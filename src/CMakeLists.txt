@@ -14,11 +14,12 @@ target_link_libraries(${ProjectName}
     glad
     static_files
     fmt
+    msquic
 ) 
 
 target_include_directories(${ProjectName} PRIVATE
     ${CMAKE_SOURCE_DIR}/submodules/websocketpp
-    ${CMAKE_SOURCE_DIR}/submodules/asio/include
+    ${CMAKE_SOURCE_DIR}/submodules/asio/asio/include
 )
 
 target_compile_definitions(${ProjectName} PRIVATE ASIO_STANDALONE)

@@ -13,3 +13,15 @@
 [submodule "submodules/websocketpp"]
 	path = submodules/websocketpp
 	url = https://github.com/zaphoyd/websocketpp.git
+[submodule "submodules/asio"]
+	path = submodules/asio
+	url = https://github.com/chriskohlhoff/asio.git
+[submodule "submodules/msquic"]
+	path = submodules/msquic
+	url = https://github.com/microsoft/msquic.git
+[submodule "submodules/gzip-hpp"]
+	path = submodules/gzip-hpp
+	url = https://github.com/mapbox/gzip-hpp.git
+[submodule "submodules/zlib"]
+	path = submodules/zlib
+	url = https://github.com/madler/zlib.git

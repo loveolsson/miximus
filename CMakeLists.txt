@@ -4,13 +4,21 @@ project(${ProjectName})
 
 set (CMAKE_CXX_STANDARD 17)
 
-add_subdirectory(submodules/json)
+set(QUIC_BUILD_TOOLS OFF)
+set(QUIC_BUILD_TEST OFF)
+set(QUIC_BUILD_PERF OFF)
+add_subdirectory(submodules/msquic)
+
+set(GLFW_BUILD_DOCS OFF)
+set(GLFW_INSTALL OFF)
 add_subdirectory(submodules/glfw)
 add_subdirectory(submodules/glad)
-add_subdirectory(submodules/fmt)
-add_subdirectory(submodules/websocketpp)
-add_subdirectory(static)
 
+add_subdirectory(submodules/json)
+add_subdirectory(submodules/fmt)
+add_subdirectory(submodules/zlib)
+
+add_subdirectory(static)
 add_subdirectory(src)
 
 set_target_properties(${ProjectName}
