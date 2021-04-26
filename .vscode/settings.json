@@ -3,5 +3,9 @@
     "editor.defaultFormatter": "xaver.clang-format",
     "[cpp]": {
         "editor.defaultFormatter": "xaver.clang-format"
+    },
+    "files.associations": {
+        "functional": "cpp",
+        "chrono": "cpp"
     }
 }

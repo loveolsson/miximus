@@ -13,9 +13,6 @@
 [submodule "submodules/websocketpp"]
 	path = submodules/websocketpp
 	url = https://github.com/zaphoyd/websocketpp.git
-[submodule "submodules/asio"]
-	path = submodules/asio
-	url = https://github.com/chriskohlhoff/asio.git
 [submodule "submodules/msquic"]
 	path = submodules/msquic
 	url = https://github.com/microsoft/msquic.git
@@ -25,3 +22,12 @@
 [submodule "submodules/zlib"]
 	path = submodules/zlib
 	url = https://github.com/madler/zlib.git
+[submodule "submodules/concurrentqueue"]
+	path = submodules/concurrentqueue
+	url = https://github.com/cameron314/concurrentqueue.git
+[submodule "submodules/asio"]
+	path = submodules/asio
+	url = https://github.com/chriskohlhoff/asio.git
+[submodule "submodules/stb"]
+	path = submodules/stb
+	url = https://github.com/nothings/stb.git

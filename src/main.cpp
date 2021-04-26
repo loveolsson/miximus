@@ -1,18 +1,46 @@
 #include "static_files/files.hpp"
-#include <websocketpp/version.hpp>
+#include "web_server/web_server.hpp"
 
-#include <asio.hpp>
+#include <chrono>
+#include <csignal>
 #include <iostream>
+#include <thread>
+
+using namespace std::chrono_literals;
+volatile int running = 1;
+
+namespace {
+volatile std::sig_atomic_t g_signal_status = 0;
+}
+
+void signal_handler(int signal) { g_signal_status = 1; }
 
 int main() {
   using namespace miximus;
 
-  auto &files = static_files::webFiles;
+  web_server::web_server web_server_;
+  web_server_.start("0.0.0.0", 8080);
+
+  auto &files = static_files::web_files;
 
   std::cout << "Files" << std::endl;
   for (auto &file : files) {
     std::cout << "File: " << file.first << std::endl;
   }
+
+  auto old = std::signal(SIGINT, signal_handler);
+  while (!g_signal_status) {
+    std::this_thread::sleep_for(1ms);
+  }
+
+  if (old) {
+    old(g_signal_status);
+    std::cout << "Calling old signal handler" << std::endl;
+  }
+
+  std::cout << "Exiting..." << std::endl;
+
+  web_server_.stop();
 
   return 0;
 }

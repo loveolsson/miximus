@@ -1,0 +1,19 @@
+#include "static_files/files.hpp"
+#include <gzip/decompress.hpp>
+
+namespace miximus::static_files {
+// File: dummy.glsl (0 B / 20 B compressed)
+static const uint8_t fileData0[] = {
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+};
+
+const std::unordered_map<std::string_view, file_record> shader_files = {
+	{ "dummy.glsl", {
+			{(const char*)fileData0, 20},
+			gzip::decompress((const char*)fileData0, 20),
+			"false"
+		}
+	},
+};
+
+} // namespace miximus::static_files

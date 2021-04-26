@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.5)
 set(ProjectName miximus)
 project(${ProjectName})
 
@@ -14,12 +14,14 @@ set(GLFW_INSTALL OFF)
 add_subdirectory(submodules/glfw)
 add_subdirectory(submodules/glad)
 
-add_subdirectory(submodules/json)
-add_subdirectory(submodules/fmt)
 add_subdirectory(submodules/zlib)
 
 add_subdirectory(static)
 add_subdirectory(src)
+
+set_target_properties(example minigzip zlib  
+    PROPERTIES EXCLUDE_FROM_ALL 1 EXCLUDE_FROM_DEFAULT_BUILD 1
+    )
 
 set_target_properties(${ProjectName}
     PROPERTIES

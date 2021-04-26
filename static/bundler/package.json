@@ -1,0 +1,17 @@
+{
+  "name": "bundler",
+  "version": "1.0.0",
+  "description": "Bundles a folder into gzipped const arrays",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "command-line-args": "^5.1.1",
+    "filesize": "^6.3.0",
+    "mime-types": "^2.1.30"
+  }
+}
