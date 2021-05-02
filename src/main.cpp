@@ -1,4 +1,3 @@
-#include "static_files/files.hpp"
 #include "web_server/web_server.hpp"
 
 #include <chrono>
@@ -19,14 +18,7 @@ int main() {
   using namespace miximus;
 
   web_server::web_server web_server_;
-  web_server_.start("0.0.0.0", 8080);
-
-  auto &files = static_files::web_files;
-
-  std::cout << "Files" << std::endl;
-  for (auto &file : files) {
-    std::cout << "File: " << file.first << std::endl;
-  }
+  web_server_.start(7351);
 
   auto old = std::signal(SIGINT, signal_handler);
   while (!g_signal_status) {

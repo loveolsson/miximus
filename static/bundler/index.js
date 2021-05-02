@@ -61,9 +61,8 @@ getFiles(src).then((files) => {
   data += `namespace ${options.namespace} {` + EOL;
 
   // Create the declaration of the map containing the uncompressed files
-  let map = `const std::unordered_map<std::string_view, file_record> ${
-                options.mapname} = {` +
-      EOL;
+  let map = `const file_map_t &${options.mapname}() {` + EOL;
+  map += '\tstatic const file_map_t files{' + EOL;
 
   // Iterate the files in the folder
   files.forEach((file, index) => {
@@ -78,12 +77,13 @@ getFiles(src).then((files) => {
     buf = gzipSync(buf);
 
     // Print the contents of the buffer
-    data += `// File: ${rel} (${filesize(origSize)} / ${
-                filesize(buf.length)} compressed)` +
+    const comment = `// File: ${rel} (${filesize(origSize)} / ${
+                        filesize(buf.length)} compressed)` +
         EOL;
-    data += `static const uint8_t fileData${index}[] = {` + EOL;
+    data += comment;
+    data += `\tstatic const uint8_t fileData${index}[] = {` + EOL;
     for (let i = 0; i < buf.length;) {
-      data += '\t';
+      data += '\t\t';
       // Add the bytes in rows of 20
       for (let j = 0; j < 20 && i < buf.length; ++j, ++i) {
         data += `0x${buf[i].toString(16).padStart(2, '0')}, `;
@@ -93,19 +93,21 @@ getFiles(src).then((files) => {
     data += '};' + EOL + EOL;
 
     // Add an entry to the map that decompresses the file into the map
-    map += `\t{ "${rel}", {` + EOL;
-    map += `\t\t\t{(const char*)fileData${index}, ${buf.length}},` + EOL;
-    map += `\t\t\tgzip::decompress((const char*)fileData${index}, ${
+    map += '\t\t' + comment;
+    map += `\t\t{ "${rel}", {` + EOL;
+    map += `\t\t\t\t{(const char*)fileData${index}, ${buf.length}},` + EOL;
+    map += `\t\t\t\tgzip::decompress((const char*)fileData${index}, ${
                buf.length}),` +
         EOL;
-    map += `\t\t\t"${contentType(basename(rel))}"` + EOL;
-    map += `\t\t}` + EOL;
-    map += `\t},`;
-    map += EOL;
+    map += `\t\t\t\t"${contentType(basename(rel))}"` + EOL;
+    map += `\t\t\t}` + EOL;
+    map += '\t\t},' + EOL;
   });
 
   // Terminate the map declaration and add it to the file
-  map += '};' + EOL + EOL;
+  map += '\t};' + EOL;
+  map += '\treturn files;' + EOL;
+  map += '};' + EOL;
   data += map;
 
   // Add termination of the namespace to the file

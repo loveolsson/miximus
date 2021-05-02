@@ -4,18 +4,20 @@ project(${ProjectName})
 
 set (CMAKE_CXX_STANDARD 17)
 
-set(QUIC_BUILD_TOOLS OFF)
-set(QUIC_BUILD_TEST OFF)
-set(QUIC_BUILD_PERF OFF)
-add_subdirectory(submodules/msquic)
+add_compile_definitions(
+    ASIO_STANDALONE
+    _WEBSOCKETPP_CPP11_INTERNAL_
+    ASIO_HAS_STD_TYPE_TRAITS
+    ASIO_HAS_STD_SHARED_PTR 
+    ASIO_HAS_STD_ADDRESSOF
+    ASIO_HAS_STD_ATOMIC
+    ASIO_HAS_STD_CHRONO 
+    ASIO_HAS_CSTDINT
+    ASIO_HAS_STD_ARRAY 
+    ASIO_HAS_STD_SYSTEM_ERROR
+)
 
-set(GLFW_BUILD_DOCS OFF)
-set(GLFW_INSTALL OFF)
-add_subdirectory(submodules/glfw)
-add_subdirectory(submodules/glad)
-
-add_subdirectory(submodules/zlib)
-
+add_subdirectory(submodules)
 add_subdirectory(static)
 add_subdirectory(src)
 
@@ -29,3 +31,4 @@ set_target_properties(${ProjectName}
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
+

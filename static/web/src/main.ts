@@ -1,8 +1,18 @@
 import Vue from "vue";
 import App from "./App.vue";
 
-Vue.config.productionTip = false;
+import { BaklavaVuePlugin } from "@baklavajs/plugin-renderer-vue";
+import "@baklavajs/plugin-renderer-vue/dist/styles.css";
 
+Vue.use(BaklavaVuePlugin);
+
+Vue.config.productionTip = false;
+//Vue.config.devtools = false
+
+Vue.prototype.log = console.log;
+
+/* eslint-disable no-new */
 new Vue({
+  el: "#app",
   render: (h) => h(App),
-}).$mount("#app");
+});
