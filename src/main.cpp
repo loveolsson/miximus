@@ -1,3 +1,4 @@
+#include "nodes/node_manager.hpp"
 #include "web_server/web_server.hpp"
 
 #include <chrono>
@@ -14,25 +15,29 @@ volatile std::sig_atomic_t g_signal_status = 0;
 
 void signal_handler(int signal) { g_signal_status = 1; }
 
-int main() {
-  using namespace miximus;
+int main()
+{
+    using namespace miximus;
 
-  web_server::web_server web_server_;
-  web_server_.start(7351);
+    node_manager           node_manager_;
+    web_server::web_server web_server_;
+    node_manager_.make_server_subscriptions(web_server_);
 
-  auto old = std::signal(SIGINT, signal_handler);
-  while (!g_signal_status) {
-    std::this_thread::sleep_for(1ms);
-  }
+    web_server_.start(7351);
 
-  if (old) {
-    old(g_signal_status);
-    std::cout << "Calling old signal handler" << std::endl;
-  }
+    auto old = std::signal(SIGINT, signal_handler);
+    while (!g_signal_status) {
+        std::this_thread::sleep_for(1ms);
+    }
 
-  std::cout << "Exiting..." << std::endl;
+    if (old) {
+        old(g_signal_status);
+        std::cout << "Calling old signal handler" << std::endl;
+    }
 
-  web_server_.stop();
+    std::cout << "Exiting..." << std::endl;
 
-  return 0;
+    web_server_.stop();
+
+    return 0;
 }

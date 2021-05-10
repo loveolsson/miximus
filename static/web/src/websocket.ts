@@ -1,68 +1,35 @@
 import EventEmitter from "eventemitter3";
-
-export enum action_t {
-  subscribe = "subscribe",
-  unsubscribe = "unsubscribe",
-  ping = "ping",
-  socket_info = "socket_info",
-  command = "command",
-  result = "result",
-  error = "error",
-}
-
-export enum topic_t {
-  add_node = "add_node",
-  remove_node = "remove_node",
-  add_connection = "add_connection",
-  remove_connection = "remove_connection",
-  position_node = "position_node",
-  get_config = "get_config",
-}
-
-export interface message {
-  action: action_t;
-  token?: string;
-}
-
-export interface socket_info extends message {
-  id: number;
-}
-
-export interface subscribe extends message {
-  topic: topic_t;
-}
-
-export interface unsubscribe extends message {
-  topic: topic_t;
-}
-
-export interface command extends message {
-  topic: topic_t;
-  origin_id?: number;
-}
-
-export interface result extends message {
-  topic: topic_t;
-}
-
-export interface error extends message {
-  topic: topic_t;
-}
+import {
+  action_t,
+  command_s,
+  error_s,
+  message_s,
+  socket_info_s,
+  subscribe_s,
+  topic_t,
+} from "./messages";
 
 interface ws_events {
   on_connected: [number];
   on_disconnected: [number, string];
 }
 
-export type message_callback_t = (msg: message, is_origin: boolean) => void;
+export type message_callback_t<T extends message_s> = (
+  msg: T | error_s,
+  is_origin: boolean
+) => void;
 
 export class ws_wrapper extends EventEmitter<ws_events> {
   private ws?: WebSocket;
-  private info?: socket_info;
+  private info?: socket_info_s;
   private ping_timer?: number;
-  private callbacks = new Map<string, message_callback_t>();
-  private subscriptions = new Map<topic_t, Set<message_callback_t>>();
+  private callbacks = new Map<string, message_callback_t<message_s>>();
+  private subscriptions = new Map<
+    topic_t,
+    Set<message_callback_t<message_s>>
+  >();
   private next_token = 0;
+  private closing = false;
 
   constructor() {
     super();
@@ -70,6 +37,10 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   }
 
   private connect(): void {
+    if (this.closing) {
+      return;
+    }
+
     this.ws = new WebSocket(`ws://${location.hostname}:7351/`);
     this.ws.onopen = this.handle_open.bind(this);
     this.ws.onclose = this.handle_close.bind(this);
@@ -86,18 +57,18 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.callbacks.clear();
 
     if (this.info) {
-      console.log("Closed", ev.code, ev.reason);
       this.info = undefined;
       this.emit("on_disconnected", ev.code, ev.reason);
     }
 
     if (this.ws) {
       this.ws.close();
-      this.ws = undefined;  
+      this.ws = undefined;
     }
 
-
-    setTimeout(this.connect.bind(this), 2000);
+    if (!this.closing) {
+      setTimeout(this.connect.bind(this), 2000);
+    }
   }
 
   private handle_message(msg: MessageEvent<string>): void {
@@ -106,7 +77,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     }
 
     try {
-      const payload: message = JSON.parse(msg.data);
+      const payload: message_s = JSON.parse(msg.data);
 
       if (!payload || !payload.action) {
         return;
@@ -116,12 +87,12 @@ export class ws_wrapper extends EventEmitter<ws_events> {
         case action_t.ping:
           return this.handle_ping();
         case action_t.socket_info:
-          return this.handle_socket_info(payload as socket_info);
+          return this.handle_socket_info(payload as socket_info_s);
         case action_t.result:
         case action_t.error:
           return this.handle_result(payload);
         case action_t.command:
-          return this.handle_command(payload as command);
+          return this.handle_command(payload as command_s);
         default:
           console.error("Unhandled message");
       }
@@ -130,14 +101,20 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     }
   }
 
-  private handle_socket_info(info: socket_info): void {
+  private handle_socket_info(info: socket_info_s): void {
     console.log(`Received socket info with id ${info.id}`);
     this.info = info;
 
     for (const topic of this.subscriptions.keys()) {
-      console.log(`Re-subscribing to ${topic}`);
-      this.send({ action: action_t.subscribe, topic }, (msg) => {
-        console.info(`Re-subscribe to ${topic} with: ${msg.action}`);
+      const payload: subscribe_s = {
+        action: action_t.subscribe,
+        topic: topic,
+      };
+
+      this.send(payload, (result) => {
+        if (result.action === action_t.error) {
+          console.info(`Failed to re-subscribe to ${topic} with: ${(result as error_s).error}`);
+        }
       });
     }
 
@@ -145,11 +122,11 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.send_ping();
   }
 
-  private handle_error(ev: Event): void {
-    //console.error(`WebSocket error!`);
+  private handle_error(): void {
+    //console.error(`WebSocket error: ${ev.message}`);
   }
 
-  private handle_command(msg: command): void {
+  private handle_command(msg: command_s): void {
     const topic = this.subscriptions.get(msg.topic);
     if (!topic) {
       return console.warn(
@@ -159,14 +136,14 @@ export class ws_wrapper extends EventEmitter<ws_events> {
 
     for (const cb of topic) {
       const is_origin =
-        this.info !== undefined && this.info.id == msg.origin_id;
+        this.info !== undefined && this.info.id === msg.origin_id;
       cb(msg, is_origin);
     }
   }
 
-  private handle_result(msg: message): void {
+  private handle_result(msg: message_s): void {
     if (!msg.token) {
-      return console.warn("No token in response");
+      return;
     }
 
     const cb = this.callbacks.get(msg.token);
@@ -198,14 +175,17 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.ws?.close();
   }
 
-  public send<T extends message>(msg: T, cb?: message_callback_t): boolean {
+  public send<T extends message_s, R extends message_s = message_s>(
+    msg: T,
+    cb?: message_callback_t<R>
+  ): boolean {
     if (!this.info) {
       return false;
     }
 
     if (cb) {
       const token = String(this.next_token++);
-      this.callbacks.set(token, cb);
+      this.callbacks.set(token, cb as message_callback_t<message_s>);
       msg.token = token;
     }
 
@@ -213,29 +193,35 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     return true;
   }
 
-  public subscribe(topic: topic_t, cb: message_callback_t) {
+  public subscribe<T extends message_s>(
+    topic: topic_t,
+    cb: message_callback_t<T>
+  ) {
     let sub = this.subscriptions.get(topic);
     if (!sub) {
       sub = new Set();
       this.subscriptions.set(topic, sub);
     }
 
-    if (sub.has(cb)) {
+    if (sub.has(cb as message_callback_t<message_s>)) {
       return console.warn(
         `Subscribing to ${topic} with callback already in set`
       );
     }
 
-    sub.add(cb);
+    sub.add(cb as message_callback_t<message_s>);
 
-    if (sub.size == 1) {
+    if (sub.size === 1) {
       this.send({ action: action_t.subscribe, topic }, (msg) => {
         console.info(`Subscribe to ${topic} with: ${msg.action}`);
       });
     }
   }
 
-  public unsubscribe(topic: topic_t, cb: message_callback_t): void {
+  public unsubscribe<T extends message_s>(
+    topic: topic_t,
+    cb: message_callback_t<T>
+  ): void {
     const sub = this.subscriptions.get(topic);
     if (!sub) {
       return console.warn(
@@ -243,16 +229,21 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       );
     }
 
-    if (!sub.delete(cb)) {
+    if (!sub.delete(cb as message_callback_t<message_s>)) {
       return console.warn(
         `Unsubscribing with callback not registered to ${topic}`
       );
     }
 
-    if (sub.size == 0) {
+    if (sub.size === 0) {
       this.send({ action: action_t.unsubscribe, topic }, (msg) => {
         console.info(`Unsubscribe to ${topic} with: ${msg.action}`);
       });
     }
+  }
+
+  public destroy() {
+    this.closing = true;
+    this.ws?.close();
   }
 }

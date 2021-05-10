@@ -1,16 +1,23 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+set(MIXIMUS_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+)
+
+add_subdirectory(utils)
 add_subdirectory(web_server)
 add_subdirectory(config)
 add_subdirectory(messages)
+add_subdirectory(nodes)
 
 add_executable(${ProjectName}
-    main.cpp
+    ${MIXIMUS_SOURCES}
 )
 
 target_link_libraries(${ProjectName}
     glfw
     glad
+    glm::glm
     msquic
     web_server
     config

@@ -1,5 +1,5 @@
 #pragma once
-#include "messages/message.hpp"
+#include "messages/payload.hpp"
 
 #include <functional>
 #include <memory>
