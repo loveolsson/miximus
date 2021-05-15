@@ -6,7 +6,6 @@ set(MIXIMUS_SOURCES
 
 add_subdirectory(utils)
 add_subdirectory(web_server)
-add_subdirectory(config)
 add_subdirectory(messages)
 add_subdirectory(nodes)
 
@@ -20,7 +19,6 @@ target_link_libraries(${ProjectName}
     glm::glm
     msquic
     web_server
-    config
 ) 
 
 add_custom_command(TARGET ${ProjectName} POST_BUILD

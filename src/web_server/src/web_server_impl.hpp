@@ -1,6 +1,7 @@
 #pragma once
 
 #include "messages/payload.hpp"
+#include "web_server/web_server.hpp"
 #include "websocket_connection.hpp"
 
 #include <websocketpp/common/asio.hpp>
@@ -19,7 +20,7 @@ class web_server_impl
     typedef std::map<int64_t, connection_hdl>                                               con_by_id_t;
     typedef std::set<connection_hdl, std::owner_less<connection_hdl>>                       con_set_t;
     typedef std::array<con_set_t, static_cast<int>(message::topic_t::_count)>               con_by_topic_t;
-    typedef std::array<message::callback_t, static_cast<int>(message::topic_t::_count)>     subscription_list_t;
+    typedef std::array<callback_t, static_cast<int>(message::topic_t::_count)>              subscription_list_t;
     typedef websocketpp::server<websocketpp::config::asio>                                  server;
     typedef server::message_ptr                                                             message_ptr;
 
@@ -42,7 +43,7 @@ class web_server_impl
     web_server_impl();
     ~web_server_impl();
 
-    void subscribe(message::topic_t topic, message::callback_t callback);
+    void subscribe(message::topic_t topic, callback_t callback);
     void start(uint16_t port);
     void stop();
 

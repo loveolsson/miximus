@@ -1,5 +1,7 @@
 #pragma once
-#include "messages/payload.hpp"
+#include "messages/types.hpp"
+
+#include <nlohmann/json_fwd.hpp>
 
 #include <functional>
 #include <memory>
@@ -10,24 +12,28 @@ namespace detail {
 class web_server_impl;
 }
 
-class web_server {
-  std::unique_ptr<detail::web_server_impl> impl;
+typedef std::function<void(nlohmann::json&&)>                         response_fn_t;
+typedef std::function<void(nlohmann::json&&, int64_t, response_fn_t)> callback_t;
 
-public:
-  web_server();
-  ~web_server();
+class web_server
+{
+    std::unique_ptr<detail::web_server_impl> impl;
 
-  void subscribe(message::topic_t topic, message::callback_t callback);
+  public:
+    web_server();
+    ~web_server();
 
-  void start(uint16_t port);
-  void stop();
+    void subscribe(message::topic_t topic, callback_t callback);
 
-  /**
-   * Sync versions of calls should only be called from the callback thread
-   */
-  void send_message(const nlohmann::json &msg, int64_t connection_id);
-  void send_message_sync(const nlohmann::json &msg, int64_t connection_id);
-  void broadcast_message(const nlohmann::json &msg);
-  void broadcast_message_sync(const nlohmann::json &msg);
+    void start(uint16_t port);
+    void stop();
+
+    /**
+     * Sync versions of calls should only be called from the callback thread
+     */
+    void send_message(const nlohmann::json& msg, int64_t connection_id);
+    void send_message_sync(const nlohmann::json& msg, int64_t connection_id);
+    void broadcast_message(const nlohmann::json& msg);
+    void broadcast_message_sync(const nlohmann::json& msg);
 };
 } // namespace miximus::web_server

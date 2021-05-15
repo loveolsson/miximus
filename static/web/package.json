@@ -33,6 +33,5 @@
     "prettier": "^2.2.1",
     "typescript": "~4.1.5",
     "vue-template-compiler": "^2.6.11"
-  },
-  "sideEffects": false
+  }
 }

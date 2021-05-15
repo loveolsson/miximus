@@ -2,6 +2,8 @@
 #include "messages/templates.hpp"
 #include "static_files/files.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <sstream>
 
 namespace miximus::web_server::detail {
@@ -101,13 +103,13 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
     }
 
     auto& payload = msg->get_payload();
-    auto  json    = nlohmann::json::parse(payload, nullptr, false);
+    auto  doc     = nlohmann::json::parse(payload, nullptr, false);
 
-    if (json.is_discarded()) {
+    if (doc.is_discarded()) {
         return terminate_and_log(hdl, "Error: Invalid JSON payload");
     }
 
-    auto action = message::get_action_from_payload(json);
+    auto action = message::get_action_from_payload(doc);
 
     switch (action) {
         case message::action_t::invalid: {
@@ -120,8 +122,8 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 
         case message::action_t::subscribe: {
             nlohmann::json response;
-            auto           topic = message::get_topic_from_payload(json);
-            auto           token = message::get_token_from_payload(json);
+            auto           topic = message::get_topic_from_payload(doc);
+            auto           token = message::get_token_from_payload(doc);
 
             if (topic != message::topic_t::invalid) {
                 con->second.topics.emplace(topic);
@@ -135,8 +137,8 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 
         case message::action_t::unsubscribe: {
             nlohmann::json response;
-            auto           topic = message::get_topic_from_payload(json);
-            auto           token = message::get_token_from_payload(json);
+            auto           topic = message::get_topic_from_payload(doc);
+            auto           token = message::get_token_from_payload(doc);
 
             if (topic != message::topic_t::invalid) {
                 con->second.topics.erase(topic);
@@ -148,14 +150,16 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
             endpoint_.send(hdl, response.dump(), opcode::text);
         } break;
 
-        case message::action_t::command:
-        case message::action_t::result:
-        case message::action_t::error: {
-            auto topic = message::get_topic_from_payload(json);
+        case message::action_t::command: {
+            auto topic = message::get_topic_from_payload(doc);
             if (topic > message ::topic_t::invalid && topic < message::topic_t::_count && subscriptions_[(int)topic]) {
-                subscriptions_[(int)topic](action, std::move(json), con->second.id);
+                auto respose_fn = [this, hdl](nlohmann::json&& payload) {
+                    endpoint_.send(hdl, payload.dump(), opcode::text);
+                };
+
+                subscriptions_[(int)topic](std::move(doc), con->second.id, respose_fn);
             } else {
-                auto token = message::get_token_from_payload(json);
+                auto token = message::get_token_from_payload(doc);
                 endpoint_.send(hdl,
                                message::create_error_base_payload(token, message::error_t::internal_error).dump(),
                                opcode::text);
@@ -197,7 +201,7 @@ void web_server_impl::on_close(connection_hdl hdl)
     connections_.erase(con);
 }
 
-void web_server_impl::subscribe(message::topic_t topic, message::callback_t callback)
+void web_server_impl::subscribe(message::topic_t topic, callback_t callback)
 {
     endpoint_.get_io_service().post([this, topic, callback]() { subscriptions_[(int)topic] = callback; });
 }
