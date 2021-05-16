@@ -1,39 +1,18 @@
-[submodule "submodules/json"]
-	path = submodules/json
-	url = https://github.com/nlohmann/json.git
-[submodule "submodules/glfw"]
-	path = submodules/glfw
-	url = https://github.com/glfw/glfw.git
 [submodule "submodules/glad"]
 	path = submodules/glad
 	url = https://github.com/Dav1dde/glad.git
-[submodule "submodules/websocketpp"]
-	path = submodules/websocketpp
-	url = https://github.com/zaphoyd/websocketpp.git
 [submodule "submodules/msquic"]
 	path = submodules/msquic
 	url = https://github.com/microsoft/msquic.git
 [submodule "submodules/gzip-hpp"]
 	path = submodules/gzip-hpp
 	url = https://github.com/mapbox/gzip-hpp.git
-[submodule "submodules/zlib"]
-	path = submodules/zlib
-	url = https://github.com/madler/zlib.git
 [submodule "submodules/concurrentqueue"]
 	path = submodules/concurrentqueue
 	url = https://github.com/cameron314/concurrentqueue.git
-[submodule "submodules/asio"]
-	path = submodules/asio
-	url = https://github.com/chriskohlhoff/asio.git
 [submodule "submodules/stb"]
 	path = submodules/stb
 	url = https://github.com/nothings/stb.git
-[submodule "submodules/spdlog"]
-	path = submodules/spdlog
-	url = https://github.com/gabime/spdlog.git
 [submodule "submodules/eternal"]
 	path = submodules/eternal
 	url = https://github.com/mapbox/eternal.git
-[submodule "submodules/glm"]
-	path = submodules/glm
-	url = https://github.com/g-truc/glm.git

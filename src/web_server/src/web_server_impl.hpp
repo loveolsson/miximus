@@ -15,13 +15,13 @@
 namespace miximus::web_server::detail {
 class web_server_impl
 {
+    typedef websocketpp::server<websocketpp::config::asio>                                  server;
     typedef websocketpp::connection_hdl                                                     connection_hdl;
     typedef std::map<connection_hdl, websocket_connection, std::owner_less<connection_hdl>> con_list_t;
     typedef std::map<int64_t, connection_hdl>                                               con_by_id_t;
     typedef std::set<connection_hdl, std::owner_less<connection_hdl>>                       con_set_t;
     typedef std::array<con_set_t, static_cast<int>(message::topic_t::_count)>               con_by_topic_t;
     typedef std::array<callback_t, static_cast<int>(message::topic_t::_count)>              subscription_list_t;
-    typedef websocketpp::server<websocketpp::config::asio>                                  server;
     typedef server::message_ptr                                                             message_ptr;
 
     void terminate_and_log(connection_hdl hdl, const std::string& msg);

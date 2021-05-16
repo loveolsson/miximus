@@ -16,6 +16,7 @@ web_server_impl::web_server_impl()
     endpoint_.clear_access_channels(websocketpp::log::alevel::all);
     endpoint_.set_access_channels(websocketpp::log::alevel::access_core);
     endpoint_.set_access_channels(websocketpp::log::alevel::app);
+    endpoint_.set_reuse_addr(true);
 
     // Initialize the Asio transport policy
     endpoint_.init_asio();

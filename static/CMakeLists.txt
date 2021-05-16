@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.16)
 
 set (CMAKE_CXX_STANDARD 17)
 
@@ -20,7 +20,5 @@ target_compile_definitions(static_files PRIVATE LIBRARY_EXPORTS)
 
 target_include_directories(static_files PUBLIC include)
 target_include_directories(static_files PRIVATE ${CMAKE_SOURCE_DIR}/submodules/gzip-hpp/include)
-target_include_directories(static_files PRIVATE ${CMAKE_SOURCE_DIR}/submodules/zlib)
-target_include_directories(static_files PRIVATE ${CMAKE_BINARY_DIR}/submodules/zlib)
-target_link_libraries(static_files zlibstatic)
+target_link_libraries(static_files ZLIB::ZLIB)
 

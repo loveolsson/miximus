@@ -9,14 +9,14 @@ add_library(web_server
 target_link_libraries(web_server 
 PRIVATE
     static_files
+    Boost::system
+    Threads::Threads
+    websocketpp::websocketpp
 PUBLIC    
     messages
 ) 
 
 target_include_directories(web_server 
-PRIVATE
-    ${CMAKE_SOURCE_DIR}/submodules/websocketpp
-    ${CMAKE_SOURCE_DIR}/submodules/asio/asio/include
 PUBLIC
     include
 )

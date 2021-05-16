@@ -9,7 +9,8 @@ struct framebuffer;
 
 enum class node_connection_type
 {
-    f64,
+    invalid = -1,
+    f64     = 0,
     i64,
     vec2,
     rect,
@@ -18,10 +19,7 @@ enum class node_connection_type
 };
 
 template <typename T>
-inline node_connection_type get_connection_type()
-{
-    static_assert(false, "Unknown connection type");
-}
+inline node_connection_type get_connection_type();
 
 template <>
 inline node_connection_type get_connection_type<double>()
