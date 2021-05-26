@@ -56,12 +56,13 @@ async function getFiles(dir) {
 // Get all files in the source folder
 getFiles(src).then((files) => {
   // Add the header of the file
-  let data = '#include "static_files/files.hpp"' + EOL;
-  data += '#include <gzip/decompress.hpp>' + EOL + EOL;
-
+  let data = "";
   data += '#ifdef _WIN32' + EOL;
   data += '#define LIBRARY_EXPORTS' + EOL;
   data += '#endif' + EOL + EOL;
+
+  data += '#include "static_files/files.hpp"' + EOL;
+  data += '#include <gzip/decompress.hpp>' + EOL + EOL;
 
   data += `namespace ${options.namespace} {` + EOL;
 

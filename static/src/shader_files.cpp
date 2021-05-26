@@ -1,9 +1,9 @@
-#include "static_files/files.hpp"
-#include <gzip/decompress.hpp>
-
 #ifdef _WIN32
 #define LIBRARY_EXPORTS
 #endif
+
+#include "static_files/files.hpp"
+#include <gzip/decompress.hpp>
 
 namespace miximus::static_files {
 // File: basic_frag.glsl (91 B / 96 B compressed)
