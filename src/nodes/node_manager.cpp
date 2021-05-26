@@ -22,8 +22,17 @@ void node_manager::make_server_subscriptions(web_server::web_server& server)
     server.subscribe(topic_t::config, utils::bind(&node_manager::handle_config, this));
 }
 
-void node_manager::handle_add_node(json&& msg, int64_t, web_server::response_fn_t cb)
+node_manager::node_map_t node_manager::clone_node_map()
 {
+    std::shared_lock lock(nodes_mutex_);
+    node_map_t       copy = nodes_;
+    return copy;
+}
+
+void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb)
+{
+    (void)client_id;
+
     auto token = get_token_from_payload(msg);
 
     try {
@@ -58,8 +67,10 @@ void node_manager::handle_add_connection(json&& msg, int64_t, web_server::respon
 
 void node_manager::handle_remove_connection(json&& msg, int64_t, web_server::response_fn_t cb) {}
 
-void node_manager::handle_config(json&& msg, int64_t, web_server::response_fn_t cb)
+void node_manager::handle_config(json&& msg, int64_t client_id, web_server::response_fn_t cb)
 {
+    (void)client_id;
+
     auto token    = get_token_from_payload(msg);
     auto response = create_result_base_payload(token);
 

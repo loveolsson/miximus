@@ -31,6 +31,9 @@ class web_server_impl
     void on_open(connection_hdl hdl);
     void on_close(connection_hdl hdl);
 
+    void send(connection_hdl hdl, const std::string&);
+    void send(connection_hdl hdl, const nlohmann::json&);
+
     server                       endpoint_;
     std::unique_ptr<std::thread> run_thread_;
 

@@ -58,6 +58,11 @@ getFiles(src).then((files) => {
   // Add the header of the file
   let data = '#include "static_files/files.hpp"' + EOL;
   data += '#include <gzip/decompress.hpp>' + EOL + EOL;
+
+  data += '#ifdef _WIN32' + EOL;
+  data += '#define LIBRARY_EXPORTS' + EOL;
+  data += '#endif' + EOL + EOL;
+
   data += `namespace ${options.namespace} {` + EOL;
 
   // Create the declaration of the map containing the uncompressed files

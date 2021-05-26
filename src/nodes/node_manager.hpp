@@ -14,14 +14,15 @@ namespace miximus {
 
 class node_manager
 {
-    typedef nlohmann::json json;
+    typedef nlohmann::json                                         json;
+    typedef std::unordered_map<std::string, std::shared_ptr<node>> node_map_t;
 
     std::shared_mutex           config_mutex_;
     std::map<std::string, json> node_config_;
     std::map<std::string, json> con_config_;
 
-    std::shared_mutex                                      nodes_mutex_;
-    std::unordered_map<std::string, std::shared_ptr<node>> nodes_;
+    std::shared_mutex nodes_mutex_;
+    node_map_t        nodes_;
 
     void handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb);
     void handle_remove_node(json&& msg, int64_t client_id, web_server::response_fn_t cb);
@@ -38,7 +39,8 @@ class node_manager
     node_manager();
     ~node_manager();
 
-    void make_server_subscriptions(web_server::web_server& server);
+    void       make_server_subscriptions(web_server::web_server& server);
+    node_map_t clone_node_map();
 
     std::shared_ptr<node> find_node(const std::string& id);
 };

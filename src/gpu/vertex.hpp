@@ -1,21 +1,11 @@
 #pragma once
+#include "gpu/vertex_attr.hpp"
 #include "utils/const_map.hpp"
-
-#include <glad/glad.h>
-#include <glm/glm.hpp>
 
 #include <array>
 #include <string_view>
 
 namespace miximus::gpu {
-
-struct vertex_attr
-{
-    GLint     size;
-    GLenum    type;
-    GLboolean norm;
-    GLsizei   offset;
-};
 
 template <typename T>
 constexpr auto get_vertex_type_info();
@@ -36,6 +26,7 @@ inline constexpr auto get_vertex_type_info<vertex_col_uv>()
              GL_FLOAT,
              GL_FALSE,
              offsetof(vertex_col_uv, pos),
+             GL_FLOAT_VEC2,
          }},
         {"uv",
          {
@@ -43,6 +34,7 @@ inline constexpr auto get_vertex_type_info<vertex_col_uv>()
              GL_FLOAT,
              GL_FALSE,
              offsetof(vertex_col_uv, uv),
+             GL_FLOAT_VEC2,
          }},
     });
 }

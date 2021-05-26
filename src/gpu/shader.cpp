@@ -6,8 +6,6 @@
 
 namespace miximus::gpu {
 
-shader_store::map_t shader_store::shaders_;
-
 class shader
 {
     GLuint id_;
@@ -39,10 +37,9 @@ class shader
             std::vector<GLchar> log(max_length);
             glGetShaderInfoLog(id_, max_length, &max_length, log.data());
 
-            std::string str(log.data());
             glDeleteShader(id_);
 
-            throw std::runtime_error(str);
+            throw std::runtime_error(std::string(log.data()));
         }
     }
 
@@ -77,11 +74,9 @@ shader_program::shader_program(std::string_view vert_name, std::string_view frag
 
         std::vector<GLchar> log(max_length);
         glGetProgramInfoLog(program_, max_length, &max_length, log.data());
-
-        std::string str(log.data());
         glDeleteProgram(program_);
 
-        throw std::runtime_error(str);
+        throw std::runtime_error(std::string(log.data()));
     }
 
     GLint   count;
@@ -120,11 +115,11 @@ shader_program::shader_program(std::string_view vert_name, std::string_view frag
 }
 
 shader_program::shader_program(shader_program&& o)
-    : program_(o.program_)
 {
-    o.program_ = 0;
-    attributes_.swap(o.attributes_);
-    uniforms_.swap(o.uniforms_);
+    program_    = o.program_;
+    o.program_  = 0;
+    attributes_ = std::move(o.attributes_);
+    uniforms_   = std::move(o.uniforms_);
 }
 
 shader_program::~shader_program()
@@ -135,8 +130,18 @@ shader_program::~shader_program()
     }
 }
 
-void shader_store::init() { shaders_.emplace("basic", shader_program{"basic.vert", "basic.frag"}); }
+shader_store::shader_store() { shaders_.emplace("basic", shader_program{"basic_vert.glsl", "basic_frag.glsl"}); }
 
-void shader_store::clear() { shaders_.clear(); }
+shader_store::~shader_store() {}
+
+shader_program& shader_store::get_shader(std::string_view name)
+{
+    auto it = shaders_.find(name);
+    if (it == shaders_.end()) {
+        throw std::runtime_error("shader not found");
+    }
+
+    return it->second;
+}
 
 } // namespace miximus::gpu

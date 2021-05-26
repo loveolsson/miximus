@@ -11,6 +11,21 @@ namespace miximus::web_server::detail {
 static const auto pong_payload       = message::create_ping_response_payload().dump();
 static int64_t    next_connection_id = 0;
 
+static std::string create_404_doc(std::string_view resource)
+{
+    std::stringstream ss;
+
+    ss << "<!doctype html><html><head>"
+          "<title>Error 404 (Resource not found)</title><body>"
+          "<h1>Error 404</h1>"
+          "<p>The requested URL "
+       << resource
+       << " was not found on this server.</p>"
+          "</body></head></html>";
+
+    return ss.str();
+}
+
 web_server_impl::web_server_impl()
 {
     endpoint_.clear_access_channels(websocketpp::log::alevel::all);
@@ -59,72 +74,62 @@ void web_server_impl::on_http(connection_hdl hdl)
     auto& files   = static_files::get_web_files();
     auto  file_it = files.find(resource.substr(1));
 
-    if (file_it != files.end()) {
-        auto&            encoding = con->get_request_header("Accept-Encoding");
-        std::string_view data;
-        if (encoding.find("gzip") != std::string::npos) {
-            con->replace_header("Content-Encoding", "gzip");
-            con->set_body(file_it->second.gzipped);
-        } else {
-            con->set_body(file_it->second.raw);
-        }
-
-        con->replace_header("Content-Type", file_it->second.mime);
-        con->set_status(websocketpp::http::status_code::ok);
+    if (file_it == files.end()) {
+        con->set_body(create_404_doc(resource));
+        con->set_status(websocketpp::http::status_code::not_found);
         return;
     }
 
-    // 404 error
-    std::stringstream ss;
+    auto& encoding = con->get_request_header("Accept-Encoding");
 
-    ss << "<!doctype html><html><head>"
-          "<title>Error 404 (Resource not found)</title><body>"
-          "<h1>Error 404</h1>"
-          "<p>The requested URL "
-       << resource
-       << " was not found on this server.</p>"
-          "</body></head></html>";
+    if (encoding.find("gzip") != std::string::npos) {
+        con->replace_header("Content-Encoding", "gzip");
+        con->set_body(std::string(file_it->second.gzipped));
+    } else {
+        con->set_body(file_it->second.raw);
+    }
 
-    con->set_body(ss.str());
-    con->set_status(websocketpp::http::status_code::not_found);
+    con->replace_header("Content-Type", std::string(file_it->second.mime));
+    con->set_status(websocketpp::http::status_code::ok);
+    return;
 }
 
 void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 {
     using namespace websocketpp::frame;
-    using websocketpp::log::alevel;
 
     auto con = connections_.find(hdl);
     if (con == connections_.end()) {
-        return terminate_and_log(hdl, "WebSocket connection not found");
+        return terminate_and_log(hdl, "connection not found");
     }
 
     if (msg->get_opcode() != opcode::text) {
-        return terminate_and_log(hdl, "Error: Only text paylods are accepted");
+        return terminate_and_log(hdl, "only text paylods are accepted");
     }
 
     auto& payload = msg->get_payload();
     auto  doc     = nlohmann::json::parse(payload, nullptr, false);
 
     if (doc.is_discarded()) {
-        return terminate_and_log(hdl, "Error: Invalid JSON payload");
+        return terminate_and_log(hdl, "invalid JSON payload");
     }
 
     auto action = message::get_action_from_payload(doc);
 
     switch (action) {
         case message::action_t::invalid: {
-            terminate_and_log(hdl, "Error: Invalid action");
+            terminate_and_log(hdl, "invalid action");
         } break;
 
         case message::action_t::ping: {
-            endpoint_.send(hdl, pong_payload, opcode::text);
+            send(hdl, pong_payload);
         } break;
 
         case message::action_t::subscribe: {
             nlohmann::json response;
-            auto           topic = message::get_topic_from_payload(doc);
-            auto           token = message::get_token_from_payload(doc);
+
+            auto topic = message::get_topic_from_payload(doc);
+            auto token = message::get_token_from_payload(doc);
 
             if (topic != message::topic_t::invalid) {
                 con->second.topics.emplace(topic);
@@ -133,42 +138,47 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
             } else {
                 response = message::create_error_base_payload(token, message::error_t::invalid_topic);
             }
-            endpoint_.send(hdl, response.dump(), opcode::text);
+
+            send(hdl, response);
         } break;
 
         case message::action_t::unsubscribe: {
-            nlohmann::json response;
-            auto           topic = message::get_topic_from_payload(doc);
-            auto           token = message::get_token_from_payload(doc);
+            auto topic = message::get_topic_from_payload(doc);
+            auto token = message::get_token_from_payload(doc);
 
-            if (topic != message::topic_t::invalid) {
-                con->second.topics.erase(topic);
-                connections_by_topic_[(int)topic].erase(hdl);
-                response = message::create_result_base_payload(token);
-            } else {
-                response = message::create_error_base_payload(token, message::error_t::invalid_topic);
+            if (topic == message::topic_t::invalid) {
+                send(hdl, message::create_error_base_payload(token, message::error_t::invalid_topic));
+                break;
             }
-            endpoint_.send(hdl, response.dump(), opcode::text);
+
+            con->second.topics.erase(topic);
+            connections_by_topic_[(int)topic].erase(hdl);
+            send(hdl, message::create_result_base_payload(token));
         } break;
 
         case message::action_t::command: {
+            auto err   = message::error_t::no_error;
             auto topic = message::get_topic_from_payload(doc);
-            if (topic > message ::topic_t::invalid && topic < message::topic_t::_count && subscriptions_[(int)topic]) {
-                auto respose_fn = [this, hdl](nlohmann::json&& payload) {
-                    endpoint_.send(hdl, payload.dump(), opcode::text);
-                };
 
-                subscriptions_[(int)topic](std::move(doc), con->second.id, respose_fn);
-            } else {
-                auto token = message::get_token_from_payload(doc);
-                endpoint_.send(hdl,
-                               message::create_error_base_payload(token, message::error_t::internal_error).dump(),
-                               opcode::text);
+            if (topic == message::topic_t::invalid) {
+                err = message::error_t::invalid_topic;
+            } else if (!subscriptions_[(int)topic]) {
+                err = message::error_t::internal_error;
             }
+
+            if (err != message::error_t::no_error) {
+                auto token = message::get_token_from_payload(doc);
+                send(hdl, message::create_error_base_payload(token, err));
+                break;
+            }
+
+            auto respose_fn = [this, hdl](nlohmann::json&& payload) { send(hdl, payload); };
+
+            subscriptions_[(int)topic](std::move(doc), con->second.id, respose_fn);
         } break;
 
         default: {
-            terminate_and_log(hdl, "Error: Unhandled action");
+            terminate_and_log(hdl, "unhandled action");
         } break;
     }
 }
@@ -176,13 +186,13 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 void web_server_impl::on_open(connection_hdl hdl)
 {
     endpoint_.get_alog().write(websocketpp::log::alevel::app, "Connection opened");
-    auto con = connections_.emplace(hdl, websocket_connection{next_connection_id++, {}});
 
-    auto id = con.first->second.id;
+    auto id = next_connection_id++;
+
+    connections_.emplace(hdl, websocket_connection{id, {}});
     connections_by_id_.emplace(id, hdl);
 
-    auto socket_info = message::create_socket_info_payload(id);
-    endpoint_.send(hdl, socket_info.dump(), websocketpp::frame::opcode::text);
+    send(hdl, message::create_socket_info_payload(id));
 }
 
 void web_server_impl::on_close(connection_hdl hdl)
@@ -201,6 +211,14 @@ void web_server_impl::on_close(connection_hdl hdl)
     connections_by_id_.erase(con->second.id);
     connections_.erase(con);
 }
+
+void web_server_impl::send(connection_hdl hdl, const std::string& msg)
+{
+    using namespace websocketpp::frame;
+    endpoint_.send(hdl, msg, opcode::text);
+}
+
+void web_server_impl::send(connection_hdl hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
 
 void web_server_impl::subscribe(message::topic_t topic, callback_t callback)
 {
@@ -231,7 +249,7 @@ void web_server_impl::stop()
 
         for (auto it = connections_.begin(); it != connections_.end(); it++) {
             websocketpp::lib::error_code ec;
-            endpoint_.close(it->first, websocketpp::close::status::going_away, "Server shutting down", ec);
+            endpoint_.close(it->first, websocketpp::close::status::going_away, "server shutting down", ec);
             if (ec) {
                 std::cout << "> Error closing connection: " << ec.message() << std::endl;
             }
@@ -269,7 +287,7 @@ void web_server_impl::send_message_sync(const std::string& msg, int64_t connecti
         return;
     }
 
-    endpoint_.send(hdl->second, msg, websocketpp::frame::opcode::text);
+    send(hdl->second, msg);
 }
 
 void web_server_impl::broadcast_message(const nlohmann::json& msg)
@@ -296,7 +314,7 @@ void web_server_impl::broadcast_message_sync(message::topic_t topic, const std::
     auto& topic_set = connections_by_topic_[(int)topic];
 
     for (auto it = topic_set.begin(); it != topic_set.end(); it++) {
-        endpoint_.send(*it, msg, websocketpp::frame::opcode::text);
+        send(*it, msg);
     }
 }
 

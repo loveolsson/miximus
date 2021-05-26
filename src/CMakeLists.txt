@@ -9,6 +9,7 @@ add_subdirectory(web_server)
 add_subdirectory(messages)
 add_subdirectory(nodes)
 add_subdirectory(gpu)
+add_subdirectory(application)
 
 add_executable(miximus
     ${MIXIMUS_MAIN_SOURCES}

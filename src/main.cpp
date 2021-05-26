@@ -1,5 +1,4 @@
-#include "gpu/context.hpp"
-#include "gpu/shader.hpp"
+#include "application/app_state.hpp"
 #include "nodes/node_manager.hpp"
 #include "web_server/web_server.hpp"
 
@@ -27,8 +26,7 @@ int main()
     node_manager_.make_server_subscriptions(web_server_);
 
     {
-        gpu::context ctx;
-        gpu::shader_store::init();
+        application::state app;
 
         web_server_.start(7351);
 
@@ -36,8 +34,6 @@ int main()
             gpu::context::poll();
             std::this_thread::sleep_for(1ms);
         }
-
-        gpu::shader_store::clear();
     }
 
     gpu::context::terminate();
