@@ -21,7 +21,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CEF_ROOT}/cmake)
 
 find_package(CEF REQUIRED)
 ADD_LOGICAL_TARGET("libcef_lib" "${CEF_LIB_DEBUG}" "${CEF_LIB_RELEASE}")
-add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
+ADD_LOGICAL_TARGET("libcef_dll_wrapper" "${CEF_LIB_DEBUG}" "${CEF_LIB_RELEASE}")
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/eternal/include

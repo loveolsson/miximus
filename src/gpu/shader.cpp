@@ -1,6 +1,7 @@
 #include "gpu/shader.hpp"
 #include "static_files/files.hpp"
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
