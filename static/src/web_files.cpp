@@ -1,9 +1,9 @@
-#include "static_files/files.hpp"
-#include <gzip/decompress.hpp>
-
 #ifdef _WIN32
 #define LIBRARY_EXPORTS
 #endif
+
+#include "static_files/files.hpp"
+#include <gzip/decompress.hpp>
 
 namespace miximus::static_files {
 // File: css/app.f7711384.css (1.04 KB / 449 B compressed)
