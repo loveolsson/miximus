@@ -1,12 +1,12 @@
 #pragma once
 
+#include "custom-config.hpp"
 #include "messages/payload.hpp"
+#include "static_files/files.hpp"
 #include "web_server/web_server.hpp"
 #include "websocket_connection.hpp"
 
 #include <websocketpp/common/asio.hpp>
-#include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/server.hpp>
 
 #include <memory>
 #include <set>
@@ -15,7 +15,7 @@
 namespace miximus::web_server::detail {
 class web_server_impl
 {
-    typedef websocketpp::server<websocketpp::config::asio>                                  server;
+    typedef websocketpp::server<custom_config>                                              server;
     typedef websocketpp::connection_hdl                                                     connection_hdl;
     typedef std::map<connection_hdl, websocket_connection, std::owner_less<connection_hdl>> con_list_t;
     typedef std::map<int64_t, connection_hdl>                                               con_by_id_t;
@@ -33,6 +33,8 @@ class web_server_impl
 
     void send(connection_hdl hdl, const std::string&);
     void send(connection_hdl hdl, const nlohmann::json&);
+
+    static_files::file_map_t files_;
 
     server                       endpoint_;
     std::unique_ptr<std::thread> run_thread_;

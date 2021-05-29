@@ -1,5 +1,6 @@
 #pragma once
 #include "gpu/vertex.hpp"
+#include "static_files/files.hpp"
 
 #include <glad/glad.h>
 
@@ -12,7 +13,7 @@ namespace miximus::gpu {
 
 class shader_program
 {
-    struct attr
+    struct attribute
     {
         std::string name;
         GLint       loc;
@@ -27,7 +28,7 @@ class shader_program
         GLint  size;
     };
 
-    typedef std::vector<attr>                        attr_list_t;
+    typedef std::vector<attribute>                   attr_list_t;
     typedef std::unordered_map<std::string, uniform> uniform_map_t;
 
     GLuint        program_;
@@ -35,7 +36,7 @@ class shader_program
     uniform_map_t uniforms_;
 
   public:
-    shader_program(std::string_view vert_name, std::string_view frag_name);
+    shader_program(const static_files::file_map_t& files, std::string_view vert_name, std::string_view frag_name);
     ~shader_program();
 
     shader_program(const shader_program&) = delete;

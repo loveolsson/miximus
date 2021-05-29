@@ -19,11 +19,11 @@ static inline nlohmann::json create_socket_info_payload(int64_t id)
     };
 }
 
-static inline nlohmann::json create_command_base_payload(token_ref_t token)
+static inline nlohmann::json create_command_base_payload(topic_t topic)
 {
     return {
         {"action", get_action_string(action_t::command)},
-        {"token", token},
+        {"topic", get_topic_string(topic)},
     };
 }
 

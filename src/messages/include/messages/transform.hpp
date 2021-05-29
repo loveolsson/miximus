@@ -105,6 +105,8 @@ constexpr std::string_view get_error_string(error_t error)
             return "invalid_type";
         case error_t::duplicate_id:
             return "duplicate_id";
+        case error_t::invalid_options:
+            return "invalid_options";
 
         case error_t::internal_error:
         default:

@@ -67,8 +67,8 @@ getFiles(src).then((files) => {
   data += `namespace ${options.namespace} {` + EOL;
 
   // Create the declaration of the map containing the uncompressed files
-  let map = `const file_map_t &${options.mapname}() {` + EOL;
-  map += '\tstatic const file_map_t files{' + EOL;
+  let map = `file_map_t ${options.mapname}() {` + EOL;
+  map += '\tfile_map_t files{' + EOL;
 
   // Iterate the files in the folder
   files.forEach((file, index) => {

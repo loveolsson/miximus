@@ -39,6 +39,7 @@ enum class error_t
     invalid_topic,
     invalid_type,
     duplicate_id,
+    invalid_options,
     _count,
 };
 

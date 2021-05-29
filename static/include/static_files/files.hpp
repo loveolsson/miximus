@@ -23,6 +23,6 @@ struct file_record
 
 typedef std::unordered_map<std::string_view, file_record> file_map_t;
 
-LIBRARY_API extern const file_map_t& get_web_files();
-LIBRARY_API extern const file_map_t& get_shader_files();
+LIBRARY_API extern file_map_t get_web_files();
+LIBRARY_API extern file_map_t get_shader_files();
 } // namespace miximus::static_files

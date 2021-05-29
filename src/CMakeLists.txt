@@ -4,6 +4,7 @@ set(MIXIMUS_MAIN_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
 )
 
+add_subdirectory(logger)
 add_subdirectory(utils)
 add_subdirectory(web_server)
 add_subdirectory(messages)
@@ -22,6 +23,7 @@ target_link_libraries(miximus
     msquic
     web_server
     static_files
+    logger
 
     libcef_lib
     libcef_dll_wrapper

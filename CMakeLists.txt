@@ -48,8 +48,8 @@ if (MIXIMUS_TUNE_NATIVE)
 endif()
 
 add_subdirectory(submodules)
-add_subdirectory(static)
 add_subdirectory(src)
+add_subdirectory(static)
 
 set_target_properties(miximus
     PROPERTIES

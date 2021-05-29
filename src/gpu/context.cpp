@@ -1,4 +1,5 @@
 #include "gpu/context.hpp"
+#include "logger/logger.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -10,7 +11,7 @@ namespace miximus::gpu {
 
 static std::once_flag glfw_init, glad_init;
 
-void error_callback(int error, const char* description) { fprintf(stderr, "Error: %s\n", description); }
+void error_callback(int error, const char* description) { spdlog::get("gpu")->error("Error: {}", description); }
 
 context::context(bool visible, context* parent)
     : window_(nullptr)

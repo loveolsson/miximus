@@ -1,4 +1,5 @@
 #include "application/app_state.hpp"
+#include "logger/logger.hpp"
 #include "nodes/node_manager.hpp"
 #include "web_server/web_server.hpp"
 
@@ -21,6 +22,8 @@ int main()
     using namespace miximus;
     std::signal(SIGINT, signal_handler);
 
+    logger::init_loggers();
+
     node_manager           node_manager_;
     web_server::web_server web_server_;
     node_manager_.make_server_subscriptions(web_server_);
@@ -38,7 +41,7 @@ int main()
 
     gpu::context::terminate();
 
-    std::cout << "Exiting..." << std::endl;
+    spdlog::get("application")->info("Exiting...");
 
     return 0;
 }

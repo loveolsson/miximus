@@ -1,6 +1,5 @@
 #include "web_server_impl.hpp"
 #include "messages/templates.hpp"
-#include "static_files/files.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -27,6 +26,7 @@ static std::string create_404_doc(std::string_view resource)
 }
 
 web_server_impl::web_server_impl()
+    : files_(static_files::get_web_files())
 {
     endpoint_.clear_access_channels(websocketpp::log::alevel::all);
     endpoint_.set_access_channels(websocketpp::log::alevel::access_core);
@@ -71,10 +71,9 @@ void web_server_impl::on_http(connection_hdl hdl)
         resource = "/index.html";
     }
 
-    auto& files   = static_files::get_web_files();
-    auto  file_it = files.find(resource.substr(1));
+    auto file_it = files_.find(resource.substr(1));
 
-    if (file_it == files.end()) {
+    if (file_it == files_.end()) {
         con->set_body(create_404_doc(resource));
         con->set_status(websocketpp::http::status_code::not_found);
         return;
@@ -227,9 +226,7 @@ void web_server_impl::subscribe(message::topic_t topic, callback_t callback)
 
 void web_server_impl::start(uint16_t port)
 {
-    std::stringstream ss;
-    ss << "Starting web server on port " << port;
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, ss.str());
+    endpoint_.get_alog().write(websocketpp::log::alevel::app, fmt::format("Starting web server on port {}", port));
     endpoint_.listen(port);
     endpoint_.start_accept();
 
@@ -242,7 +239,7 @@ void web_server_impl::stop()
         return;
     }
 
-    std::cout << "Stopping server" << std::endl;
+    endpoint_.get_alog().write(websocketpp::log::alevel::app, "Stopping server");
 
     endpoint_.get_io_service().post([&]() {
         endpoint_.stop_listening();
@@ -251,7 +248,8 @@ void web_server_impl::stop()
             websocketpp::lib::error_code ec;
             endpoint_.close(it->first, websocketpp::close::status::going_away, "server shutting down", ec);
             if (ec) {
-                std::cout << "> Error closing connection: " << ec.message() << std::endl;
+                endpoint_.get_alog().write(websocketpp::log::elevel::rerror,
+                                           fmt::format("Error closing connection: {}", ec.message()));
             }
         }
     });

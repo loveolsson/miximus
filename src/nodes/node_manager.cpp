@@ -14,6 +14,8 @@ node_manager::~node_manager() {}
 
 void node_manager::make_server_subscriptions(web_server::web_server& server)
 {
+    server_ = &server;
+
     server.subscribe(topic_t::add_node, utils::bind(&node_manager::handle_add_node, this));
     server.subscribe(topic_t::remove_node, utils::bind(&node_manager::handle_remove_node, this));
     server.subscribe(topic_t::add_connection, utils::bind(&node_manager::handle_add_connection, this));
@@ -31,8 +33,6 @@ node_manager::node_map_t node_manager::clone_node_map()
 
 void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb)
 {
-    (void)client_id;
-
     auto token = get_token_from_payload(msg);
 
     try {
@@ -44,14 +44,39 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
             return cb(create_error_base_payload(token, error_t::duplicate_id));
         }
 
-        // if (!handle_add_node(type, id)) {
-        //     return respond_error(client_id, token, error_t::invalid_type);
-        // }
+        message::error_t error = message::error_t::no_error;
+        auto             node  = create_node(type, id, error);
+
+        if (error != message::error_t::no_error) {
+            return cb(create_error_base_payload(token, error));
+        }
 
         auto options = node_obj.find("options");
         if (options != node_obj.end()) {
+            if (!node->set_options(options.value())) {
+                return cb(create_error_base_payload(token, error_t::invalid_options));
+            }
         }
 
+        {
+            std::unique_lock lock(nodes_mutex_);
+            nodes_.emplace(id, node);
+        }
+
+        auto payload         = create_command_base_payload(topic_t::add_node);
+        payload["origin_id"] = client_id;
+        payload["node"]      = json{
+            {"id", id},
+            {"type", type},
+        };
+
+        if (options != node_obj.end()) {
+            payload["node"]["options"] = options.value();
+        }
+
+        if (server_) {
+            server_->broadcast_message_sync(payload);
+        }
     } catch (json::exception&) {
         return cb(create_error_base_payload(token, error_t::malformed_payload));
     }
@@ -100,10 +125,11 @@ json node_manager::get_config()
     };
 }
 
-std::shared_ptr<node> node_manager::create_node(const std::string& type, const std::string& id)
+std::shared_ptr<node> node_manager::create_node(const std::string& type, const std::string& id, message::error_t& error)
 {
     node_type_t t = node_type_from_string(type);
     if (t == node_type_t::invalid) {
+        error = message::error_t::invalid_type;
         return nullptr;
     }
 
