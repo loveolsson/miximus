@@ -60,7 +60,14 @@ inline bool accepts_connection_input(node_connection_type o)
 template <>
 inline bool accepts_connection_input<texture>(node_connection_type o)
 {
-    return o == node_connection_type::texture || o == node_connection_type::framebuffer;
+    switch (o) {
+        case node_connection_type::texture:
+        case node_connection_type::framebuffer:
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 } // namespace miximus

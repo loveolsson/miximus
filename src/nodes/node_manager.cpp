@@ -1,4 +1,5 @@
 #include "nodes/node_manager.hpp"
+#include "logger/logger.hpp"
 #include "messages/payload.hpp"
 #include "messages/templates.hpp"
 #include "utils/bind.hpp"
@@ -33,6 +34,8 @@ node_manager::node_map_t node_manager::clone_node_map()
 
 void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb)
 {
+    spdlog::get("application")->info(msg.dump());
+
     auto token = get_token_from_payload(msg);
 
     try {
@@ -47,14 +50,26 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
         message::error_t error = message::error_t::no_error;
         auto             node  = create_node(type, id, error);
 
-        if (error != message::error_t::no_error) {
+        if (error != message::error_t::no_error || !node) {
             return cb(create_error_base_payload(token, error));
         }
 
-        auto options = node_obj.find("options");
-        if (options != node_obj.end()) {
-            if (!node->set_options(options.value())) {
-                return cb(create_error_base_payload(token, error_t::invalid_options));
+        auto bcast_payload         = create_command_base_payload(topic_t::add_node);
+        bcast_payload["origin_id"] = client_id;
+        bcast_payload["node"]      = json{
+            {"id", id},
+            {"type", type},
+            {"options", json::object()},
+        };
+
+        auto options_it = node_obj.find("options");
+        if (options_it != node_obj.end()) {
+            auto& options = options_it.value();
+
+            for (auto option = options.begin(); option != options.end(); ++option) {
+                if (node->set_option(option.key(), option.value())) {
+                    bcast_payload["node"]["options"][option.key()] = option.value();
+                }
             }
         }
 
@@ -63,19 +78,8 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
             nodes_.emplace(id, node);
         }
 
-        auto payload         = create_command_base_payload(topic_t::add_node);
-        payload["origin_id"] = client_id;
-        payload["node"]      = json{
-            {"id", id},
-            {"type", type},
-        };
-
-        if (options != node_obj.end()) {
-            payload["node"]["options"] = options.value();
-        }
-
         if (server_) {
-            server_->broadcast_message_sync(payload);
+            server_->broadcast_message_sync(bcast_payload);
         }
     } catch (json::exception&) {
         return cb(create_error_base_payload(token, error_t::malformed_payload));
@@ -125,15 +129,11 @@ json node_manager::get_config()
     };
 }
 
-std::shared_ptr<node> node_manager::create_node(const std::string& type, const std::string& id, message::error_t& error)
+std::shared_ptr<nodes::node>
+node_manager::create_node(const std::string& type, const std::string& id, message::error_t& error)
 {
-    node_type_t t = node_type_from_string(type);
-    if (t == node_type_t::invalid) {
-        error = message::error_t::invalid_type;
-        return nullptr;
-    }
-
-    return node_factory::create_node(t, id);
+    nodes::node_type_t t = nodes::type_from_string(type);
+    return nodes::create_node(t, id, error);
 }
 
 } // namespace miximus

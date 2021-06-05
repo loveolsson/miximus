@@ -366,7 +366,7 @@ export default class Miximus extends Vue {
       };
 
       this.wsWrapper.send<command_add_node_s, result_s>(payload, (msg) => {
-        if (msg.action !== action_t.error) {
+        if (msg.action === action_t.error) {
           this.node_to_be_removed = node;
           this.editor.removeNode(node);
         }

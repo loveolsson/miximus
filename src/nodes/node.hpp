@@ -1,38 +1,53 @@
 #pragma once
+#include "messages/types.hpp"
 #include "nodes/connection.hpp"
 #include "nodes/node_type.hpp"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
 
-namespace miximus {
+namespace miximus::nodes {
 
 class node
 {
   protected:
+    enum class state_t
+    {
+        uninitialized,
+        prepared,
+        ready,
+        complete,
+    } state_;
+
+    struct
+    {
+        double x, y;
+    } position_;
+
     const std::string id_;
 
     node(const std::string& id)
         : id_(id)
+        , state_(state_t::uninitialized)
     {
     }
 
     virtual ~node() {}
 
   public:
-    virtual bool                                 set_options(const nlohmann::json&)   = 0;
-    virtual bool                                 test_connection(std::string)         = 0;
-    virtual std::shared_ptr<node_interface_base> get_interface(std::string_view name) = 0;
+    virtual bool           set_option(std::string_view option, const nlohmann::json&);
+    virtual nlohmann::json get_options();
 
-    const std::string& id() const;
+    virtual void prepare()  = 0;
+    virtual void complete() = 0;
+
+    const std::string& id() const { return id_; }
 };
 
-class node_factory
-{
-  public:
-    static std::shared_ptr<node> create_node(node_type_t type, std::string id);
-};
-} // namespace miximus
+std::shared_ptr<node> create_node(node_type_t type, const std::string& id, message::error_t& error);
+
+} // namespace miximus::nodes

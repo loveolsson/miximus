@@ -99,6 +99,7 @@
         "xtree": "cpp",
         "*.ipp": "cpp",
         "string_view": "cpp",
-        "bitset": "cpp"
+        "bitset": "cpp",
+        "*.idl": "cpp"
     }
 }
