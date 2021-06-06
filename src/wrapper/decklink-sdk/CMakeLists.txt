@@ -9,13 +9,13 @@ if(WIN32)
 
     file(RELATIVE_PATH DECKLINK_SOURCES_REL ${CMAKE_CURRENT_SOURCE_DIR} ${DECKLINK_SOURCES})
 
-    add_idl(decklink_sdk ${DECKLINK_SOURCES_REL})
-    
-    add_library(decklink INTERFACE)
+    add_idl(DeckLinkAPI ${DECKLINK_SOURCES_REL})    
+    add_library(decklink ${CMAKE_CURRENT_BINARY_DIR}/Generated/DeckLinkAPI_i.c)
 
-    target_link_libraries(decklink INTERFACE
-        decklink_sdk
+    target_link_libraries(decklink PUBLIC
+        DeckLinkAPI
         ${DECKLINK_DVP_LIB}
+#        comsuppw
     )
 else()
     if(APPLE)

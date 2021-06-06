@@ -1,8 +1,6 @@
 #pragma once
 #include "decklink_ptr.hpp"
 
-#include <DeckLinkAPI.h>
-
 #include <string>
 #include <vector>
 

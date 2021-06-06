@@ -1,26 +1,33 @@
 #include "decklink.hpp"
 
-namespace miximus::nodes::decklink {
-
 #if _WIN32
-string bstr_to_str(BSTR source)
+static std::string ConvertWCSToMBS(const wchar_t* pstr, long wslen)
 {
-    _bstr_t wrapped_bstr = _bstr_t(source);
-    int     length       = wrapped_bstr.length();
-    char*   char_array   = new char[length];
-    strcpy_s(char_array, length + 1, wrapped_bstr);
-    return char_array;
+    int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
+
+    std::string dblstr(len, '\0');
+    len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, &dblstr[0], len, NULL, NULL);
+
+    return dblstr;
 }
+
+static std::string ConvertBSTRToMBS(BSTR bstr)
+{
+    int wslen = ::SysStringLen(bstr);
+    return ConvertWCSToMBS((wchar_t*)bstr, wslen);
+}
+
 #endif
 
+namespace miximus::nodes::decklink {
 decklink_ptr<IDeckLinkIterator> get_device_iterator()
 {
 #if _WIN32
     IDeckLinkIterator* iteratror = NULL;
 
-    auto res = CoCreateInstance(CLSID_CDeckLinkIterator, NULL, CLSCTX_ALL, IID_IDeckLinkIterator, (void*)&iteratror);
+    auto res = CoCreateInstance(CLSID_CDeckLinkIterator, NULL, CLSCTX_ALL, IID_IDeckLinkIterator, (LPVOID*)&iteratror);
 
-    if (SUCCESS(res)) {
+    if (SUCCEEDED(res)) {
         return iteratror;
     }
 
@@ -66,9 +73,9 @@ std::vector<std::string> get_device_names()
         auto dl_ptr = decklink_ptr(ptr);
 
 #if _WIN32
-        BSTR str;
+        BSTR name;
         dl_ptr->GetDisplayName(&name);
-        res.emplace_back(bstr_to_str(name));
+        res.emplace_back(ConvertBSTRToMBS(name));
 #else
         const char* name;
         dl_ptr->GetDisplayName(&name);

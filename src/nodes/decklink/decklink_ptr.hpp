@@ -1,6 +1,10 @@
 #pragma once
 
+#if _WIN32
+#include <DeckLinkAPI_i.h>
+#else
 #include <DeckLinkAPI.h>
+#endif
 
 #include <utility>
 
