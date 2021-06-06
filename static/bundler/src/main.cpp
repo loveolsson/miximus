@@ -1,5 +1,6 @@
 #include <gzip/compress.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -10,9 +11,11 @@
 
 using namespace std;
 
-vector<string> get_file_paths(const std::string& root)
+static string tab(size_t i) { return string(i * 4, ' '); }
+
+static vector<string> get_file_paths(const string& root)
 {
-    using namespace std::filesystem;
+    using namespace filesystem;
     vector<string> res;
 
     for (recursive_directory_iterator end, dir(root); dir != end; ++dir) {
@@ -24,7 +27,7 @@ vector<string> get_file_paths(const std::string& root)
     return res;
 }
 
-string get_mime(const string& name)
+static string get_mime(const string& name)
 {
     string res;
 
@@ -36,8 +39,16 @@ string get_mime(const string& name)
         return "text/html;charset=UTF-8";
     } else if (res == ".js") {
         return "text/javascript;charset=UTF-8";
+    } else if (res == ".jpg" || res == ".jpeg") {
+        return "image/jpeg";
     } else if (res == ".png") {
         return "image/png";
+    } else if (res == ".gif") {
+        return "image/gif";
+    } else if (res == ".webp") {
+        return "image/webp";
+    } else if (res == ".svg") {
+        return "image/svg+xml";
     } else if (res == ".ico") {
         return "image/x-icon";
     }
@@ -45,7 +56,7 @@ string get_mime(const string& name)
     return "application/octet-stream";
 }
 
-int bundle(const std::string& src, const std::string& dst, const std::string& nspace, const std::string& mapname)
+static int bundle(const string& src, const string& dst, const string& nspace, const string& mapname)
 {
     ofstream     target(dst);
     stringstream map;
@@ -68,8 +79,9 @@ int bundle(const std::string& src, const std::string& dst, const std::string& ns
     target << "namespace " << nspace << " {" << endl;
 
     // Create the declaration of the map containing the uncompressed files
-    map << "file_map_t " << mapname << "() {" << endl;
-    map << "\tfile_map_t files {" << endl;
+    map << "file_map_t " << mapname << "()" << endl;
+    map << "{" << endl;
+    map << tab(1) << "file_map_t files {" << endl;
 
     // Iterate the files in the folder
     for (int fi = 0; fi < files.size(); ++fi) {
@@ -84,22 +96,21 @@ int bundle(const std::string& src, const std::string& dst, const std::string& ns
         }
 
         // Read the contents of the file
-        std::string file_data((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+        string file_data((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
 
         // Compress the buffer
-        auto compressed = gzip::compress(file_data.data(), file_data.size());
+        auto compressed = gzip::compress(file_data.data(), file_data.size(), Z_BEST_COMPRESSION);
 
         stringstream comment;
-        comment << "// File: " << unix_name << " (" << file_data.size() << " / " << compressed.size() << " compressed)"
-                << endl;
+        comment << "// File: " << unix_name << " (" << file_data.size() << " / " << compressed.size() << " compressed)";
 
-        target << comment.str();
+        target << comment.str() << endl;
 
-        target << "\tstatic const uint8_t fileData" << fi << "[] = {" << endl;
+        target << "static const uint8_t fileData" << fi << "[] = {" << endl;
         for (int i = 0; i < compressed.size();) {
-            target << "\t\t";
-            // Add the bytes in rows of 20
-            for (int j = 0; j < 20 && i < compressed.size(); ++j, ++i) {
+            target << tab(1);
+            // Add the bytes in rows of 18
+            for (int j = 0; j < 18 && i < compressed.size(); ++j, ++i) {
                 target << "0x" << hex << setw(2) << setfill('0') << (int)(uint8_t)compressed[i] << ", ";
             }
             target << endl;
@@ -107,18 +118,19 @@ int bundle(const std::string& src, const std::string& dst, const std::string& ns
         target << "};" << endl << endl;
 
         // Add an entry to the map that decompresses the file into the map
-        map << "\t\t" << comment.str();
-        map << "\t\t{ \"" << unix_name << "\", {" << endl;
-        map << "\t\t\t\t{(const char*)fileData" << fi << ", " << compressed.size() << "}," << endl;
-        map << "\t\t\t\tgzip::decompress((const char*)fileData" << fi << ", " << compressed.size() << ")," << endl;
-        map << "\t\t\t\t\"" << get_mime(src + filename) << "\"" << endl;
-        map << "\t\t\t}" << endl;
-        map << "\t\t}," << endl;
+        map << tab(2) << "{ " << comment.str() << endl;
+        map << tab(3) << "\"" << unix_name << "\"," << endl;
+        map << tab(3) << "{" << endl;
+        map << tab(4) << "{(const char*)fileData" << fi << ", " << compressed.size() << "}," << endl;
+        map << tab(4) << "gzip::decompress((const char*)fileData" << fi << ", " << compressed.size() << ")," << endl;
+        map << tab(4) << "\"" << get_mime(src + filename) << "\"," << endl;
+        map << tab(3) << "}," << endl;
+        map << tab(2) << "}," << endl;
     }
 
     // Terminate the map declaration and add it to the file
-    map << "\t};" << endl;
-    map << "\treturn files;" << endl;
+    map << tab(1) << "};" << endl << endl;
+    map << tab(1) << "return files;" << endl;
     map << "};" << endl;
     target << map.str();
 
@@ -150,15 +162,12 @@ int main(int argc, char* argv[])
         }
     }
 
-    cout << "Bundling " << src << endl;
-    cout << dst << endl;
-    cout << nspace << endl;
-    cout << mapname << endl;
-
     if (src.empty() || dst.empty() || nspace.empty() || mapname.empty()) {
         cout << "Missing parameter" << endl;
         return EXIT_FAILURE;
     }
+
+    cout << "Bundling " << src << endl;
 
     return bundle(src, dst, nspace, mapname);
 }

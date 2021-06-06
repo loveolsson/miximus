@@ -5,7 +5,10 @@ add_subdirectory(bundler)
 add_custom_command(
   OUTPUT 
     ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
-  COMMAND $<TARGET_FILE:bundler> --src ./web/dist/ --dst ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp --namespace miximus::static_files --mapname get_web_files
+  COMMAND 
+    $<TARGET_FILE:bundler> 
+  ARGS 
+    --src ./web/dist/ --dst ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp --namespace miximus::static_files --mapname get_web_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS bundler
 )
@@ -13,11 +16,13 @@ add_custom_command(
 add_custom_command(
   OUTPUT 
     ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp
-  COMMAND $<TARGET_FILE:bundler> --src ./shaders/ --dst ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp --namespace miximus::static_files --mapname get_shader_files
+  COMMAND 
+    $<TARGET_FILE:bundler> 
+  ARGS 
+    --src ./shaders/ --dst ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp --namespace miximus::static_files --mapname get_shader_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS bundler
 )
-
 
 add_library(static_files SHARED
   ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp

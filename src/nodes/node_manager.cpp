@@ -79,6 +79,8 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
         }
 
         if (server_) {
+            spdlog::get("app")->info(bcast_payload.dump());
+
             server_->broadcast_message_sync(bcast_payload);
         }
     } catch (json::exception&) {
