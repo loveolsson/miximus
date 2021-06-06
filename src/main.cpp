@@ -24,24 +24,28 @@ int main()
 
     logger::init_loggers();
 
-    node_manager           node_manager_;
-    web_server::web_server web_server_;
-    node_manager_.make_server_subscriptions(web_server_);
-
     {
-        application::state app;
+        node_manager           node_manager_;
+        web_server::web_server web_server_;
+        node_manager_.make_server_subscriptions(web_server_);
 
-        web_server_.start(7351);
+        {
+            application::state app;
 
-        while (!g_signal_status) {
-            gpu::context::poll();
-            std::this_thread::sleep_for(1ms);
+            web_server_.start(7351);
+
+            while (!g_signal_status) {
+                gpu::context::poll();
+                std::this_thread::sleep_for(1ms);
+            }
         }
+
+        gpu::context::terminate();
+
+        spdlog::get("application")->info("Exiting...");
     }
 
-    gpu::context::terminate();
-
-    spdlog::get("application")->info("Exiting...");
+    spdlog::shutdown();
 
     return 0;
 }

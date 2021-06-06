@@ -1,11 +1,21 @@
 set(DECKLINK_SDK_DIR ${CMAKE_SOURCE_DIR}/3rd-party/decklink-sdk)
 
 if(WIN32) 
+    find_package(IDL REQUIRED)
+
     set(DECKLINK_OS_DIR ${DECKLINK_SDK_DIR}/Win)
     find_file(DECKLINK_SOURCES DeckLinkAPI.idl PATHS ${DECKLINK_OS_DIR}/include REQUIRED NO_DEFAULT_PATH)
+    find_file(DECKLINK_DVP_LIB dvp_static.lib PATHS ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/lib/x64 REQUIRED NO_DEFAULT_PATH)
+
+    file(RELATIVE_PATH DECKLINK_SOURCES_REL ${CMAKE_CURRENT_SOURCE_DIR} ${DECKLINK_SOURCES})
+
+    add_idl(decklink_sdk ${DECKLINK_SOURCES_REL})
     
-    add_library(decklink
-        ${DECKLINK_SOURCES}
+    add_library(decklink INTERFACE)
+
+    target_link_libraries(decklink INTERFACE
+        decklink_sdk
+        ${DECKLINK_DVP_LIB}
     )
 else()
     if(APPLE)

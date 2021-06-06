@@ -2,8 +2,6 @@
 #include "./custom-logger.hpp"
 #include <websocketpp/concurrency/basic.hpp>
 #include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/extensions/permessage_deflate/enabled.hpp>
-#include <websocketpp/logger/syslog.hpp>
 #include <websocketpp/server.hpp>
 
 namespace miximus::web_server::detail {

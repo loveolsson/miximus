@@ -5,7 +5,7 @@ add_library(logger
 
 target_link_libraries(logger 
 PUBLIC
-    spdlog
+    spdlog::spdlog 
 ) 
 
 target_include_directories(logger 
