@@ -1,20 +1,47 @@
 set(DECKLINK_SDK_DIR ${CMAKE_SOURCE_DIR}/3rd-party/decklink-sdk)
 
 if(WIN32) 
-    find_package(IDL REQUIRED)
-
     set(DECKLINK_OS_DIR ${DECKLINK_SDK_DIR}/Win)
-    find_file(DECKLINK_SOURCES DeckLinkAPI.idl PATHS ${DECKLINK_OS_DIR}/include REQUIRED NO_DEFAULT_PATH)
+    find_file(MIDL_FILE DeckLinkAPI.idl PATHS ${DECKLINK_OS_DIR}/include REQUIRED NO_DEFAULT_PATH)
     find_file(DECKLINK_DVP_LIB dvp_static.lib PATHS ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/lib/x64 REQUIRED NO_DEFAULT_PATH)
 
-    file(RELATIVE_PATH DECKLINK_SOURCES_REL ${CMAKE_CURRENT_SOURCE_DIR} ${DECKLINK_SOURCES})
+    set(MIDL_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/Generated)
 
-    add_idl(DeckLinkAPI ${DECKLINK_SOURCES_REL})    
-    add_library(decklink ${CMAKE_CURRENT_BINARY_DIR}/Generated/DeckLinkAPI_i.c)
+    set(MIDL_OUTPUT
+        ${MIDL_OUTPUT_PATH}/DeckLinkAPI_i.h
+        ${MIDL_OUTPUT_PATH}/DeckLinkAPI_i.c
+        )
+
+    add_custom_command(
+        OUTPUT ${MIDL_OUTPUT}
+        COMMAND midl ARGS /nologo ${MIDL_FILE} /out ${MIDL_OUTPUT_PATH} /h ${MIDL_OUTPUT}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        DEPENDS ${MIDL_FILE}
+        VERBATIM
+        )
+
+    add_custom_target(midl-cmplr
+        DEPENDS ${MIDL_FILE}
+        )
+
+    set_source_files_properties(
+        ${MIDL_OUTPUT}
+            PROPERTIES
+                GENERATED TRUE
+        )
+
+    add_library(decklink ${MIDL_OUTPUT})
+
+    add_dependencies(decklink
+    midl-cmplr
+    )
 
     target_link_libraries(decklink PUBLIC
-        DeckLinkAPI
         ${DECKLINK_DVP_LIB}
+    )
+
+    target_include_directories(decklink PUBLIC
+        ${MIDL_OUTPUT_PATH}
     )
 else()
     if(APPLE)

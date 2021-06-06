@@ -59,7 +59,7 @@ shader_program::shader_program(const static_files::file_map_t& files,
     : program_(0)
 {
     auto log = spdlog::get("gpu");
-    log->info("Compiling shader \"{}\"->\"{}\"", vert_name, frag_name);
+    log->info("Compiling shader \"{}\"/\"{}\"", vert_name, frag_name);
 
     shader vert(files, vert_name, GL_VERTEX_SHADER);
     shader frag(files, frag_name, GL_FRAGMENT_SHADER);
