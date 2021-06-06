@@ -29,6 +29,7 @@ target_link_libraries(miximus
     ffmpeg
     decklink
     cef
+    video-sdk
 
     ${CMAKE_DL_LIBS}
 )

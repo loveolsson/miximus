@@ -1,10 +1,13 @@
 #pragma once
 
+#include <DeckLinkAPI.h>
+
+#include <utility>
+
 namespace miximus::nodes::decklink {
 
 #define IID_FROM_TYPE(x) IID_##x
-
-#define QUERY_INTERFACE (D, T) D.query_interface(D, IID_FROM_TYPE(T))
+#define QUERY_INTERFACE(D, T) D.query_interface(D, IID_FROM_TYPE(T))
 
 template <typename T>
 class decklink_ptr
@@ -49,16 +52,38 @@ class decklink_ptr
     {
         if (ptr_) {
             ptr_->Release();
+            ptr_ = nullptr;
         }
+    }
+
+    decklink_ptr& operator=(decklink_ptr&& o)
+    {
+        ~decklink_ptr();
+        std::swap(ptr_, o.ptr_);
+    }
+
+    decklink_ptr& operator=(const decklink_ptr& o)
+    {
+        ~decklink_ptr();
+        ptr_ = o.ptr_;
+        if (ptr_) {
+            ptr_->AddRef();
+        }
+    }
+
+    decklink_ptr& operator=(T* ptr)
+    {
+        ~decklink_ptr();
+        ptr_ = ptr;
     }
 
     operator bool() { return ptr_ != nullptr; }
 
-    T& operator*() { return *this->ptr; }
+    T& operator*() { return *ptr_; }
 
-    T* operator->() { return this->ptr; }
+    T* operator->() { return ptr_; }
 
-    static decklink_ptr<T> query_interface(REFIID iid)
+    decklink_ptr<T> query_interface(REFIID iid)
     {
         if (!ptr_) {
             return nullptr;

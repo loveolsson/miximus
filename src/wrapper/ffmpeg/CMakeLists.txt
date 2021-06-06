@@ -3,25 +3,14 @@ include(FindPackageHandleStandardArgs)
 add_library(ffmpeg INTERFACE)
 
 macro(find_component _library _header)
-  find_path(INCLUDE_DIRS ${_header}
-    PATH_SUFFIXES
-      ffmpeg
-    REQUIRED
-  )
+  find_path(INCLUDE_DIRS ${_header} REQUIRED)
 
-  find_library(LIBRARIES NAMES ${_library}
-    REQUIRED
-  )
-
-  mark_as_advanced(
-    INCLUDE_DIRS
-    LIBRARIES
-  )
+  find_library(LIBRARIES NAMES ${_library} REQUIRED)
 
   target_include_directories(ffmpeg INTERFACE ${INCLUDE_DIRS})
   target_link_libraries(ffmpeg INTERFACE ${LIBRARIES})
 
-  message("-- Found ${_library}: ${LIBRARIES}")
+  message("-- Found ${_library}: ${LIBRARIES}, ${INCLUDE_DIRS}")
 
 endmacro()
 
