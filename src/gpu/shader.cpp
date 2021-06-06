@@ -129,7 +129,7 @@ shader_program::shader_program(const static_files::file_map_t& files,
     }
 }
 
-shader_program::shader_program(shader_program&& o)
+shader_program::shader_program(shader_program&& o) noexcept
 {
     program_    = o.program_;
     o.program_  = 0;

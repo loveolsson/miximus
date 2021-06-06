@@ -5,15 +5,15 @@
 namespace miximus::nodes {
 enum class node_type_t
 {
-    invalid        = -1,
-    decklink_input = 0,
-    decklink_output,
+    invalid           = -1,
+    decklink_producer = 0,
+    decklink_consumer,
     _count,
 };
 
 constexpr auto node_type_lookup_table = utils::const_map_t<std::string_view, node_type_t>({
-    {"decklink_input", node_type_t::decklink_input},
-    {"decklink_output", node_type_t::decklink_output},
+    {"decklink_producer", node_type_t::decklink_producer},
+    {"decklink_consumer", node_type_t::decklink_consumer},
 });
 
 static_assert(node_type_lookup_table.size() == (size_t)node_type_t::_count);

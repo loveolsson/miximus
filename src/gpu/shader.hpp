@@ -40,7 +40,7 @@ class shader_program
     ~shader_program();
 
     shader_program(const shader_program&) = delete;
-    shader_program(shader_program&&);
+    shader_program(shader_program&&) noexcept;
 
     void        use();
     static void use_none();

@@ -43,10 +43,10 @@ nlohmann::json node::get_options()
 std::shared_ptr<node> create_node(node_type_t type, const std::string& id, message::error_t& error)
 {
     switch (type) {
-        case node_type_t::decklink_input:
+        case node_type_t::decklink_producer:
             error = message::error_t::invalid_type;
             return nullptr;
-        case node_type_t::decklink_output:
+        case node_type_t::decklink_consumer:
             error = message::error_t::invalid_type;
             return nullptr;
 
