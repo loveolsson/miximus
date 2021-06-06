@@ -1,6 +1,6 @@
-#include "boost/filesystem.hpp"
 #include <gzip/compress.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -12,7 +12,7 @@ using namespace std;
 
 vector<string> get_file_paths(const std::string& root)
 {
-    using namespace boost::filesystem;
+    using namespace std::filesystem;
     vector<string> res;
 
     for (recursive_directory_iterator end, dir(root); dir != end; ++dir) {
@@ -129,6 +129,8 @@ int bundle(const std::string& src, const std::string& dst, const std::string& ns
 
 int main(int argc, char* argv[])
 {
+    cout << "Running bundler" << endl;
+
     string src;
     string dst;
     string nspace;
@@ -147,6 +149,11 @@ int main(int argc, char* argv[])
             mapname = argv[++i];
         }
     }
+
+    cout << "Bundling " << src << endl;
+    cout << dst << endl;
+    cout << nspace << endl;
+    cout << mapname << endl;
 
     if (src.empty() || dst.empty() || nspace.empty() || mapname.empty()) {
         cout << "Missing parameter" << endl;

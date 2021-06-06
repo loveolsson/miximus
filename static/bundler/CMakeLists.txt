@@ -8,5 +8,4 @@ target_include_directories(bundler PRIVATE
 
 target_link_libraries(bundler
     ZLIB::ZLIB
-    Boost::filesystem
 )
