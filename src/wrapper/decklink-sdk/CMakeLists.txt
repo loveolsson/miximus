@@ -15,7 +15,6 @@ if(WIN32)
     target_link_libraries(decklink PUBLIC
         DeckLinkAPI
         ${DECKLINK_DVP_LIB}
-#        comsuppw
     )
 else()
     if(APPLE)

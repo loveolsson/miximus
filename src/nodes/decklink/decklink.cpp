@@ -1,7 +1,7 @@
 #include "decklink.hpp"
 
 #if _WIN32
-static std::string ConvertWCSToMBS(const wchar_t* pstr, long wslen)
+static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
 {
     int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
 
@@ -11,10 +11,10 @@ static std::string ConvertWCSToMBS(const wchar_t* pstr, long wslen)
     return dblstr;
 }
 
-static std::string ConvertBSTRToMBS(BSTR bstr)
+static std::string bstr_to_mbs(BSTR bstr)
 {
     int wslen = ::SysStringLen(bstr);
-    return ConvertWCSToMBS((wchar_t*)bstr, wslen);
+    return wcs_tp_mbs((wchar_t*)bstr, wslen);
 }
 
 #endif
@@ -48,7 +48,7 @@ decklink_ptr<IDeckLink> get_device_by_index(int i)
 
     IDeckLink* ptr;
     while (iterator->Next(&ptr) == S_OK) {
-        auto dl_ptr = decklink_ptr(ptr);
+        decklink_ptr dl_ptr(ptr);
 
         if (c++ == i) {
             return dl_ptr;
@@ -58,7 +58,7 @@ decklink_ptr<IDeckLink> get_device_by_index(int i)
     return nullptr;
 }
 
-std::vector<std::string> get_device_names()
+static std::vector<std::string> get_device_names_impl()
 {
     std::vector<std::string> res;
 
@@ -70,12 +70,12 @@ std::vector<std::string> get_device_names()
 
     IDeckLink* ptr;
     while (iterator->Next(&ptr) == S_OK) {
-        auto dl_ptr = decklink_ptr(ptr);
+        decklink_ptr dl_ptr(ptr);
 
 #if _WIN32
         BSTR name;
         dl_ptr->GetDisplayName(&name);
-        res.emplace_back(ConvertBSTRToMBS(name));
+        res.emplace_back(bstr_to_mbs(name));
 #else
         const char* name;
         dl_ptr->GetDisplayName(&name);
@@ -84,6 +84,12 @@ std::vector<std::string> get_device_names()
     }
 
     return res;
+}
+
+std::vector<std::string> get_device_names()
+{
+    static auto names = get_device_names_impl();
+    return names;
 }
 
 } // namespace miximus::nodes::decklink

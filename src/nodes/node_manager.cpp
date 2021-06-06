@@ -34,7 +34,7 @@ node_manager::node_map_t node_manager::clone_node_map()
 
 void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb)
 {
-    spdlog::get("application")->info(msg.dump());
+    spdlog::get("app")->info(msg.dump());
 
     auto token = get_token_from_payload(msg);
 

@@ -58,7 +58,8 @@ shader_program::shader_program(const static_files::file_map_t& files,
                                std::string_view                frag_name)
     : program_(0)
 {
-    auto logger = spdlog::get("gpu");
+    auto log = spdlog::get("gpu");
+    log->info("Compiling shader \"{}\"->\"{}\"", vert_name, frag_name);
 
     shader vert(files, vert_name, GL_VERTEX_SHADER);
     shader frag(files, frag_name, GL_FRAGMENT_SHADER);
@@ -90,12 +91,12 @@ shader_program::shader_program(const static_files::file_map_t& files,
     GLsizei name_length;
 
     glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTES, &count);
-    logger->info("Active Attributes: {}", count);
+    log->info("Active Attributes: {}", count);
 
     for (GLuint i = 0; i < count; i++) {
         glGetActiveAttrib(program_, i, sizeof(name), &name_length, &size, &type, name);
 
-        logger->info("Attribute {} Type: {} Name: {}", i, type, name);
+        log->info(" -- Attribute {} Type: {} Name: \"{}\"", i, type, name);
 
         GLint loc = glGetAttribLocation(program_, name);
         if (loc != -1) {
@@ -110,12 +111,12 @@ shader_program::shader_program(const static_files::file_map_t& files,
     }
 
     glGetProgramiv(program_, GL_ACTIVE_UNIFORMS, &count);
-    logger->info("Active Uniforms: {}", count);
+    log->info("Active Uniforms: {}", count);
 
     for (GLuint i = 0; i < count; i++) {
         glGetActiveUniform(program_, i, sizeof(name), &name_length, &size, &type, name);
 
-        logger->info("Uniform {} Type: {} Name: {}", i, type, name);
+        log->info(" -- Uniform {} Type: {} Name: \"{}\"", i, type, name);
 
         GLint loc = glGetUniformLocation(program_, name);
         if (loc != -1) {

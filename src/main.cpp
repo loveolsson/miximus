@@ -1,5 +1,6 @@
 #include "application/app_state.hpp"
 #include "logger/logger.hpp"
+#include "nodes/decklink/decklink.hpp"
 #include "nodes/node_manager.hpp"
 #include "web_server/web_server.hpp"
 
@@ -9,7 +10,6 @@
 #include <thread>
 
 using namespace std::chrono_literals;
-volatile int running = 1;
 
 namespace {
 volatile std::sig_atomic_t g_signal_status = 0;
@@ -23,6 +23,15 @@ int main()
     std::signal(SIGINT, signal_handler);
 
     logger::init_loggers();
+    auto log = spdlog::get("app");
+
+    {
+        auto names = nodes::decklink::get_device_names();
+        log->info("Found DeckLink devices:");
+        for (auto& name : names) {
+            log->info(" -- \"{}\"", name);
+        }
+    }
 
     {
         node_manager           node_manager_;
@@ -42,7 +51,7 @@ int main()
 
         gpu::context::terminate();
 
-        spdlog::get("application")->info("Exiting...");
+        log->info("Exiting...");
     }
 
     spdlog::shutdown();

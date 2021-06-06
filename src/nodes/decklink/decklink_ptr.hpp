@@ -6,12 +6,10 @@
 #include <DeckLinkAPI.h>
 #endif
 
-#include <utility>
-
 namespace miximus::nodes::decklink {
 
 #define IID_FROM_TYPE(x) IID_##x
-#define QUERY_INTERFACE(D, T) D.query_interface(D, IID_FROM_TYPE(T))
+#define QUERY_INTERFACE(D, T) D.query_interface<T>(D, IID_FROM_TYPE(T))
 
 template <typename T>
 class decklink_ptr
@@ -63,7 +61,8 @@ class decklink_ptr
     decklink_ptr& operator=(decklink_ptr&& o)
     {
         ~decklink_ptr();
-        std::swap(ptr_, o.ptr_);
+        ptr_   = o.ptr_;
+        o.ptr_ = nullptr;
     }
 
     decklink_ptr& operator=(const decklink_ptr& o)
