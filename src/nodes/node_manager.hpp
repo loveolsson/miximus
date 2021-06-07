@@ -1,6 +1,6 @@
 #pragma once
 #include "messages/types.hpp"
-#include "nodes/node.hpp"
+#include "nodes/node_config.hpp"
 #include "web_server/web_server.hpp"
 
 #include <nlohmann/json.hpp>
@@ -14,17 +14,14 @@ namespace miximus {
 
 class node_manager
 {
-    typedef nlohmann::json                                                json;
-    typedef std::unordered_map<std::string, std::shared_ptr<nodes::node>> node_map_t;
+    typedef nlohmann::json json;
 
     web_server::web_server* server_;
 
-    std::shared_mutex           config_mutex_;
-    std::map<std::string, json> node_config_;
-    std::map<std::string, json> con_config_;
+    std::shared_mutex config_mutex_;
 
     std::shared_mutex nodes_mutex_;
-    node_map_t        nodes_;
+    nodes::node_cfg_t config_;
 
     void handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb);
     void handle_remove_node(json&& msg, int64_t client_id, web_server::response_fn_t cb);
@@ -41,22 +38,8 @@ class node_manager
     node_manager();
     ~node_manager();
 
-    void       make_server_subscriptions(web_server::web_server& server);
-    node_map_t clone_node_map();
-
-    std::shared_ptr<nodes::node> find_node(const std::string& id);
+    void              make_server_subscriptions(web_server::web_server& server);
+    nodes::node_cfg_t clone_node_config();
 };
-
-inline std::shared_ptr<nodes::node> node_manager::find_node(const std::string& id)
-{
-    std::shared_lock lock(nodes_mutex_);
-
-    auto it = nodes_.find(id);
-    if (it != nodes_.end()) {
-        return it->second;
-    }
-
-    return nullptr;
-}
 
 } // namespace miximus

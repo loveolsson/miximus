@@ -31,7 +31,11 @@ class node_impl : public node
 
     void prepare() final {}
 
+    void execute(const node_cfg_t&) final {}
+
     void complete() final {}
+
+    node_type_t type() final { return node_type_t::invalid; }
 };
 
 std::shared_ptr<node> create_node(const std::string& id) { return std::make_shared<node_impl>(id); }

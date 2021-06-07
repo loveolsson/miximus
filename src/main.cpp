@@ -17,12 +17,21 @@ volatile std::sig_atomic_t g_signal_status = 0;
 
 void signal_handler(int signal) { g_signal_status = 1; }
 
-int main()
+int main(int argc, char* argv[])
 {
     using namespace miximus;
     std::signal(SIGINT, signal_handler);
 
-    logger::init_loggers();
+    spdlog::level::level_enum log_level = spdlog::level::info;
+
+    for (int i = 1; i < argc; ++i) {
+        std::string_view param(argv[i]);
+        if (param == "--log-debug") {
+            log_level = spdlog::level::debug;
+        }
+    }
+
+    logger::init_loggers(log_level);
     auto log = spdlog::get("app");
 
     {

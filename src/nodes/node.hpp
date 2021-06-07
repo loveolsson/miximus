@@ -1,6 +1,6 @@
 #pragma once
 #include "messages/types.hpp"
-#include "nodes/connection.hpp"
+#include "nodes/node_config.hpp"
 #include "nodes/node_type.hpp"
 
 #include <nlohmann/json_fwd.hpp>
@@ -41,9 +41,11 @@ class node
   public:
     virtual bool           set_option(std::string_view option, const nlohmann::json&);
     virtual nlohmann::json get_options();
+    virtual node_type_t    type() = 0;
 
-    virtual void prepare()  = 0;
-    virtual void complete() = 0;
+    virtual void prepare()                  = 0;
+    virtual void execute(const node_cfg_t&) = 0;
+    virtual void complete()                 = 0;
 
     const std::string& id() const { return id_; }
 };

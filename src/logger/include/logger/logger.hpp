@@ -3,6 +3,6 @@
 
 namespace miximus::logger {
 
-void init_loggers();
+void init_loggers(spdlog::level::level_enum level);
 
 } // namespace miximus::logger

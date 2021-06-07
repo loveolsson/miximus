@@ -1,41 +1,24 @@
 #pragma once
 #include "nodes/connection_type.hpp"
 
-#include <memory>
 #include <string>
-#include <vector>
 
-namespace miximus {
+namespace miximus::nodes {
 
-class node_manager;
-
-struct node_connection
+struct connection
 {
-    const std::string id;
-    const std::string node_id;
-    const std::string iface;
+    std::string from_node;
+    std::string from_interface;
+    std::string to_node;
+    std::string to_interface;
 };
 
-class node_interface_base
+} // namespace miximus::nodes
+
+namespace std {
+template <>
+struct hash<miximus::nodes::connection>
 {
-  protected:
-    std::vector<node_connection> connections_;
-
-  public:
-    virtual node_connection_type get_type() = 0;
-
-    std::vector<std::shared_ptr<node_interface_base>> resolve_connections(node_manager& manager);
+    std::size_t operator()(const miximus::nodes::connection& c) const;
 };
-
-template <typename T>
-class node_interface : public node_interface_base
-{
-    const T value_;
-
-  public:
-    node_connection_type get_type() final { return get_connection_type<T>(); }
-
-    const T& value() const { return value_; }
-};
-
-} // namespace miximus
+} // namespace std

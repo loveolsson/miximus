@@ -2,6 +2,7 @@
 #include "logger/logger.hpp"
 #include "messages/payload.hpp"
 #include "messages/templates.hpp"
+#include "nodes/node.hpp"
 #include "utils/bind.hpp"
 #include "web_server/web_server.hpp"
 
@@ -25,16 +26,17 @@ void node_manager::make_server_subscriptions(web_server::web_server& server)
     server.subscribe(topic_t::config, utils::bind(&node_manager::handle_config, this));
 }
 
-node_manager::node_map_t node_manager::clone_node_map()
+nodes::node_cfg_t node_manager::clone_node_config()
 {
     std::shared_lock lock(nodes_mutex_);
-    node_map_t       copy = nodes_;
-    return copy;
+
+    auto clone = config_;
+    return clone;
 }
 
 void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb)
 {
-    spdlog::get("app")->info(msg.dump());
+    std::shared_lock lock(nodes_mutex_);
 
     auto token = get_token_from_payload(msg);
 
@@ -43,7 +45,7 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
         std::string id       = node_obj["id"];
         std::string type     = node_obj["type"];
 
-        if (find_node(id)) {
+        if (config_.find_node(id)) {
             return cb(create_error_base_payload(token, error_t::duplicate_id));
         }
 
@@ -73,14 +75,9 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
             }
         }
 
-        {
-            std::unique_lock lock(nodes_mutex_);
-            nodes_.emplace(id, node);
-        }
+        config_.nodes.emplace(id, node);
 
         if (server_) {
-            spdlog::get("app")->info(bcast_payload.dump());
-
             server_->broadcast_message_sync(bcast_payload);
         }
     } catch (json::exception&) {
@@ -90,13 +87,27 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
     cb(create_result_base_payload(token));
 }
 
-void node_manager::handle_remove_node(json&& msg, int64_t, web_server::response_fn_t cb) {}
+void node_manager::handle_remove_node(json&& msg, int64_t, web_server::response_fn_t cb)
+{
+    std::shared_lock lock(nodes_mutex_);
 
-void node_manager::hande_update_node(json&& msg, int64_t, web_server::response_fn_t cb) {}
+    auto token = get_token_from_payload(msg);
+}
 
-void node_manager::handle_add_connection(json&& msg, int64_t, web_server::response_fn_t cb) {}
+void node_manager::hande_update_node(json&& msg, int64_t, web_server::response_fn_t cb)
+{
+    std::shared_lock lock(nodes_mutex_);
+}
 
-void node_manager::handle_remove_connection(json&& msg, int64_t, web_server::response_fn_t cb) {}
+void node_manager::handle_add_connection(json&& msg, int64_t, web_server::response_fn_t cb)
+{
+    std::shared_lock lock(nodes_mutex_);
+}
+
+void node_manager::handle_remove_connection(json&& msg, int64_t, web_server::response_fn_t cb)
+{
+    std::shared_lock lock(nodes_mutex_);
+}
 
 void node_manager::handle_config(json&& msg, int64_t client_id, web_server::response_fn_t cb)
 {
@@ -117,12 +128,27 @@ json node_manager::get_config()
     auto nodes       = json::array();
     auto connections = json::array();
 
-    for (const auto& [id, cfg] : node_config_) {
-        nodes.emplace_back(cfg);
+    for (const auto& [id, node] : config_.nodes) {
+        nlohmann::json cfg{
+            {"id", id},
+            {"type", type_from_string(node->type())},
+            {"options", node->get_options()},
+        };
+
+        nodes.emplace_back(std::move(cfg));
     }
 
-    for (const auto& [id, con] : con_config_) {
-        connections.emplace_back(con);
+    for (const auto& [id, con] : config_.connections) {
+        (void)id;
+
+        nlohmann::json cfg{
+            {"from_node", con.from_node},
+            {"from_interface", con.from_interface},
+            {"to_node", con.to_node},
+            {"to_interface", con.to_interface},
+        };
+
+        connections.emplace_back(std::move(cfg));
     }
 
     return {

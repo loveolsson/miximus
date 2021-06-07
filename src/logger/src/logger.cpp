@@ -4,33 +4,37 @@
 #include <spdlog/async_logger.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+using namespace spdlog;
+
 namespace miximus::logger {
 
-void init_loggers()
+void init_loggers(level::level_enum level_)
 {
-    spdlog::init_thread_pool(8192, 1);
+    init_thread_pool(8192, 1);
 
-    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto sink = std::make_shared<sinks::stdout_color_sink_mt>();
 
     {
-        auto log = std::make_shared<spdlog::async_logger>("http", sink, spdlog::thread_pool());
-        log->flush_on(spdlog::level::info);
-        log->set_level(spdlog::level::level_enum::info);
-        spdlog::register_logger(log);
+        auto log = std::make_shared<async_logger>("app", sink, thread_pool());
+        log->flush_on(level_);
+        log->set_level(level_);
+        register_logger(log);
+
+        log->info("Log level: {}", to_string_view(level_));
     }
 
     {
-        auto log = std::make_shared<spdlog::async_logger>("app", sink, spdlog::thread_pool());
-        log->flush_on(spdlog::level::info);
-        log->set_level(spdlog::level::level_enum::info);
-        spdlog::register_logger(log);
+        auto log = std::make_shared<async_logger>("http", sink, thread_pool());
+        log->flush_on(level_);
+        log->set_level(level_);
+        register_logger(log);
     }
 
     {
-        auto log = std::make_shared<spdlog::async_logger>("gpu", sink, spdlog::thread_pool());
-        log->flush_on(spdlog::level::info);
-        log->set_level(spdlog::level::level_enum::info);
-        spdlog::register_logger(log);
+        auto log = std::make_shared<async_logger>("gpu", sink, thread_pool());
+        log->flush_on(level_);
+        log->set_level(level_);
+        register_logger(log);
     }
 }
 
