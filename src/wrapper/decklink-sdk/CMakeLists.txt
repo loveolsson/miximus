@@ -62,7 +62,7 @@ else()
         ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/include
     )
 
-    target_link_libraries(decklink PUBLIC
+    target_link_libraries(decklink INTERFACE
         ${DECKLINK_DVP_LIB}
     )
 endif()
