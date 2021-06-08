@@ -49,6 +49,9 @@ class custom_logger : public basic<concurrency, names>
         }
 
         auto log = spdlog::get("http");
+        if (!log) {
+            return;
+        }
 
         if (m_channel_type_hint == channel_type_hint::access) {
             log->info(msg);

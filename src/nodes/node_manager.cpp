@@ -50,7 +50,7 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
         }
 
         message::error_t error = message::error_t::no_error;
-        auto             node  = create_node(type, id, error);
+        auto             node  = create_node(type, error);
 
         if (error != message::error_t::no_error || !node) {
             return cb(create_error_base_payload(token, error));
@@ -138,9 +138,7 @@ json node_manager::get_config()
         nodes.emplace_back(std::move(cfg));
     }
 
-    for (const auto& [id, con] : config_.connections) {
-        (void)id;
-
+    for (const auto& con : config_.connections) {
         nlohmann::json cfg{
             {"from_node", con.from_node},
             {"from_interface", con.from_interface},
@@ -157,11 +155,10 @@ json node_manager::get_config()
     };
 }
 
-std::shared_ptr<nodes::node>
-node_manager::create_node(const std::string& type, const std::string& id, message::error_t& error)
+std::shared_ptr<nodes::node> node_manager::create_node(const std::string& type, message::error_t& error)
 {
-    nodes::node_type_t t = nodes::type_from_string(type);
-    return nodes::create_node(t, id, error);
+    nodes::node_type_e t = nodes::type_from_string(type);
+    return nodes::create_node(t, error);
 }
 
 } // namespace miximus

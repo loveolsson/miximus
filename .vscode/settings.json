@@ -100,6 +100,12 @@
         "*.ipp": "cpp",
         "string_view": "cpp",
         "bitset": "cpp",
-        "*.idl": "cpp"
+        "*.idl": "cpp",
+        "csetjmp": "cpp",
+        "cwctype": "cpp",
+        "*.tcc": "cpp",
+        "memory_resource": "cpp",
+        "source_location": "cpp",
+        "cfenv": "cpp"
     }
 }

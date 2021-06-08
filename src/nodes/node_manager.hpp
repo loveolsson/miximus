@@ -3,9 +3,8 @@
 #include "nodes/node_config.hpp"
 #include "web_server/web_server.hpp"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
-#include <memory>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -30,7 +29,7 @@ class node_manager
     void handle_remove_connection(json&& msg, int64_t client_id, web_server::response_fn_t cb);
     void handle_config(json&& msg, int64_t client_id, web_server::response_fn_t cb);
 
-    std::shared_ptr<nodes::node> create_node(const std::string& type, const std::string& id, message::error_t& error);
+    std::shared_ptr<nodes::node> create_node(const std::string& type, message::error_t& error);
 
     json get_config();
 

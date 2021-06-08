@@ -1,21 +1,29 @@
 #pragma once
 #include "messages/types.hpp"
-#include "nodes/node_config.hpp"
 #include "nodes/node_type.hpp"
+#include "nodes/option.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
-#include <map>
 #include <memory>
-#include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace miximus::nodes {
 
+class interface;
+class node_cfg_t;
+
 class node
 {
+    typedef std::unordered_map<std::string_view, interface*> interface_map_t;
+    typedef std::unordered_map<std::string_view, option*>    option_map_t;
+
+    option_position opt_position_;
+    option_name     opt_name_;
+
   protected:
-    enum class state_t
+    enum class state_e
     {
         uninitialized,
         prepared,
@@ -28,28 +36,34 @@ class node
         double x, y;
     } position_;
 
-    const std::string id_;
+    interface_map_t interfaces_;
+    option_map_t    options_;
 
-    node(const std::string& id)
-        : id_(id)
-        , state_(state_t::uninitialized)
-    {
-    }
-
+    node();
     virtual ~node() {}
 
   public:
-    virtual bool           set_option(std::string_view option, const nlohmann::json&);
-    virtual nlohmann::json get_options();
-    virtual node_type_t    type() = 0;
+    virtual node_type_e type()                     = 0;
+    virtual void        prepare()                  = 0;
+    virtual void        execute(const node_cfg_t&) = 0;
+    virtual void        complete();
 
-    virtual void prepare()                  = 0;
-    virtual void execute(const node_cfg_t&) = 0;
-    virtual void complete()                 = 0;
+    bool           set_option(std::string_view option, const nlohmann::json&);
+    nlohmann::json get_options();
 
-    const std::string& id() const { return id_; }
+    interface* find_interface(std::string_view name);
+    interface* get_prepared_interface(const node_cfg_t& cfg, std::string_view name);
 };
 
-std::shared_ptr<node> create_node(node_type_t type, const std::string& id, message::error_t& error);
+inline interface* node::find_interface(std::string_view name)
+{
+    auto it = interfaces_.find(name);
+    if (it != interfaces_.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+std::shared_ptr<node> create_node(node_type_e type, message::error_t& error);
 
 } // namespace miximus::nodes

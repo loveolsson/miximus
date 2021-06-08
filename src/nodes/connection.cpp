@@ -1,10 +1,6 @@
 #include "connection.hpp"
 #include <boost/functional/hash.hpp>
 
-namespace miximus::nodes {
-
-} // namespace miximus::nodes
-
 namespace std {
 std::size_t hash<miximus::nodes::connection>::operator()(const miximus::nodes::connection& c) const
 {

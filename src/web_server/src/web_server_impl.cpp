@@ -51,7 +51,7 @@ web_server_impl::~web_server_impl() { stop(); }
 void web_server_impl::terminate_and_log(connection_hdl hdl, const std::string& msg)
 {
     std::error_code ec;
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, msg);
+    endpoint_.get_alog().write(websocketpp::log::alevel::fail, msg);
     endpoint_.close(hdl, websocketpp::close::status::protocol_error, msg, ec);
     if (ec) {
         endpoint_.get_alog().write(websocketpp::log::alevel::fail, ec.message());
@@ -65,7 +65,7 @@ void web_server_impl::on_http(connection_hdl hdl)
 
     std::string_view resource = con->get_resource();
 
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, std::string(resource));
+    endpoint_.get_alog().write(websocketpp::log::alevel::http, std::string(resource));
 
     if (resource == "/") {
         resource = "/index.html";
@@ -184,7 +184,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 
 void web_server_impl::on_open(connection_hdl hdl)
 {
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, "Connection opened");
+    endpoint_.get_alog().write(websocketpp::log::alevel::http, "Connection opened");
 
     auto id = next_connection_id++;
 
@@ -196,7 +196,7 @@ void web_server_impl::on_open(connection_hdl hdl)
 
 void web_server_impl::on_close(connection_hdl hdl)
 {
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, "Connection closed");
+    endpoint_.get_alog().write(websocketpp::log::alevel::http, "Connection closed");
     auto con = connections_.find(hdl);
     if (con == connections_.end()) {
         return;

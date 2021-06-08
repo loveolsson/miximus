@@ -1,43 +1,37 @@
 #include "nodes/dummy/dummy.hpp"
-
-#include <nlohmann/json.hpp>
+#include "nodes/interface.hpp"
+#include "nodes/option_typed.hpp"
 
 namespace miximus::nodes::dummy {
 
 class node_impl : public node
 {
+    option_typed<double>           opt_test;
+    interface_typed<double, true>  iface_input{true};
+    interface_typed<double, false> iface_output{false};
+
   public:
-    node_impl(const std::string& id)
-        : node(id)
+    node_impl()
+        : node()
     {
-    }
-
-    bool set_option(std::string_view option, const nlohmann::json& val) final
-    {
-        if (node::set_option(option, val)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    nlohmann::json get_options() final
-    {
-        using namespace nlohmann;
-        auto options = node::get_options();
-
-        return options;
+        options_.emplace("test", &opt_test);
+        interfaces_.emplace("ip", &iface_input);
+        interfaces_.emplace("op", &iface_output);
     }
 
     void prepare() final {}
 
-    void execute(const node_cfg_t&) final {}
+    void execute(const node_cfg_t& cfg) final
+    {
+        auto input_vals = iface_input.resolve_connection_values(cfg);
+        iface_output.set_value(opt_test.get_value());
+    }
 
-    void complete() final {}
+    void complete() final { node::complete(); }
 
-    node_type_t type() final { return node_type_t::invalid; }
+    node_type_e type() final { return node_type_e::invalid; }
 };
 
-std::shared_ptr<node> create_node(const std::string& id) { return std::make_shared<node_impl>(id); }
+std::shared_ptr<node> create_node() { return std::make_shared<node_impl>(); }
 
 } // namespace miximus::nodes::dummy

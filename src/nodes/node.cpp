@@ -1,31 +1,33 @@
 #include "nodes/node.hpp"
 #include "logger/logger.hpp"
 #include "nodes/dummy/dummy.hpp"
+#include "nodes/interface.hpp"
 
 #include <nlohmann/json.hpp>
 
 namespace miximus::nodes {
 
-bool node::set_option(std::string_view option, const nlohmann::json& val)
+node::node()
+    : state_(state_e::uninitialized)
 {
-    if (option == "position") {
-        if (!val.is_array()) {
-            return false;
-        }
+    options_.emplace("position", &opt_position_);
+    options_.emplace("name", &opt_name_);
+}
 
-        if (val.size() != 2) {
-            return false;
-        }
+void node::complete()
+{
+    for (auto& [name, iface] : interfaces_) {
+        (void)name;
+        iface->reset();
+    }
+}
 
-        auto& x = val[0];
-        auto& y = val[1];
+bool node::set_option(std::string_view option, const nlohmann::json& value)
+{
+    auto it = options_.find(option);
 
-        if (!x.is_number() || !y.is_number()) {
-            return false;
-        }
-
-        position_ = {x.get<double>(), y.get<double>()};
-        return true;
+    if (it != options_.end()) {
+        return it->second->set_json(value);
     }
 
     return false;
@@ -33,20 +35,40 @@ bool node::set_option(std::string_view option, const nlohmann::json& val)
 
 nlohmann::json node::get_options()
 {
-    using namespace nlohmann;
+    auto options = nlohmann::json::object();
 
-    return {
-        {"position", json::array({position_.x, position_.y})},
-    };
+    for (auto& [name, option] : options_) {
+        options.emplace(name, option->get_json());
+    }
+
+    return options;
 }
 
-std::shared_ptr<node> create_node(node_type_t type, const std::string& id, message::error_t& error)
+interface* node::get_prepared_interface(const node_cfg_t& cfg, std::string_view name)
+{
+    auto iface = find_interface(name);
+    if (iface) {
+        return nullptr;
+    }
+
+    if (!iface->has_value()) {
+        execute(cfg);
+    }
+
+    if (!iface->has_value()) {
+        throw std::runtime_error("interface does not contain value after execute");
+    }
+
+    return iface;
+}
+
+std::shared_ptr<node> create_node(node_type_e type, message::error_t& error)
 {
     switch (type) {
-        case node_type_t::decklink_producer:
+        case node_type_e::decklink_producer:
             error = message::error_t::invalid_type;
             return nullptr;
-        case node_type_t::decklink_consumer:
+        case node_type_e::decklink_consumer:
             error = message::error_t::invalid_type;
             return nullptr;
 
@@ -55,7 +77,7 @@ std::shared_ptr<node> create_node(node_type_t type, const std::string& id, messa
             error = message::error_t::invalid_type;
             return nullptr;
 #else
-            return dummy::create_node(id);
+            return dummy::create_node();
 #endif
     }
 }
