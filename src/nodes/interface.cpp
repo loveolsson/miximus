@@ -2,6 +2,8 @@
 #include "nodes/node.hpp"
 #include "nodes/node_config.hpp"
 
+#include <stdexcept>
+
 namespace miximus::nodes {
 
 bool interface::add_connection(const connection& con, std::vector<connection>& removed)

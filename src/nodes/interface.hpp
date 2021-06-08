@@ -2,6 +2,7 @@
 #include "interface_type.hpp"
 #include "nodes/connection.hpp"
 
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
