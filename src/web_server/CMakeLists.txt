@@ -1,8 +1,8 @@
 add_library(web_server
-    include/web_server/web_server.hpp
-    src/web_server.cpp
-    src/web_server_impl.cpp
-    src/web_server_impl.hpp
+    include/web_server/server.hpp
+    src/server.cpp
+    src/server_impl.cpp
+    src/server_impl.hpp
     src/websocket_connection.hpp
     src/custom-config.hpp
     src/custom-logger.hpp

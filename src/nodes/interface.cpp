@@ -37,20 +37,32 @@ std::vector<interface*> interface::resolve_connections(const node_cfg& cfg)
     return result;
 }
 
+interface* interface::resolve_connection(const node_cfg& cfg)
+{
+    if (connections_.size() > 0) {
+        auto& con = *connections_.begin();
+        if (auto n = cfg.find_node(con.from_node)) {
+            return n->get_prepared_interface(cfg, con.from_interface);
+        }
+    }
+
+    return nullptr;
+}
+
 /**
  * Interface converters
  */
 
 template <>
-double interface_typed<double, false>::get_value_from(interface* iface)
+double interface_typed<double>::get_value_from(interface* iface)
 {
     switch (iface->type()) {
         case interface_type_e::f64: {
-            auto typed = static_cast<interface_typed<double, false>*>(iface);
+            auto typed = static_cast<interface_typed<double>*>(iface);
             return typed->get_value();
         }
         case interface_type_e::i64: {
-            auto typed = static_cast<interface_typed<int64_t, false>*>(iface);
+            auto typed = static_cast<interface_typed<int64_t>*>(iface);
             return typed->get_value();
         }
 
@@ -61,15 +73,15 @@ double interface_typed<double, false>::get_value_from(interface* iface)
 }
 
 template <>
-int64_t interface_typed<int64_t, false>::get_value_from(interface* iface)
+int64_t interface_typed<int64_t>::get_value_from(interface* iface)
 {
     switch (iface->type()) {
         case interface_type_e::f64: {
-            auto typed = static_cast<interface_typed<double, false>*>(iface);
+            auto typed = static_cast<interface_typed<double>*>(iface);
             return typed->get_value();
         }
         case interface_type_e::i64: {
-            auto typed = static_cast<interface_typed<int64_t, false>*>(iface);
+            auto typed = static_cast<interface_typed<int64_t>*>(iface);
             return typed->get_value();
         }
 

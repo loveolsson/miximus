@@ -1,9 +1,8 @@
 #pragma once
-
 #include "custom-config.hpp"
 #include "messages/payload.hpp"
 #include "static_files/files.hpp"
-#include "web_server/web_server.hpp"
+#include "web_server/server.hpp"
 #include "websocket_connection.hpp"
 
 #include <websocketpp/common/asio.hpp>

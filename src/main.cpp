@@ -2,7 +2,7 @@
 #include "logger/logger.hpp"
 #include "nodes/decklink/decklink.hpp"
 #include "nodes/node_manager.hpp"
-#include "web_server/web_server.hpp"
+#include "web_server/server.hpp"
 
 #include <chrono>
 #include <csignal>
@@ -43,8 +43,8 @@ int main(int argc, char* argv[])
     }
 
     {
-        node_manager           node_manager_;
-        web_server::web_server web_server_;
+        node_manager       node_manager_;
+        web_server::server web_server_;
         node_manager_.make_server_subscriptions(web_server_);
 
         {

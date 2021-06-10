@@ -1,7 +1,7 @@
 #pragma once
 #include "messages/types.hpp"
 #include "nodes/node_config.hpp"
-#include "web_server/web_server.hpp"
+#include "web_server/server.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -15,7 +15,7 @@ class node_manager
 {
     typedef nlohmann::json json;
 
-    web_server::web_server* server_;
+    web_server::server* server_;
 
     std::shared_mutex config_mutex_;
 
@@ -37,7 +37,7 @@ class node_manager
     node_manager();
     ~node_manager();
 
-    void            make_server_subscriptions(web_server::web_server& server);
+    void            make_server_subscriptions(web_server::server& server);
     nodes::node_cfg clone_node_config();
 };
 

@@ -4,7 +4,7 @@
 #include "messages/templates.hpp"
 #include "nodes/node.hpp"
 #include "utils/bind.hpp"
-#include "web_server/web_server.hpp"
+#include "web_server/server.hpp"
 
 namespace miximus {
 using namespace nlohmann;
@@ -14,7 +14,7 @@ node_manager::node_manager() {}
 
 node_manager::~node_manager() {}
 
-void node_manager::make_server_subscriptions(web_server::web_server& server)
+void node_manager::make_server_subscriptions(web_server::server& server)
 {
     server_ = &server;
 
@@ -56,26 +56,24 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
             return cb(create_error_base_payload(token, error));
         }
 
-        auto bcast_payload         = create_command_base_payload(topic_e::add_node);
-        bcast_payload["origin_id"] = client_id;
-        bcast_payload["node"]      = json{
-            {"id", id},
-            {"type", type},
-            {"options", json::object()},
-        };
-
         auto options_it = node_obj.find("options");
         if (options_it != node_obj.end()) {
             auto& options = options_it.value();
 
             for (auto option = options.begin(); option != options.end(); ++option) {
-                if (node->set_option(option.key(), option.value())) {
-                    bcast_payload["node"]["options"][option.key()] = option.value();
-                }
+                node->set_option(option.key(), option.value());
             }
         }
 
         config_.nodes.emplace(id, node);
+
+        auto bcast_payload         = create_command_base_payload(topic_e::add_node);
+        bcast_payload["origin_id"] = client_id;
+        bcast_payload["node"]      = json{
+            {"id", id},
+            {"type", type},
+            {"options", node->get_options()},
+        };
 
         if (server_) {
             server_->broadcast_message_sync(bcast_payload);

@@ -15,13 +15,13 @@ class web_server_impl;
 typedef std::function<void(nlohmann::json&&)>                         response_fn_t;
 typedef std::function<void(nlohmann::json&&, int64_t, response_fn_t)> callback_t;
 
-class web_server
+class server
 {
     std::unique_ptr<detail::web_server_impl> impl;
 
   public:
-    web_server();
-    ~web_server();
+    server();
+    ~server();
 
     void subscribe(message::topic_e topic, callback_t callback);
 
