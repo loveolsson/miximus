@@ -3,6 +3,7 @@
 #include "nodes/connection.hpp"
 
 #include <optional>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
@@ -14,22 +15,22 @@ class interface
 {
     std::unordered_set<connection> connections_;
     bool                           is_input_;
-    bool                           single_connection_;
+    int                            max_connection_count_;
 
   public:
-    interface(bool is_input, bool single_connection)
+    interface(bool is_input)
         : is_input_(is_input)
-        , single_connection_(single_connection)
+        , max_connection_count_(is_input_ ? 1 : INT_MAX)
     {
     }
 
     virtual ~interface() {}
 
-    bool                    add_connection(const connection& con, std::vector<connection>& removed);
-    bool                    remove_connection(const connection& con);
-    std::vector<interface*> resolve_connections(const node_cfg& cfg);
-    interface*              resolve_connection(const node_cfg& cfg);
-    bool                    is_input() { return is_input_; }
+    bool       add_connection(const connection& con, std::vector<connection>& removed);
+    bool       remove_connection(const connection& con);
+    interface* resolve_connection(const node_cfg& cfg);
+    bool       is_input() { return is_input_; }
+    void       set_max_connections(int count) { max_connection_count_ = count; }
 
     virtual interface_type_e type()            = 0;
     virtual bool             has_value() const = 0;
@@ -42,12 +43,11 @@ class interface_typed : public interface
     std::optional<T> value_;
 
   public:
-    interface_typed(bool is_input, bool single_connection)
-        : interface(is_input, single_connection){};
+    interface_typed(bool is_input)
+        : interface(is_input){};
     ~interface_typed(){};
 
-    std::vector<T>   resolve_connection_values(const node_cfg& cfg);
-    std::optional<T> resolve_connection_value(const node_cfg& cfg);
+    bool resolve_connection_value(const node_cfg& cfg);
 
     interface_type_e type() final { return get_interface_type<T>(); }
     bool             has_value() const final { return value_ != std::nullopt; }
@@ -72,25 +72,15 @@ class interface_typed : public interface
 };
 
 template <typename T>
-std::vector<T> interface_typed<T>::resolve_connection_values(const node_cfg& cfg)
-{
-    std::vector<T> result;
-
-    for (auto iface : resolve_connections(cfg)) {
-        result.emplace_back(get_value_from(iface));
-    }
-
-    return result;
-}
-
-template <typename T>
-std::optional<T> interface_typed<T>::resolve_connection_value(const node_cfg& cfg)
+bool interface_typed<T>::resolve_connection_value(const node_cfg& cfg)
 {
     if (auto iface = resolve_connection(cfg)) {
-        return get_value_from(iface);
+        value_ = get_value_from(iface);
+        return true;
     }
 
-    return std::nullopt;
+    value_ = T();
+    return false;
 }
 
 /**
@@ -104,8 +94,7 @@ T interface_typed<T>::get_value_from(interface* iface)
         throw std::runtime_error("incompatible interface types");
     }
 
-    auto typed = static_cast<interface_typed<T>*>(iface);
-    return typed->get_value();
+    return static_cast<interface_typed<T>*>(iface)->get_value();
 }
 
 template <>

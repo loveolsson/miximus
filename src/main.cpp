@@ -36,7 +36,7 @@ int main(int argc, char* argv[])
 
     {
         auto names = nodes::decklink::get_device_names();
-        log->info("Found {} DeckLink device(s):", names.size());
+        log->info("Found {} DeckLink device(s)", names.size());
         for (auto& name : names) {
             log->info(" -- \"{}\"", name);
         }

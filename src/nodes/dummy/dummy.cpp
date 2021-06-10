@@ -8,8 +8,8 @@ namespace miximus::nodes::dummy {
 class node_impl : public node
 {
     option_typed<double>    opt_test_{};
-    interface_typed<double> iface_input_{true, true};
-    interface_typed<double> iface_output_{false, false};
+    interface_typed<double> iface_input_{true};
+    interface_typed<double> iface_output_{false};
 
   public:
     node_impl()
@@ -24,7 +24,7 @@ class node_impl : public node
 
     void execute(const node_cfg& cfg) final
     {
-        auto input_vals = iface_input_.resolve_connection_values(cfg);
+        iface_input_.resolve_connection_value(cfg);
         iface_output_.set_value(opt_test_.get_value());
     }
 

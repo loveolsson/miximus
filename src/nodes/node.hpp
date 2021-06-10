@@ -39,18 +39,10 @@ class node
     nlohmann::json get_options();
     nlohmann::json get_option(std::string_view option);
 
-    interface* find_interface(std::string_view name);
-    interface* get_prepared_interface(const node_cfg& cfg, std::string_view name);
+    const interface_map_t& get_interfaces() const { return interfaces_; }
+    interface*             find_interface(std::string_view name);
+    interface*             get_prepared_interface(const node_cfg& cfg, std::string_view name);
 };
-
-inline interface* node::find_interface(std::string_view name)
-{
-    auto it = interfaces_.find(name);
-    if (it != interfaces_.end()) {
-        return it->second;
-    }
-    return nullptr;
-}
 
 std::shared_ptr<node> create_node(node_type_e type, message::error_e& error);
 

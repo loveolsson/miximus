@@ -69,11 +69,13 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
 
         auto bcast_payload         = create_command_base_payload(topic_e::add_node);
         bcast_payload["origin_id"] = client_id;
-        bcast_payload["node"]      = json{
+        bcast_payload["node"]      = {
             {"id", id},
             {"type", type},
             {"options", node->get_options()},
         };
+
+        cb(create_result_base_payload(token));
 
         if (server_) {
             server_->broadcast_message_sync(bcast_payload);
@@ -81,8 +83,6 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
     } catch (json::exception&) {
         return cb(create_error_base_payload(token, error_e::malformed_payload));
     }
-
-    cb(create_result_base_payload(token));
 }
 
 void node_manager::handle_remove_node(json&& msg, int64_t, web_server::response_fn_t cb)

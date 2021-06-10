@@ -11,9 +11,9 @@ namespace miximus::nodes::math {
 template <typename T, auto Op>
 class node_impl : public node
 {
-    interface_typed<T> iface_a_{true, true};
-    interface_typed<T> iface_b_{true, true};
-    interface_typed<T> iface_res_{false, false};
+    interface_typed<T> iface_a_{true};
+    interface_typed<T> iface_b_{true};
+    interface_typed<T> iface_res_{false};
 
     node_type_e type_;
 
@@ -31,22 +31,10 @@ class node_impl : public node
 
     void execute(const node_cfg& cfg) final
     {
-        auto a = T();
-        auto b = T();
+        iface_a_.resolve_connection_value(cfg);
+        iface_b_.resolve_connection_value(cfg);
 
-        auto a_val = iface_a_.resolve_connection_value(cfg);
-        auto b_val = iface_b_.resolve_connection_value(cfg);
-
-        if (a_val != std::nullopt) {
-            a = *a_val;
-        }
-
-        if (b_val != std::nullopt) {
-            b = *b_val;
-        }
-
-        T res = Op(a, b);
-
+        T res = Op(iface_a_.get_value(), iface_b_.get_value());
         iface_res_.set_value(res);
     }
 

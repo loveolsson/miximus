@@ -53,6 +53,15 @@ nlohmann::json node::get_option(std::string_view option)
     return nlohmann::json(); // null
 }
 
+interface* node::find_interface(std::string_view name)
+{
+    auto it = interfaces_.find(name);
+    if (it != interfaces_.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
 interface* node::get_prepared_interface(const node_cfg& cfg, std::string_view name)
 {
     auto iface = find_interface(name);
