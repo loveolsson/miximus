@@ -23,7 +23,7 @@ class web_server
     web_server();
     ~web_server();
 
-    void subscribe(message::topic_t topic, callback_t callback);
+    void subscribe(message::topic_e topic, callback_t callback);
 
     void start(uint16_t port);
     void stop();

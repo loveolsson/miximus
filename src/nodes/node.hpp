@@ -12,7 +12,7 @@
 namespace miximus::nodes {
 
 class interface;
-class node_cfg_t;
+class node_cfg;
 
 class node
 {
@@ -23,19 +23,6 @@ class node
     option_name     opt_name_;
 
   protected:
-    enum class state_e
-    {
-        uninitialized,
-        prepared,
-        ready,
-        complete,
-    } state_;
-
-    struct
-    {
-        double x, y;
-    } position_;
-
     interface_map_t interfaces_;
     option_map_t    options_;
 
@@ -43,16 +30,17 @@ class node
     virtual ~node() {}
 
   public:
-    virtual node_type_e type()                     = 0;
-    virtual void        prepare()                  = 0;
-    virtual void        execute(const node_cfg_t&) = 0;
+    virtual node_type_e type()                   = 0;
+    virtual void        prepare()                = 0;
+    virtual void        execute(const node_cfg&) = 0;
     virtual void        complete();
 
     bool           set_option(std::string_view option, const nlohmann::json&);
     nlohmann::json get_options();
+    nlohmann::json get_option(std::string_view option);
 
     interface* find_interface(std::string_view name);
-    interface* get_prepared_interface(const node_cfg_t& cfg, std::string_view name);
+    interface* get_prepared_interface(const node_cfg& cfg, std::string_view name);
 };
 
 inline interface* node::find_interface(std::string_view name)
@@ -64,6 +52,6 @@ inline interface* node::find_interface(std::string_view name)
     return nullptr;
 }
 
-std::shared_ptr<node> create_node(node_type_e type, message::error_t& error);
+std::shared_ptr<node> create_node(node_type_e type, message::error_e& error);
 
 } // namespace miximus::nodes

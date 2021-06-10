@@ -9,7 +9,7 @@ web_server::web_server()
 
 web_server::~web_server() {}
 
-void web_server::subscribe(message::topic_t topic, callback_t callback) { impl->subscribe(topic, callback); }
+void web_server::subscribe(message::topic_e topic, callback_t callback) { impl->subscribe(topic, callback); }
 
 void web_server::start(uint16_t port) { impl->start(port); }
 

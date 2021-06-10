@@ -6,7 +6,7 @@ namespace miximus::message {
 typedef std::string      token_t;
 typedef std::string_view token_ref_t;
 
-enum class action_t
+enum class action_e
 {
     invalid   = -1,
     subscribe = 0,
@@ -19,7 +19,7 @@ enum class action_t
     _count,
 };
 
-enum class topic_t
+enum class topic_e
 {
     invalid  = -1,
     add_node = 0,
@@ -31,7 +31,7 @@ enum class topic_t
     _count,
 };
 
-enum class error_t
+enum class error_e
 {
     no_error       = -1,
     internal_error = 0,

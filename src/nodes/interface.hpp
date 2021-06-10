@@ -8,7 +8,7 @@
 
 namespace miximus::nodes {
 
-class node_cfg_t;
+class node_cfg;
 
 class interface
 {
@@ -24,7 +24,7 @@ class interface
 
     bool                    add_connection(const connection& con, std::vector<connection>& removed);
     bool                    remove_connection(const connection& con);
-    std::vector<interface*> resolve_connections(const node_cfg_t& cfg);
+    std::vector<interface*> resolve_connections(const node_cfg& cfg);
 
     virtual bool             is_input()        = 0;
     virtual interface_type_e type()            = 0;
@@ -42,10 +42,10 @@ class interface_typed : public interface
         : interface(single_connection){};
     ~interface_typed(){};
 
-    std::vector<T> resolve_connection_values(const node_cfg_t& cfg);
+    std::vector<T> resolve_connection_values(const node_cfg& cfg);
 
     bool             is_input() final { return IsInput; }
-    interface_type_e type() final { return get_connection_type<T>(); }
+    interface_type_e type() final { return get_interface_type<T>(); }
     bool             has_value() const final { return value_ != std::nullopt; }
     void             reset() final { value_ = std::nullopt; }
 
@@ -68,7 +68,7 @@ T interface_typed<T, IsInput>::get_value_from(interface* iface)
 {
     static_assert(IsInput, "get_value_from used from output");
 
-    if (get_connection_type<T>() != iface->type()) {
+    if (get_interface_type<T>() != iface->type()) {
         throw std::runtime_error("incompatible interface types");
     }
 
@@ -83,7 +83,7 @@ template <>
 int64_t interface_typed<int64_t, false>::get_value_from(interface* iface);
 
 template <typename T, bool IsInput>
-std::vector<T> interface_typed<T, IsInput>::resolve_connection_values(const node_cfg_t& cfg)
+std::vector<T> interface_typed<T, IsInput>::resolve_connection_values(const node_cfg& cfg)
 {
     std::vector<T> result;
 

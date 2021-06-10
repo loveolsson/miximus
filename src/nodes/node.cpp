@@ -8,7 +8,6 @@
 namespace miximus::nodes {
 
 node::node()
-    : state_(state_e::uninitialized)
 {
     options_.emplace("position", &opt_position_);
     options_.emplace("name", &opt_name_);
@@ -44,7 +43,17 @@ nlohmann::json node::get_options()
     return options;
 }
 
-interface* node::get_prepared_interface(const node_cfg_t& cfg, std::string_view name)
+nlohmann::json node::get_option(std::string_view option)
+{
+    auto it = options_.find(option);
+    if (it != options_.end()) {
+        return it->second->get_json();
+    }
+
+    return nlohmann::json(); // null
+}
+
+interface* node::get_prepared_interface(const node_cfg& cfg, std::string_view name)
 {
     auto iface = find_interface(name);
     if (iface) {
@@ -62,19 +71,19 @@ interface* node::get_prepared_interface(const node_cfg_t& cfg, std::string_view 
     return iface;
 }
 
-std::shared_ptr<node> create_node(node_type_e type, message::error_t& error)
+std::shared_ptr<node> create_node(node_type_e type, message::error_e& error)
 {
     switch (type) {
         case node_type_e::decklink_producer:
-            error = message::error_t::invalid_type;
+            error = message::error_e::invalid_type;
             return nullptr;
         case node_type_e::decklink_consumer:
-            error = message::error_t::invalid_type;
+            error = message::error_e::invalid_type;
             return nullptr;
 
         default:
-#if 0
-            error = message::error_t::invalid_type;
+#if 1
+            error = message::error_e::invalid_type;
             return nullptr;
 #else
             return dummy::create_node();

@@ -9,7 +9,7 @@
 namespace miximus::nodes {
 class node;
 
-struct node_cfg_t
+struct node_cfg
 {
     typedef std::unordered_map<std::string, std::shared_ptr<node>> node_map_t;
     typedef std::unordered_set<connection>                         con_map_t;

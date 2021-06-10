@@ -20,7 +20,7 @@ class option_name : public option
 
   public:
     option_name() {}
-    ~option_name() {}
+    ~option_name();
 
     bool           set_json(const nlohmann::json&) final;
     nlohmann::json get_json() const final;

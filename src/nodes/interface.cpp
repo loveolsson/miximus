@@ -22,7 +22,7 @@ bool interface::remove_connection(const connection& con)
     return (removed > 0);
 }
 
-std::vector<interface*> interface::resolve_connections(const node_cfg_t& cfg)
+std::vector<interface*> interface::resolve_connections(const node_cfg& cfg)
 {
     std::vector<interface*> result;
 

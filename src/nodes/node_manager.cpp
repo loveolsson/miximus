@@ -18,15 +18,15 @@ void node_manager::make_server_subscriptions(web_server::web_server& server)
 {
     server_ = &server;
 
-    server.subscribe(topic_t::add_node, utils::bind(&node_manager::handle_add_node, this));
-    server.subscribe(topic_t::remove_node, utils::bind(&node_manager::handle_remove_node, this));
-    server.subscribe(topic_t::add_connection, utils::bind(&node_manager::handle_add_connection, this));
-    server.subscribe(topic_t::remove_connection, utils::bind(&node_manager::handle_remove_connection, this));
-    server.subscribe(topic_t::update_node, utils::bind(&node_manager::hande_update_node, this));
-    server.subscribe(topic_t::config, utils::bind(&node_manager::handle_config, this));
+    server.subscribe(topic_e::add_node, utils::bind(&node_manager::handle_add_node, this));
+    server.subscribe(topic_e::remove_node, utils::bind(&node_manager::handle_remove_node, this));
+    server.subscribe(topic_e::add_connection, utils::bind(&node_manager::handle_add_connection, this));
+    server.subscribe(topic_e::remove_connection, utils::bind(&node_manager::handle_remove_connection, this));
+    server.subscribe(topic_e::update_node, utils::bind(&node_manager::hande_update_node, this));
+    server.subscribe(topic_e::config, utils::bind(&node_manager::handle_config, this));
 }
 
-nodes::node_cfg_t node_manager::clone_node_config()
+nodes::node_cfg node_manager::clone_node_config()
 {
     std::shared_lock lock(nodes_mutex_);
 
@@ -46,17 +46,17 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
         std::string type     = node_obj["type"];
 
         if (config_.find_node(id)) {
-            return cb(create_error_base_payload(token, error_t::duplicate_id));
+            return cb(create_error_base_payload(token, error_e::duplicate_id));
         }
 
-        message::error_t error = message::error_t::no_error;
+        message::error_e error = message::error_e::no_error;
         auto             node  = create_node(type, error);
 
-        if (error != message::error_t::no_error || !node) {
+        if (error != message::error_e::no_error || !node) {
             return cb(create_error_base_payload(token, error));
         }
 
-        auto bcast_payload         = create_command_base_payload(topic_t::add_node);
+        auto bcast_payload         = create_command_base_payload(topic_e::add_node);
         bcast_payload["origin_id"] = client_id;
         bcast_payload["node"]      = json{
             {"id", id},
@@ -81,7 +81,7 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
             server_->broadcast_message_sync(bcast_payload);
         }
     } catch (json::exception&) {
-        return cb(create_error_base_payload(token, error_t::malformed_payload));
+        return cb(create_error_base_payload(token, error_e::malformed_payload));
     }
 
     cb(create_result_base_payload(token));
@@ -155,7 +155,7 @@ json node_manager::get_config()
     };
 }
 
-std::shared_ptr<nodes::node> node_manager::create_node(const std::string& type, message::error_t& error)
+std::shared_ptr<nodes::node> node_manager::create_node(const std::string& type, message::error_e& error)
 {
     nodes::node_type_e t = nodes::type_from_string(type);
     return nodes::create_node(t, error);

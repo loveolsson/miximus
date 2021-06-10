@@ -1,6 +1,8 @@
 #pragma once
+#include "gpu/types.hpp"
 #include "gpu/vertex_attr.hpp"
 #include "utils/const_map.hpp"
+
 
 #include <array>
 #include <string_view>

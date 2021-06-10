@@ -21,7 +21,7 @@ class node_impl : public node
 
     void prepare() final {}
 
-    void execute(const node_cfg_t& cfg) final
+    void execute(const node_cfg& cfg) final
     {
         auto input_vals = iface_input.resolve_connection_values(cfg);
         iface_output.set_value(opt_test.get_value());

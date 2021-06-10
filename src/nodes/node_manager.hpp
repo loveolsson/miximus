@@ -20,7 +20,7 @@ class node_manager
     std::shared_mutex config_mutex_;
 
     std::shared_mutex nodes_mutex_;
-    nodes::node_cfg_t config_;
+    nodes::node_cfg   config_;
 
     void handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb);
     void handle_remove_node(json&& msg, int64_t client_id, web_server::response_fn_t cb);
@@ -29,7 +29,7 @@ class node_manager
     void handle_remove_connection(json&& msg, int64_t client_id, web_server::response_fn_t cb);
     void handle_config(json&& msg, int64_t client_id, web_server::response_fn_t cb);
 
-    std::shared_ptr<nodes::node> create_node(const std::string& type, message::error_t& error);
+    std::shared_ptr<nodes::node> create_node(const std::string& type, message::error_e& error);
 
     json get_config();
 
@@ -37,8 +37,8 @@ class node_manager
     node_manager();
     ~node_manager();
 
-    void              make_server_subscriptions(web_server::web_server& server);
-    nodes::node_cfg_t clone_node_config();
+    void            make_server_subscriptions(web_server::web_server& server);
+    nodes::node_cfg clone_node_config();
 };
 
 } // namespace miximus

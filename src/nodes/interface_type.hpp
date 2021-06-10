@@ -1,9 +1,10 @@
 #pragma once
 #include <cinttypes>
+#include <glm/fwd.hpp>
 
 namespace miximus {
 namespace gpu {
-struct vec2;
+using vec2 = glm::dvec2;
 struct rect;
 struct texture;
 struct framebuffer;
@@ -22,34 +23,34 @@ enum class interface_type_e
 };
 
 template <typename T>
-inline interface_type_e get_connection_type();
+inline interface_type_e get_interface_type();
 
 template <>
-inline interface_type_e get_connection_type<double>()
+inline interface_type_e get_interface_type<double>()
 {
     return interface_type_e::f64;
 }
 
 template <>
-inline interface_type_e get_connection_type<int64_t>()
+inline interface_type_e get_interface_type<int64_t>()
 {
     return interface_type_e::f64;
 }
 
 template <>
-inline interface_type_e get_connection_type<gpu::vec2>()
+inline interface_type_e get_interface_type<gpu::vec2>()
 {
     return interface_type_e::vec2;
 }
 
 template <>
-inline interface_type_e get_connection_type<gpu::rect>()
+inline interface_type_e get_interface_type<gpu::rect>()
 {
     return interface_type_e::rect;
 }
 
 template <>
-inline interface_type_e get_connection_type<gpu::texture>()
+inline interface_type_e get_interface_type<gpu::texture>()
 {
     return interface_type_e::framebuffer;
 }

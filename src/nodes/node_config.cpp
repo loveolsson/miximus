@@ -4,7 +4,7 @@
 
 namespace miximus::nodes {
 
-node* node_cfg_t::find_node(const std::string& id) const
+node* node_cfg::find_node(const std::string& id) const
 {
     auto it = nodes.find(id);
     if (it != nodes.end()) {
@@ -14,7 +14,7 @@ node* node_cfg_t::find_node(const std::string& id) const
     return nullptr;
 }
 
-bool node_cfg_t::erase_node(const std::string& id)
+bool node_cfg::erase_node(const std::string& id)
 {
     auto it = nodes.find(id);
     if (it != nodes.end()) {
@@ -25,7 +25,7 @@ bool node_cfg_t::erase_node(const std::string& id)
     return false;
 }
 
-bool node_cfg_t::erase_connection(const connection& con)
+bool node_cfg::erase_connection(const connection& con)
 {
     auto it = connections.find(con);
     if (it != connections.end()) {

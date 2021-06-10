@@ -1,9 +1,10 @@
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
 
+#include <glad/glad.h>
+// GLAD needs to be included before GLFW to avoid APIENTRY redefinition warning in MSVC
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
-#include <glad/glad.h>
 
 #include <mutex>
 

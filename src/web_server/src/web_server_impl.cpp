@@ -116,37 +116,37 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
     auto action = message::get_action_from_payload(doc);
 
     switch (action) {
-        case message::action_t::invalid: {
+        case message::action_e::invalid: {
             terminate_and_log(hdl, "invalid action");
         } break;
 
-        case message::action_t::ping: {
+        case message::action_e::ping: {
             send(hdl, pong_payload);
         } break;
 
-        case message::action_t::subscribe: {
+        case message::action_e::subscribe: {
             nlohmann::json response;
 
             auto topic = message::get_topic_from_payload(doc);
             auto token = message::get_token_from_payload(doc);
 
-            if (topic != message::topic_t::invalid) {
+            if (topic != message::topic_e::invalid) {
                 con->second.topics.emplace(topic);
                 connections_by_topic_[(int)topic].emplace(hdl);
                 response = message::create_result_base_payload(token);
             } else {
-                response = message::create_error_base_payload(token, message::error_t::invalid_topic);
+                response = message::create_error_base_payload(token, message::error_e::invalid_topic);
             }
 
             send(hdl, response);
         } break;
 
-        case message::action_t::unsubscribe: {
+        case message::action_e::unsubscribe: {
             auto topic = message::get_topic_from_payload(doc);
             auto token = message::get_token_from_payload(doc);
 
-            if (topic == message::topic_t::invalid) {
-                send(hdl, message::create_error_base_payload(token, message::error_t::invalid_topic));
+            if (topic == message::topic_e::invalid) {
+                send(hdl, message::create_error_base_payload(token, message::error_e::invalid_topic));
                 break;
             }
 
@@ -155,17 +155,17 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
             send(hdl, message::create_result_base_payload(token));
         } break;
 
-        case message::action_t::command: {
-            auto err   = message::error_t::no_error;
+        case message::action_e::command: {
+            auto err   = message::error_e::no_error;
             auto topic = message::get_topic_from_payload(doc);
 
-            if (topic == message::topic_t::invalid) {
-                err = message::error_t::invalid_topic;
+            if (topic == message::topic_e::invalid) {
+                err = message::error_e::invalid_topic;
             } else if (!subscriptions_[(int)topic]) {
-                err = message::error_t::internal_error;
+                err = message::error_e::internal_error;
             }
 
-            if (err != message::error_t::no_error) {
+            if (err != message::error_e::no_error) {
                 auto token = message::get_token_from_payload(doc);
                 send(hdl, message::create_error_base_payload(token, err));
                 break;
@@ -219,7 +219,7 @@ void web_server_impl::send(connection_hdl hdl, const std::string& msg)
 
 void web_server_impl::send(connection_hdl hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
 
-void web_server_impl::subscribe(message::topic_t topic, callback_t callback)
+void web_server_impl::subscribe(message::topic_e topic, callback_t callback)
 {
     endpoint_.get_io_service().post([this, topic, callback]() { subscriptions_[(int)topic] = callback; });
 }
@@ -303,9 +303,9 @@ void web_server_impl::broadcast_message_sync(const nlohmann::json& msg)
     broadcast_message_sync(topic, serialized);
 }
 
-void web_server_impl::broadcast_message_sync(message::topic_t topic, const std::string& msg)
+void web_server_impl::broadcast_message_sync(message::topic_e topic, const std::string& msg)
 {
-    if (topic <= message::topic_t::invalid && topic >= message::topic_t::_count) {
+    if (topic <= message::topic_e::invalid && topic >= message::topic_e::_count) {
         return;
     }
 
