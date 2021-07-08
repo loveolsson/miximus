@@ -7,9 +7,9 @@ server::server()
 {
 }
 
-server::~server() {}
+server::~server() { impl.reset(); }
 
-void server::subscribe(message::topic_e topic, callback_t callback) { impl->subscribe(topic, callback); }
+void server::subscribe(message::topic_e topic, const callback_t& callback) { impl->subscribe(topic, callback); }
 
 void server::start(uint16_t port) { impl->start(port); }
 

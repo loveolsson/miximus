@@ -1,8 +1,8 @@
 #pragma once
 #include "gpu/types.hpp"
 #include "gpu/vertex_attr.hpp"
-#include "utils/const_map.hpp"
 
+#include <frozen/map.h>
 
 #include <array>
 #include <string_view>
@@ -21,7 +21,7 @@ struct vertex_col_uv
 template <>
 inline constexpr auto get_vertex_type_info<vertex_col_uv>()
 {
-    return utils::const_map_t<std::string_view, vertex_attr>({
+    return frozen::map<std::string_view, vertex_attr, 2>{
         {"pos",
          {
              2,
@@ -38,7 +38,7 @@ inline constexpr auto get_vertex_type_info<vertex_col_uv>()
              offsetof(vertex_col_uv, uv),
              GL_FLOAT_VEC2,
          }},
-    });
+    };
 }
 
 } // namespace miximus::gpu

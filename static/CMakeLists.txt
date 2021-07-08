@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.9)
+set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
 
 add_subdirectory(bundler)
 

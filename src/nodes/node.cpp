@@ -64,8 +64,8 @@ interface* node::find_interface(std::string_view name)
 
 interface* node::get_prepared_interface(const node_cfg& cfg, std::string_view name)
 {
-    auto iface = find_interface(name);
-    if (iface) {
+    auto* iface = find_interface(name);
+    if (iface == nullptr) {
         return nullptr;
     }
 

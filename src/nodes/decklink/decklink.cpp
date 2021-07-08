@@ -46,7 +46,7 @@ decklink_ptr<IDeckLink> get_device_by_index(int i)
         return nullptr;
     }
 
-    IDeckLink* ptr;
+    IDeckLink* ptr = nullptr;
     while (iterator->Next(&ptr) == S_OK) {
         decklink_ptr dl_ptr(ptr);
 
@@ -68,7 +68,7 @@ static std::vector<std::string> get_device_names_impl()
         return res;
     }
 
-    IDeckLink* ptr;
+    IDeckLink* ptr = nullptr;
     while (iterator->Next(&ptr) == S_OK) {
         decklink_ptr dl_ptr(ptr);
 
@@ -77,7 +77,7 @@ static std::vector<std::string> get_device_names_impl()
         dl_ptr->GetDisplayName(&name);
         res.emplace_back(bstr_to_mbs(name));
 #else
-        const char* name;
+        const char* name = nullptr;
         dl_ptr->GetDisplayName(&name);
         res.emplace_back(name);
 #endif

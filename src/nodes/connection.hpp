@@ -15,12 +15,9 @@ struct connection
     bool operator==(const connection& o) const { return tie() == o.tie(); }
 };
 
-} // namespace miximus::nodes
-
-namespace std {
-template <>
-struct hash<miximus::nodes::connection>
+struct connection_hash
 {
     std::size_t operator()(const miximus::nodes::connection& c) const;
 };
-} // namespace std
+
+} // namespace miximus::nodes

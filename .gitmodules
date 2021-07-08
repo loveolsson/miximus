@@ -13,6 +13,6 @@
 [submodule "submodules/stb"]
 	path = submodules/stb
 	url = https://github.com/nothings/stb.git
-[submodule "submodules/eternal"]
-	path = submodules/eternal
-	url = https://github.com/mapbox/eternal.git
+[submodule "submodules/frozen"]
+	path = submodules/frozen
+	url = https://github.com/serge-sans-paille/frozen.git

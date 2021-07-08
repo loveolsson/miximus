@@ -1,5 +1,6 @@
 #include "server_impl.hpp"
 #include "messages/templates.hpp"
+#include "utils/bind.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -7,8 +8,7 @@
 
 namespace miximus::web_server::detail {
 
-static const auto pong_payload       = message::create_ping_response_payload().dump();
-static int64_t    next_connection_id = 0;
+static int64_t next_connection_id = 0;
 
 static std::string create_404_doc(std::string_view resource)
 {
@@ -37,13 +37,10 @@ web_server_impl::web_server_impl()
     endpoint_.init_asio();
 
     // Bind the handlers we are using
-    using websocketpp::lib::bind;
-    using websocketpp::lib::placeholders::_1;
-    using websocketpp::lib::placeholders::_2;
-    endpoint_.set_open_handler(bind(&web_server_impl::on_open, this, _1));
-    endpoint_.set_close_handler(bind(&web_server_impl::on_close, this, _1));
-    endpoint_.set_http_handler(bind(&web_server_impl::on_http, this, _1));
-    endpoint_.set_message_handler(bind(&web_server_impl::on_message, this, _1, _2));
+    endpoint_.set_open_handler(utils::bind(&web_server_impl::on_open, this));
+    endpoint_.set_close_handler(utils::bind(&web_server_impl::on_close, this));
+    endpoint_.set_http_handler(utils::bind(&web_server_impl::on_http, this));
+    endpoint_.set_message_handler(utils::bind(&web_server_impl::on_message, this));
 }
 
 web_server_impl::~web_server_impl() { stop(); }
@@ -52,13 +49,13 @@ void web_server_impl::terminate_and_log(connection_hdl hdl, const std::string& m
 {
     std::error_code ec;
     endpoint_.get_alog().write(websocketpp::log::alevel::fail, msg);
-    endpoint_.close(hdl, websocketpp::close::status::protocol_error, msg, ec);
+    endpoint_.close(std::move(hdl), websocketpp::close::status::protocol_error, msg, ec);
     if (ec) {
         endpoint_.get_alog().write(websocketpp::log::alevel::fail, ec.message());
     }
 }
 
-void web_server_impl::on_http(connection_hdl hdl)
+void web_server_impl::on_http(const connection_hdl& hdl)
 {
     // Upgrade our connection handle to a full connection_ptr
     server::connection_ptr con = endpoint_.get_con_from_hdl(hdl);
@@ -79,7 +76,7 @@ void web_server_impl::on_http(connection_hdl hdl)
         return;
     }
 
-    auto& encoding = con->get_request_header("Accept-Encoding");
+    const auto& encoding = con->get_request_header("Accept-Encoding");
 
     if (encoding.find("gzip") != std::string::npos) {
         con->replace_header("Content-Encoding", "gzip");
@@ -90,10 +87,9 @@ void web_server_impl::on_http(connection_hdl hdl)
 
     con->replace_header("Content-Type", std::string(file_it->second.mime));
     con->set_status(websocketpp::http::status_code::ok);
-    return;
 }
 
-void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
+void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& msg)
 {
     using namespace websocketpp::frame;
 
@@ -106,8 +102,8 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
         return terminate_and_log(hdl, "only text paylods are accepted");
     }
 
-    auto& payload = msg->get_payload();
-    auto  doc     = nlohmann::json::parse(payload, nullptr, false);
+    const auto& payload = msg->get_payload();
+    auto        doc     = nlohmann::json::parse(payload, nullptr, false);
 
     if (doc.is_discarded()) {
         return terminate_and_log(hdl, "invalid JSON payload");
@@ -121,6 +117,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
         } break;
 
         case message::action_e::ping: {
+            auto pong_payload = message::create_ping_response_payload().dump();
             send(hdl, pong_payload);
         } break;
 
@@ -132,7 +129,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 
             if (topic != message::topic_e::invalid) {
                 con->second.topics.emplace(topic);
-                connections_by_topic_[(int)topic].emplace(hdl);
+                connections_by_topic_[static_cast<int>(topic)].emplace(hdl);
                 response = message::create_result_base_payload(token);
             } else {
                 response = message::create_error_base_payload(token, message::error_e::invalid_topic);
@@ -151,7 +148,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
             }
 
             con->second.topics.erase(topic);
-            connections_by_topic_[(int)topic].erase(hdl);
+            connections_by_topic_[static_cast<int>(topic)].erase(hdl);
             send(hdl, message::create_result_base_payload(token));
         } break;
 
@@ -161,7 +158,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 
             if (topic == message::topic_e::invalid) {
                 err = message::error_e::invalid_topic;
-            } else if (!subscriptions_[(int)topic]) {
+            } else if (!subscriptions_[static_cast<int>(topic)]) {
                 err = message::error_e::internal_error;
             }
 
@@ -173,7 +170,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
 
             auto respose_fn = [this, hdl](nlohmann::json&& payload) { send(hdl, payload); };
 
-            subscriptions_[(int)topic](std::move(doc), con->second.id, respose_fn);
+            subscriptions_[static_cast<int>(topic)](std::move(doc), con->second.id, respose_fn);
         } break;
 
         default: {
@@ -182,7 +179,7 @@ void web_server_impl::on_message(connection_hdl hdl, message_ptr msg)
     }
 }
 
-void web_server_impl::on_open(connection_hdl hdl)
+void web_server_impl::on_open(const connection_hdl& hdl)
 {
     endpoint_.get_alog().write(websocketpp::log::alevel::http, "Connection opened");
 
@@ -194,7 +191,7 @@ void web_server_impl::on_open(connection_hdl hdl)
     send(hdl, message::create_socket_info_payload(id));
 }
 
-void web_server_impl::on_close(connection_hdl hdl)
+void web_server_impl::on_close(const connection_hdl& hdl)
 {
     endpoint_.get_alog().write(websocketpp::log::alevel::http, "Connection closed");
     auto con = connections_.find(hdl);
@@ -203,25 +200,25 @@ void web_server_impl::on_close(connection_hdl hdl)
     }
 
     auto& topics = con->second.topics;
-    for (auto it = topics.begin(); it != topics.end(); ++it) {
-        connections_by_topic_[(int)*it].erase(hdl);
+    for (auto topic : topics) {
+        connections_by_topic_[static_cast<int>(topic)].erase(hdl);
     }
 
     connections_by_id_.erase(con->second.id);
     connections_.erase(con);
 }
 
-void web_server_impl::send(connection_hdl hdl, const std::string& msg)
+void web_server_impl::send(const connection_hdl& hdl, const std::string& msg)
 {
     using namespace websocketpp::frame;
     endpoint_.send(hdl, msg, opcode::text);
 }
 
-void web_server_impl::send(connection_hdl hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
+void web_server_impl::send(const connection_hdl& hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
 
-void web_server_impl::subscribe(message::topic_e topic, callback_t callback)
+void web_server_impl::subscribe(message::topic_e topic, const callback_t& callback)
 {
-    endpoint_.get_io_service().post([this, topic, callback]() { subscriptions_[(int)topic] = callback; });
+    endpoint_.get_io_service().post([this, topic, callback]() { subscriptions_[static_cast<int>(topic)] = callback; });
 }
 
 void web_server_impl::start(uint16_t port)
@@ -244,9 +241,9 @@ void web_server_impl::stop()
     endpoint_.get_io_service().post([&]() {
         endpoint_.stop_listening();
 
-        for (auto it = connections_.begin(); it != connections_.end(); it++) {
+        for (auto& connection : connections_) {
             websocketpp::lib::error_code ec;
-            endpoint_.close(it->first, websocketpp::close::status::going_away, "server shutting down", ec);
+            endpoint_.close(connection.first, websocketpp::close::status::going_away, "server shutting down", ec);
             if (ec) {
                 endpoint_.get_alog().write(websocketpp::log::elevel::rerror,
                                            fmt::format("Error closing connection: {}", ec.message()));
@@ -309,10 +306,9 @@ void web_server_impl::broadcast_message_sync(message::topic_e topic, const std::
         return;
     }
 
-    auto& topic_set = connections_by_topic_[(int)topic];
-
-    for (auto it = topic_set.begin(); it != topic_set.end(); it++) {
-        send(*it, msg);
+    auto& topic_set = connections_by_topic_[static_cast<int>(topic)];
+    for (const auto& hdl : topic_set) {
+        send(hdl, msg);
     }
 }
 

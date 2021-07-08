@@ -25,13 +25,13 @@ class web_server_impl
 
     void terminate_and_log(connection_hdl hdl, const std::string& msg);
 
-    void on_http(connection_hdl hdl);
-    void on_message(connection_hdl hdl, message_ptr msg);
-    void on_open(connection_hdl hdl);
-    void on_close(connection_hdl hdl);
+    void on_http(const connection_hdl& hdl);
+    void on_message(const connection_hdl& hdl, const message_ptr& msg);
+    void on_open(const connection_hdl& hdl);
+    void on_close(const connection_hdl& hdl);
 
-    void send(connection_hdl hdl, const std::string&);
-    void send(connection_hdl hdl, const nlohmann::json&);
+    void send(const connection_hdl& hdl, const std::string&);
+    void send(const connection_hdl& hdl, const nlohmann::json&);
 
     static_files::file_map_t files_;
 
@@ -47,7 +47,7 @@ class web_server_impl
     web_server_impl();
     ~web_server_impl();
 
-    void subscribe(message::topic_e topic, callback_t callback);
+    void subscribe(message::topic_e topic, const callback_t& callback);
     void start(uint16_t port);
     void stop();
 

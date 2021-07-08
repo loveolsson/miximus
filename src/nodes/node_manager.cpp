@@ -10,9 +10,10 @@ namespace miximus {
 using namespace nlohmann;
 using namespace message;
 
-node_manager::node_manager() {}
-
-node_manager::~node_manager() {}
+node_manager::node_manager()
+    : server_(nullptr)
+{
+}
 
 void node_manager::make_server_subscriptions(web_server::server& server)
 {
@@ -34,7 +35,7 @@ nodes::node_cfg node_manager::clone_node_config()
     return clone;
 }
 
-void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::response_fn_t cb)
+void node_manager::handle_add_node(json&& msg, int64_t client_id, const web_server::response_fn_t& cb)
 {
     std::shared_lock lock(nodes_mutex_);
 
@@ -45,7 +46,7 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
         std::string id       = node_obj["id"];
         std::string type     = node_obj["type"];
 
-        if (config_.find_node(id)) {
+        if (config_.find_node(id) != nullptr) {
             return cb(create_error_base_payload(token, error_e::duplicate_id));
         }
 
@@ -77,7 +78,7 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
 
         cb(create_result_base_payload(token));
 
-        if (server_) {
+        if (server_ != nullptr) {
             server_->broadcast_message_sync(bcast_payload);
         }
     } catch (json::exception&) {
@@ -85,29 +86,29 @@ void node_manager::handle_add_node(json&& msg, int64_t client_id, web_server::re
     }
 }
 
-void node_manager::handle_remove_node(json&& msg, int64_t, web_server::response_fn_t cb)
+void node_manager::handle_remove_node(json&& msg, int64_t, const web_server::response_fn_t& cb)
 {
     std::shared_lock lock(nodes_mutex_);
 
     auto token = get_token_from_payload(msg);
 }
 
-void node_manager::hande_update_node(json&& msg, int64_t, web_server::response_fn_t cb)
+void node_manager::hande_update_node(json&& msg, int64_t, const web_server::response_fn_t& cb)
 {
     std::shared_lock lock(nodes_mutex_);
 }
 
-void node_manager::handle_add_connection(json&& msg, int64_t, web_server::response_fn_t cb)
+void node_manager::handle_add_connection(json&& msg, int64_t, const web_server::response_fn_t& cb)
 {
     std::shared_lock lock(nodes_mutex_);
 }
 
-void node_manager::handle_remove_connection(json&& msg, int64_t, web_server::response_fn_t cb)
+void node_manager::handle_remove_connection(json&& msg, int64_t, const web_server::response_fn_t& cb)
 {
     std::shared_lock lock(nodes_mutex_);
 }
 
-void node_manager::handle_config(json&& msg, int64_t client_id, web_server::response_fn_t cb)
+void node_manager::handle_config(json&& msg, int64_t client_id, const web_server::response_fn_t& cb)
 {
     (void)client_id;
 
@@ -115,7 +116,6 @@ void node_manager::handle_config(json&& msg, int64_t client_id, web_server::resp
     auto response = create_result_base_payload(token);
 
     response["config"] = get_config();
-
     cb(std::move(response));
 }
 

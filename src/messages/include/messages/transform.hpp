@@ -1,12 +1,13 @@
 #pragma once
 #include "messages/types.hpp"
-#include "utils/const_map.hpp"
+
+#include <frozen/map.h>
 
 #include <cassert>
 
 namespace miximus::message {
 
-constexpr auto action_lookup_table = utils::const_map_t<std::string_view, action_e>({
+constexpr frozen::map<std::string_view, action_e, (size_t)action_e::_count> action_lookup_table = {
     {"subscribe", action_e::subscribe},
     {"unsubscribe", action_e::unsubscribe},
     {"ping", action_e::ping},
@@ -14,11 +15,9 @@ constexpr auto action_lookup_table = utils::const_map_t<std::string_view, action
     {"command", action_e::command},
     {"result", action_e::result},
     {"error", action_e::error},
-});
+};
 
-static_assert(action_lookup_table.size() == (size_t)action_e::_count);
-
-constexpr auto action_resolve_table = utils::const_map_t<action_e, std::string_view>({
+constexpr frozen::map<action_e, std::string_view, (size_t)action_e::_count> action_resolve_table = {
     {action_e::subscribe, "subscribe"},
     {action_e::unsubscribe, "unsubscribe"},
     {action_e::ping, "ping"},
@@ -26,29 +25,25 @@ constexpr auto action_resolve_table = utils::const_map_t<action_e, std::string_v
     {action_e::command, "command"},
     {action_e::result, "result"},
     {action_e::error, "error"},
-});
+};
 
-static_assert(action_resolve_table.size() == (size_t)action_e::_count);
-
-constexpr auto topic_lookup_table = utils::const_map_t<std::string_view, topic_e>({
+constexpr frozen::map<std::string_view, topic_e, (size_t)topic_e::_count> topic_lookup_table = {
     {"add_node", topic_e::add_node},
     {"remove_node", topic_e::remove_node},
     {"add_connection", topic_e::add_connection},
     {"remove_connection", topic_e::remove_connection},
     {"update_node", topic_e::update_node},
     {"config", topic_e::config},
-});
+};
 
-static_assert(topic_lookup_table.size() == (size_t)topic_e::_count);
-
-constexpr auto topic_resolve_table = utils::const_map_t<topic_e, std::string_view>({
+constexpr frozen::map<topic_e, std::string_view, (size_t)topic_e::_count> topic_resolve_table = {
     {topic_e::add_node, "add_node"},
     {topic_e::remove_node, "remove_node"},
     {topic_e::add_connection, "add_connection"},
     {topic_e::remove_connection, "remove_connection"},
     {topic_e::update_node, "update_node"},
     {topic_e::config, "config"},
-});
+};
 
 static_assert(topic_resolve_table.size() == (size_t)topic_e::_count);
 

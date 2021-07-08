@@ -13,7 +13,6 @@ class node_impl : public node
 
   public:
     node_impl()
-        : node()
     {
         options_.emplace("test", &opt_test_);
         interfaces_.emplace("ip", &iface_input_);

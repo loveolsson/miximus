@@ -18,7 +18,7 @@ context::context(bool visible, context* parent)
     : window_(nullptr)
 {
     std::call_once(glfw_init, []() {
-        if (!glfwInit()) {
+        if (glfwInit() == 0) {
             throw std::runtime_error("Failed to initialize GLFW");
         }
 
@@ -35,19 +35,19 @@ context::context(bool visible, context* parent)
     }
 
     GLFWwindow* parent_window = nullptr;
-    if (parent) {
+    if (parent != nullptr) {
         parent_window = parent->window_;
     }
 
-    window_ = glfwCreateWindow(640, 480, "Miximus", NULL, parent_window);
-    if (!window_) {
+    window_ = glfwCreateWindow(640, 480, "Miximus", nullptr, parent_window);
+    if (window_ == nullptr) {
         throw std::runtime_error("Failed to create GLFW window");
     }
 
     make_current();
 
     std::call_once(glad_init, []() {
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        if (gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) == 0) {
             throw std::runtime_error("GLAD failed to load OpenGL procs");
         }
     });
@@ -59,7 +59,7 @@ context::context(bool visible, context* parent)
 
 context::~context()
 {
-    if (window_) {
+    if (window_ != nullptr) {
         glfwDestroyWindow(window_);
     }
 }

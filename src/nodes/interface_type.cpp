@@ -5,19 +5,19 @@
 
 namespace miximus::nodes {
 
-static const std::map<interface_type_e, std::set<interface_type_e>> conversion_pairs{
-    {
-        interface_type_e::f64,   // to
-        {interface_type_e::i64}, // from
-    },
-    {
-        interface_type_e::i64,
-        {interface_type_e::f64},
-    },
-};
-
 bool test_interface_pair(interface_type_e from, interface_type_e to)
 {
+    static std::map<interface_type_e, std::set<interface_type_e>> conversion_pairs = {
+        {
+            interface_type_e::f64,   // to
+            {interface_type_e::i64}, // from
+        },
+        {
+            interface_type_e::i64,
+            {interface_type_e::f64},
+        },
+    };
+
     if (from == to) {
         return true;
     }

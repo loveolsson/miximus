@@ -77,7 +77,7 @@ class shader_store
 
   public:
     shader_store();
-    ~shader_store();
+    ~shader_store() = default;
 
     shader_program& get_shader(std::string_view name);
 };

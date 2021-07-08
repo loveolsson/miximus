@@ -1,6 +1,7 @@
 #pragma once
 #include <nlohmann/json_fwd.hpp>
 
+#include <set>
 #include <string>
 
 namespace miximus::nodes {
@@ -16,7 +17,8 @@ class option
 
 class option_name : public option
 {
-    std::string name_;
+    std::string                         name_;
+    inline static std::set<std::string> names_in_use;
 
   public:
     option_name() {}

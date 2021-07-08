@@ -6,10 +6,10 @@
 
 namespace miximus::nodes {
 
-bool interface::add_connection(const connection& con, std::vector<connection>& removed)
+bool interface::add_connection(const connection& con, con_set_t& removed)
 {
     if (max_connection_count_ == 1 && !connections_.empty()) {
-        removed.push_back(*connections_.begin());
+        removed.emplace(*connections_.begin());
     } else if (connections_.size() >= max_connection_count_) {
         return false;
     }
@@ -30,9 +30,9 @@ interface* interface::resolve_connection(const node_cfg& cfg)
         throw std::runtime_error("resolve_connection called on output interface");
     }
 
-    if (connections_.size() > 0) {
-        auto& con = *connections_.begin();
-        if (auto n = cfg.find_node(con.from_node)) {
+    if (!connections_.empty()) {
+        const auto& con = *connections_.begin();
+        if (auto* n = cfg.find_node(con.from_node)) {
             return n->get_prepared_interface(cfg, con.from_interface);
         }
     }
@@ -47,33 +47,51 @@ interface* interface::resolve_connection(const node_cfg& cfg)
 template <>
 double interface_typed<double>::get_value_from(interface* iface)
 {
+    auto res = double{};
+
     switch (iface->type()) {
         case interface_type_e::f64:
-            return static_cast<interface_typed<double>*>(iface)->get_value();
+            if (auto* dyn = dynamic_cast<interface_typed<double>*>(iface)) {
+                res = dyn->get_value();
+            }
+            break;
 
         case interface_type_e::i64:
-            return static_cast<interface_typed<int64_t>*>(iface)->get_value();
+            if (auto* dyn = dynamic_cast<interface_typed<int64_t>*>(iface)) {
+                res = dyn->get_value();
+            }
+            break;
 
         default:
             throw std::runtime_error("incompatible interface types");
-            return 0;
     }
+
+    return res;
 }
 
 template <>
 int64_t interface_typed<int64_t>::get_value_from(interface* iface)
 {
+    auto res = int16_t{};
+
     switch (iface->type()) {
         case interface_type_e::f64:
-            return static_cast<interface_typed<double>*>(iface)->get_value();
+            if (auto* dyn = dynamic_cast<interface_typed<double>*>(iface)) {
+                res = dyn->get_value();
+            };
+            break;
 
         case interface_type_e::i64:
-            return static_cast<interface_typed<int64_t>*>(iface)->get_value();
+            if (auto* dyn = dynamic_cast<interface_typed<int64_t>*>(iface)) {
+                res = dyn->get_value();
+            }
+            break;
 
         default:
             throw std::runtime_error("incompatible interface types");
-            return 0;
     }
+
+    return res;
 }
 
 } // namespace miximus::nodes

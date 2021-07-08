@@ -18,7 +18,7 @@ class node_impl : public node
     node_type_e type_;
 
   public:
-    node_impl(node_type_e type)
+    explicit node_impl(node_type_e type)
         : node()
         , type_(type)
     {

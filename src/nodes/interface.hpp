@@ -1,7 +1,8 @@
 #pragma once
 #include "interface_type.hpp"
-#include "nodes/connection.hpp"
+#include "nodes/node_config.hpp"
 
+#include <climits>
 #include <optional>
 #include <stdexcept>
 #include <unordered_set>
@@ -9,13 +10,11 @@
 
 namespace miximus::nodes {
 
-class node_cfg;
-
 class interface
 {
-    std::unordered_set<connection> connections_;
-    bool                           is_input_;
-    int                            max_connection_count_;
+    con_set_t connections_;
+    bool      is_input_;
+    int       max_connection_count_;
 
   public:
     interface(bool is_input)
@@ -26,11 +25,12 @@ class interface
 
     virtual ~interface() {}
 
-    bool       add_connection(const connection& con, std::vector<connection>& removed);
-    bool       remove_connection(const connection& con);
-    interface* resolve_connection(const node_cfg& cfg);
-    bool       is_input() { return is_input_; }
-    void       set_max_connections(int count) { max_connection_count_ = count; }
+    bool             add_connection(const connection& con, con_set_t& removed);
+    bool             remove_connection(const connection& con);
+    interface*       resolve_connection(const node_cfg& cfg);
+    const con_set_t& get_connections() { return connections_; }
+    bool             is_input() { return is_input_; }
+    void             set_max_connections(int count) { max_connection_count_ = count; }
 
     virtual interface_type_e type()            = 0;
     virtual bool             has_value() const = 0;

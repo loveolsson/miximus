@@ -13,6 +13,8 @@ add_subdirectory(gpu)
 add_subdirectory(wrapper)
 add_subdirectory(application)
 
+set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
+
 add_executable(miximus
     ${MIXIMUS_MAIN_SOURCES}
 )

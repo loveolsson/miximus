@@ -1,6 +1,7 @@
 #include "gpu/shader.hpp"
 #include "logger/logger.hpp"
 
+#include <array>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,8 +24,8 @@ class shader
 
         id_ = glCreateShader(type);
 
-        auto shader_text = it->second.raw.c_str();
-        glShaderSource(id_, 1, &shader_text, NULL);
+        const char* shader_text = it->second.raw.c_str();
+        glShaderSource(id_, 1, &shader_text, nullptr);
         glCompileShader(id_);
 
         GLint is_compiled = 0;
@@ -50,7 +51,12 @@ class shader
         }
     }
 
-    GLuint id() { return id_; }
+    shader(const shader&) = delete;
+    shader(shader&&)      = delete;
+    void operator=(const shader&) = delete;
+    void operator=(shader&&) = delete;
+
+    GLuint id() const { return id_; }
 };
 
 shader_program::shader_program(const static_files::file_map_t& files,
@@ -59,7 +65,7 @@ shader_program::shader_program(const static_files::file_map_t& files,
     : program_(0)
 {
     auto log = spdlog::get("gpu");
-    log->debug("Compiling shader \"{}\"/\"{}\"", vert_name, frag_name);
+    log->debug(R"(Compiling shader "{}"/"{}")", vert_name, frag_name);
 
     shader vert(files, vert_name, GL_VERTEX_SHADER);
     shader frag(files, frag_name, GL_FRAGMENT_SHADER);
@@ -84,24 +90,24 @@ shader_program::shader_program(const static_files::file_map_t& files,
         throw std::runtime_error(std::string(log.data()));
     }
 
-    GLint   count;
-    GLint   size;
-    GLenum  type;
-    GLchar  name[16];
-    GLsizei name_length;
+    GLint                  count       = 0;
+    GLint                  size        = 0;
+    GLenum                 type        = 0;
+    GLsizei                name_length = 0;
+    std::array<GLchar, 16> name{};
 
     glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTES, &count);
     log->debug("Active Attributes: {}", count);
 
     for (GLuint i = 0; i < count; i++) {
-        glGetActiveAttrib(program_, i, sizeof(name), &name_length, &size, &type, name);
+        glGetActiveAttrib(program_, i, name.size(), &name_length, &size, &type, name.data());
 
-        log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, name);
+        log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, name.data());
 
-        GLint loc = glGetAttribLocation(program_, name);
+        GLint loc = glGetAttribLocation(program_, name.data());
         if (loc != -1) {
-            attribute attr;
-            attr.name = name;
+            attribute attr{};
+            attr.name = name.data();
             attr.loc  = loc;
             attr.type = type;
             attr.size = size;
@@ -114,18 +120,18 @@ shader_program::shader_program(const static_files::file_map_t& files,
     log->debug("Active Uniforms: {}", count);
 
     for (GLuint i = 0; i < count; i++) {
-        glGetActiveUniform(program_, i, sizeof(name), &name_length, &size, &type, name);
+        glGetActiveUniform(program_, i, name.size(), &name_length, &size, &type, name.data());
 
-        log->debug(" -- Uniform {} Type: {} Name: \"{}\"", i, type, name);
+        log->debug(" -- Uniform {} Type: {} Name: \"{}\"", i, type, name.data());
 
-        GLint loc = glGetUniformLocation(program_, name);
+        GLint loc = glGetUniformLocation(program_, name.data());
         if (loc != -1) {
-            uniform uni;
+            uniform uni{};
             uni.loc  = loc;
             uni.type = type;
             uni.size = size;
 
-            uniforms_.emplace(name, uni);
+            uniforms_.emplace(name.data(), uni);
         }
     }
 }
@@ -151,8 +157,6 @@ shader_store::shader_store()
     auto files = static_files::get_shader_files();
     shaders_.emplace("basic", shader_program{files, "basic_vert.glsl", "basic_frag.glsl"});
 }
-
-shader_store::~shader_store() {}
 
 shader_program& shader_store::get_shader(std::string_view name)
 {

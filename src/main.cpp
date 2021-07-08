@@ -11,13 +11,11 @@
 
 using namespace std::chrono_literals;
 
-namespace {
-volatile std::sig_atomic_t g_signal_status = 0;
-}
+static volatile std::sig_atomic_t g_signal_status = 0;
 
-void signal_handler(int signal) { g_signal_status = 1; }
+void signal_handler(int /*signal*/) { g_signal_status = 1; }
 
-int main(int argc, char* argv[])
+int main(int argc, char** argv)
 {
     using namespace miximus;
     std::signal(SIGINT, signal_handler);
@@ -52,7 +50,7 @@ int main(int argc, char* argv[])
 
             web_server_.start(7351);
 
-            while (!g_signal_status) {
+            while (g_signal_status == 0) {
                 gpu::context::poll();
                 std::this_thread::sleep_for(1ms);
             }

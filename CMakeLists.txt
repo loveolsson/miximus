@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(miximus)
 
 set(CMAKE_CXX_STANDARD 17)
+set(MIXIMUS_CLANG_TIDY "clang-tidy;-checks=*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-readability-magic-numbers, -cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -20,7 +21,7 @@ set(Boost_USE_RELEASE_LIBS ON)
 find_package(Boost COMPONENTS system REQUIRED)
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/eternal/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/frozen/include
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/stb
 )
 

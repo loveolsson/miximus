@@ -1,3 +1,5 @@
+set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
+
 add_library(web_server
     include/web_server/server.hpp
     src/server.cpp

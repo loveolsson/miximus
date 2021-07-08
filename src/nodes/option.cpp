@@ -1,11 +1,7 @@
 #include "nodes/option.hpp"
 #include "nodes/option_typed.hpp"
 
-#include <set>
-
 namespace miximus::nodes {
-
-static std::set<std::string> names_in_use;
 
 option_name::~option_name()
 {
@@ -40,8 +36,8 @@ nlohmann::json option_name::get_json() const { return name_; }
 bool option_position::set_json(const nlohmann::json& value)
 {
     if (value.is_array() && value.size() == 2) {
-        auto& x = value[0];
-        auto& y = value[1];
+        const auto& x = value[0];
+        const auto& y = value[1];
 
         if (x.is_number() && y.is_number()) {
             x_ = x;
