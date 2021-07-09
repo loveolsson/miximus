@@ -27,7 +27,7 @@ class node
     option_map_t    options_;
 
     node();
-    virtual ~node() {}
+    virtual ~node() = default;
 
   public:
     virtual node_type_e type()                   = 0;
@@ -41,7 +41,7 @@ class node
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     interface*             find_interface(std::string_view name);
-    interface*             get_prepared_interface(const node_cfg& cfg, std::string_view name);
+    virtual interface*     get_prepared_interface(const node_cfg& cfg, std::string_view name);
 };
 
 std::shared_ptr<node> create_node(node_type_e type, message::error_e& error);

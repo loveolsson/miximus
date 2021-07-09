@@ -31,8 +31,8 @@ interface* interface::resolve_connection(const node_cfg& cfg)
     }
 
     if (!connections_.empty()) {
-        const auto& con = *connections_.begin();
-        if (auto* n = cfg.find_node(con.from_node)) {
+        const connection& con = *connections_.begin();
+        if (node* n = cfg.find_node(con.from_node)) {
             return n->get_prepared_interface(cfg, con.from_interface);
         }
     }

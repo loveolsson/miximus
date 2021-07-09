@@ -2,6 +2,7 @@
 #include "logger/logger.hpp"
 #include "nodes/dummy/dummy.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node_config.hpp"
 
 #include <nlohmann/json.hpp>
 
