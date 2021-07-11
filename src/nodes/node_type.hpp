@@ -77,7 +77,7 @@ constexpr node_type_e type_from_string(std::string_view type)
     return it->second;
 }
 
-constexpr std::string_view type_from_string(node_type_e type)
+constexpr std::string_view type_to_string(node_type_e type)
 {
     auto it = node_string_lookup_table.find(type);
     if (it == node_string_lookup_table.end()) {

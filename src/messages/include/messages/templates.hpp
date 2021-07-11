@@ -1,5 +1,8 @@
 #pragma once
 #include "messages/transform.hpp"
+#include "messages/types.hpp"
+
+#include <nlohmann/json.hpp>
 
 namespace miximus::message {
 

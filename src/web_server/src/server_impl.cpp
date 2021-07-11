@@ -168,9 +168,7 @@ void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& m
                 break;
             }
 
-            auto respose_fn = [this, hdl](nlohmann::json&& payload) { send(hdl, payload); };
-
-            subscriptions_[static_cast<int>(topic)](std::move(doc), con->second.id, respose_fn);
+            subscriptions_[static_cast<int>(topic)](std::move(doc), con->second.id);
         } break;
 
         default: {

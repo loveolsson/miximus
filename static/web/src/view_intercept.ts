@@ -40,15 +40,6 @@ export class view_intercept {
 
       return view;
     });
-
-    this.ws.subscribe<command_update_node_s>(topic_t.update_node, (msg) => {
-      if (
-        msg.action === action_t.command &&
-        msg.topic === topic_t.update_node
-      ) {
-        this.handle_server_update_node(msg.id, msg.options);
-      }
-    });
   }
 
   static transform_position(view: NodeView): position_t {
@@ -73,12 +64,12 @@ export class view_intercept {
     };
 
     // Disgusting hack
-    const oldDoneRename = view.doneRenaming;
+    const old_done_rename = view.doneRenaming;
     view.doneRenaming = () => {
       if (info!.options.name !== view.tempName)
         info!.options.name = view.tempName;
       this.handle_value_change(info!, "name", view.tempName);
-      oldDoneRename.call(view);
+      old_done_rename.call(view);
     };
 
     view.data.events.update.addListener({}, (ev) => {
@@ -162,39 +153,5 @@ export class view_intercept {
 
   remove(id: string) {
     this.infos.delete(id);
-  }
-
-  handle_server_update_node(id: string, options?: options_s) {
-    const info = this.infos.get(id);
-    if (!info) {
-      return console.error(`Server tried to update non-existant node ${id}`);
-    }
-
-    for (const key in options) {
-      const val = options[key];
-      if (
-        val === undefined ||
-        isEqual(val, info.options[key], { strict: true })
-      ) {
-        continue;
-      }
-
-      info.options[key] = val;
-
-      switch (key) {
-        case "name":
-          info.view.data.name = val;
-          break;
-        case "position":
-          this.set_position(id, val);
-          break;
-        default:
-          try {
-            info.view.data.setOptionValue(key, val);
-          } catch (e) {
-            console.error(e);
-          }
-      }
-    }
   }
 }

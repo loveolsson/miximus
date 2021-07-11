@@ -1,4 +1,6 @@
 #pragma once
+#include <nlohmann/json_fwd.hpp>
+
 #include <string>
 #include <tuple>
 
@@ -13,6 +15,8 @@ struct connection
 
     auto tie() const { return std::tie(from_node, from_interface, to_node, to_interface); }
     bool operator==(const connection& o) const { return tie() == o.tie(); }
+
+    nlohmann::json serialize();
 };
 
 struct connection_hash

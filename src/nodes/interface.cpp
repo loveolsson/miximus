@@ -1,6 +1,5 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
-#include "nodes/node_config.hpp"
 
 #include <stdexcept>
 

@@ -2,7 +2,6 @@
 #include "logger/logger.hpp"
 #include "nodes/dummy/dummy.hpp"
 #include "nodes/interface.hpp"
-#include "nodes/node_config.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -92,11 +91,11 @@ std::shared_ptr<node> create_node(node_type_e type, message::error_e& error)
             return nullptr;
 
         default:
-#if 1
+#if 0
             error = message::error_e::invalid_type;
             return nullptr;
 #else
-            return dummy::create_node();
+            return dummy::create_node(type);
 #endif
     }
 }

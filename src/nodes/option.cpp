@@ -1,10 +1,13 @@
 #include "nodes/option.hpp"
+#include "logger/logger.hpp"
 #include "nodes/option_typed.hpp"
 
 namespace miximus::nodes {
 
 option_name::~option_name()
 {
+    std::unique_lock lock(names_in_use_mutex_);
+
     if (!name_.empty()) {
         names_in_use.erase(name_);
     }
@@ -12,7 +15,10 @@ option_name::~option_name()
 
 bool option_name::set_json(const nlohmann::json& value)
 {
+    std::unique_lock lock(value_mutex_);
+
     if (!value.is_string()) {
+        spdlog::get("app")->warn("Option value is not a string");
         return false;
     }
 
@@ -22,34 +28,50 @@ bool option_name::set_json(const nlohmann::json& value)
         return true;
     }
 
-    if (names_in_use.count(new_name) > 0) {
-        return false;
+    {
+        std::unique_lock lock(names_in_use_mutex_);
+
+        if (names_in_use.count(new_name) > 0) {
+            spdlog::get("app")->warn(R"(Node name "{}" already in use)", new_name);
+            return false;
+        }
+
+        names_in_use.erase(name_);
+        names_in_use.emplace(new_name);
     }
 
-    names_in_use.emplace(new_name);
     name_ = new_name;
     return true;
 }
 
-nlohmann::json option_name::get_json() const { return name_; }
+nlohmann::json option_name::get_json() const { return get_value(); }
 
 bool option_position::set_json(const nlohmann::json& value)
 {
-    if (value.is_array() && value.size() == 2) {
-        const auto& x = value[0];
-        const auto& y = value[1];
+    std::unique_lock lock(value_mutex_);
 
-        if (x.is_number() && y.is_number()) {
-            x_ = x;
-            y_ = y;
-
-            return true;
-        }
+    if (!value.is_array() || value.size() != 2) {
+        spdlog::get("app")->warn("Option value is not an array with 2 items");
+        return false;
     }
 
-    return false;
+    const auto& x = value[0];
+    const auto& y = value[1];
+
+    if (!x.is_number() || !y.is_number()) {
+        spdlog::get("app")->warn("Option values not numbers");
+        return false;
+    }
+
+    pos_ = {x, y};
+
+    return true;
 }
 
-nlohmann::json option_position::get_json() const { return nlohmann::json::array({x_, y_}); }
+nlohmann::json option_position::get_json() const
+{
+    auto pos = get_value();
+    return nlohmann::json::array({pos[0], pos[1]});
+}
 
 } // namespace miximus::nodes

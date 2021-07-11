@@ -40,6 +40,7 @@ enum class error_e
     invalid_type,
     duplicate_id,
     invalid_options,
+    not_found,
     _count,
 };
 

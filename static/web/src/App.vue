@@ -93,6 +93,7 @@ import { OptionPlugin } from "@baklavajs/plugin-options-vue";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { ws_wrapper } from "./websocket";
 import { register_types } from "./nodes/register_types";
+import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/types";
 import { view_intercept } from "./view_intercept";
 import { helpers } from "./helpers";
 import {
@@ -106,6 +107,8 @@ import {
   result_config_s,
   topic_t,
   connection_s,
+  options_s,
+  command_update_node_s,
 } from "./messages";
 
 @Component
@@ -153,13 +156,13 @@ export default class Miximus extends Vue {
     this.wsWrapper.subscribe<command_add_node_s>(
       topic_t.add_node,
       (msg, is_origin) => {
-        if (msg.action === action_t.command && msg.topic === topic_t.add_node) {
-          this.handle_server_add_node(
-            msg.node.type,
-            msg.node.id,
-            msg.node.options?.position,
-            is_origin
-          );
+        if (
+          msg.action === action_t.command &&
+          msg.topic === topic_t.add_node &&
+          !is_origin
+        ) {
+          this.handle_server_add_node(msg.node.type, msg.node.id);
+          this.handle_server_update_node(msg.node.id, msg.node.options);
         }
       }
     );
@@ -172,6 +175,19 @@ export default class Miximus extends Vue {
           msg.topic === topic_t.remove_node
         ) {
           this.handle_server_remove_node(msg.id);
+        }
+      }
+    );
+
+    this.wsWrapper.subscribe<command_update_node_s>(
+      topic_t.update_node,
+      (msg, is_origin) => {
+        if (
+          msg.action === action_t.command &&
+          msg.topic === topic_t.update_node &&
+          !is_origin
+        ) {
+          this.handle_server_update_node(msg.id, msg.options);
         }
       }
     );
@@ -218,19 +234,8 @@ export default class Miximus extends Vue {
         console.log("got config:", msg);
 
         for (const node of msg.config.nodes) {
-          this.handle_server_add_node(
-            node.type,
-            node.id,
-            node.options?.position,
-            false
-          );
-
-          if (node.options) {
-            this.view_intercept.handle_server_update_node(
-              node.id,
-              node.options
-            );
-          }
+          this.handle_server_add_node(node.type, node.id);
+          this.handle_server_update_node(node.id, node.options);
         }
 
         for (const con of msg.config.connections) {
@@ -256,16 +261,7 @@ export default class Miximus extends Vue {
     }
   }
 
-  handle_server_add_node(
-    type: string,
-    id: string,
-    position: [number, number] | undefined,
-    is_origin: boolean
-  ) {
-    if (is_origin) {
-      return;
-    }
-
+  handle_server_add_node(type: string, id: string) {
     const node_type = this.editor.nodeTypes.get(type);
     if (!node_type) {
       return console.error(`Node type ${type} not found`);
@@ -273,13 +269,6 @@ export default class Miximus extends Vue {
 
     const node = new node_type() as Node;
     node.id = id;
-
-    if (position) {
-      (node as any).position = {
-        x: position[0],
-        y: position[1],
-      };
-    }
 
     this.node_to_be_added = node;
     this.editor.addNode(node);
@@ -293,6 +282,40 @@ export default class Miximus extends Vue {
 
     this.node_to_be_removed = node;
     this.editor.removeNode(node);
+  }
+
+  handle_server_update_node(id: string, options?: options_s) {
+    const node = this.editor.nodes.find((node) => node.id === id);
+    if (!options || !node) return;
+
+    if (options) {
+      for (let key in options) {
+        const value = options[key];
+        switch (key) {
+          case "position":
+            {
+              console.log("position", value);
+              const view = node as unknown as IViewNode;
+              view.position.x = value[0];
+              view.position.y = value[1];
+            }
+            break;
+
+          case "name":
+            {
+              node.name = value;
+            }
+            break;
+
+          default: {
+            const opt = node.options.get(key);
+            if (opt) {
+              opt.value = value;
+            }
+          }
+        }
+      }
+    }
   }
 
   handle_server_add_connection(con: connection_s) {

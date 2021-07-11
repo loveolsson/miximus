@@ -12,8 +12,7 @@ namespace detail {
 class web_server_impl;
 }
 
-typedef std::function<void(nlohmann::json&&)>                                response_fn_t;
-typedef std::function<void(nlohmann::json&&, int64_t, const response_fn_t&)> callback_t;
+typedef std::function<void(nlohmann::json&&, int64_t)> callback_t;
 
 class server
 {

@@ -7,12 +7,14 @@ namespace miximus::nodes::dummy {
 
 class node_impl : public node
 {
+    node_type_e             type_;
     option_typed<double>    opt_test_{};
     interface_typed<double> iface_input_{true};
     interface_typed<double> iface_output_{false};
 
   public:
-    node_impl()
+    explicit node_impl(node_type_e type)
+        : type_(type)
     {
         options_.emplace("test", &opt_test_);
         interfaces_.emplace("ip", &iface_input_);
@@ -29,9 +31,9 @@ class node_impl : public node
 
     void complete() final { node::complete(); }
 
-    node_type_e type() final { return node_type_e::invalid; }
+    node_type_e type() final { return type_; }
 };
 
-std::shared_ptr<node> create_node() { return std::make_shared<node_impl>(); }
+std::shared_ptr<node> create_node(node_type_e type) { return std::make_shared<node_impl>(type); }
 
 } // namespace miximus::nodes::dummy

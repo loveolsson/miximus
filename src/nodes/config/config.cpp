@@ -1,4 +1,4 @@
-#include "nodes/node_config.hpp"
+#include "nodes/config/config.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -18,11 +18,26 @@ node* node_cfg::find_node(const std::string& id) const
     return nullptr;
 }
 
-bool node_cfg::erase_node(const std::string& id)
+bool node_cfg::erase_node(const std::string& id, std::vector<connection>& removed_connections)
 {
+    std::vector<connection> temp_removed;
+
     auto it = nodes.find(id);
     if (it != nodes.end()) {
+        const auto& interfaces = it->second->get_interfaces();
+        for (const auto& iface : interfaces) {
+            const auto& connections = iface.second->get_connections();
+            temp_removed.insert(temp_removed.end(), connections.begin(), connections.end());
+        }
+
         nodes.erase(it);
+
+        for (auto&& connection : temp_removed) {
+            if (remove_connection(connection)) {
+                removed_connections.emplace_back(std::move(connection));
+            }
+        }
+
         return true;
     }
 

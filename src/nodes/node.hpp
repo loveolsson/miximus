@@ -41,7 +41,9 @@ class node
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     interface*             find_interface(std::string_view name);
-    virtual interface*     get_prepared_interface(const node_cfg& cfg, std::string_view name);
+
+    // NOTE(Love): get_prepared_interface needs to be virtual to link on MSVC and I have no idea why
+    virtual interface* get_prepared_interface(const node_cfg& cfg, std::string_view name);
 };
 
 std::shared_ptr<node> create_node(node_type_e type, message::error_e& error);

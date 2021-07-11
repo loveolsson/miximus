@@ -1,6 +1,6 @@
 #pragma once
 #include "interface_type.hpp"
-#include "nodes/node_config.hpp"
+#include "nodes/config/config.hpp"
 
 #include <climits>
 #include <optional>

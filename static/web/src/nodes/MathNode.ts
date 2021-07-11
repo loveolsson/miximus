@@ -6,7 +6,7 @@ export class MathNode extends Node {
 
   constructor() {
     super();
-    this.type = "MathNode";
+    this.type = "math_add_i64";
     this.name = "Math";
     this.addInputInterface("Number 1", "NumberOption", 1);
     this.addInputInterface("Number 2", "NumberOption", 10);

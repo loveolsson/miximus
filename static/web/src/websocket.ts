@@ -83,6 +83,10 @@ export class ws_wrapper extends EventEmitter<ws_events> {
         return;
       }
 
+      if (payload.action !== action_t.ping) {
+        console.log('Received', payload);
+      }
+
       switch (payload.action) {
         case action_t.ping:
           return this.handle_ping();
@@ -187,6 +191,10 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       const token = String(this.next_token++);
       this.callbacks.set(token, cb as message_callback_t<message_s>);
       msg.token = token;
+    }
+
+    if (msg.action !== action_t.ping) {
+      console.log('Sent', msg);
     }
 
     this.ws?.send(JSON.stringify(msg));
