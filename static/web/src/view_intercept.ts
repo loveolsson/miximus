@@ -134,14 +134,14 @@ export class view_intercept {
     });
   }
 
-  set_position(id: string, position: position_t): void {
+  set_position(id: string, position: position_t): boolean {
     const node = this.infos.get(id);
     if (!node) {
-      return;
+      return false;
     }
 
     if (node.waiting === wait_state_t.waiting || node.new_position) {
-      return;
+      return true;
     }
 
     node.options.position = position;
@@ -149,6 +149,8 @@ export class view_intercept {
       x: position[0],
       y: position[1],
     };
+
+    return true;
   }
 
   remove(id: string) {

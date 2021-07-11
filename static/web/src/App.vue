@@ -156,12 +156,11 @@ export default class Miximus extends Vue {
     this.wsWrapper.subscribe<command_add_node_s>(
       topic_t.add_node,
       (msg, is_origin) => {
-        if (
-          msg.action === action_t.command &&
-          msg.topic === topic_t.add_node &&
-          !is_origin
-        ) {
-          this.handle_server_add_node(msg.node.type, msg.node.id);
+        if (msg.action === action_t.command && msg.topic === topic_t.add_node) {
+          if (!is_origin) {
+            this.handle_server_add_node(msg.node.type, msg.node.id);
+          }
+
           this.handle_server_update_node(msg.node.id, msg.node.options);
         }
       }
@@ -294,10 +293,12 @@ export default class Miximus extends Vue {
         switch (key) {
           case "position":
             {
-              console.log("position", value);
-              const view = node as unknown as IViewNode;
-              view.position.x = value[0];
-              view.position.y = value[1];
+              if (!this.view_intercept.set_position(id, value)) {
+                // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
+                const view = node as unknown as IViewNode;
+                view.position.x = value[0];
+                view.position.y = value[1];
+              }
             }
             break;
 
