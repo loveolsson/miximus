@@ -1,6 +1,6 @@
 #pragma once
-#include "nodes/connection.hpp"
 #include "nodes/node_type.hpp"
+#include "types/connection.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 

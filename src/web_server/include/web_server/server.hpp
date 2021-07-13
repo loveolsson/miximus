@@ -1,5 +1,5 @@
 #pragma once
-#include "messages/types.hpp"
+#include "types/topic.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -22,7 +22,7 @@ class server
     server();
     ~server();
 
-    void subscribe(message::topic_e topic, const callback_t& callback);
+    void subscribe(topic_e topic, const callback_t& callback);
 
     void start(uint16_t port);
     void stop();

@@ -5,6 +5,7 @@ set(MIXIMUS_MAIN_SOURCES
 )
 
 add_subdirectory(logger)
+add_subdirectory(types)
 add_subdirectory(utils)
 add_subdirectory(web_server)
 add_subdirectory(messages)

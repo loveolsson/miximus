@@ -4,7 +4,7 @@
 
 namespace miximus::nodes {
 
-nlohmann::json connection::serialize()
+nlohmann::json connection::serialize() const
 {
     return {
         {"from_node", from_node},

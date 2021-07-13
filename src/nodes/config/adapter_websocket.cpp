@@ -87,8 +87,6 @@ void websocket_config::handle_update_node(json&& msg, int64_t client_id)
         std::string id      = msg["id"];
         auto&       options = msg["options"];
 
-        spdlog::get("http")->info(R"(Updating node with id "{}")", id);
-
         auto res = manager_->handle_update_node(id, options, client_id);
 
         if (res == error_e::no_error) {
@@ -103,9 +101,57 @@ void websocket_config::handle_update_node(json&& msg, int64_t client_id)
     }
 }
 
-void websocket_config::handle_add_connection(json&& msg, int64_t client_id) {}
+void websocket_config::handle_add_connection(json&& msg, int64_t client_id)
+{
+    auto token = get_token_from_payload(msg);
 
-void websocket_config::handle_remove_connection(json&& msg, int64_t client_id) {}
+    try {
+        auto&      con_obj = msg["connection"];
+        connection con;
+        con.from_node      = con_obj["from_node"];
+        con.from_interface = con_obj["from_interface"];
+        con.to_node        = con_obj["to_node"];
+        con.to_interface   = con_obj["to_interface"];
+
+        auto res = manager_->handle_add_connection(con, client_id);
+
+        if (res == error_e::no_error) {
+            server_.send_message_sync(create_result_base_payload(token), client_id);
+        } else {
+            server_.send_message_sync(create_error_base_payload(token, res), client_id);
+        }
+
+    } catch (json::exception& e) {
+        spdlog::get("http")->warn("Received malformed payload for add connection: {}", e.what());
+        server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
+    }
+}
+
+void websocket_config::handle_remove_connection(json&& msg, int64_t client_id)
+{
+    auto token = get_token_from_payload(msg);
+
+    try {
+        auto&      con_obj = msg["connection"];
+        connection con;
+        con.from_node      = con_obj["from_node"];
+        con.from_interface = con_obj["from_interface"];
+        con.to_node        = con_obj["to_node"];
+        con.to_interface   = con_obj["to_interface"];
+
+        auto res = manager_->handle_remove_connection(con, client_id);
+
+        if (res == error_e::no_error) {
+            server_.send_message_sync(create_result_base_payload(token), client_id);
+        } else {
+            server_.send_message_sync(create_error_base_payload(token, res), client_id);
+        }
+
+    } catch (json::exception& e) {
+        spdlog::get("http")->warn("Received malformed payload for remove connection: {}", e.what());
+        server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
+    }
+}
 
 void websocket_config::handle_config(json&& msg, int64_t client_id)
 {
@@ -150,8 +196,22 @@ void websocket_config::emit_update_node(std::string_view id, const json& options
     server_.broadcast_message_sync(payload);
 }
 
-void websocket_config::emit_add_connection(const connection& con, int64_t client_id) {}
+void websocket_config::emit_add_connection(const connection& con, int64_t client_id)
+{
+    auto payload          = create_command_base_payload(topic_e::add_connection);
+    payload["origin_id"]  = client_id;
+    payload["connection"] = con.serialize();
 
-void websocket_config::emit_remove_connection(const connection& con, int64_t client_id) {}
+    server_.broadcast_message_sync(payload);
+}
+
+void websocket_config::emit_remove_connection(const connection& con, int64_t client_id)
+{
+    auto payload          = create_command_base_payload(topic_e::remove_connection);
+    payload["origin_id"]  = client_id;
+    payload["connection"] = con.serialize();
+
+    server_.broadcast_message_sync(payload);
+}
 
 } // namespace miximus::nodes

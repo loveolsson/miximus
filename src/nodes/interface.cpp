@@ -25,7 +25,7 @@ bool interface::remove_connection(const connection& con)
 
 interface* interface::resolve_connection(const node_cfg& cfg)
 {
-    if (!is_input_) {
+    if (direction_ == dir::output) {
         throw std::runtime_error("resolve_connection called on output interface");
     }
 
@@ -62,7 +62,7 @@ double interface_typed<double>::get_value_from(interface* iface)
             break;
 
         default:
-            throw std::runtime_error("incompatible interface types");
+            break;
     }
 
     return res;
@@ -87,7 +87,7 @@ int64_t interface_typed<int64_t>::get_value_from(interface* iface)
             break;
 
         default:
-            throw std::runtime_error("incompatible interface types");
+            break;
     }
 
     return res;

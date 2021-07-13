@@ -12,14 +12,22 @@ namespace miximus::nodes {
 
 class interface
 {
+  public:
+    enum class dir
+    {
+        input,
+        output,
+    };
+
+  private:
     con_set_t connections_;
-    bool      is_input_;
+    dir       direction_;
     int       max_connection_count_;
 
   public:
-    interface(bool is_input)
-        : is_input_(is_input)
-        , max_connection_count_(is_input_ ? 1 : INT_MAX)
+    interface(dir direction)
+        : direction_(direction)
+        , max_connection_count_(direction == dir::input ? 1 : INT_MAX)
     {
     }
 
@@ -29,7 +37,7 @@ class interface
     bool             remove_connection(const connection& con);
     interface*       resolve_connection(const node_cfg& cfg);
     const con_set_t& get_connections() { return connections_; }
-    bool             is_input() { return is_input_; }
+    dir              direction() { return direction_; }
     void             set_max_connections(int count) { max_connection_count_ = count; }
 
     virtual interface_type_e type()            = 0;
@@ -43,8 +51,8 @@ class interface_typed : public interface
     std::optional<T> value_;
 
   public:
-    interface_typed(bool is_input)
-        : interface(is_input){};
+    interface_typed(dir direction)
+        : interface(direction){};
     ~interface_typed(){};
 
     bool resolve_connection_value(const node_cfg& cfg);
@@ -64,10 +72,6 @@ class interface_typed : public interface
 
     void set_value(const T& value) { value_ = value; }
 
-    /**
-     * Get value from another interface, with conversion if possible
-     * @throw std::runtime_error if the value conversion is not possible
-     */
     static T get_value_from(interface*);
 };
 
@@ -91,7 +95,7 @@ template <typename T>
 T interface_typed<T>::get_value_from(interface* iface)
 {
     if (get_interface_type<T>() != iface->type()) {
-        throw std::runtime_error("incompatible interface types");
+        return T();
     }
 
     return static_cast<interface_typed<T>*>(iface)->get_value();

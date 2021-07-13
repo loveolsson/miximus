@@ -1,5 +1,6 @@
 #pragma once
-#include "messages/transform.hpp"
+#include "types/action.hpp"
+#include "types/topic.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -24,14 +25,14 @@ static inline topic_e get_topic_from_payload(const nlohmann::json& payload)
     return topic_from_string(top->get<std::string_view>());
 }
 
-static inline token_ref_t get_token_from_payload(const nlohmann::json& payload)
+static inline std::string_view get_token_from_payload(const nlohmann::json& payload)
 {
     auto token = payload.find("token");
     if (token == payload.cend() || !token->is_string()) {
         return {};
     }
 
-    return token->get<token_ref_t>();
+    return token->get<std::string_view>();
 }
 
 } // namespace miximus::message

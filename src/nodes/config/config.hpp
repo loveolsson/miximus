@@ -1,5 +1,5 @@
 #pragma once
-#include "nodes/connection.hpp"
+#include "types/connection.hpp"
 
 #include <memory>
 #include <string>
@@ -20,8 +20,16 @@ class node_cfg
     con_set_t  connections;
 
     node* find_node(const std::string& id) const;
-    bool  erase_node(const std::string& id, std::vector<connection>& removed_connections);
-    bool  remove_connection(const connection& con);
-    bool  is_connection_circular(const connection& con) const;
 };
+
+inline node* node_cfg::find_node(const std::string& id) const
+{
+    auto it = nodes.find(id);
+    if (it != nodes.end()) {
+        return it->second.get();
+    }
+
+    return nullptr;
+}
+
 } // namespace miximus::nodes

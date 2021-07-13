@@ -7,10 +7,12 @@ namespace miximus::nodes::dummy {
 
 class node_impl : public node
 {
+    using dir = interface::dir;
+
     node_type_e             type_;
     option_typed<double>    opt_test_{};
-    interface_typed<double> iface_input_{true};
-    interface_typed<double> iface_output_{false};
+    interface_typed<double> iface_input_{dir::input};
+    interface_typed<double> iface_output_{dir::output};
 
   public:
     explicit node_impl(node_type_e type)

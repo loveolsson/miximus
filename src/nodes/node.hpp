@@ -1,7 +1,7 @@
 #pragma once
-#include "messages/types.hpp"
 #include "nodes/node_type.hpp"
 #include "nodes/option.hpp"
+#include "types/error.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -46,6 +46,6 @@ class node
     virtual interface* get_prepared_interface(const node_cfg& cfg, std::string_view name);
 };
 
-std::shared_ptr<node> create_node(node_type_e type, message::error_e& error);
+std::shared_ptr<node> create_node(node_type_e type, error_e& error);
 
 } // namespace miximus::nodes

@@ -1,5 +1,6 @@
 import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import NodeView from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/src/components/node/Node.vue";
+
 import { ws_wrapper } from "./websocket";
 import {
   action_t,
@@ -87,6 +88,8 @@ export class view_intercept {
 
   handle_value_change(info: NodeInfo, key: string, value: any) {
     info.options[key] = value;
+
+    console.log(key, value);
 
     const payload: command_update_node_s = {
       action: action_t.command,

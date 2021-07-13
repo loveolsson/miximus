@@ -11,9 +11,11 @@ namespace miximus::nodes::math {
 template <typename T, auto Op>
 class node_impl : public node
 {
-    interface_typed<T> iface_a_{true};
-    interface_typed<T> iface_b_{true};
-    interface_typed<T> iface_res_{false};
+    using dir = interface::dir;
+
+    interface_typed<T> iface_a_{dir::input};
+    interface_typed<T> iface_b_{dir::input};
+    interface_typed<T> iface_res_{dir::output};
 
     node_type_e type_;
 

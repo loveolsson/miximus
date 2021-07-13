@@ -46,6 +46,7 @@ int main(int argc, char** argv)
 
         web_server::server  web_server_;
         nodes::node_manager node_manager_;
+
         node_manager_.add_adapter(std::make_unique<nodes::websocket_config>(web_server_));
 
         {
@@ -58,6 +59,8 @@ int main(int argc, char** argv)
                 std::this_thread::sleep_for(1ms);
             }
         }
+
+        node_manager_.clear_adapters();
 
         gpu::context::terminate();
 
