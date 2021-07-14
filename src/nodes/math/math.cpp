@@ -17,7 +17,7 @@ class node_impl : public node_i
 
     const node_type_e type_;
 
-    option_typed<operation> operation_{operation_setter, operation_getter};
+    option_typed<operation_e> operation_{operation_setter, operation_getter};
 
     interface<T> iface_a_{dir::input};
     interface<T> iface_b_{dir::input};
@@ -33,31 +33,31 @@ class node_impl : public node_i
         interfaces_.emplace("res", &iface_res_);
     }
 
-    void prepare() final {}
+    bool prepare() final { return false; }
 
-    void execute(node_map_t& nodes, con_map_t& con_map) final
+    void execute(node_map_t& nodes, node_state& state) final
     {
-        iface_a_.resolve_connection_value(nodes, con_map["a"]);
-        iface_b_.resolve_connection_value(nodes, con_map["b"]);
+        iface_a_.resolve_connection_value(nodes, state.con_map["a"]);
+        iface_b_.resolve_connection_value(nodes, state.con_map["b"]);
 
         T res{};
         T a = iface_a_.get_value();
         T b = iface_b_.get_value();
 
         switch (operation_.get_value()) {
-            case operation::add:
+            case operation_e::add:
                 res = a + b;
                 break;
-            case operation::sub:
+            case operation_e::sub:
                 res = a - b;
                 break;
-            case operation::mul:
+            case operation_e::mul:
                 res = a * b;
                 break;
-            case operation::min:
+            case operation_e::min:
                 res = glm::min(a, b);
                 break;
-            case operation::max:
+            case operation_e::max:
                 res = glm::max(a, b);
                 break;
             default:

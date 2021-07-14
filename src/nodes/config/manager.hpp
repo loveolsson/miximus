@@ -52,6 +52,7 @@ class node_manager
     node_map_t clone_nodes();
     void       add_adapter(std::unique_ptr<adapter_i>&& adapter);
     void       clear_adapters();
+    void       run_one_frame();
 };
 
 } // namespace miximus::nodes

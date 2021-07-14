@@ -23,11 +23,11 @@ class node_impl : public node_i
         interfaces_.emplace("op", &iface_output_);
     }
 
-    void prepare() final {}
+    bool prepare() final { return false; }
 
-    void execute(node_map_t& nodes, con_map_t& connections) final
+    void execute(node_map_t& nodes, node_state& state) final
     {
-        iface_input_.resolve_connection_value(nodes, connections["ip"]);
+        iface_input_.resolve_connection_value(nodes, state.con_map["ip"]);
         iface_output_.set_value(opt_test_.get_value());
     }
 

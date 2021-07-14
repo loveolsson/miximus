@@ -1,5 +1,8 @@
 #pragma once
+#include "utils/lookup.hpp"
+
 #include <frozen/map.h>
+
 #include <string_view>
 
 namespace miximus {
@@ -36,6 +39,8 @@ constexpr frozen::map<action_e, std::string_view, (size_t)action_e::_count> acti
     {action_e::result, "result"},
     {action_e::error, "error"},
 };
+
+static_assert(verify_lookup(action_lookup_table, action_resolve_table), "Lookup tables does not match");
 
 constexpr action_e action_from_string(std::string_view action)
 {

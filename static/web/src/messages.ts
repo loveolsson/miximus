@@ -18,21 +18,9 @@ export const enum topic_e {
 }
 
 export const enum type_e {
-  math_add_i64 = "math_add_i64",
-  math_add_f64 = "math_add_f64",
-  math_add_vec2 = "math_add_vec2",
-  math_sub_i64 = "math_sub_i64",
-  math_sub_f64 = "math_sub_f64",
-  math_sub_vec2 = "math_sub_vec2",
-  math_mul_i64 = "math_mul_i64",
-  math_mul_f64 = "math_mul_f64",
-  math_mul_vec2 = "math_mul_vec2",
-  math_min_i64 = "math_min_i64",
-  math_min_f64 = "math_min_f64",
-  math_min_vec2 = "math_min_vec2",
-  math_max_i64 = "math_max_i64",
-  math_max_f64 = "math_max_f64",
-  math_max_vec2 = "math_max_vec2",
+  math_i64 = "math_i64",
+  math_f64 = "math_f64",
+  math_vec2 = "math_vec2",
 }
 
 export type position_t = [number, number];

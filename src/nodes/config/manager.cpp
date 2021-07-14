@@ -10,7 +10,7 @@
 namespace miximus::nodes {
 using nlohmann::json;
 
-static auto log() { return spdlog::get("http"); };
+static auto log() { return spdlog::get("app"); };
 
 node_map_t node_manager::clone_nodes()
 {
@@ -22,10 +22,10 @@ error_e
 node_manager::handle_add_node(node_type_e type, const std::string& id, const nlohmann::json& options, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
-    log()->info(R"(Creating "{}" node with id "{}")", type_to_string(type), id);
+    log()->info("Creating {} node with id {}", type_to_string(type), id);
 
     if (nodes_.count(id) > 0) {
-        log()->warn(R"(Node ID "{}" already in use)", id);
+        log()->warn("Node id {} already in use", id);
         return error_e::duplicate_id;
     }
 
@@ -46,15 +46,15 @@ node_manager::handle_add_node(node_type_e type, const std::string& id, const nlo
         adapter->emit_add_node(type, id, resolved_options, client_id);
     }
 
-    node_state state;
+    node_record record;
 
     // Prime the state with a con_set_t for each interface
     for (auto& [id, _] : node->get_interfaces()) {
-        state.con_map.emplace(id, con_set_t{});
+        record.state.con_map.emplace(id, con_set_t{});
     }
 
-    state.node = std::move(node);
-    nodes_.emplace(id, std::move(state));
+    record.node = std::move(node);
+    nodes_.emplace(id, std::move(record));
 
     return error;
 }
@@ -65,11 +65,11 @@ error_e node_manager::handle_remove_node(const std::string& id, int64_t client_i
 
     std::vector<connection> removed_connections;
 
-    log()->info(R"(Removing node with id "{}")", id);
+    log()->info("Removing node with id {}", id);
 
     auto node_it = nodes_.find(id);
     if (node_it == nodes_.end()) {
-        log()->warn("Node to remove not found: {}", id);
+        log()->warn("Node with id {} not found", id);
         return error_e::not_found;
     }
 
@@ -77,7 +77,7 @@ error_e node_manager::handle_remove_node(const std::string& id, int64_t client_i
 
     const auto& ifaces = node->get_interfaces();
     for (const auto& [id, iface] : ifaces) {
-        const auto& cons = node_it->second.con_map[id];
+        const auto& cons = node_it->second.state.con_map[id];
         removed_connections.insert(removed_connections.end(), cons.begin(), cons.end());
     }
 
@@ -98,11 +98,11 @@ error_e node_manager::handle_update_node(const std::string& id, const nlohmann::
 {
     std::unique_lock lock(nodes_mutex_);
 
-    log()->info(R"(Updating node with id "{}")", id);
+    log()->info("Updating node with id {}", id);
 
     auto node_it = nodes_.find(id);
     if (node_it == nodes_.end()) {
-        log()->warn(R"(Node with id "{}" not found)", id);
+        log()->warn("Node with id {} not found", id);
         return error_e::not_found;
     }
 
@@ -141,7 +141,7 @@ static bool is_connection_circular(const node_map_t&           nodes,
     auto node_it = nodes.find(con.from_node);
     if (node_it != nodes.end()) {
         auto& node    = node_it->second.node;
-        auto& con_map = node_it->second.con_map;
+        auto& con_map = node_it->second.state.con_map;
 
         for (const auto& [id, iface] : node->get_interfaces()) {
             if (iface->direction() == dir::output) {
@@ -224,8 +224,8 @@ error_e node_manager::handle_add_connection(connection con, int64_t client_id)
     con_set_t removed_connections;
     connections_.emplace(con);
 
-    auto& from_connections = from_node_it->second.con_map[con.from_interface];
-    auto& to_connections   = to_node_it->second.con_map[con.to_interface];
+    auto& from_connections = from_node_it->second.state.con_map[con.from_interface];
+    auto& to_connections   = to_node_it->second.state.con_map[con.to_interface];
 
     from_iface->add_connection(&from_connections, con, removed_connections);
     to_iface->add_connection(&to_connections, con, removed_connections);
@@ -248,11 +248,11 @@ error_e node_manager::handle_remove_connection(const connection& con, int64_t cl
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
         auto node_it = nodes_.find(node_name);
         if (node_it != nodes_.end()) {
-            auto& node    = node_it->second.node;
-            auto& con_map = node_it->second.con_map;
+            auto& node  = node_it->second.node;
+            auto& state = node_it->second.state;
 
-            auto connections = con_map.find(iface_name);
-            if (connections != con_map.end()) {
+            auto connections = state.con_map.find(iface_name);
+            if (connections != state.con_map.end()) {
                 connections->second.erase(con);
             }
         }
@@ -346,6 +346,27 @@ void node_manager::clear_adapters()
 {
     std::unique_lock lock(nodes_mutex_);
     adapters_.clear();
+}
+
+void node_manager::run_one_frame()
+{
+    auto conf = clone_nodes();
+
+    std::vector<node_record*> consumers;
+
+    for (auto& [_, state] : conf) {
+        if (state.node->prepare()) {
+            consumers.emplace_back(&state);
+        }
+    }
+
+    for (auto* record : consumers) {
+        record->node->execute(conf, record->state);
+    }
+
+    for (auto& [_, state] : conf) {
+        state.node->complete();
+    }
 }
 
 } // namespace miximus::nodes

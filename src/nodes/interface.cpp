@@ -22,12 +22,12 @@ interface_i* interface_i::resolve_connection(node_map_t& nodes, con_set_t& conne
     }
 
     if (!connections.empty()) {
-        const connection& con   = *connections.begin();
-        auto              state = nodes.find(con.from_node);
-        if (state != nodes.end()) {
-            const auto& node    = state->second.node;
-            auto&       con_map = state->second.con_map;
-            return node->get_prepared_interface(nodes, con_map, con.from_interface);
+        const connection& con    = *connections.begin();
+        auto              record = nodes.find(con.from_node);
+        if (record != nodes.end()) {
+            const auto& node  = record->second.node;
+            auto&       state = record->second.state;
+            return node->get_prepared_interface(nodes, state, con.from_interface);
         }
     }
 

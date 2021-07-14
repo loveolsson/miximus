@@ -10,8 +10,8 @@ export class MathNode extends Node {
     this.name = "";
     this.addInputInterface("a", "Number", 1);
     this.addInputInterface("b", "Number", 10);
-    this.addOption("operation", "SelectOption", "Add", undefined, {
-      items: ["add", "subtract", "multiply", "min", "max"],
+    this.addOption("operation", "SelectOption", "add", undefined, {
+      items: ["add", "sub", "mul", "min", "max"],
     });
     this.addOutputInterface("res");
   }

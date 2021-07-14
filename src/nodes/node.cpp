@@ -63,7 +63,7 @@ interface_i* node_i::find_interface(std::string_view name)
     return nullptr;
 }
 
-interface_i* node_i::get_prepared_interface(node_map_t& nodes, con_map_t& con_map, std::string_view name)
+interface_i* node_i::get_prepared_interface(node_map_t& nodes, node_state& state, std::string_view name)
 {
     auto* iface = find_interface(name);
     if (iface == nullptr) {
@@ -71,7 +71,7 @@ interface_i* node_i::get_prepared_interface(node_map_t& nodes, con_map_t& con_ma
     }
 
     if (!iface->has_value()) {
-        execute(nodes, con_map);
+        execute(nodes, state);
     }
 
     if (!iface->has_value()) {

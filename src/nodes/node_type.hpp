@@ -1,4 +1,6 @@
 #pragma once
+#include "utils/lookup.hpp"
+
 #include <frozen/map.h>
 
 #include <string_view>
@@ -30,6 +32,8 @@ constexpr frozen::map<node_type_e, std::string_view, (size_t)node_type_e::_count
     {node_type_e::decklink_producer, "decklink_producer"},
     {node_type_e::decklink_consumer, "decklink_consumer"},
 };
+
+static_assert(verify_lookup(node_type_lookup_table, node_string_lookup_table), "Lookup tables does not match");
 
 constexpr node_type_e type_from_string(std::string_view type)
 {

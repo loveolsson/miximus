@@ -74,12 +74,10 @@ div.header button:hover {
           <span class="offline" v-if="!connected">Offline</span></span
         >
       </div>
-      <div class="controls">
-        <button v-on:click="save">Save</button>
-        <button v-on:click="load">Load</button>
-      </div>
+      <div class="controls"></div>
+      <button v-on:click="center_view">Center view</button>
     </div>
-    <div style="flex: 1">
+    <div style="flex: 1" ref="editorArea">
       <baklava-editor :plugin="viewPlugin" />
     </div>
   </div>
@@ -221,6 +219,54 @@ export default class Miximus extends Vue {
     this.wsWrapper.destroy();
   }
 
+  clear_nodes() {
+    while (this.editor.connections.length > 0) {
+      this.connection_to_be_removed = this.editor.connections[0];
+      this.editor.removeConnection(this.editor.connections[0]);
+    }
+
+    while (this.editor.nodes.length > 0) {
+      this.node_to_be_removed = this.editor.nodes[0];
+      this.editor.removeNode(this.editor.nodes[0]);
+    }
+  }
+
+  center_view() {
+    // Scale and center the graph on the page
+    // NOTE(Love): This code is horrendous, remember to fix it
+    if (this.editor.nodes.length > 0) {
+      let x0 = Number.MAX_VALUE;
+      let y0 = Number.MAX_VALUE;
+      let x1 = Number.MIN_VALUE;
+      let y1 = Number.MIN_VALUE;
+
+      for (let node of this.editor.nodes) {
+        const pos = (node as unknown as IViewNode).position;
+
+        x0 = Math.min(x0, pos.x + 90);
+        y0 = Math.min(y0, pos.y + 90);
+        x1 = Math.max(x1, pos.x + 90);
+        y1 = Math.max(y1, pos.y + 90);
+      }
+
+      const area = this.$refs.editorArea;
+      const w = x1 - x0 + 250;
+      const h = y1 - y0 + 250;
+
+      const scale = Math.min(area.clientHeight / h, area.clientWidth / w);
+      this.viewPlugin.scaling = scale;
+
+      const mid_x = (x0 + x1) / 2 - area.clientWidth / scale / 2;
+      const mid_y = (y0 + y1) / 2 - area.clientHeight / scale / 2;
+      this.viewPlugin.panning.x = -mid_x;
+      this.viewPlugin.panning.y = -mid_y;
+    } else {
+      this.viewPlugin.panning.x = 0;
+      this.viewPlugin.panning.y = 0;
+      this.viewPlugin.scaling = 1;
+    }
+  }
+
   handle_connected(id: number) {
     this.connected = true;
 
@@ -231,7 +277,7 @@ export default class Miximus extends Vue {
 
     this.wsWrapper.send<command_config_s, result_config_s>(payload, (msg) => {
       if (msg.action === action_e.result) {
-        console.log("got config:", msg);
+        this.clear_nodes();
 
         for (const node of msg.config.nodes) {
           this.handle_server_add_node(node.type, node.id);
@@ -241,6 +287,8 @@ export default class Miximus extends Vue {
         for (const con of msg.config.connections) {
           this.handle_server_add_connection(con);
         }
+
+        this.center_view();
       }
     });
   }
@@ -249,16 +297,7 @@ export default class Miximus extends Vue {
     console.log("WebSocket disconnected: ", code, reason);
 
     this.connected = false;
-
-    while (this.editor.connections.length > 0) {
-      this.connection_to_be_removed = this.editor.connections[0];
-      this.editor.removeConnection(this.editor.connections[0]);
-    }
-
-    while (this.editor.nodes.length > 0) {
-      this.node_to_be_removed = this.editor.nodes[0];
-      this.editor.removeNode(this.editor.nodes[0]);
-    }
+    this.clear_nodes();
   }
 
   handle_server_add_node(type: string, id: string) {
@@ -478,14 +517,6 @@ export default class Miximus extends Vue {
     this.wsWrapper.send(payload);
 
     return false;
-  }
-
-  save() {
-    console.log("Saving", JSON.stringify(this.editor.save(), null, 2));
-  }
-
-  load() {
-    console.log("Loading");
   }
 }
 </script>

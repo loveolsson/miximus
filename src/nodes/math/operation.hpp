@@ -1,64 +1,69 @@
 #pragma once
-#include <frozen/map.h>
+
 #include <nlohmann/json.hpp>
+
+#include <string_view>
 
 namespace miximus::nodes::math {
 
-enum class operation
+enum class operation_e
 {
-    add = 0,
+    add,
     sub,
     mul,
     min,
     max,
-    _count,
 };
 
-constexpr frozen::map<std::string_view, operation, (size_t)operation::_count> op_lookup_table = {
-    {"add", operation::add},
-    {"subtract", operation::sub},
-    {"multiply", operation::mul},
-    {"min", operation::min},
-    {"max", operation::max},
-};
-
-constexpr frozen::map<operation, std::string_view, (size_t)operation::_count> op_resolve_table = {
-    {operation::add, "add"},
-    {operation::sub, "subtract"},
-    {operation::mul, "multiply"},
-    {operation::min, "min"},
-    {operation::max, "max"},
-};
-
-constexpr operation op_from_string(std::string_view topic)
+constexpr operation_e op_from_string(std::string_view topic)
 {
-    auto it = op_lookup_table.find(topic);
-    if (it == op_lookup_table.end()) {
-        return operation::add;
+    if (topic == "sub") {
+        return operation_e::sub;
     }
 
-    return it->second;
-}
-
-constexpr std::string_view op_to_string(operation topic)
-{
-    auto it = op_resolve_table.find(topic);
-    if (it == op_resolve_table.end()) {
-        return "add";
+    if (topic == "mul") {
+        return operation_e::mul;
     }
 
-    return it->second;
+    if (topic == "min") {
+        return operation_e::min;
+    }
+
+    if (topic == "max") {
+        return operation_e::max;
+    }
+
+    return operation_e::add;
 }
 
-auto operation_setter = [](operation& t, const nlohmann::json& j) -> bool {
+constexpr std::string_view op_to_string(operation_e topic)
+{
+    switch (topic) {
+        case operation_e::add:
+            return "add";
+        case operation_e::sub:
+            return "sub";
+        case operation_e::mul:
+            return "mul";
+        case operation_e::min:
+            return "min";
+        case operation_e::max:
+            return "max";
+        default:
+            return "add";
+    }
+}
+
+constexpr auto operation_setter = [](operation_e& t, const nlohmann::json& j) -> bool {
     try {
         t = op_from_string(j.get<std::string_view>());
-        return true;
     } catch (nlohmann::json::exception& e) {
         return false;
     }
+
+    return true;
 };
 
-auto operation_getter = [](const operation& t) -> nlohmann::json { return op_to_string(t); };
+constexpr auto operation_getter = [](const operation_e& t) -> nlohmann::json { return op_to_string(t); };
 
 } // namespace miximus::nodes::math

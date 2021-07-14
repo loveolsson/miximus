@@ -1,5 +1,8 @@
 #pragma once
+#include "utils/lookup.hpp"
+
 #include <frozen/map.h>
+
 #include <string_view>
 
 namespace miximus {
@@ -42,6 +45,8 @@ constexpr frozen::map<error_e, std::string_view, (size_t)error_e::_count> error_
     {error_e::not_found, "not_found"},
     {error_e::circular_connection, "circular_connection"},
 };
+
+static_assert(verify_lookup(error_lookup_table, error_resolve_table), "Lookup tables does not match");
 
 constexpr error_e error_from_string(std::string_view topic)
 {

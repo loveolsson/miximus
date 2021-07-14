@@ -28,8 +28,8 @@ int main(int argc, char** argv)
     std::signal(SIGINT, signal_handler);
 
     try {
-        spdlog::level::level_enum log_level     = spdlog::level::info;
-        path                      settings_path = path(argv[0]).parent_path() / "settings.json";
+        auto log_level     = spdlog::level::info;
+        auto settings_path = path(argv[0]).parent_path() / "settings.json";
 
         for (int i = 1; i < argc; ++i) {
             std::string_view param(argv[i]);
@@ -64,8 +64,8 @@ int main(int argc, char** argv)
                     try {
                         node_manager_.set_config(json::parse(file));
                     } catch (json::exception& e) {
-                        // This error should panic as we don't want to run the app with a partial config, or overwrite the
-                        // broken file with an empty config on exit
+                        // This error should panic as we don't want to run the app with a partial config, or overwrite
+                        // the broken file with an empty config on exit
                         throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
                     }
                 } else {
@@ -82,16 +82,19 @@ int main(int argc, char** argv)
 
                 while (g_signal_status == 0) {
                     gpu::context::poll();
-                    std::this_thread::sleep_for(1ms);
+                    node_manager_.run_one_frame();
+                    std::this_thread::sleep_for(16ms);
                 }
             }
 
             node_manager_.clear_adapters();
+            web_server_.stop();
 
             {
                 std::ofstream file(settings_path);
                 if (file.is_open()) {
-                    file << node_manager_.get_config();
+                    log->info("Writing settings to {}", settings_path.u8string());
+                    file << std::setfill(' ') << std::setw(2) << node_manager_.get_config();
                 } else {
                     log->error("Failed to write settings to {}", settings_path.u8string());
                 }
