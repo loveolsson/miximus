@@ -58,7 +58,7 @@ int main(int argc, char** argv)
             nodes::node_manager node_manager_;
 
             {
-                log->info(R"(Reading settings file "{}" )", settings_path.c_str());
+                log->info(R"(Reading settings file "{}" )", settings_path.u8string());
                 std::ifstream file(settings_path);
                 if (file.is_open()) {
                     try {
@@ -67,7 +67,7 @@ int main(int argc, char** argv)
                         throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
                     }
                 } else {
-                    log->error("Failed to open settings file {}", settings_path.c_str());
+                    log->error("Failed to open settings file {}", settings_path.u8string());
                 }
             }
 
@@ -91,7 +91,7 @@ int main(int argc, char** argv)
                 if (file.is_open()) {
                     file << node_manager_.get_config();
                 } else {
-                    log->error("Failed to write settings to {}", settings_path.c_str());
+                    log->error("Failed to write settings to {}", settings_path.u8string());
                 }
             }
 

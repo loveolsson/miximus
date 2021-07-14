@@ -85,7 +85,7 @@ bool interface<double>::resolve_connection_value(node_map_t& nodes, con_set_t& c
             }
 
             case interface_type_e::i64: {
-                value_ = dynamic_cast<interface<int64_t>*>(iface)->get_value();
+                value_ = static_cast<double>(dynamic_cast<interface<int64_t>*>(iface)->get_value());
                 return true;
             }
 
@@ -104,7 +104,7 @@ bool interface<int64_t>::resolve_connection_value(node_map_t& nodes, con_set_t& 
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {
             case interface_type_e::f64: {
-                value_ = dynamic_cast<interface<double>*>(iface)->get_value();
+                value_ = static_cast<int64_t>(dynamic_cast<interface<double>*>(iface)->get_value());
                 return true;
             }
 
