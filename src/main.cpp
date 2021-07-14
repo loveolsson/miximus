@@ -73,6 +73,7 @@ int main(int argc, char** argv)
                 }
             }
 
+            // Add adapters _after_ config is loaded to prevent spam to the adapters during load
             node_manager_.add_adapter(std::make_unique<nodes::websocket_config>(node_manager_, web_server_));
 
             {
