@@ -8,50 +8,12 @@
 
 namespace miximus::nodes {
 
-node_i::node_i()
-{
-    options_.emplace("position", &opt_position_);
-    options_.emplace("name", &opt_name_);
-}
-
 void node_i::complete()
 {
     for (auto& [name, iface] : interfaces_) {
         (void)name;
         iface->reset();
     }
-}
-
-bool node_i::set_option(std::string_view option, const nlohmann::json& value)
-{
-    auto it = options_.find(option);
-
-    if (it != options_.end()) {
-        return it->second->set_json(value);
-    }
-
-    return false;
-}
-
-nlohmann::json node_i::get_options()
-{
-    auto options = nlohmann::json::object();
-
-    for (auto& [name, option] : options_) {
-        options.emplace(name, option->get_json());
-    }
-
-    return options;
-}
-
-nlohmann::json node_i::get_option(std::string_view option)
-{
-    auto it = options_.find(option);
-    if (it != options_.end()) {
-        return it->second->get_json();
-    }
-
-    return nlohmann::json(); // null
 }
 
 interface_i* node_i::find_interface(std::string_view name)

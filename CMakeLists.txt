@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(miximus)
 
 set(CMAKE_CXX_STANDARD 17)
-#set(MIXIMUS_CLANG_TIDY "clang-tidy;-checks=*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-readability-magic-numbers, -cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator")
+#set(MIXIMUS_CLANG_TIDY "clang-tidy;-checks=*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-readability-magic-numbers, -cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-hicpp-no-array-decay")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 

@@ -7,10 +7,26 @@
 
 #include <nlohmann/json.hpp>
 
+#include <set>
+
 namespace miximus::nodes {
 using nlohmann::json;
 
 static auto log() { return spdlog::get("app"); };
+
+static bool is_valid_common_option(std::string_view name, const json& value)
+{
+    if (name == "position") {
+        if (value.is_array() && value.size() == 2 && value[0].is_number() && value[1].is_number()) {
+            return true;
+        }
+    } else if (name == "name") {
+        if (value.is_string()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 node_map_t node_manager::clone_nodes()
 {
@@ -32,24 +48,28 @@ node_manager::handle_add_node(node_type_e type, const std::string& id, const nlo
     error_e error = error_e::no_error;
     auto    node  = create_node(type, error);
 
-    if (error != error_e::no_error || !node) {
+    if (error != error_e::no_error) {
         return error;
     }
 
-    for (auto option = options.begin(); option != options.end(); ++option) {
-        node->set_option(option.key(), option.value());
-    }
+    node_record record;
+    record.state.options = node->get_default_options();
 
-    auto resolved_options = node->get_options();
+    for (auto option = options.begin(); option != options.end(); ++option) {
+        const auto& key   = option.key();
+        const auto& value = option.value();
+
+        if (is_valid_common_option(key, value) || node->check_option(key, value)) {
+            record.state.options[key] = value;
+        }
+    }
 
     for (auto& adapter : adapters_) {
-        adapter->emit_add_node(type, id, resolved_options, client_id);
+        adapter->emit_add_node(type, id, record.state.options, client_id);
     }
 
-    node_record record;
-
     // Prime the state with a con_set_t for each interface
-    for (auto& [id, _] : node->get_interfaces()) {
+    for (const auto& [id, _] : node->get_interfaces()) {
         record.state.con_map.emplace(id, con_set_t{});
     }
 
@@ -106,18 +126,20 @@ error_e node_manager::handle_update_node(const std::string& id, const nlohmann::
         return error_e::not_found;
     }
 
-    auto& node = node_it->second.node;
-
-    auto bcast_options = nlohmann::json::object();
+    auto& node  = node_it->second.node;
+    auto& state = node_it->second.state;
 
     for (auto option = options.begin(); option != options.end(); ++option) {
-        if (node->set_option(option.key(), option.value())) {
-            bcast_options[option.key()] = option.value();
+        const auto& key   = option.key();
+        const auto& value = option.value();
+
+        if (is_valid_common_option(key, value) || node->check_option(key, value)) {
+            state.options[key] = value;
         }
     }
 
     for (auto& adapter : adapters_) {
-        adapter->emit_update_node(id, bcast_options, client_id);
+        adapter->emit_update_node(id, state.options, client_id);
     }
 
     return error_e::no_error;
@@ -138,10 +160,9 @@ static bool is_connection_circular(const node_map_t&           nodes,
         return true;
     }
 
-    auto node_it = nodes.find(con.from_node);
-    if (node_it != nodes.end()) {
-        auto& node    = node_it->second.node;
-        auto& con_map = node_it->second.state.con_map;
+    if (auto node_it = nodes.find(con.from_node); node_it != nodes.end()) {
+        const auto& node    = node_it->second.node;
+        const auto& con_map = node_it->second.state.con_map;
 
         for (const auto& [id, iface] : node->get_interfaces()) {
             if (iface->direction() == dir::output) {
@@ -149,7 +170,10 @@ static bool is_connection_circular(const node_map_t&           nodes,
             }
 
             auto connections = con_map.find(id);
-            assert(connections != con_map.end());
+            if (connections == con_map.end()) {
+                assert(false);
+                continue;
+            }
 
             for (const auto& c : connections->second) {
                 if (is_connection_circular(nodes, cleared_nodes, target_node_id, c)) {
@@ -283,11 +307,11 @@ json node_manager::get_config()
     auto nodes       = json::array();
     auto connections = json::array();
 
-    for (const auto& [id, state] : nodes_) {
+    for (const auto& [id, record] : nodes_) {
         json cfg{
             {"id", id},
-            {"type", type_to_string(state.node->type())},
-            {"options", state.node->get_options()},
+            {"type", type_to_string(record.node->type())},
+            {"options", record.state.options},
         };
 
         nodes.emplace_back(std::move(cfg));

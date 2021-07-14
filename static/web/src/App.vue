@@ -160,7 +160,11 @@ export default class Miximus extends Vue {
             this.handle_server_add_node(msg.node.type, msg.node.id);
           }
 
-          this.handle_server_update_node(msg.node.id, msg.node.options);
+          this.handle_server_update_node(
+            msg.node.id,
+            msg.node.options,
+            is_origin
+          );
         }
       }
     );
@@ -182,10 +186,9 @@ export default class Miximus extends Vue {
       (msg, is_origin) => {
         if (
           msg.action === action_e.command &&
-          msg.topic === topic_e.update_node &&
-          !is_origin
+          msg.topic === topic_e.update_node
         ) {
-          this.handle_server_update_node(msg.id, msg.options);
+          this.handle_server_update_node(msg.id, msg.options, is_origin);
         }
       }
     );
@@ -249,17 +252,19 @@ export default class Miximus extends Vue {
         y1 = Math.max(y1, pos.y + 90);
       }
 
-      const area = this.$refs.editorArea;
-      const w = x1 - x0 + 250;
-      const h = y1 - y0 + 250;
+      if (this.$refs.editorArea instanceof Element) {
+        const area = this.$refs.editorArea;
+        const w = x1 - x0 + 250;
+        const h = y1 - y0 + 250;
 
-      const scale = Math.min(area.clientHeight / h, area.clientWidth / w);
-      this.viewPlugin.scaling = scale;
+        const scale = Math.min(area.clientHeight / h, area.clientWidth / w);
+        this.viewPlugin.scaling = scale;
 
-      const mid_x = (x0 + x1) / 2 - area.clientWidth / scale / 2;
-      const mid_y = (y0 + y1) / 2 - area.clientHeight / scale / 2;
-      this.viewPlugin.panning.x = -mid_x;
-      this.viewPlugin.panning.y = -mid_y;
+        const mid_x = (x0 + x1) / 2 - area.clientWidth / scale / 2;
+        const mid_y = (y0 + y1) / 2 - area.clientHeight / scale / 2;
+        this.viewPlugin.panning.x = -mid_x;
+        this.viewPlugin.panning.y = -mid_y;
+      }
     } else {
       this.viewPlugin.panning.x = 0;
       this.viewPlugin.panning.y = 0;
@@ -281,7 +286,7 @@ export default class Miximus extends Vue {
 
         for (const node of msg.config.nodes) {
           this.handle_server_add_node(node.type, node.id);
-          this.handle_server_update_node(node.id, node.options);
+          this.handle_server_update_node(node.id, node.options, false);
         }
 
         for (const con of msg.config.connections) {
@@ -323,7 +328,11 @@ export default class Miximus extends Vue {
     this.editor.removeNode(node);
   }
 
-  handle_server_update_node(id: string, options?: options_s) {
+  handle_server_update_node(
+    id: string,
+    options: options_s | undefined,
+    is_origin: boolean
+  ) {
     const node = this.editor.nodes.find((node) => node.id === id);
     if (!options || !node) return;
 
@@ -333,6 +342,10 @@ export default class Miximus extends Vue {
         switch (key) {
           case "position":
             {
+              if (is_origin) {
+                continue;
+              }
+
               if (!this.view_intercept.set_position(id, value)) {
                 // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
                 const view = node as unknown as IViewNode;

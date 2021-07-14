@@ -1,6 +1,5 @@
 #include "nodes/dummy/dummy.hpp"
 #include "nodes/interface.hpp"
-#include "nodes/option_typed.hpp"
 #include "utils/bind.hpp"
 
 namespace miximus::nodes::dummy {
@@ -9,16 +8,14 @@ class node_impl : public node_i
 {
     using dir = interface_i::dir;
 
-    node_type_e          type_;
-    option_typed<double> opt_test_{};
-    interface<double>    iface_input_{dir::input};
-    interface<double>    iface_output_{dir::output};
+    node_type_e       type_;
+    interface<double> iface_input_{dir::input};
+    interface<double> iface_output_{dir::output};
 
   public:
     explicit node_impl(node_type_e type)
         : type_(type)
     {
-        options_.emplace("test", &opt_test_);
         interfaces_.emplace("ip", &iface_input_);
         interfaces_.emplace("op", &iface_output_);
     }
@@ -28,10 +25,14 @@ class node_impl : public node_i
     void execute(node_map_t& nodes, node_state& state) final
     {
         iface_input_.resolve_connection_value(nodes, state.con_map["ip"]);
-        iface_output_.set_value(opt_test_.get_value());
+        iface_output_.set_value(iface_input_.get_value());
     }
 
     void complete() final { node_i::complete(); }
+
+    nlohmann::json get_default_options() final { return {}; }
+
+    bool check_option(std::string_view /*name*/, const nlohmann::json& /*value*/) final { return false; }
 
     node_type_e type() final { return type_; }
 };

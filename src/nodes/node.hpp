@@ -1,6 +1,5 @@
 #pragma once
 #include "nodes/node_type.hpp"
-#include "nodes/option.hpp"
 #include "types/error.hpp"
 #include "types/node_map.hpp"
 
@@ -18,16 +17,11 @@ class node_cfg;
 class node_i
 {
     typedef std::unordered_map<std::string_view, interface_i*> interface_map_t;
-    typedef std::unordered_map<std::string_view, option_i*>    option_map_t;
-
-    option_position opt_position_;
-    option_name     opt_name_;
 
   protected:
     interface_map_t interfaces_;
-    option_map_t    options_;
 
-    node_i();
+    node_i()          = default;
     virtual ~node_i() = default;
 
   public:
@@ -36,9 +30,8 @@ class node_i
     virtual void        execute(node_map_t&, node_state&) = 0;
     virtual void        complete();
 
-    bool           set_option(std::string_view option, const nlohmann::json&);
-    nlohmann::json get_options();
-    nlohmann::json get_option(std::string_view option);
+    virtual nlohmann::json get_default_options()                                            = 0;
+    virtual bool           check_option(std::string_view name, const nlohmann::json& value) = 0;
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     interface_i*           find_interface(std::string_view name);

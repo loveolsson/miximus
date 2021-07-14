@@ -1,8 +1,6 @@
 #include "nodes/math/math.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
-#include "nodes/math/operation.hpp"
-#include "nodes/option_typed.hpp"
 
 #include <glm/glm.hpp>
 
@@ -17,8 +15,6 @@ class node_impl : public node_i
 
     const node_type_e type_;
 
-    option_typed<operation_e> operation_{operation_setter, operation_getter};
-
     interface<T> iface_a_{dir::input};
     interface<T> iface_b_{dir::input};
     interface<T> iface_res_{dir::output};
@@ -27,7 +23,6 @@ class node_impl : public node_i
     explicit node_impl(node_type_e type)
         : type_(type)
     {
-        options_.emplace("operation", &operation_);
         interfaces_.emplace("a", &iface_a_);
         interfaces_.emplace("b", &iface_b_);
         interfaces_.emplace("res", &iface_res_);
@@ -44,30 +39,42 @@ class node_impl : public node_i
         T a = iface_a_.get_value();
         T b = iface_b_.get_value();
 
-        switch (operation_.get_value()) {
-            case operation_e::add:
-                res = a + b;
-                break;
-            case operation_e::sub:
-                res = a - b;
-                break;
-            case operation_e::mul:
-                res = a * b;
-                break;
-            case operation_e::min:
-                res = glm::min(a, b);
-                break;
-            case operation_e::max:
-                res = glm::max(a, b);
-                break;
-            default:
-                break;
+        auto op = state.options["operation"].get<std::string_view>();
+
+        if (op == "sub") {
+            res = a - b;
+        } else if (op == "mul") {
+            res = a * b;
+        } else if (op == "min") {
+            res = glm::min(a, b);
+        } else if (op == "max") {
+            res = glm::max(a, b);
+        } else { // add
+            res = a + b;
         }
 
         iface_res_.set_value(res);
     }
 
     void complete() final { node_i::complete(); }
+
+    nlohmann::json get_default_options() final { return {{"operation", "add"}}; }
+
+    bool check_option(std::string_view name, const nlohmann::json& value) final
+    {
+        if (name == "operation") {
+            if (!value.is_string()) {
+                return false;
+            }
+
+            auto val = value.get<std::string_view>();
+            if (val == "add" || val == "sub" || val == "mul" || val == "min" || val == "max") {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     node_type_e type() final { return type_; }
 };

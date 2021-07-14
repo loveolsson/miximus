@@ -7,6 +7,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <mutex>
+#include <string_view>
 #include <vector>
 
 namespace miximus::nodes {
