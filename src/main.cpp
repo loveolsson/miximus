@@ -64,6 +64,8 @@ int main(int argc, char** argv)
                     try {
                         node_manager_.set_config(json::parse(file));
                     } catch (json::exception& e) {
+                        // This error should panic as we don't want to run the app with a partial config, or overwrite the
+                        // broken file with an empty config on exit
                         throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
                     }
                 } else {
@@ -102,8 +104,7 @@ int main(int argc, char** argv)
 
         spdlog::shutdown();
     } catch (std::exception& e) {
-        std::cout << std::endl << std::endl;
-        std::cout << "Application exiting due to unhandled exeption: " << e.what() << std::endl;
+        std::cout << std::endl << "Panic: " << e.what() << std::endl;
     }
 
     return 0;
