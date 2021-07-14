@@ -270,14 +270,12 @@ error_e node_manager::handle_remove_connection(const connection& con, int64_t cl
     auto lock = do_lock ? std::unique_lock<std::mutex>(nodes_mutex_) : std::unique_lock<std::mutex>();
 
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
-        auto node_it = nodes_.find(node_name);
-        if (node_it != nodes_.end()) {
+        if (auto node_it = nodes_.find(node_name); node_it != nodes_.end()) {
             auto& node  = node_it->second.node;
             auto& state = node_it->second.state;
 
-            auto connections = state.con_map.find(iface_name);
-            if (connections != state.con_map.end()) {
-                connections->second.erase(con);
+            if (auto cons_it = state.con_map.find(iface_name); cons_it != state.con_map.end()) {
+                cons_it->second.erase(con);
             }
         }
 
@@ -300,8 +298,6 @@ error_e node_manager::handle_remove_connection(const connection& con, int64_t cl
 
 json node_manager::get_config()
 {
-    using nlohmann::json;
-
     std::unique_lock lock(nodes_mutex_);
 
     auto nodes       = json::array();
