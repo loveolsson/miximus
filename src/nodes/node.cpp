@@ -8,13 +8,13 @@
 
 namespace miximus::nodes {
 
-node::node()
+node_i::node_i()
 {
     options_.emplace("position", &opt_position_);
     options_.emplace("name", &opt_name_);
 }
 
-void node::complete()
+void node_i::complete()
 {
     for (auto& [name, iface] : interfaces_) {
         (void)name;
@@ -22,7 +22,7 @@ void node::complete()
     }
 }
 
-bool node::set_option(std::string_view option, const nlohmann::json& value)
+bool node_i::set_option(std::string_view option, const nlohmann::json& value)
 {
     auto it = options_.find(option);
 
@@ -33,7 +33,7 @@ bool node::set_option(std::string_view option, const nlohmann::json& value)
     return false;
 }
 
-nlohmann::json node::get_options()
+nlohmann::json node_i::get_options()
 {
     auto options = nlohmann::json::object();
 
@@ -44,7 +44,7 @@ nlohmann::json node::get_options()
     return options;
 }
 
-nlohmann::json node::get_option(std::string_view option)
+nlohmann::json node_i::get_option(std::string_view option)
 {
     auto it = options_.find(option);
     if (it != options_.end()) {
@@ -54,7 +54,7 @@ nlohmann::json node::get_option(std::string_view option)
     return nlohmann::json(); // null
 }
 
-interface* node::find_interface(std::string_view name)
+interface_i* node_i::find_interface(std::string_view name)
 {
     auto it = interfaces_.find(name);
     if (it != interfaces_.end()) {
@@ -63,7 +63,7 @@ interface* node::find_interface(std::string_view name)
     return nullptr;
 }
 
-interface* node::get_prepared_interface(const node_cfg& cfg, std::string_view name)
+interface_i* node_i::get_prepared_interface(node_map_t& nodes, con_map_t& con_map, std::string_view name)
 {
     auto* iface = find_interface(name);
     if (iface == nullptr) {
@@ -71,7 +71,7 @@ interface* node::get_prepared_interface(const node_cfg& cfg, std::string_view na
     }
 
     if (!iface->has_value()) {
-        execute(cfg);
+        execute(nodes, con_map);
     }
 
     if (!iface->has_value()) {
@@ -81,24 +81,12 @@ interface* node::get_prepared_interface(const node_cfg& cfg, std::string_view na
     return iface;
 }
 
-std::shared_ptr<node> create_node(node_type_e type, error_e& error)
+std::shared_ptr<node_i> create_node(node_type_e type, error_e& error)
 {
     switch (type) {
-        case node_type_e::math_add_i64:
-        case node_type_e::math_add_f64:
-        case node_type_e::math_add_vec2:
-        case node_type_e::math_sub_i64:
-        case node_type_e::math_sub_f64:
-        case node_type_e::math_sub_vec2:
-        case node_type_e::math_mul_i64:
-        case node_type_e::math_mul_f64:
-        case node_type_e::math_mul_vec2:
-        case node_type_e::math_min_i64:
-        case node_type_e::math_min_f64:
-        case node_type_e::math_min_vec2:
-        case node_type_e::math_max_i64:
-        case node_type_e::math_max_f64:
-        case node_type_e::math_max_vec2:
+        case node_type_e::math_i64:
+        case node_type_e::math_f64:
+        case node_type_e::math_vec2:
             return math::create_node(type);
 
         case node_type_e::decklink_producer:

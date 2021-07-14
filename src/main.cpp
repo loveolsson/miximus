@@ -5,8 +5,12 @@
 #include "nodes/decklink/decklink.hpp"
 #include "web_server/server.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <chrono>
 #include <csignal>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <thread>
 
@@ -19,55 +23,88 @@ void signal_handler(int /*signal*/) { g_signal_status = 1; }
 int main(int argc, char** argv)
 {
     using namespace miximus;
+    using namespace std::filesystem;
+    using nlohmann::json;
     std::signal(SIGINT, signal_handler);
 
-    spdlog::level::level_enum log_level = spdlog::level::info;
+    try {
+        spdlog::level::level_enum log_level     = spdlog::level::info;
+        path                      settings_path = path(argv[0]).parent_path() / "settings.json";
 
-    for (int i = 1; i < argc; ++i) {
-        std::string_view param(argv[i]);
-        if (param == "--log-debug") {
-            log_level = spdlog::level::debug;
-        }
-    }
+        for (int i = 1; i < argc; ++i) {
+            std::string_view param(argv[i]);
+            if (param == "--log-debug") {
+                log_level = spdlog::level::debug;
+            }
 
-    logger::init_loggers(log_level);
-    auto log = spdlog::get("app");
-
-    {
-        auto names = nodes::decklink::get_device_names();
-        log->info("Found {} DeckLink device(s)", names.size());
-        for (auto& name : names) {
-            log->info(" -- \"{}\"", name);
-        }
-    }
-
-    {
-        // NOTE(Love): Review order
-
-        web_server::server  web_server_;
-        nodes::node_manager node_manager_;
-
-        node_manager_.add_adapter(std::make_unique<nodes::websocket_config>(web_server_));
-
-        {
-            application::state app;
-
-            web_server_.start(7351);
-
-            while (g_signal_status == 0) {
-                gpu::context::poll();
-                std::this_thread::sleep_for(1ms);
+            if (param == "--settings" && i + 1 < argc) {
+                settings_path = argv[++i];
             }
         }
 
-        node_manager_.clear_adapters();
+        logger::init_loggers(log_level);
+        auto log = spdlog::get("app");
 
-        gpu::context::terminate();
+        {
+            auto names = nodes::decklink::get_device_names();
+            log->info("Found {} DeckLink device(s)", names.size());
+            for (auto& name : names) {
+                log->info(" -- \"{}\"", name);
+            }
+        }
 
-        log->info("Exiting...");
+        {
+            web_server::server  web_server_;
+            nodes::node_manager node_manager_;
+
+            {
+                log->info(R"(Reading settings file "{}" )", settings_path.c_str());
+                std::ifstream file(settings_path);
+                if (file.is_open()) {
+                    try {
+                        node_manager_.set_config(json::parse(file));
+                    } catch (json::exception& e) {
+                        throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
+                    }
+                } else {
+                    log->error("Failed to open settings file {}", settings_path.c_str());
+                }
+            }
+
+            node_manager_.add_adapter(std::make_unique<nodes::websocket_config>(node_manager_, web_server_));
+
+            {
+                application::state app;
+
+                web_server_.start(7351);
+
+                while (g_signal_status == 0) {
+                    gpu::context::poll();
+                    std::this_thread::sleep_for(1ms);
+                }
+            }
+
+            node_manager_.clear_adapters();
+
+            {
+                std::ofstream file(settings_path);
+                if (file.is_open()) {
+                    file << node_manager_.get_config();
+                } else {
+                    log->error("Failed to write settings to {}", settings_path.c_str());
+                }
+            }
+
+            gpu::context::terminate();
+
+            log->info("Exiting...");
+        }
+
+        spdlog::shutdown();
+    } catch (std::exception& e) {
+        std::cout << std::endl << std::endl;
+        std::cout << "Application exiting due to unhandled exeption: " << e.what() << std::endl;
     }
-
-    spdlog::shutdown();
 
     return 0;
 }

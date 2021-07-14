@@ -27,7 +27,7 @@ template <typename T>
 auto default_option_getter = [](const T& t) -> nlohmann::json { return t; };
 
 template <typename T>
-class option_typed : public option
+class option_typed : public option_i
 {
     T               v_;
     option_set_f<T> setter_;

@@ -1,12 +1,12 @@
 import EventEmitter from "eventemitter3";
 import {
-  action_t,
+  action_e,
   command_s,
   error_s,
   message_s,
   socket_info_s,
   subscribe_s,
-  topic_t,
+  topic_e,
 } from "./messages";
 
 interface ws_events {
@@ -25,7 +25,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   private ping_timer?: number;
   private callbacks = new Map<string, message_callback_t<message_s>>();
   private subscriptions = new Map<
-    topic_t,
+    topic_e,
     Set<message_callback_t<message_s>>
   >();
   private next_token = 0;
@@ -83,19 +83,19 @@ export class ws_wrapper extends EventEmitter<ws_events> {
         return;
       }
 
-      if (payload.action !== action_t.ping) {
-        console.log('Received', payload);
+      if (payload.action !== action_e.ping) {
+        console.log("Received", payload);
       }
 
       switch (payload.action) {
-        case action_t.ping:
+        case action_e.ping:
           return this.handle_ping();
-        case action_t.socket_info:
+        case action_e.socket_info:
           return this.handle_socket_info(payload as socket_info_s);
-        case action_t.result:
-        case action_t.error:
+        case action_e.result:
+        case action_e.error:
           return this.handle_result(payload);
-        case action_t.command:
+        case action_e.command:
           return this.handle_command(payload as command_s);
         default:
           console.error("Unhandled message");
@@ -111,13 +111,17 @@ export class ws_wrapper extends EventEmitter<ws_events> {
 
     for (const topic of this.subscriptions.keys()) {
       const payload: subscribe_s = {
-        action: action_t.subscribe,
+        action: action_e.subscribe,
         topic: topic,
       };
 
       this.send(payload, (result) => {
-        if (result.action === action_t.error) {
-          console.info(`Failed to re-subscribe to ${topic} with: ${(result as error_s).error}`);
+        if (result.action === action_e.error) {
+          console.info(
+            `Failed to re-subscribe to ${topic} with: ${
+              (result as error_s).error
+            }`
+          );
         }
       });
     }
@@ -161,7 +165,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
 
   private send_ping(): void {
     if (this.info) {
-      this.send({ action: action_t.ping });
+      this.send({ action: action_e.ping });
       this.ping_timer = setTimeout(
         this.handle_no_pong_response.bind(this),
         2000
@@ -193,8 +197,8 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       msg.token = token;
     }
 
-    if (msg.action !== action_t.ping) {
-      console.log('Sent', msg);
+    if (msg.action !== action_e.ping) {
+      console.log("Sent", msg);
     }
 
     this.ws?.send(JSON.stringify(msg));
@@ -202,7 +206,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   }
 
   public subscribe<T extends message_s>(
-    topic: topic_t,
+    topic: topic_e,
     cb: message_callback_t<T>
   ) {
     let sub = this.subscriptions.get(topic);
@@ -220,14 +224,14 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     sub.add(cb as message_callback_t<message_s>);
 
     if (sub.size === 1) {
-      this.send({ action: action_t.subscribe, topic }, (msg) => {
+      this.send({ action: action_e.subscribe, topic }, (msg) => {
         console.info(`Subscribe to ${topic} with: ${msg.action}`);
       });
     }
   }
 
   public unsubscribe<T extends message_s>(
-    topic: topic_t,
+    topic: topic_e,
     cb: message_callback_t<T>
   ): void {
     const sub = this.subscriptions.get(topic);
@@ -244,7 +248,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     }
 
     if (sub.size === 0) {
-      this.send({ action: action_t.unsubscribe, topic }, (msg) => {
+      this.send({ action: action_e.unsubscribe, topic }, (msg) => {
         console.info(`Unsubscribe to ${topic} with: ${msg.action}`);
       });
     }

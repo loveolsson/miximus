@@ -106,6 +106,14 @@
         "*.tcc": "cpp",
         "memory_resource": "cpp",
         "source_location": "cpp",
-        "cfenv": "cpp"
+        "cfenv": "cpp",
+        "cassert": "cpp",
+        "ccomplex": "cpp",
+        "cerrno": "cpp",
+        "cfloat": "cpp",
+        "ciso646": "cpp",
+        "climits": "cpp",
+        "filesystem": "cpp",
+        "cstdbool": "cpp"
     }
 }

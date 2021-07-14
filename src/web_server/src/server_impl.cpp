@@ -28,9 +28,11 @@ static std::string create_404_doc(std::string_view resource)
 web_server_impl::web_server_impl()
     : files_(static_files::get_web_files())
 {
-    endpoint_.clear_access_channels(websocketpp::log::alevel::all);
-    endpoint_.set_access_channels(websocketpp::log::alevel::access_core);
-    endpoint_.set_access_channels(websocketpp::log::alevel::app);
+    using namespace websocketpp::log;
+
+    endpoint_.clear_access_channels(alevel::all);
+    endpoint_.set_access_channels(alevel::access_core);
+    endpoint_.set_access_channels(alevel::app);
     endpoint_.set_reuse_addr(true);
 
     // Initialize the Asio transport policy
@@ -47,22 +49,28 @@ web_server_impl::~web_server_impl() { stop(); }
 
 void web_server_impl::terminate_and_log(connection_hdl hdl, const std::string& msg)
 {
+    using namespace websocketpp::log;
+    using namespace websocketpp::close;
+
     std::error_code ec;
-    endpoint_.get_alog().write(websocketpp::log::alevel::fail, msg);
-    endpoint_.close(std::move(hdl), websocketpp::close::status::protocol_error, msg, ec);
+    endpoint_.get_alog().write(alevel::fail, msg);
+    endpoint_.close(std::move(hdl), status::protocol_error, msg, ec);
     if (ec) {
-        endpoint_.get_alog().write(websocketpp::log::alevel::fail, ec.message());
+        endpoint_.get_alog().write(alevel::fail, ec.message());
     }
 }
 
 void web_server_impl::on_http(const connection_hdl& hdl)
 {
+    using namespace websocketpp::http;
+    using namespace websocketpp::log;
+
     // Upgrade our connection handle to a full connection_ptr
     server::connection_ptr con = endpoint_.get_con_from_hdl(hdl);
 
     std::string_view resource = con->get_resource();
 
-    endpoint_.get_alog().write(websocketpp::log::alevel::http, std::string(resource));
+    endpoint_.get_alog().write(alevel::http, std::string(resource));
 
     if (resource == "/") {
         resource = "/index.html";
@@ -72,7 +80,7 @@ void web_server_impl::on_http(const connection_hdl& hdl)
 
     if (file_it == files_.end()) {
         con->set_body(create_404_doc(resource));
-        con->set_status(websocketpp::http::status_code::not_found);
+        con->set_status(status_code::not_found);
         return;
     }
 
@@ -86,7 +94,7 @@ void web_server_impl::on_http(const connection_hdl& hdl)
     }
 
     con->replace_header("Content-Type", std::string(file_it->second.mime));
-    con->set_status(websocketpp::http::status_code::ok);
+    con->set_status(status_code::ok);
 }
 
 void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& msg)
@@ -179,7 +187,9 @@ void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& m
 
 void web_server_impl::on_open(const connection_hdl& hdl)
 {
-    endpoint_.get_alog().write(websocketpp::log::alevel::http, "Connection opened");
+    using namespace websocketpp::log;
+
+    endpoint_.get_alog().write(alevel::http, "Connection opened");
 
     auto id = next_connection_id++;
 
@@ -191,7 +201,9 @@ void web_server_impl::on_open(const connection_hdl& hdl)
 
 void web_server_impl::on_close(const connection_hdl& hdl)
 {
-    endpoint_.get_alog().write(websocketpp::log::alevel::http, "Connection closed");
+    using namespace websocketpp::log;
+
+    endpoint_.get_alog().write(alevel::http, "Connection closed");
     auto con = connections_.find(hdl);
     if (con == connections_.end()) {
         return;
@@ -221,7 +233,9 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 
 void web_server_impl::start(uint16_t port)
 {
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, fmt::format("Starting web server on port {}", port));
+    using namespace websocketpp::log;
+
+    endpoint_.get_alog().write(alevel::app, fmt::format("Starting web server on port {}", port));
     endpoint_.listen(port);
     endpoint_.start_accept();
 
@@ -230,21 +244,24 @@ void web_server_impl::start(uint16_t port)
 
 void web_server_impl::stop()
 {
+    using namespace websocketpp::log;
+    using namespace websocketpp::close;
+    using websocketpp::lib::error_code;
+
     if (!run_thread_) {
         return;
     }
 
-    endpoint_.get_alog().write(websocketpp::log::alevel::app, "Stopping server");
+    endpoint_.get_alog().write(alevel::app, "Stopping server");
 
     endpoint_.get_io_service().post([&]() {
         endpoint_.stop_listening();
 
         for (auto& connection : connections_) {
-            websocketpp::lib::error_code ec;
-            endpoint_.close(connection.first, websocketpp::close::status::going_away, "server shutting down", ec);
+            error_code ec;
+            endpoint_.close(connection.first, status::going_away, "server shutting down", ec);
             if (ec) {
-                endpoint_.get_alog().write(websocketpp::log::elevel::rerror,
-                                           fmt::format("Error closing connection: {}", ec.message()));
+                endpoint_.get_alog().write(elevel::rerror, fmt::format("Error closing connection: {}", ec.message()));
             }
         }
     });

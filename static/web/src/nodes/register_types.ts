@@ -8,6 +8,6 @@ export function register_connection_types(iface: InterfaceTypePlugin) {
 }
 
 export function register_types(editor: Editor) {
-  editor.registerNodeType("math_add_i64", MathNode, "math");
+  editor.registerNodeType("math_i64", MathNode, "math");
   editor.registerNodeType("DisplayNode", DisplayNode, "something");
 }

@@ -1,6 +1,8 @@
 #include "nodes/math/math.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/math/operation.hpp"
+#include "nodes/option_typed.hpp"
 
 #include <glm/glm.hpp>
 
@@ -8,22 +10,24 @@
 
 namespace miximus::nodes::math {
 
-template <typename T, auto Op>
-class node_impl : public node
+template <typename T>
+class node_impl : public node_i
 {
-    using dir = interface::dir;
+    using dir = interface_i::dir;
 
-    interface_typed<T> iface_a_{dir::input};
-    interface_typed<T> iface_b_{dir::input};
-    interface_typed<T> iface_res_{dir::output};
+    const node_type_e type_;
 
-    node_type_e type_;
+    option_typed<operation> operation_{operation_setter, operation_getter};
+
+    interface<T> iface_a_{dir::input};
+    interface<T> iface_b_{dir::input};
+    interface<T> iface_res_{dir::output};
 
   public:
     explicit node_impl(node_type_e type)
-        : node()
-        , type_(type)
+        : type_(type)
     {
+        options_.emplace("operation", &operation_);
         interfaces_.emplace("a", &iface_a_);
         interfaces_.emplace("b", &iface_b_);
         interfaces_.emplace("res", &iface_res_);
@@ -31,92 +35,52 @@ class node_impl : public node
 
     void prepare() final {}
 
-    void execute(const node_cfg& cfg) final
+    void execute(node_map_t& nodes, con_map_t& con_map) final
     {
-        iface_a_.resolve_connection_value(cfg);
-        iface_b_.resolve_connection_value(cfg);
+        iface_a_.resolve_connection_value(nodes, con_map["a"]);
+        iface_b_.resolve_connection_value(nodes, con_map["b"]);
 
-        T res = Op(iface_a_.get_value(), iface_b_.get_value());
+        T res{};
+        T a = iface_a_.get_value();
+        T b = iface_b_.get_value();
+
+        switch (operation_.get_value()) {
+            case operation::add:
+                res = a + b;
+                break;
+            case operation::sub:
+                res = a - b;
+                break;
+            case operation::mul:
+                res = a * b;
+                break;
+            case operation::min:
+                res = glm::min(a, b);
+                break;
+            case operation::max:
+                res = glm::max(a, b);
+                break;
+            default:
+                break;
+        }
+
         iface_res_.set_value(res);
     }
 
-    void complete() final { node::complete(); }
+    void complete() final { node_i::complete(); }
 
     node_type_e type() final { return type_; }
 };
 
-template <typename T>
-T add(const T& a, const T& b)
-{
-    return a + b;
-}
-
-template <typename T>
-T sub(const T& a, const T& b)
-{
-    return a - b;
-}
-
-template <typename T>
-T mul(const T& a, const T& b)
-{
-    return a * b;
-}
-
-template <typename T>
-T min(const T& a, const T& b)
-{
-    return glm::min(a, b);
-}
-
-template <typename T>
-T max(const T& a, const T& b)
-{
-    return glm::max(a, b);
-}
-
-std::shared_ptr<node> create_node(node_type_e type)
+std::shared_ptr<node_i> create_node(node_type_e type)
 {
     switch (type) {
-        // ADD
-        case node_type_e::math_add_f64:
-            return std::make_shared<node_impl<double, add<double>>>(node_type_e::math_add_f64);
-        case node_type_e::math_add_i64:
-            return std::make_shared<node_impl<int64_t, add<int64_t>>>(node_type_e::math_add_i64);
-        case node_type_e::math_add_vec2:
-            return std::make_shared<node_impl<gpu::vec2, add<gpu::vec2>>>(node_type_e::math_add_vec2);
-
-        // SUB
-        case node_type_e::math_sub_f64:
-            return std::make_shared<node_impl<double, sub<double>>>(node_type_e::math_sub_f64);
-        case node_type_e::math_sub_i64:
-            return std::make_shared<node_impl<int64_t, sub<int64_t>>>(node_type_e::math_sub_i64);
-        case node_type_e::math_sub_vec2:
-            return std::make_shared<node_impl<gpu::vec2, sub<gpu::vec2>>>(node_type_e::math_sub_vec2);
-
-        // MUL
-        case node_type_e::math_mul_f64:
-            return std::make_shared<node_impl<double, mul<double>>>(node_type_e::math_mul_f64);
-        case node_type_e::math_mul_i64:
-            return std::make_shared<node_impl<int64_t, mul<int64_t>>>(node_type_e::math_mul_i64);
-        case node_type_e::math_mul_vec2:
-            return std::make_shared<node_impl<gpu::vec2, mul<gpu::vec2>>>(node_type_e::math_mul_vec2);
-
-        // MIN
-        case node_type_e::math_min_f64:
-            return std::make_shared<node_impl<double, min<double>>>(node_type_e::math_min_f64);
-        case node_type_e::math_min_i64:
-            return std::make_shared<node_impl<int64_t, min<int64_t>>>(node_type_e::math_min_i64);
-        case node_type_e::math_min_vec2:
-            return std::make_shared<node_impl<gpu::vec2, min<gpu::vec2>>>(node_type_e::math_min_vec2);
-
-        // MAX
-        case node_type_e::math_max_f64:
-            return std::make_shared<node_impl<double, max<double>>>(node_type_e::math_max_f64);
-        case node_type_e::math_max_i64:
-            return std::make_shared<node_impl<int64_t, max<int64_t>>>(node_type_e::math_max_i64);
-        case node_type_e::math_max_vec2:
-            return std::make_shared<node_impl<gpu::vec2, max<gpu::vec2>>>(node_type_e::math_max_vec2);
+        case node_type_e::math_f64:
+            return std::make_shared<node_impl<double>>(node_type_e::math_f64);
+        case node_type_e::math_i64:
+            return std::make_shared<node_impl<int64_t>>(node_type_e::math_i64);
+        case node_type_e::math_vec2:
+            return std::make_shared<node_impl<gpu::vec2>>(node_type_e::math_vec2);
 
         default:
             return nullptr;

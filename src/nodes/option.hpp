@@ -9,19 +9,19 @@
 
 namespace miximus::nodes {
 
-class option
+class option_i
 {
   protected:
     mutable std::mutex value_mutex_;
 
   public:
-    virtual ~option() = default;
+    virtual ~option_i() = default;
 
     virtual bool           set_json(const nlohmann::json&) = 0;
     virtual nlohmann::json get_json() const                = 0;
 };
 
-class option_name : public option
+class option_name : public option_i
 {
     std::string                         name_;
     inline static std::mutex            names_in_use_mutex_;
@@ -33,14 +33,10 @@ class option_name : public option
 
     bool           set_json(const nlohmann::json&) final;
     nlohmann::json get_json() const final;
-    std::string    get_value() const
-    {
-        std::unique_lock lock(value_mutex_);
-        return name_;
-    }
+    std::string    get_value() const;
 };
 
-class option_position : public option
+class option_position : public option_i
 {
     gpu::vec2 pos_;
 
@@ -54,11 +50,7 @@ class option_position : public option
 
     bool           set_json(const nlohmann::json&) final;
     nlohmann::json get_json() const final;
-    gpu::vec2      get_value() const
-    {
-        std::unique_lock lock(value_mutex_);
-        return pos_;
-    }
+    gpu::vec2      get_value() const;
 };
 
 } // namespace miximus::nodes

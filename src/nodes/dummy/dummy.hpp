@@ -3,6 +3,6 @@
 
 namespace miximus::nodes::dummy {
 
-std::shared_ptr<node> create_node(node_type_e type);
+std::shared_ptr<node_i> create_node(node_type_e type);
 
 } // namespace miximus::nodes::dummy

@@ -97,7 +97,7 @@ import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-
 import { view_intercept } from "./view_intercept";
 import { helpers } from "./helpers";
 import {
-  action_t,
+  action_e,
   command_add_connection_s,
   command_add_node_s,
   command_config_s,
@@ -105,10 +105,11 @@ import {
   command_remove_node_s,
   result_s,
   result_config_s,
-  topic_t,
+  topic_e,
   connection_s,
   options_s,
   command_update_node_s,
+  type_e,
 } from "./messages";
 
 @Component
@@ -154,9 +155,9 @@ export default class Miximus extends Vue {
     this.wsWrapper.on("on_disconnected", this.handle_disconnected.bind(this));
 
     this.wsWrapper.subscribe<command_add_node_s>(
-      topic_t.add_node,
+      topic_e.add_node,
       (msg, is_origin) => {
-        if (msg.action === action_t.command && msg.topic === topic_t.add_node) {
+        if (msg.action === action_e.command && msg.topic === topic_e.add_node) {
           if (!is_origin) {
             this.handle_server_add_node(msg.node.type, msg.node.id);
           }
@@ -167,11 +168,11 @@ export default class Miximus extends Vue {
     );
 
     this.wsWrapper.subscribe<command_remove_node_s>(
-      topic_t.remove_node,
+      topic_e.remove_node,
       (msg) => {
         if (
-          msg.action === action_t.command &&
-          msg.topic === topic_t.remove_node
+          msg.action === action_e.command &&
+          msg.topic === topic_e.remove_node
         ) {
           this.handle_server_remove_node(msg.id);
         }
@@ -179,11 +180,11 @@ export default class Miximus extends Vue {
     );
 
     this.wsWrapper.subscribe<command_update_node_s>(
-      topic_t.update_node,
+      topic_e.update_node,
       (msg, is_origin) => {
         if (
-          msg.action === action_t.command &&
-          msg.topic === topic_t.update_node &&
+          msg.action === action_e.command &&
+          msg.topic === topic_e.update_node &&
           !is_origin
         ) {
           this.handle_server_update_node(msg.id, msg.options);
@@ -192,11 +193,11 @@ export default class Miximus extends Vue {
     );
 
     this.wsWrapper.subscribe<command_add_connection_s>(
-      topic_t.add_connection,
+      topic_e.add_connection,
       (msg) => {
         if (
-          msg.action === action_t.command &&
-          msg.topic === topic_t.add_connection
+          msg.action === action_e.command &&
+          msg.topic === topic_e.add_connection
         ) {
           this.handle_server_add_connection(msg.connection);
         }
@@ -204,11 +205,11 @@ export default class Miximus extends Vue {
     );
 
     this.wsWrapper.subscribe<command_remove_connection_s>(
-      topic_t.remove_connection,
+      topic_e.remove_connection,
       (msg) => {
         if (
-          msg.action === action_t.command &&
-          msg.topic === topic_t.remove_connection
+          msg.action === action_e.command &&
+          msg.topic === topic_e.remove_connection
         ) {
           this.handle_server_remove_connection(msg.connection);
         }
@@ -224,12 +225,12 @@ export default class Miximus extends Vue {
     this.connected = true;
 
     const payload: command_config_s = {
-      action: action_t.command,
-      topic: topic_t.config,
+      action: action_e.command,
+      topic: topic_e.config,
     };
 
     this.wsWrapper.send<command_config_s, result_config_s>(payload, (msg) => {
-      if (msg.action === action_t.result) {
+      if (msg.action === action_e.result) {
         console.log("got config:", msg);
 
         for (const node of msg.config.nodes) {
@@ -249,14 +250,14 @@ export default class Miximus extends Vue {
 
     this.connected = false;
 
-    for (const con of this.editor.connections) {
-      this.connection_to_be_removed = con;
-      this.editor.removeConnection(con);
+    while (this.editor.connections.length > 0) {
+      this.connection_to_be_removed = this.editor.connections[0];
+      this.editor.removeConnection(this.editor.connections[0]);
     }
 
-    for (const node of this.editor.nodes) {
-      this.node_to_be_removed = node;
-      this.editor.removeNode(node);
+    while (this.editor.nodes.length > 0) {
+      this.node_to_be_removed = this.editor.nodes[0];
+      this.editor.removeNode(this.editor.nodes[0]);
     }
   }
 
@@ -378,10 +379,10 @@ export default class Miximus extends Vue {
       const position = (node as any).position;
 
       const payload: command_add_node_s = {
-        action: action_t.command,
-        topic: topic_t.add_node,
+        action: action_e.command,
+        topic: topic_e.add_node,
         node: {
-          type: node.type,
+          type: node.type as type_e,
           id: node.id,
           options: {
             position: [position.x, position.y],
@@ -390,7 +391,7 @@ export default class Miximus extends Vue {
       };
 
       this.wsWrapper.send<command_add_node_s, result_s>(payload, (msg) => {
-        if (msg.action === action_t.error) {
+        if (msg.action === action_e.error) {
           this.node_to_be_removed = node;
           this.editor.removeNode(node);
         }
@@ -408,8 +409,8 @@ export default class Miximus extends Vue {
     }
 
     const payload: command_remove_node_s = {
-      action: action_t.command,
-      topic: topic_t.remove_node,
+      action: action_e.command,
+      topic: topic_e.remove_node,
       id: node.id,
     };
 
@@ -425,14 +426,18 @@ export default class Miximus extends Vue {
       return true;
     }
 
+    if (!this.connected) {
+      return false;
+    }
+
     const from_interface = helpers.get_interface_name(con.from);
     const to_interface = helpers.get_interface_name(con.to);
 
     if (!from_interface || !to_interface) return true;
 
     const payload: command_add_connection_s = {
-      action: action_t.command,
-      topic: topic_t.add_connection,
+      action: action_e.command,
+      topic: topic_e.add_connection,
       connection: {
         from_node: con.from.parent.id,
         from_interface,
@@ -460,8 +465,8 @@ export default class Miximus extends Vue {
     }
 
     const payload: command_remove_connection_s = {
-      action: action_t.command,
-      topic: topic_t.remove_connection,
+      action: action_e.command,
+      topic: topic_e.remove_connection,
       connection: {
         from_node: con.from.parent.id,
         from_interface,

@@ -5,92 +5,153 @@
 
 namespace miximus::nodes {
 
-bool interface::add_connection(const connection& con, con_set_t& removed)
+bool interface_i::add_connection(con_set_t* connections, const connection& con, con_set_t& removed) const
 {
-    if (max_connection_count_ == 1 && !connections_.empty()) {
-        removed.emplace(*connections_.begin());
-    } else if (connections_.size() >= max_connection_count_) {
-        return false;
+    if (direction_ == dir::input && !connections->empty()) {
+        removed.emplace(*connections->begin());
     }
 
-    auto [_, success] = connections_.emplace(con);
+    auto [_, success] = connections->emplace(con);
     return success;
 }
 
-bool interface::remove_connection(const connection& con)
-{
-    size_t removed = connections_.erase(con);
-    return (removed > 0);
-}
-
-interface* interface::resolve_connection(const node_cfg& cfg)
+interface_i* interface_i::resolve_connection(node_map_t& nodes, con_set_t& connections)
 {
     if (direction_ == dir::output) {
         throw std::runtime_error("resolve_connection called on output interface");
     }
 
-    if (!connections_.empty()) {
-        const connection& con = *connections_.begin();
-        if (node* n = cfg.find_node(con.from_node)) {
-            return n->get_prepared_interface(cfg, con.from_interface);
+    if (!connections.empty()) {
+        const connection& con   = *connections.begin();
+        auto              state = nodes.find(con.from_node);
+        if (state != nodes.end()) {
+            const auto& node    = state->second.node;
+            auto&       con_map = state->second.con_map;
+            return node->get_prepared_interface(nodes, con_map, con.from_interface);
         }
     }
 
     return nullptr;
 }
 
-/**
- * Interface converters
- */
-
 template <>
-double interface_typed<double>::get_value_from(interface* iface)
+bool interface<double>::accepts(interface_type_e type)
 {
-    auto res = double{};
-
-    switch (iface->type()) {
+    switch (type) {
         case interface_type_e::f64:
-            if (auto* dyn = dynamic_cast<interface_typed<double>*>(iface)) {
-                res = dyn->get_value();
-            }
-            break;
-
         case interface_type_e::i64:
-            if (auto* dyn = dynamic_cast<interface_typed<int64_t>*>(iface)) {
-                res = dyn->get_value();
-            }
-            break;
+            return true;
 
         default:
-            break;
+            return false;
     }
-
-    return res;
 }
 
 template <>
-int64_t interface_typed<int64_t>::get_value_from(interface* iface)
+bool interface<int64_t>::accepts(interface_type_e type)
 {
-    auto res = int16_t{};
-
-    switch (iface->type()) {
+    switch (type) {
         case interface_type_e::f64:
-            if (auto* dyn = dynamic_cast<interface_typed<double>*>(iface)) {
-                res = dyn->get_value();
-            };
-            break;
-
         case interface_type_e::i64:
-            if (auto* dyn = dynamic_cast<interface_typed<int64_t>*>(iface)) {
-                res = dyn->get_value();
-            }
-            break;
+            return true;
 
         default:
-            break;
+            return false;
+    }
+}
+
+template <>
+bool interface<gpu::vec2>::accepts(interface_type_e type)
+{
+    switch (type) {
+        case interface_type_e::f64:
+        case interface_type_e::i64:
+        case interface_type_e::vec2:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+template <>
+bool interface<double>::resolve_connection_value(node_map_t& nodes, con_set_t& connections)
+{
+    if (auto* iface = resolve_connection(nodes, connections)) {
+        switch (iface->type()) {
+            case interface_type_e::f64: {
+                value_ = dynamic_cast<interface<double>*>(iface)->get_value();
+                return true;
+            }
+
+            case interface_type_e::i64: {
+                value_ = dynamic_cast<interface<int64_t>*>(iface)->get_value();
+                return true;
+            }
+
+            default:
+                break;
+        }
     }
 
-    return res;
+    value_ = double{};
+    return false;
+}
+
+template <>
+bool interface<int64_t>::resolve_connection_value(node_map_t& nodes, con_set_t& connections)
+{
+    if (auto* iface = resolve_connection(nodes, connections)) {
+        switch (iface->type()) {
+            case interface_type_e::f64: {
+                value_ = dynamic_cast<interface<double>*>(iface)->get_value();
+                return true;
+            }
+
+            case interface_type_e::i64: {
+                value_ = dynamic_cast<interface<int64_t>*>(iface)->get_value();
+                return true;
+            }
+
+            default:
+                break;
+        }
+    }
+
+    value_ = int64_t{};
+    return false;
+}
+
+template <>
+bool interface<gpu::vec2>::resolve_connection_value(node_map_t& nodes, con_set_t& connections)
+{
+    if (auto* iface = resolve_connection(nodes, connections)) {
+        switch (iface->type()) {
+            case interface_type_e::f64: {
+                auto val = dynamic_cast<interface<double>*>(iface)->get_value();
+                value_   = {val, val};
+                return true;
+            }
+
+            case interface_type_e::i64: {
+                auto val = dynamic_cast<interface<int64_t>*>(iface)->get_value();
+                value_   = {val, val};
+                return true;
+            }
+
+            case interface_type_e::vec2: {
+                value_ = dynamic_cast<interface<gpu::vec2>*>(iface)->get_value();
+                return true;
+            }
+
+            default:
+                break;
+        }
+        return true;
+    }
+
+    value_ = gpu::vec2(0, 0);
+    return false;
 }
 
 } // namespace miximus::nodes

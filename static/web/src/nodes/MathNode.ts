@@ -6,13 +6,13 @@ export class MathNode extends Node {
 
   constructor() {
     super();
-    this.type = "math_add_i64";
-    this.name = "Math";
+    this.type = "math_i64";
+    this.name = "";
     this.addInputInterface("a", "Number", 1);
     this.addInputInterface("b", "Number", 10);
-    // this.addOption("Operation", "SelectOption", "Add", undefined, {
-    //   items: ["Add", "Subtract"],
-    // });
+    this.addOption("operation", "SelectOption", "Add", undefined, {
+      items: ["add", "subtract", "multiply", "min", "max"],
+    });
     this.addOutputInterface("res");
   }
 }

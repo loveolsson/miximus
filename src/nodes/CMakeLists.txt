@@ -1,6 +1,5 @@
 list(APPEND MIXIMUS_MAIN_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/interface_type.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/interface_type.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/node_type.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/node.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/node.cpp

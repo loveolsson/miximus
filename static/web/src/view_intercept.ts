@@ -3,11 +3,11 @@ import NodeView from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-rende
 
 import { ws_wrapper } from "./websocket";
 import {
-  action_t,
+  action_e,
   command_update_node_s,
   options_s,
   position_t,
-  topic_t,
+  topic_e,
 } from "./messages";
 import isEqual from "deep-equal";
 
@@ -92,8 +92,8 @@ export class view_intercept {
     console.log(key, value);
 
     const payload: command_update_node_s = {
-      action: action_t.command,
-      topic: topic_t.update_node,
+      action: action_e.command,
+      topic: topic_e.update_node,
       id: info.view.data.id,
       options: {},
     };
@@ -118,8 +118,8 @@ export class view_intercept {
     }
 
     const payload: command_update_node_s = {
-      action: action_t.command,
-      topic: topic_t.update_node,
+      action: action_e.command,
+      topic: topic_e.update_node,
       id,
       options: {
         position: info.options.position,

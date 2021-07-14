@@ -46,6 +46,12 @@ bool option_name::set_json(const nlohmann::json& value)
 
 nlohmann::json option_name::get_json() const { return get_value(); }
 
+std::string option_name::get_value() const
+{
+    std::unique_lock lock(value_mutex_);
+    return name_;
+}
+
 bool option_position::set_json(const nlohmann::json& value)
 {
     std::unique_lock lock(value_mutex_);
@@ -72,6 +78,12 @@ nlohmann::json option_position::get_json() const
 {
     auto pos = get_value();
     return nlohmann::json::array({pos[0], pos[1]});
+}
+
+gpu::vec2 option_position::get_value() const
+{
+    std::unique_lock lock(value_mutex_);
+    return pos_;
 }
 
 } // namespace miximus::nodes

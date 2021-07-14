@@ -1,4 +1,6 @@
 list(APPEND MIXIMUS_MAIN_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/connection_set.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/node_map.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/action.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/error.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/topic.hpp

@@ -2,18 +2,15 @@
 #include "logger/logger.hpp"
 #include "messages/payload.hpp"
 #include "messages/templates.hpp"
-#include "nodes/config/manager.hpp"
 #include "utils/bind.hpp"
-
-#include <cassert>
-#include <string>
 
 namespace miximus::nodes {
 using namespace message;
 using namespace nlohmann;
 
-websocket_config::websocket_config(web_server::server& server)
-    : server_(server)
+websocket_config::websocket_config(node_manager& manager, web_server::server& server)
+    : manager_(manager)
+    , server_(server)
 {
     server_.subscribe(topic_e::add_node, utils::bind(&websocket_config::handle_add_node, this));
     server_.subscribe(topic_e::remove_node, utils::bind(&websocket_config::handle_remove_node, this));
@@ -45,7 +42,7 @@ void websocket_config::handle_add_node(json&& msg, int64_t client_id)
         std::string id       = node_obj["id"];
         auto&       options  = node_obj["options"];
 
-        auto res = manager_->handle_add_node(type, id, options, client_id);
+        auto res = manager_.handle_add_node(type, id, options, client_id);
 
         if (res == error_e::no_error) {
             server_.send_message_sync(create_result_base_payload(token), client_id);
@@ -65,7 +62,7 @@ void websocket_config::handle_remove_node(json&& msg, int64_t client_id)
     try {
         std::string id = msg["id"];
 
-        auto res = manager_->handle_remove_node(id, client_id);
+        auto res = manager_.handle_remove_node(id, client_id);
 
         if (res == error_e::no_error) {
             server_.send_message_sync(create_result_base_payload(token), client_id);
@@ -87,7 +84,7 @@ void websocket_config::handle_update_node(json&& msg, int64_t client_id)
         std::string id      = msg["id"];
         auto&       options = msg["options"];
 
-        auto res = manager_->handle_update_node(id, options, client_id);
+        auto res = manager_.handle_update_node(id, options, client_id);
 
         if (res == error_e::no_error) {
             server_.send_message_sync(create_result_base_payload(token), client_id);
@@ -113,7 +110,7 @@ void websocket_config::handle_add_connection(json&& msg, int64_t client_id)
         con.to_node        = con_obj["to_node"];
         con.to_interface   = con_obj["to_interface"];
 
-        auto res = manager_->handle_add_connection(con, client_id);
+        auto res = manager_.handle_add_connection(con, client_id);
 
         if (res == error_e::no_error) {
             server_.send_message_sync(create_result_base_payload(token), client_id);
@@ -139,7 +136,7 @@ void websocket_config::handle_remove_connection(json&& msg, int64_t client_id)
         con.to_node        = con_obj["to_node"];
         con.to_interface   = con_obj["to_interface"];
 
-        auto res = manager_->handle_remove_connection(con, client_id);
+        auto res = manager_.handle_remove_connection(con, client_id);
 
         if (res == error_e::no_error) {
             server_.send_message_sync(create_result_base_payload(token), client_id);
@@ -158,7 +155,7 @@ void websocket_config::handle_config(json&& msg, int64_t client_id)
     auto token    = get_token_from_payload(msg);
     auto response = create_result_base_payload(token);
 
-    response["config"] = manager_->get_config();
+    response["config"] = manager_.get_config();
 
     server_.send_message_sync(response, client_id);
 }

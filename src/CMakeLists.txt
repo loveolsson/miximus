@@ -33,6 +33,7 @@ target_link_libraries(miximus
     decklink
     cef
     video-sdk
+    Boost::system
 
     ${CMAKE_DL_LIBS}
 )
