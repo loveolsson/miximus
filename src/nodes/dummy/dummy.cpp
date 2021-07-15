@@ -30,8 +30,6 @@ class node_impl : public node_i
 
     void complete() final { node_i::complete(); }
 
-    nlohmann::json get_default_options() final { return {}; }
-
     bool check_option(std::string_view /*name*/, const nlohmann::json& /*value*/) final { return false; }
 
     node_type_e type() final { return type_; }

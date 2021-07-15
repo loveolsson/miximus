@@ -37,7 +37,7 @@ struct node_state
         try {
             return it->get<T>();
         } catch (nlohmann::json::exception& e) {
-            return T();
+            return fallback;
         }
     }
 };

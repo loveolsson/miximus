@@ -35,7 +35,7 @@ interface_i* interface_i::resolve_connection(const node_map_t& nodes, const con_
 }
 
 template <>
-bool interface<double>::accepts(interface_type_e type)
+bool interface<double>::accepts(interface_type_e type) const
 {
     switch (type) {
         case interface_type_e::f64:
@@ -48,7 +48,7 @@ bool interface<double>::accepts(interface_type_e type)
 }
 
 template <>
-bool interface<int64_t>::accepts(interface_type_e type)
+bool interface<int64_t>::accepts(interface_type_e type) const
 {
     switch (type) {
         case interface_type_e::f64:
@@ -61,7 +61,7 @@ bool interface<int64_t>::accepts(interface_type_e type)
 }
 
 template <>
-bool interface<gpu::vec2>::accepts(interface_type_e type)
+bool interface<gpu::vec2>::accepts(interface_type_e type) const
 {
     switch (type) {
         case interface_type_e::f64:

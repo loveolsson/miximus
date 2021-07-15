@@ -30,7 +30,7 @@ class node_i
     virtual void        execute(const node_map_t&, const node_state&) = 0;
     virtual void        complete();
 
-    virtual nlohmann::json get_default_options()                                            = 0;
+    virtual nlohmann::json get_default_options() { return nlohmann::json::object(); }
     virtual bool           check_option(std::string_view name, const nlohmann::json& value) = 0;
 
     const interface_map_t& get_interfaces() const { return interfaces_; }

@@ -23,7 +23,6 @@ class interface_i
 
   private:
     const dir direction_;
-    int       max_connection_count_;
 
   public:
     interface_i(dir direction)
@@ -35,13 +34,13 @@ class interface_i
 
     bool         add_connection(con_set_t* connections, const connection& con, con_set_t& removed) const;
     interface_i* resolve_connection(const node_map_t&, const con_set_t&);
-    dir          direction() { return direction_; }
+    dir          direction() const { return direction_; }
 
     virtual bool has_value() const = 0;
     virtual void reset()           = 0;
 
-    virtual interface_type_e type()                         = 0;
-    virtual bool             accepts(interface_type_e type) = 0;
+    virtual interface_type_e type() const                         = 0;
+    virtual bool             accepts(interface_type_e type) const = 0;
 };
 
 template <typename T>
@@ -57,8 +56,8 @@ class interface : public interface_i
     bool             resolve_connection_value(const node_map_t&, const con_set_t&);
     bool             has_value() const final { return value_ != std::nullopt; }
     void             reset() final { value_ = std::nullopt; }
-    interface_type_e type() final { return get_interface_type<T>(); }
-    virtual bool     accepts(interface_type_e type) final;
+    interface_type_e type() const final { return get_interface_type<T>(); }
+    virtual bool     accepts(interface_type_e type) const final;
 
     const T get_value() const
     {
