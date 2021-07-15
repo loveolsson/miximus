@@ -8,13 +8,7 @@
 
 namespace miximus::nodes {
 
-void node_i::complete()
-{
-    for (auto& [name, iface] : interfaces_) {
-        (void)name;
-        iface->reset();
-    }
-}
+void node_i::complete() {}
 
 interface_i* node_i::find_interface(std::string_view name)
 {
@@ -23,24 +17,6 @@ interface_i* node_i::find_interface(std::string_view name)
         return it->second;
     }
     return nullptr;
-}
-
-interface_i* node_i::get_prepared_interface(const node_map_t& nodes, const node_state& state, std::string_view name)
-{
-    auto* iface = find_interface(name);
-    if (iface == nullptr) {
-        return nullptr;
-    }
-
-    if (!iface->has_value()) {
-        execute(nodes, state);
-    }
-
-    if (!iface->has_value()) {
-        throw std::runtime_error("interface does not contain value after execute");
-    }
-
-    return iface;
 }
 
 std::shared_ptr<node_i> create_node(node_type_e type, error_e& error)
@@ -59,7 +35,7 @@ std::shared_ptr<node_i> create_node(node_type_e type, error_e& error)
             return nullptr;
 
         default:
-#if 0
+#if 1
             error = error_e::invalid_type;
             return nullptr;
 #else

@@ -1,5 +1,5 @@
 #pragma once
-#include "nodes/config/manager.hpp"
+#include "nodes/manager.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json_fwd.hpp>

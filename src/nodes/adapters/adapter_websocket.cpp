@@ -1,4 +1,4 @@
-#include "nodes/config/adapter_websocket.hpp"
+#include "nodes/adapters/adapter_websocket.hpp"
 #include "logger/logger.hpp"
 #include "messages/payload.hpp"
 #include "messages/templates.hpp"
@@ -37,10 +37,9 @@ void websocket_config::handle_add_node(json&& msg, int64_t client_id)
     try {
         auto& node_obj = msg["node"];
 
-        std::string type_str = node_obj["type"];
-        auto        type     = type_from_string(type_str);
-        std::string id       = node_obj["id"];
-        auto&       options  = node_obj["options"];
+        auto  type    = type_from_string(node_obj["type"].get<std::string_view>());
+        auto  id      = node_obj["id"].get<std::string>();
+        auto& options = node_obj["options"];
 
         auto res = manager_.handle_add_node(type, id, options, client_id);
 

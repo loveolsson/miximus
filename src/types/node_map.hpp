@@ -10,12 +10,13 @@ namespace miximus::nodes {
 
 class node_i;
 
-typedef std::unordered_map<std::string_view, con_set_t> con_map_t;
+using con_map_t = std::unordered_map<std::string_view, con_set_t>;
 
 struct node_state
 {
     con_map_t      con_map;
     nlohmann::json options;
+    bool           executed{false};
 
     const con_set_t& get_connections(std::string_view name) const
     {
@@ -48,6 +49,6 @@ struct node_record
     node_state              state;
 };
 
-typedef std::unordered_map<std::string, node_record> node_map_t;
+using node_map_t = std::unordered_map<std::string, node_record>;
 
 } // namespace miximus::nodes

@@ -32,7 +32,7 @@ constexpr interface_type_e get_interface_type<double>()
 template <>
 constexpr interface_type_e get_interface_type<int64_t>()
 {
-    return interface_type_e::f64;
+    return interface_type_e::i64;
 }
 
 template <>

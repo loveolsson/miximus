@@ -238,26 +238,32 @@ export default class Miximus extends Vue {
     // Scale and center the graph on the page
     // NOTE(Love): This code is horrendous, remember to fix it
     if (this.editor.nodes.length > 0) {
-      let x0 = Number.MAX_VALUE;
-      let y0 = Number.MAX_VALUE;
-      let x1 = Number.MIN_VALUE;
-      let y1 = Number.MIN_VALUE;
+      let x0 = Number.POSITIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
 
       for (let node of this.editor.nodes) {
         const pos = (node as unknown as IViewNode).position;
+        x0 = Math.min(x0, pos.x);
+        y0 = Math.min(y0, pos.y);
+        x1 = Math.max(x1, pos.x + 180);
+        y1 = Math.max(y1, pos.y + 180);
 
-        x0 = Math.min(x0, pos.x + 90);
-        y0 = Math.min(y0, pos.y + 90);
-        x1 = Math.max(x1, pos.x + 90);
-        y1 = Math.max(y1, pos.y + 90);
       }
 
       if (this.$refs.editorArea instanceof Element) {
         const area = this.$refs.editorArea;
-        const w = x1 - x0 + 250;
-        const h = y1 - y0 + 250;
+        const w = x1 - x0 + 180;
+        const h = y1 - y0 + 180;
 
-        const scale = Math.min(area.clientHeight / h, area.clientWidth / w);
+        const scale = Math.min(
+          Math.min(
+            area.clientHeight / h, //
+            area.clientWidth / w
+          ),
+          1
+        );
         this.viewPlugin.scaling = scale;
 
         const mid_x = (x0 + x1) / 2 - area.clientWidth / scale / 2;

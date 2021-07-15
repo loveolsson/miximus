@@ -1,4 +1,5 @@
 #include "decklink.hpp"
+#include "logger/logger.hpp"
 
 #if _WIN32
 static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
@@ -90,6 +91,16 @@ std::vector<std::string> get_device_names()
 {
     static auto names = get_device_names_impl();
     return names;
+}
+
+void log_device_names()
+{
+    auto log   = spdlog::get("app");
+    auto names = nodes::decklink::get_device_names();
+    log->info("Found {} DeckLink device(s)", names.size());
+    for (auto& name : names) {
+        log->info(" -- \"{}\"", name);
+    }
 }
 
 } // namespace miximus::nodes::decklink

@@ -7,7 +7,7 @@ namespace miximus::nodes {
 
 bool interface_i::add_connection(con_set_t* connections, const connection& con, con_set_t& removed) const
 {
-    if (direction_ == dir::input && !connections->empty()) {
+    if (direction() == dir::input && !connections->empty()) {
         removed.emplace(*connections->begin());
     }
 
@@ -15,9 +15,9 @@ bool interface_i::add_connection(con_set_t* connections, const connection& con, 
     return success;
 }
 
-interface_i* interface_i::resolve_connection(const node_map_t& nodes, const con_set_t& connections)
+interface_i* interface_i::resolve_connection(node_map_t& nodes, const con_set_t& connections) const
 {
-    if (direction_ == dir::output) {
+    if (direction() == dir::output) {
         throw std::runtime_error("resolve_connection called on output interface");
     }
 
@@ -27,7 +27,18 @@ interface_i* interface_i::resolve_connection(const node_map_t& nodes, const con_
         if (record != nodes.end()) {
             const auto& node  = record->second.node;
             auto&       state = record->second.state;
-            return node->get_prepared_interface(nodes, state, con.from_interface);
+
+            auto iface = node->find_interface(con.from_interface);
+            if (iface == nullptr) {
+                return nullptr;
+            }
+
+            if (!state.executed) {
+                state.executed = true;
+                node->execute(nodes, state);
+            }
+
+            return iface;
         }
     }
 
@@ -35,7 +46,7 @@ interface_i* interface_i::resolve_connection(const node_map_t& nodes, const con_
 }
 
 template <>
-bool interface<double>::accepts(interface_type_e type) const
+bool input_interface<double>::accepts(interface_type_e type) const
 {
     switch (type) {
         case interface_type_e::f64:
@@ -48,7 +59,7 @@ bool interface<double>::accepts(interface_type_e type) const
 }
 
 template <>
-bool interface<int64_t>::accepts(interface_type_e type) const
+bool input_interface<int64_t>::accepts(interface_type_e type) const
 {
     switch (type) {
         case interface_type_e::f64:
@@ -61,7 +72,7 @@ bool interface<int64_t>::accepts(interface_type_e type) const
 }
 
 template <>
-bool interface<gpu::vec2>::accepts(interface_type_e type) const
+bool input_interface<gpu::vec2>::accepts(interface_type_e type) const
 {
     switch (type) {
         case interface_type_e::f64:
@@ -75,18 +86,26 @@ bool interface<gpu::vec2>::accepts(interface_type_e type) const
 }
 
 template <>
-bool interface<double>::resolve_connection_value(const node_map_t& nodes, const con_set_t& connections)
+double input_interface<double>::resolve_value(node_map_t& nodes, const con_set_t& connections) const
 {
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {
             case interface_type_e::f64: {
-                value_ = dynamic_cast<interface<double>*>(iface)->get_value();
-                return true;
+                auto cast = dynamic_cast<output_interface<double>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                return cast->get_value();
             }
 
             case interface_type_e::i64: {
-                value_ = static_cast<double>(dynamic_cast<interface<int64_t>*>(iface)->get_value());
-                return true;
+                auto cast = dynamic_cast<output_interface<int64_t>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                return static_cast<double>(cast->get_value());
             }
 
             default:
@@ -94,23 +113,30 @@ bool interface<double>::resolve_connection_value(const node_map_t& nodes, const 
         }
     }
 
-    value_ = double{};
-    return false;
+    return 0;
 }
 
 template <>
-bool interface<int64_t>::resolve_connection_value(const node_map_t& nodes, const con_set_t& connections)
+int64_t input_interface<int64_t>::resolve_value(node_map_t& nodes, const con_set_t& connections) const
 {
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {
             case interface_type_e::f64: {
-                value_ = static_cast<int64_t>(dynamic_cast<interface<double>*>(iface)->get_value());
-                return true;
+                auto cast = dynamic_cast<output_interface<double>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                return static_cast<int64_t>(cast->get_value());
             }
 
             case interface_type_e::i64: {
-                value_ = dynamic_cast<interface<int64_t>*>(iface)->get_value();
-                return true;
+                auto cast = dynamic_cast<output_interface<int64_t>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                return cast->get_value();
             }
 
             default:
@@ -118,40 +144,49 @@ bool interface<int64_t>::resolve_connection_value(const node_map_t& nodes, const
         }
     }
 
-    value_ = int64_t{};
-    return false;
+    return 0;
 }
 
 template <>
-bool interface<gpu::vec2>::resolve_connection_value(const node_map_t& nodes, const con_set_t& connections)
+gpu::vec2 input_interface<gpu::vec2>::resolve_value(node_map_t& nodes, const con_set_t& connections) const
 {
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {
             case interface_type_e::f64: {
-                auto val = dynamic_cast<interface<double>*>(iface)->get_value();
-                value_   = {val, val};
-                return true;
+                auto cast = dynamic_cast<output_interface<double>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                auto val = cast->get_value();
+                return gpu::vec2{val, val};
             }
 
             case interface_type_e::i64: {
-                auto val = dynamic_cast<interface<int64_t>*>(iface)->get_value();
-                value_   = {val, val};
-                return true;
+                auto cast = dynamic_cast<output_interface<int64_t>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                auto val = cast->get_value();
+                return gpu::vec2{val, val};
             }
 
             case interface_type_e::vec2: {
-                value_ = dynamic_cast<interface<gpu::vec2>*>(iface)->get_value();
-                return true;
+                auto cast = dynamic_cast<output_interface<gpu::vec2>*>(iface);
+                if (cast == nullptr) {
+                    assert(false);
+                    break;
+                }
+                return cast->get_value();
             }
 
             default:
                 break;
         }
-        return true;
     }
 
-    value_ = gpu::vec2(0, 0);
-    return false;
+    return gpu::vec2{0, 0};
 }
 
 } // namespace miximus::nodes

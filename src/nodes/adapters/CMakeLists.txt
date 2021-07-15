@@ -1,6 +1,4 @@
 list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/manager.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/manager.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/adapter_websocket.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/adapter_websocket.cpp
 )

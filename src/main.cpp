@@ -1,8 +1,8 @@
 #include "application/app_state.hpp"
 #include "logger/logger.hpp"
-#include "nodes/config/adapter_websocket.hpp"
-#include "nodes/config/manager.hpp"
+#include "nodes/adapters/adapter_websocket.hpp"
 #include "nodes/decklink/decklink.hpp"
+#include "nodes/manager.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json.hpp>
@@ -45,13 +45,7 @@ int main(int argc, char** argv)
         logger::init_loggers(log_level);
         auto log = spdlog::get("app");
 
-        {
-            auto names = nodes::decklink::get_device_names();
-            log->info("Found {} DeckLink device(s)", names.size());
-            for (auto& name : names) {
-                log->info(" -- \"{}\"", name);
-            }
-        }
+        nodes::decklink::log_device_names();
 
         {
             web_server::server  web_server_;
@@ -83,7 +77,7 @@ int main(int argc, char** argv)
 
                 while (g_signal_status == 0) {
                     gpu::context::poll();
-                    node_manager_.run_one_frame();
+                    node_manager_.tick_one_frame();
                     std::this_thread::sleep_for(16ms);
                 }
             }

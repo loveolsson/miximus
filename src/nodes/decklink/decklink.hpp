@@ -12,4 +12,6 @@ decklink_ptr<IDeckLink> get_device_by_index(int i);
 
 std::vector<std::string> get_device_names();
 
+void log_device_names();
+
 } // namespace miximus::nodes::decklink

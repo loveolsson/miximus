@@ -1,8 +1,8 @@
 #pragma once
-#include "nodes/node_type.hpp"
 #include "types/connection_set.hpp"
 #include "types/error.hpp"
 #include "types/node_map.hpp"
+#include "types/node_type.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -34,6 +34,7 @@ class node_manager
 
     std::mutex     nodes_mutex_;
     node_map_t     nodes_;
+    node_map_t     nodes_copy_;
     con_set_t      connections_;
     adapter_list_t adapters_;
 
@@ -50,10 +51,10 @@ class node_manager
     nlohmann::json get_config();
     void           set_config(const nlohmann::json&);
 
-    node_map_t clone_nodes();
-    void       add_adapter(std::unique_ptr<adapter_i>&& adapter);
-    void       clear_adapters();
-    void       run_one_frame();
+    void add_adapter(std::unique_ptr<adapter_i>&& adapter);
+    void clear_adapters();
+
+    void tick_one_frame();
 };
 
 } // namespace miximus::nodes

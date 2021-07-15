@@ -1,4 +1,4 @@
-#include "nodes/config/manager.hpp"
+#include "nodes/manager.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -26,12 +26,6 @@ static bool is_valid_common_option(std::string_view name, const json& value)
         }
     }
     return false;
-}
-
-node_map_t node_manager::clone_nodes()
-{
-    std::unique_lock lock(nodes_mutex_);
-    return nodes_;
 }
 
 error_e
@@ -145,7 +139,7 @@ error_e node_manager::handle_update_node(const std::string& id, const nlohmann::
     return error_e::no_error;
 }
 
-static bool is_connection_circular(const node_map_t&           nodes,
+static bool is_connection_circular(node_map_t&                 nodes,
                                    std::set<std::string_view>* cleared_nodes,
                                    std::string_view            target_node_id,
                                    const connection&           con)
@@ -304,24 +298,20 @@ json node_manager::get_config()
     auto connections = json::array();
 
     for (const auto& [id, record] : nodes_) {
-        json cfg{
+        nodes.emplace_back(json{
             {"id", id},
             {"type", type_to_string(record.node->type())},
             {"options", record.state.options},
-        };
-
-        nodes.emplace_back(std::move(cfg));
+        });
     }
 
     for (const auto& con : connections_) {
-        json cfg{
+        connections.emplace_back(json{
             {"from_node", con.from_node},
             {"from_interface", con.from_interface},
             {"to_node", con.to_node},
             {"to_interface", con.to_interface},
-        };
-
-        connections.emplace_back(std::move(cfg));
+        });
     }
 
     return {
@@ -368,24 +358,29 @@ void node_manager::clear_adapters()
     adapters_.clear();
 }
 
-void node_manager::run_one_frame()
+void node_manager::tick_one_frame()
 {
-    auto conf = clone_nodes();
+    {
+        std::unique_lock lock(nodes_mutex_);
+        nodes_copy_ = nodes_;
+    }
 
-    std::vector<node_record*> consumers;
+    std::vector<node_record*> must_run;
 
-    for (auto& [_, state] : conf) {
-        if (state.node->prepare()) {
-            consumers.emplace_back(&state);
+    for (auto& [_, record] : nodes_copy_) {
+        if (record.node->prepare(record.state)) {
+            must_run.emplace_back(&record);
         }
     }
 
-    for (auto* record : consumers) {
-        record->node->execute(conf, record->state);
+    for (auto* record : must_run) {
+        if (!record->state.executed) {
+            record->node->execute(nodes_copy_, record->state);
+        }
     }
 
-    for (auto& [_, state] : conf) {
-        state.node->complete();
+    for (auto& [_, record] : nodes_copy_) {
+        record.node->complete();
     }
 }
 

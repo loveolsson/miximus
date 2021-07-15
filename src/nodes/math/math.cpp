@@ -15,9 +15,9 @@ class node_impl : public node_i
 
     const node_type_e type_;
 
-    interface<T> iface_a_{dir::input};
-    interface<T> iface_b_{dir::input};
-    interface<T> iface_res_{dir::output};
+    input_interface<T>  iface_a_;
+    input_interface<T>  iface_b_;
+    output_interface<T> iface_res_;
 
   public:
     explicit node_impl(node_type_e type)
@@ -28,16 +28,14 @@ class node_impl : public node_i
         interfaces_.emplace("res", &iface_res_);
     }
 
-    bool prepare() final { return false; }
+    bool prepare(const node_state&) final { return true; }
 
-    void execute(const node_map_t& nodes, const node_state& state) final
+    void execute(node_map_t& nodes, const node_state& state) final
     {
-        iface_a_.resolve_connection_value(nodes, state.get_connections("a"));
-        iface_b_.resolve_connection_value(nodes, state.get_connections("b"));
-
         T res{};
-        T a = iface_a_.get_value();
-        T b = iface_b_.get_value();
+
+        auto a = iface_a_.resolve_value(nodes, state.get_connections("a"));
+        auto b = iface_b_.resolve_value(nodes, state.get_connections("b"));
 
         auto op = state.get_option<std::string_view>("operation", "add");
 
@@ -58,7 +56,28 @@ class node_impl : public node_i
 
     void complete() final { node_i::complete(); }
 
-    nlohmann::json get_default_options() final { return {{"operation", "add"}}; }
+    nlohmann::json get_default_options() final
+    {
+        std::string_view name("Math");
+        switch (type()) {
+            case node_type_e::math_f64:
+                name = "Floating point math";
+                break;
+            case node_type_e::math_i64:
+                name = "Integer math";
+                break;
+            case node_type_e::math_vec2:
+                name = "Vector math";
+                break;
+            default:
+                break;
+        }
+
+        return {
+            {"name", name},
+            {"operation", "add"},
+        };
+    }
 
     bool check_option(std::string_view name, const nlohmann::json& value) final
     {

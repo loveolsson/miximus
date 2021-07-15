@@ -8,9 +8,9 @@ class node_impl : public node_i
 {
     using dir = interface_i::dir;
 
-    node_type_e       type_;
-    interface<double> iface_input_{dir::input};
-    interface<double> iface_output_{dir::output};
+    node_type_e              type_;
+    input_interface<double>  iface_input_;
+    output_interface<double> iface_output_;
 
   public:
     explicit node_impl(node_type_e type)
@@ -20,12 +20,12 @@ class node_impl : public node_i
         interfaces_.emplace("op", &iface_output_);
     }
 
-    bool prepare() final { return false; }
+    bool prepare(const node_state&) final { return false; }
 
-    void execute(const node_map_t& nodes, const node_state& state) final
+    void execute(node_map_t& nodes, const node_state& state) final
     {
-        iface_input_.resolve_connection_value(nodes, state.get_connections("ip"));
-        iface_output_.set_value(iface_input_.get_value());
+        auto value = iface_input_.resolve_value(nodes, state.get_connections("ip"));
+        iface_output_.set_value(value);
     }
 
     void complete() final { node_i::complete(); }

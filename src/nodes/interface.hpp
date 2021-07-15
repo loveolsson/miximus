@@ -1,7 +1,7 @@
 #pragma once
 #include "gpu/types.hpp"
-#include "interface_type.hpp"
 #include "types/connection_set.hpp"
+#include "types/interface_type.hpp"
 #include "types/node_map.hpp"
 
 #include <climits>
@@ -21,55 +21,44 @@ class interface_i
         output,
     };
 
-  private:
-    const dir direction_;
-
-  public:
-    interface_i(dir direction)
-        : direction_(direction)
-    {
-    }
-
-    virtual ~interface_i() {}
+    interface_i()          = default;
+    virtual ~interface_i() = default;
 
     bool         add_connection(con_set_t* connections, const connection& con, con_set_t& removed) const;
-    interface_i* resolve_connection(const node_map_t&, const con_set_t&);
-    dir          direction() const { return direction_; }
+    interface_i* resolve_connection(node_map_t&, const con_set_t&) const;
 
-    virtual bool has_value() const = 0;
-    virtual void reset()           = 0;
-
-    virtual interface_type_e type() const                         = 0;
-    virtual bool             accepts(interface_type_e type) const = 0;
+    virtual dir              direction() const = 0;
+    virtual interface_type_e type() const      = 0;
+    virtual bool             accepts(interface_type_e /*type*/) const { return false; }
 };
 
 template <typename T>
-class interface : public interface_i
+class input_interface : public interface_i
 {
-    std::optional<T> value_;
+  public:
+    input_interface()  = default;
+    ~input_interface() = default;
+
+    dir              direction() const final { return dir::input; }
+    interface_type_e type() const final { return get_interface_type<T>(); }
+    bool             accepts(interface_type_e type) const final;
+
+    T resolve_value(node_map_t& nodes, const con_set_t& connections) const;
+};
+
+template <typename T>
+class output_interface : public interface_i
+{
+    T value_{};
 
   public:
-    interface(dir direction)
-        : interface_i(direction){};
-    ~interface(){};
+    output_interface()  = default;
+    ~output_interface() = default;
 
-    bool             resolve_connection_value(const node_map_t&, const con_set_t&);
-    bool             has_value() const final { return value_ != std::nullopt; }
-    void             reset() final { value_ = std::nullopt; }
+    dir              direction() const final { return dir::output; }
     interface_type_e type() const final { return get_interface_type<T>(); }
-    virtual bool     accepts(interface_type_e type) const final;
 
-    const T get_value() const
-    {
-        if (!has_value()) {
-            // Since this happens after resolve, the value should always be set
-            assert(false);
-            return T();
-        }
-
-        return *value_;
-    }
-
+    T    get_value() const { return value_; }
     void set_value(const T& value) { value_ = value; }
 };
 
