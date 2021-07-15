@@ -22,9 +22,9 @@ class node_impl : public node_i
 
     bool prepare() final { return false; }
 
-    void execute(node_map_t& nodes, node_state& state) final
+    void execute(const node_map_t& nodes, const node_state& state) final
     {
-        iface_input_.resolve_connection_value(nodes, state.con_map["ip"]);
+        iface_input_.resolve_connection_value(nodes, state.get_connections("ip"));
         iface_output_.set_value(iface_input_.get_value());
     }
 

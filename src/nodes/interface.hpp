@@ -34,7 +34,7 @@ class interface_i
     virtual ~interface_i() {}
 
     bool         add_connection(con_set_t* connections, const connection& con, con_set_t& removed) const;
-    interface_i* resolve_connection(node_map_t&, con_set_t&);
+    interface_i* resolve_connection(const node_map_t&, const con_set_t&);
     dir          direction() { return direction_; }
 
     virtual bool has_value() const = 0;
@@ -54,7 +54,7 @@ class interface : public interface_i
         : interface_i(direction){};
     ~interface(){};
 
-    bool             resolve_connection_value(node_map_t&, con_set_t&);
+    bool             resolve_connection_value(const node_map_t&, const con_set_t&);
     bool             has_value() const final { return value_ != std::nullopt; }
     void             reset() final { value_ = std::nullopt; }
     interface_type_e type() final { return get_interface_type<T>(); }

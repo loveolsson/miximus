@@ -15,7 +15,7 @@ bool interface_i::add_connection(con_set_t* connections, const connection& con, 
     return success;
 }
 
-interface_i* interface_i::resolve_connection(node_map_t& nodes, con_set_t& connections)
+interface_i* interface_i::resolve_connection(const node_map_t& nodes, const con_set_t& connections)
 {
     if (direction_ == dir::output) {
         throw std::runtime_error("resolve_connection called on output interface");
@@ -75,7 +75,7 @@ bool interface<gpu::vec2>::accepts(interface_type_e type)
 }
 
 template <>
-bool interface<double>::resolve_connection_value(node_map_t& nodes, con_set_t& connections)
+bool interface<double>::resolve_connection_value(const node_map_t& nodes, const con_set_t& connections)
 {
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {
@@ -99,7 +99,7 @@ bool interface<double>::resolve_connection_value(node_map_t& nodes, con_set_t& c
 }
 
 template <>
-bool interface<int64_t>::resolve_connection_value(node_map_t& nodes, con_set_t& connections)
+bool interface<int64_t>::resolve_connection_value(const node_map_t& nodes, const con_set_t& connections)
 {
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {
@@ -123,7 +123,7 @@ bool interface<int64_t>::resolve_connection_value(node_map_t& nodes, con_set_t& 
 }
 
 template <>
-bool interface<gpu::vec2>::resolve_connection_value(node_map_t& nodes, con_set_t& connections)
+bool interface<gpu::vec2>::resolve_connection_value(const node_map_t& nodes, const con_set_t& connections)
 {
     if (auto* iface = resolve_connection(nodes, connections)) {
         switch (iface->type()) {

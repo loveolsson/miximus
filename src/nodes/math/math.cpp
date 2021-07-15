@@ -30,18 +30,20 @@ class node_impl : public node_i
 
     bool prepare() final { return false; }
 
-    void execute(node_map_t& nodes, node_state& state) final
+    void execute(const node_map_t& nodes, const node_state& state) final
     {
-        iface_a_.resolve_connection_value(nodes, state.con_map["a"]);
-        iface_b_.resolve_connection_value(nodes, state.con_map["b"]);
+        iface_a_.resolve_connection_value(nodes, state.get_connections("a"));
+        iface_b_.resolve_connection_value(nodes, state.get_connections("b"));
 
         T res{};
         T a = iface_a_.get_value();
         T b = iface_b_.get_value();
 
-        auto op = state.options["operation"].get<std::string_view>();
+        auto op = state.get_option<std::string_view>("operation", "add");
 
-        if (op == "sub") {
+        if (op == "add") {
+            res = a + b;
+        } else if (op == "sub") {
             res = a - b;
         } else if (op == "mul") {
             res = a * b;
@@ -49,8 +51,6 @@ class node_impl : public node_i
             res = glm::min(a, b);
         } else if (op == "max") {
             res = glm::max(a, b);
-        } else { // add
-            res = a + b;
         }
 
         iface_res_.set_value(res);

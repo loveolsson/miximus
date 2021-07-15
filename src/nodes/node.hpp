@@ -25,9 +25,9 @@ class node_i
     virtual ~node_i() = default;
 
   public:
-    virtual node_type_e type()                            = 0;
-    virtual bool        prepare()                         = 0;
-    virtual void        execute(node_map_t&, node_state&) = 0;
+    virtual node_type_e type()                                        = 0;
+    virtual bool        prepare()                                     = 0;
+    virtual void        execute(const node_map_t&, const node_state&) = 0;
     virtual void        complete();
 
     virtual nlohmann::json get_default_options()                                            = 0;
@@ -37,7 +37,7 @@ class node_i
     interface_i*           find_interface(std::string_view name);
 
     // NOTE(Love): get_prepared_interface needs to be virtual to link on MSVC and I have no idea why
-    virtual interface_i* get_prepared_interface(node_map_t&, node_state&, std::string_view name);
+    virtual interface_i* get_prepared_interface(const node_map_t&, const node_state&, std::string_view name);
 };
 
 std::shared_ptr<node_i> create_node(node_type_e type, error_e& error);

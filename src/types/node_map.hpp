@@ -16,6 +16,30 @@ struct node_state
 {
     con_map_t      con_map;
     nlohmann::json options;
+
+    const con_set_t& get_connections(std::string_view name) const
+    {
+        auto it = con_map.find(name);
+        if (it == con_map.end()) {
+            throw std::runtime_error(std::string("missing connection set ") + std::string(name));
+        }
+        return it->second;
+    }
+
+    template <typename T>
+    T get_option(std::string_view name, T fallback) const
+    {
+        auto it = options.find(name);
+        if (it == options.end()) {
+            return fallback;
+        }
+
+        try {
+            return it->get<T>();
+        } catch (nlohmann::json::exception& e) {
+            return T();
+        }
+    }
 };
 
 struct node_record
