@@ -28,8 +28,10 @@ static bool is_valid_common_option(std::string_view name, const json& value)
     return false;
 }
 
-error_e
-node_manager::handle_add_node(node_type_e type, const std::string& id, const nlohmann::json& options, int64_t client_id)
+error_e node_manager_s::handle_add_node(node_type_e           type,
+                                        const std::string&    id,
+                                        const nlohmann::json& options,
+                                        int64_t               client_id)
 {
     std::unique_lock lock(nodes_mutex_);
     log()->info("Creating {} node with id {}", type_to_string(type), id);
@@ -46,7 +48,7 @@ node_manager::handle_add_node(node_type_e type, const std::string& id, const nlo
         return error;
     }
 
-    node_record record;
+    node_record_s record;
     record.state.options = node->get_default_options();
 
     for (auto option = options.begin(); option != options.end(); ++option) {
@@ -73,11 +75,11 @@ node_manager::handle_add_node(node_type_e type, const std::string& id, const nlo
     return error;
 }
 
-error_e node_manager::handle_remove_node(const std::string& id, int64_t client_id)
+error_e node_manager_s::handle_remove_node(const std::string& id, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
 
-    std::vector<connection> removed_connections;
+    std::vector<connection_s> removed_connections;
 
     log()->info("Removing node with id {}", id);
 
@@ -108,7 +110,7 @@ error_e node_manager::handle_remove_node(const std::string& id, int64_t client_i
     return error_e::no_error;
 }
 
-error_e node_manager::handle_update_node(const std::string& id, const nlohmann::json& options, int64_t client_id)
+error_e node_manager_s::handle_update_node(const std::string& id, const nlohmann::json& options, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
 
@@ -142,9 +144,9 @@ error_e node_manager::handle_update_node(const std::string& id, const nlohmann::
 static bool is_connection_circular(node_map_t&                 nodes,
                                    std::set<std::string_view>* cleared_nodes,
                                    std::string_view            target_node_id,
-                                   const connection&           con)
+                                   const connection_s&         con)
 {
-    using dir = interface_i::dir;
+    using dir_e = interface_i::dir_e;
 
     if (cleared_nodes->count(con.from_node) > 0) {
         return false;
@@ -159,7 +161,7 @@ static bool is_connection_circular(node_map_t&                 nodes,
         const auto& con_map = node_it->second.state.con_map;
 
         for (const auto& [id, iface] : node->get_interfaces()) {
-            if (iface->direction() == dir::output) {
+            if (iface->direction() == dir_e::output) {
                 continue;
             }
 
@@ -181,9 +183,9 @@ static bool is_connection_circular(node_map_t&                 nodes,
     return false;
 }
 
-error_e node_manager::handle_add_connection(connection con, int64_t client_id)
+error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_id)
 {
-    using dir = interface_i::dir;
+    using dir_e = interface_i::dir_e;
     std::unique_lock lock(nodes_mutex_);
 
     if (connections_.count(con) > 0) {
@@ -212,7 +214,7 @@ error_e node_manager::handle_add_connection(connection con, int64_t client_id)
     auto from_dir = from_iface->direction();
     auto to_dir   = to_iface->direction();
 
-    if (from_dir == dir::input && to_dir == dir::output) {
+    if (from_dir == dir_e::input && to_dir == dir_e::output) {
         // Handle the case where the connection has been declared to-from
         std::swap(con.from_node, con.to_node);
         std::swap(con.from_interface, con.to_interface);
@@ -223,7 +225,7 @@ error_e node_manager::handle_add_connection(connection con, int64_t client_id)
         if (connections_.count(con) > 0) {
             return error_e::duplicate_id;
         }
-    } else if (from_dir == dir::input || to_dir == dir::output) {
+    } else if (from_dir == dir_e::input || to_dir == dir_e::output) {
         log()->warn("Interface directions does not match: {}, {}", from_dir, to_dir);
         return error_e::invalid_type;
     }
@@ -259,7 +261,7 @@ error_e node_manager::handle_add_connection(connection con, int64_t client_id)
     return error_e::no_error;
 }
 
-error_e node_manager::handle_remove_connection(const connection& con, int64_t client_id, bool do_lock)
+error_e node_manager_s::handle_remove_connection(const connection_s& con, int64_t client_id, bool do_lock)
 {
     auto lock = do_lock ? std::unique_lock<std::mutex>(nodes_mutex_) : std::unique_lock<std::mutex>();
 
@@ -290,7 +292,7 @@ error_e node_manager::handle_remove_connection(const connection& con, int64_t cl
     return error_e::not_found;
 }
 
-json node_manager::get_config()
+json node_manager_s::get_config()
 {
     std::unique_lock lock(nodes_mutex_);
 
@@ -306,12 +308,9 @@ json node_manager::get_config()
     }
 
     for (const auto& con : connections_) {
-        connections.emplace_back(json{
-            {"from_node", con.from_node},
-            {"from_interface", con.from_interface},
-            {"to_node", con.to_node},
-            {"to_interface", con.to_interface},
-        });
+        json j = con;
+
+        connections.emplace_back(std::move(j));
     }
 
     return {
@@ -320,7 +319,7 @@ json node_manager::get_config()
     };
 }
 
-void node_manager::set_config(const nlohmann::json& settings)
+void node_manager_s::set_config(const nlohmann::json& settings)
 {
     const auto& nodes       = settings["nodes"];
     const auto& connections = settings["connections"];
@@ -334,17 +333,13 @@ void node_manager::set_config(const nlohmann::json& settings)
     }
 
     for (const auto& con_obj : connections) {
-        connection con;
-        con.from_node      = con_obj["from_node"];
-        con.from_interface = con_obj["from_interface"];
-        con.to_node        = con_obj["to_node"];
-        con.to_interface   = con_obj["to_interface"];
+        auto con = con_obj.get<connection_s>();
 
         handle_add_connection(con, -1);
     }
 }
 
-void node_manager::add_adapter(std::unique_ptr<adapter_i>&& adapter)
+void node_manager_s::add_adapter(std::unique_ptr<adapter_i>&& adapter)
 {
     std::unique_lock lock(nodes_mutex_);
     if (adapter) {
@@ -352,30 +347,38 @@ void node_manager::add_adapter(std::unique_ptr<adapter_i>&& adapter)
     }
 }
 
-void node_manager::clear_adapters()
+void node_manager_s::clear_adapters()
 {
     std::unique_lock lock(nodes_mutex_);
     adapters_.clear();
 }
 
-void node_manager::tick_one_frame()
+void node_manager_s::tick_one_frame(app_state_s& app)
 {
     {
+        /**
+         * A few things are accomplished by copying the node map here:
+         * - The config if fixed during this frame, while not locking up the config thread
+         * - The lifetime of a node is guaraneed for the duration of the frame
+         * - Any node that has been prepared at least once is guaranteed to be destroyed in this thread,
+         *      making resource management a lot simpler
+         */
         std::unique_lock lock(nodes_mutex_);
         nodes_copy_ = nodes_;
     }
 
-    std::vector<node_record*> must_run;
+    std::vector<node_record_s*> must_execute;
 
+    // Call prepare on all nodes, and collect the ones that must execute
     for (auto& [_, record] : nodes_copy_) {
-        if (record.node->prepare(record.state)) {
-            must_run.emplace_back(&record);
+        if (record.node->prepare(app, record.state)) {
+            must_execute.emplace_back(&record);
         }
     }
 
-    for (auto* record : must_run) {
+    for (auto* record : must_execute) {
         if (!record->state.executed) {
-            record->node->execute(nodes_copy_, record->state);
+            record->node->execute(app, nodes_copy_, record->state);
         }
     }
 

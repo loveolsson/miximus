@@ -1,22 +1,12 @@
-#include "connection.hpp"
-#include <boost/functional/hash.hpp>
+#include "types/connection.hpp"
+
 #include <nlohmann/json.hpp>
 
 namespace miximus::nodes {
-
-nlohmann::json connection::serialize() const
-{
-    return {
-        {"from_node", from_node},
-        {"from_interface", from_interface},
-        {"to_node", to_node},
-        {"to_interface", to_interface},
-    };
-}
-
-std::size_t connection_hash::operator()(const miximus::nodes::connection& c) const
+std::size_t connection_hash::operator()(const connection_s& c) const
 {
     using boost::hash_combine;
+
     size_t res = 0;
 
     hash_combine(res, c.from_node);
@@ -25,5 +15,23 @@ std::size_t connection_hash::operator()(const miximus::nodes::connection& c) con
     hash_combine(res, c.to_interface);
 
     return res;
+}
+
+void to_json(nlohmann::json& j, const miximus::nodes::connection_s& con)
+{
+    j = nlohmann::json{
+        {"from_node", con.from_node},
+        {"from_interface", con.from_interface},
+        {"to_node", con.to_node},
+        {"to_interface", con.to_interface},
+    };
+}
+
+void from_json(const nlohmann::json& j, miximus::nodes::connection_s& con)
+{
+    j.at("from_node").get_to(con.from_node);
+    j.at("from_interface").get_to(con.from_interface);
+    j.at("to_node").get_to(con.to_node);
+    j.at("to_interface").get_to(con.to_interface);
 }
 } // namespace miximus::nodes

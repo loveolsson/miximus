@@ -8,8 +8,6 @@
 
 namespace miximus::nodes {
 
-void node_i::complete() {}
-
 interface_i* node_i::find_interface(std::string_view name)
 {
     auto it = interfaces_.find(name);

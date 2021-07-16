@@ -1,5 +1,6 @@
 import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import NodeView from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/src/components/node/Node.vue";
+import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 
 import { ws_wrapper } from "./websocket";
 import {
@@ -27,8 +28,12 @@ interface NodeInfo {
 export class view_intercept {
   infos = new Map<string, NodeInfo>();
 
-  constructor(view_plugin: ViewPlugin, private ws: ws_wrapper) {
-    view_plugin.hooks.renderNode.tap({}, (view) => {
+  constructor(
+    view_plugin: ViewPlugin,
+    type_plugin: InterfaceTypePlugin,
+    private ws: ws_wrapper
+  ) {
+    view_plugin.hooks.renderNode.tap(this, (view) => {
       const info = this.get_or_create_info(view);
       const new_pos = view_intercept.transform_position(view);
 
@@ -40,6 +45,14 @@ export class view_intercept {
       }
 
       return view;
+    });
+
+    view_plugin.hooks.renderConnection.tap(this, (con) => {
+      const f = type_plugin as any;
+      const color = f.types.get(con.connection.from.type).color;
+      con.$el.setAttribute("style", "stroke: " + color);
+
+      return con;
     });
   }
 
@@ -76,6 +89,13 @@ export class view_intercept {
     view.data.events.update.addListener({}, (ev) => {
       if (ev.option) {
         const value = ev.option.value;
+        if (info!.options[ev.name] !== value) {
+          this.handle_value_change(info!, ev.name, value);
+        }
+      }
+
+      if (ev.interface) {
+        const value = ev.interface.value;
         if (info!.options[ev.name] !== value) {
           this.handle_value_change(info!, ev.name, value);
         }

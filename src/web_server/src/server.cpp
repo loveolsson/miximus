@@ -2,28 +2,31 @@
 #include "server_impl.hpp"
 
 namespace miximus::web_server {
-server::server()
+server_s::server_s()
     : impl(std::make_unique<detail::web_server_impl>())
 {
 }
 
-server::~server() { impl.reset(); }
+server_s::~server_s() { impl.reset(); }
 
-void server::subscribe(topic_e topic, const callback_t& callback) { impl->subscribe(topic, callback); }
+void server_s::subscribe(topic_e topic, const callback_t& callback) { impl->subscribe(topic, callback); }
 
-void server::start(uint16_t port) { impl->start(port); }
+void server_s::start(uint16_t port) { impl->start(port); }
 
-void server::stop() { impl->stop(); }
+void server_s::stop() { impl->stop(); }
 
-void server::send_message(const nlohmann::json& msg, int64_t connection_id) { impl->send_message(msg, connection_id); }
+void server_s::send_message(const nlohmann::json& msg, int64_t connection_id)
+{
+    impl->send_message(msg, connection_id);
+}
 
-void server::send_message_sync(const nlohmann::json& msg, int64_t connection_id)
+void server_s::send_message_sync(const nlohmann::json& msg, int64_t connection_id)
 {
     impl->send_message_sync(msg, connection_id);
 }
 
-void server::broadcast_message(const nlohmann::json& msg) { impl->broadcast_message(msg); }
+void server_s::broadcast_message(const nlohmann::json& msg) { impl->broadcast_message(msg); }
 
-void server::broadcast_message_sync(const nlohmann::json& msg) { impl->broadcast_message_sync(msg); }
+void server_s::broadcast_message_sync(const nlohmann::json& msg) { impl->broadcast_message_sync(msg); }
 
 } // namespace miximus::web_server

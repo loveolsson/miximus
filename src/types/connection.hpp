@@ -1,4 +1,5 @@
 #pragma once
+#include <boost/functional/hash.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <string>
@@ -6,7 +7,7 @@
 
 namespace miximus::nodes {
 
-struct connection
+struct connection_s
 {
     std::string from_node;
     std::string from_interface;
@@ -14,14 +15,15 @@ struct connection
     std::string to_interface;
 
     auto tie() const { return std::tie(from_node, from_interface, to_node, to_interface); }
-    bool operator==(const connection& o) const { return tie() == o.tie(); }
-
-    nlohmann::json serialize() const;
+    bool operator==(const connection_s& o) const { return tie() == o.tie(); }
 };
 
 struct connection_hash
 {
-    std::size_t operator()(const miximus::nodes::connection& c) const;
+    std::size_t operator()(const connection_s& c) const;
 };
+
+void to_json(nlohmann::json& j, const miximus::nodes::connection_s& con);
+void from_json(const nlohmann::json& j, miximus::nodes::connection_s& con);
 
 } // namespace miximus::nodes

@@ -1,4 +1,5 @@
 #pragma once
+#include "application/app_state.hpp"
 #include "types/error.hpp"
 #include "types/node_map.hpp"
 #include "types/node_type.hpp"
@@ -12,11 +13,10 @@
 namespace miximus::nodes {
 
 class interface_i;
-class node_cfg;
 
 class node_i
 {
-    typedef std::unordered_map<std::string_view, interface_i*> interface_map_t;
+    using interface_map_t = std::unordered_map<std::string_view, interface_i*>;
 
   protected:
     interface_map_t interfaces_;
@@ -25,13 +25,13 @@ class node_i
     virtual ~node_i() = default;
 
   public:
-    virtual node_type_e type()                                  = 0;
-    virtual bool        prepare(const node_state&)              = 0;
-    virtual void        execute(node_map_t&, const node_state&) = 0;
-    virtual void        complete();
+    virtual node_type_e type() const                                                  = 0;
+    virtual bool        prepare(app_state_s&, const node_state_s&)                    = 0;
+    virtual void        execute(app_state_s&, const node_map_t&, const node_state_s&) = 0;
+    virtual void        complete(){};
 
-    virtual nlohmann::json get_default_options() { return nlohmann::json::object(); }
-    virtual bool           check_option(std::string_view name, const nlohmann::json& value) = 0;
+    virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }
+    virtual bool           check_option(std::string_view name, const nlohmann::json& value) const = 0;
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     interface_i*           find_interface(std::string_view name);

@@ -90,7 +90,7 @@ import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import { OptionPlugin } from "@baklavajs/plugin-options-vue";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { ws_wrapper } from "./websocket";
-import { register_types } from "./nodes/register_types";
+import { register_connection_types, register_types } from "./nodes/register_types";
 import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/types";
 import { view_intercept } from "./view_intercept";
 import { helpers } from "./helpers";
@@ -116,7 +116,7 @@ export default class Miximus extends Vue {
   viewPlugin = new ViewPlugin();
   intfTypePlugin = new InterfaceTypePlugin();
   wsWrapper = new ws_wrapper();
-  view_intercept = new view_intercept(this.viewPlugin, this.wsWrapper);
+  view_intercept = new view_intercept(this.viewPlugin, this.intfTypePlugin, this.wsWrapper);
   nodes_mutated = true;
   node_to_be_added?: Node;
   node_to_be_removed?: Node;
@@ -134,6 +134,7 @@ export default class Miximus extends Vue {
     this.viewPlugin.enableMinimap = true;
 
     register_types(this.editor);
+    register_connection_types(this.intfTypePlugin);
 
     const token = {};
     this.editor.events.addNode.addListener(token, (ev) =>
@@ -247,15 +248,15 @@ export default class Miximus extends Vue {
         const pos = (node as unknown as IViewNode).position;
         x0 = Math.min(x0, pos.x);
         y0 = Math.min(y0, pos.y);
-        x1 = Math.max(x1, pos.x + 180);
-        y1 = Math.max(y1, pos.y + 180);
+        x1 = Math.max(x1, pos.x + 200);
+        y1 = Math.max(y1, pos.y + 200);
 
       }
 
       if (this.$refs.editorArea instanceof Element) {
         const area = this.$refs.editorArea;
-        const w = x1 - x0 + 180;
-        const h = y1 - y0 + 180;
+        const w = x1 - x0 + 200;
+        const h = y1 - y0 + 200;
 
         const scale = Math.min(
           Math.min(
@@ -371,6 +372,13 @@ export default class Miximus extends Vue {
             const opt = node.options.get(key);
             if (opt) {
               opt.value = value;
+              break;
+            }
+            
+            const iface = node.getInterface(key);
+            if (iface && iface.isInput) {
+              iface.value = value;
+              break;
             }
           }
         }

@@ -14,17 +14,50 @@
 #include <iostream>
 #include <thread>
 
+using namespace miximus;
+using namespace std::filesystem;
 using namespace std::chrono_literals;
+using nlohmann::json;
 
 static volatile std::sig_atomic_t g_signal_status = 0;
 
-void signal_handler(int /*signal*/) { g_signal_status = 1; }
+static void signal_handler(int /*signal*/) { g_signal_status = 1; }
+
+static void load_settings(nodes::node_manager_s& manager, const path& settings_path)
+{
+    auto log = spdlog::get("app");
+
+    std::ifstream file(settings_path);
+    if (file.is_open()) {
+        log->info("Reading settings from {}", settings_path.u8string());
+
+        try {
+            manager.set_config(json::parse(file));
+        } catch (json::exception& e) {
+            // This error should panic as we don't want to run the app with a partial config, or overwrite
+            // the broken file with an empty config on exit
+            throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
+        }
+    } else {
+        log->error("Failed to open settings file {}", settings_path.u8string());
+    }
+}
+
+static void save_settings(nodes::node_manager_s& manager, const path& settings_path)
+{
+    auto log = spdlog::get("app");
+
+    std::ofstream file(settings_path);
+    if (file.is_open()) {
+        log->info("Writing settings to {}", settings_path.u8string());
+        file << std::setfill(' ') << std::setw(2) << manager.get_config();
+    } else {
+        log->error("Failed to write settings to {}", settings_path.u8string());
+    }
+}
 
 int main(int argc, char** argv)
 {
-    using namespace miximus;
-    using namespace std::filesystem;
-    using nlohmann::json;
     std::signal(SIGINT, signal_handler);
 
     try {
@@ -43,61 +76,32 @@ int main(int argc, char** argv)
         }
 
         logger::init_loggers(log_level);
-        auto log = spdlog::get("app");
 
         nodes::decklink::log_device_names();
 
         {
-            web_server::server  web_server_;
-            nodes::node_manager node_manager_;
+            app_state_s           app;
+            web_server::server_s  web_server;
+            nodes::node_manager_s node_manager;
 
-            {
-                log->info(R"(Reading settings file "{}" )", settings_path.u8string());
-                std::ifstream file(settings_path);
-                if (file.is_open()) {
-                    try {
-                        node_manager_.set_config(json::parse(file));
-                    } catch (json::exception& e) {
-                        // This error should panic as we don't want to run the app with a partial config, or overwrite
-                        // the broken file with an empty config on exit
-                        throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
-                    }
-                } else {
-                    log->error("Failed to open settings file {}", settings_path.u8string());
-                }
-            }
+            load_settings(node_manager, settings_path);
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            node_manager_.add_adapter(std::make_unique<nodes::websocket_config>(node_manager_, web_server_));
+            node_manager.add_adapter(std::make_unique<nodes::websocket_config_s>(node_manager, web_server));
+            web_server.start(7351);
 
-            {
-                application::state app;
-
-                web_server_.start(7351);
-
-                while (g_signal_status == 0) {
-                    gpu::context::poll();
-                    node_manager_.tick_one_frame();
-                    std::this_thread::sleep_for(16ms);
-                }
+            while (g_signal_status == 0) {
+                gpu::context::poll();
+                node_manager.tick_one_frame(app);
+                std::this_thread::sleep_for(16ms);
             }
 
-            node_manager_.clear_adapters();
-            web_server_.stop();
+            web_server.stop();
+            node_manager.clear_adapters();
 
-            {
-                std::ofstream file(settings_path);
-                if (file.is_open()) {
-                    log->info("Writing settings to {}", settings_path.u8string());
-                    file << std::setfill(' ') << std::setw(2) << node_manager_.get_config();
-                } else {
-                    log->error("Failed to write settings to {}", settings_path.u8string());
-                }
-            }
+            save_settings(node_manager, settings_path);
 
-            gpu::context::terminate();
-
-            log->info("Exiting...");
+            spdlog::get("app")->info("Exiting...");
         }
 
         spdlog::shutdown();

@@ -11,9 +11,9 @@
 
 namespace miximus::gpu {
 
-class shader_program
+class shader_program_s
 {
-    struct attribute
+    struct attribute_s
     {
         std::string name;
         GLint       loc;
@@ -21,26 +21,26 @@ class shader_program
         GLint       size;
     };
 
-    struct uniform
+    struct uniform_s
     {
         GLint  loc;
         GLenum type;
         GLint  size;
     };
 
-    typedef std::vector<attribute>                   attr_list_t;
-    typedef std::unordered_map<std::string, uniform> uniform_map_t;
+    using attr_list_t   = std::vector<attribute_s>;
+    using uniform_map_t = std::unordered_map<std::string, uniform_s>;
 
     GLuint        program_;
     attr_list_t   attributes_;
     uniform_map_t uniforms_;
 
   public:
-    shader_program(const static_files::file_map_t& files, std::string_view vert_name, std::string_view frag_name);
-    ~shader_program();
+    shader_program_s(const static_files::file_map_t& files, std::string_view vert_name, std::string_view frag_name);
+    ~shader_program_s();
 
-    shader_program(const shader_program&) = delete;
-    shader_program(shader_program&&) noexcept;
+    shader_program_s(const shader_program_s&) = delete;
+    shader_program_s(shader_program_s&&) noexcept;
 
     void        use();
     static void use_none();
@@ -50,7 +50,7 @@ class shader_program
 };
 
 template <typename T>
-inline void shader_program::set_vertex_type()
+inline void shader_program_s::set_vertex_type()
 {
     constexpr auto info = get_vertex_type_info<T>();
 
@@ -69,17 +69,17 @@ inline void shader_program::set_vertex_type()
     }
 }
 
-class shader_store
+class shader_store_s
 {
-    typedef std::unordered_map<std::string_view, shader_program> map_t;
+    using shader_map_t = std::unordered_map<std::string_view, shader_program_s>;
 
-    map_t shaders_;
+    shader_map_t shaders_;
 
   public:
-    shader_store();
-    ~shader_store() = default;
+    shader_store_s();
+    ~shader_store_s() = default;
 
-    shader_program& get_shader(std::string_view name);
+    shader_program_s& get_shader(std::string_view name);
 };
 
 } // namespace miximus::gpu

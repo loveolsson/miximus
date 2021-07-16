@@ -59,9 +59,9 @@ class shader
     GLuint id() const { return id_; }
 };
 
-shader_program::shader_program(const static_files::file_map_t& files,
-                               std::string_view                vert_name,
-                               std::string_view                frag_name)
+shader_program_s::shader_program_s(const static_files::file_map_t& files,
+                                   std::string_view                vert_name,
+                                   std::string_view                frag_name)
     : program_(0)
 {
     auto log = spdlog::get("gpu");
@@ -106,7 +106,7 @@ shader_program::shader_program(const static_files::file_map_t& files,
 
         GLint loc = glGetAttribLocation(program_, name.data());
         if (loc != -1) {
-            attribute attr{};
+            attribute_s attr{};
             attr.name = name.data();
             attr.loc  = loc;
             attr.type = type;
@@ -126,7 +126,7 @@ shader_program::shader_program(const static_files::file_map_t& files,
 
         GLint loc = glGetUniformLocation(program_, name.data());
         if (loc != -1) {
-            uniform uni{};
+            uniform_s uni{};
             uni.loc  = loc;
             uni.type = type;
             uni.size = size;
@@ -136,7 +136,7 @@ shader_program::shader_program(const static_files::file_map_t& files,
     }
 }
 
-shader_program::shader_program(shader_program&& o) noexcept
+shader_program_s::shader_program_s(shader_program_s&& o) noexcept
 {
     program_    = o.program_;
     o.program_  = 0;
@@ -144,7 +144,7 @@ shader_program::shader_program(shader_program&& o) noexcept
     uniforms_   = std::move(o.uniforms_);
 }
 
-shader_program::~shader_program()
+shader_program_s::~shader_program_s()
 {
     if (program_ != 0) {
         glUseProgram(0);
@@ -152,13 +152,13 @@ shader_program::~shader_program()
     }
 }
 
-shader_store::shader_store()
+shader_store_s::shader_store_s()
 {
     auto files = static_files::get_shader_files();
-    shaders_.emplace("basic", shader_program{files, "basic_vert.glsl", "basic_frag.glsl"});
+    shaders_.emplace("basic", shader_program_s{files, "basic_vert.glsl", "basic_frag.glsl"});
 }
 
-shader_program& shader_store::get_shader(std::string_view name)
+shader_program_s& shader_store_s::get_shader(std::string_view name)
 {
     auto it = shaders_.find(name);
     if (it == shaders_.end()) {

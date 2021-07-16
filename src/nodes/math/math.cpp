@@ -6,38 +6,68 @@
 
 #include <functional>
 
-namespace miximus::nodes::math {
+namespace {
 
 template <typename T>
+bool validate_num_option(const nlohmann::json&);
+
+template <>
+bool validate_num_option<int64_t>(const nlohmann::json& val)
+{
+    return val.is_number_integer();
+}
+
+template <>
+bool validate_num_option<double>(const nlohmann::json& val)
+{
+    return val.is_number();
+}
+
+template <>
+bool validate_num_option<miximus::gpu::vec2>(const nlohmann::json& val)
+{
+    if (!val.is_array() || val.size() != 2) {
+        return false;
+    }
+    if (!val[0].is_number() || !val[1].is_number()) {
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+namespace miximus::nodes::math {
+
+template <typename T, node_type_e Type>
 class node_impl : public node_i
 {
-    using dir = interface_i::dir;
+    using dir = interface_i::dir_e;
 
-    const node_type_e type_;
-
-    input_interface<T>  iface_a_;
-    input_interface<T>  iface_b_;
-    output_interface<T> iface_res_;
+    input_interface_s<T>  iface_a_;
+    input_interface_s<T>  iface_b_;
+    output_interface_s<T> iface_res_;
 
   public:
-    explicit node_impl(node_type_e type)
-        : type_(type)
+    explicit node_impl()
     {
         interfaces_.emplace("a", &iface_a_);
         interfaces_.emplace("b", &iface_b_);
         interfaces_.emplace("res", &iface_res_);
     }
 
-    bool prepare(const node_state&) final { return true; }
+    bool prepare(app_state_s&, const node_state_s&) final { return true; }
 
-    void execute(node_map_t& nodes, const node_state& state) final
+    void execute(app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
     {
         T res{};
 
-        auto a = iface_a_.resolve_value(nodes, state.get_connections("a"));
-        auto b = iface_b_.resolve_value(nodes, state.get_connections("b"));
+        auto op    = state.get_option<std::string_view>("operation", "add");
+        auto a_opt = state.get_option<T>("a");
+        auto b_opt = state.get_option<T>("b");
 
-        auto op = state.get_option<std::string_view>("operation", "add");
+        auto a = iface_a_.resolve_value(app, nodes, state.get_connection_set("a"), a_opt);
+        auto b = iface_b_.resolve_value(app, nodes, state.get_connection_set("b"), b_opt);
 
         if (op == "add") {
             res = a + b;
@@ -56,7 +86,7 @@ class node_impl : public node_i
 
     void complete() final { node_i::complete(); }
 
-    nlohmann::json get_default_options() final
+    nlohmann::json get_default_options() const final
     {
         std::string_view name("Math");
         switch (type()) {
@@ -79,7 +109,7 @@ class node_impl : public node_i
         };
     }
 
-    bool check_option(std::string_view name, const nlohmann::json& value) final
+    bool check_option(std::string_view name, const nlohmann::json& value) const final
     {
         if (name == "operation") {
             if (!value.is_string()) {
@@ -90,23 +120,25 @@ class node_impl : public node_i
             if (val == "add" || val == "sub" || val == "mul" || val == "min" || val == "max") {
                 return true;
             }
+        } else if (name == "a" || name == "b") {
+            return validate_num_option<T>(value);
         }
 
         return false;
     }
 
-    node_type_e type() final { return type_; }
+    node_type_e type() const final { return Type; }
 };
 
 std::shared_ptr<node_i> create_node(node_type_e type)
 {
     switch (type) {
         case node_type_e::math_f64:
-            return std::make_shared<node_impl<double>>(node_type_e::math_f64);
+            return std::make_shared<node_impl<double, node_type_e::math_f64>>();
         case node_type_e::math_i64:
-            return std::make_shared<node_impl<int64_t>>(node_type_e::math_i64);
+            return std::make_shared<node_impl<int64_t, node_type_e::math_i64>>();
         case node_type_e::math_vec2:
-            return std::make_shared<node_impl<gpu::vec2>>(node_type_e::math_vec2);
+            return std::make_shared<node_impl<gpu::vec2, node_type_e::math_vec2>>();
 
         default:
             return nullptr;

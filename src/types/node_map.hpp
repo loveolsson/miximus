@@ -1,24 +1,34 @@
 #pragma once
-#include "types/connection_set.hpp"
+#include "types/connection.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <map>
 #include <memory>
-#include <unordered_map>
+#include <unordered_set>
 
 namespace miximus::nodes {
 
 class node_i;
 
-using con_map_t = std::unordered_map<std::string_view, con_set_t>;
+// Set of connections connected to an interface
+using con_set_t = std::unordered_set<connection_s, connection_hash>;
 
-struct node_state
+// Map of connection sets, keyed of interface name
+using con_map_t = std::map<std::string_view, con_set_t>;
+
+/**
+ * Configuration state of a node
+ * This is stored separate from the node and can be copied without
+ * involving the node instance
+ */
+struct node_state_s
 {
     con_map_t      con_map;
     nlohmann::json options;
-    bool           executed{false};
+    mutable bool   executed{false};
 
-    const con_set_t& get_connections(std::string_view name) const
+    const con_set_t& get_connection_set(std::string_view name) const
     {
         auto it = con_map.find(name);
         if (it == con_map.end()) {
@@ -28,7 +38,7 @@ struct node_state
     }
 
     template <typename T>
-    T get_option(std::string_view name, T fallback) const
+    T get_option(std::string_view name, const T& fallback = T()) const
     {
         auto it = options.find(name);
         if (it == options.end()) {
@@ -43,12 +53,17 @@ struct node_state
     }
 };
 
-struct node_record
+/**
+ * Record of a node contaning an owning reference to the node
+ * and a copy of it's config
+ */
+struct node_record_s
 {
     std::shared_ptr<node_i> node;
-    node_state              state;
+    node_state_s            state;
 };
 
-using node_map_t = std::unordered_map<std::string, node_record>;
+// Map of node records, keyed of node id
+using node_map_t = std::unordered_map<std::string, node_record_s>;
 
 } // namespace miximus::nodes
