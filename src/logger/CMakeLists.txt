@@ -1,6 +1,6 @@
 add_library(logger
-    include/logger/logger.hpp 
-    src/logger.cpp
+    logger.hpp 
+    logger.cpp
 )
 
 target_link_libraries(logger 

@@ -3,7 +3,7 @@
 #include "gpu/shader.hpp"
 #include <memory>
 
-namespace miximus {
+namespace miximus::core {
 
 class app_state_s
 {
@@ -15,4 +15,4 @@ class app_state_s
     ~app_state_s();
 };
 
-} // namespace miximus
+} // namespace miximus::core

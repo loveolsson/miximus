@@ -1,4 +1,4 @@
-#include "types/connection.hpp"
+#include "nodes/connection.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -17,7 +17,7 @@ std::size_t connection_hash::operator()(const connection_s& c) const
     return res;
 }
 
-void to_json(nlohmann::json& j, const miximus::nodes::connection_s& con)
+void to_json(nlohmann::json& j, const connection_s& con)
 {
     j = nlohmann::json{
         {"from_node", con.from_node},
@@ -27,7 +27,7 @@ void to_json(nlohmann::json& j, const miximus::nodes::connection_s& con)
     };
 }
 
-void from_json(const nlohmann::json& j, miximus::nodes::connection_s& con)
+void from_json(const nlohmann::json& j, connection_s& con)
 {
     j.at("from_node").get_to(con.from_node);
     j.at("from_interface").get_to(con.from_interface);

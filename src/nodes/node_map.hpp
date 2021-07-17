@@ -1,5 +1,5 @@
 #pragma once
-#include "types/connection.hpp"
+#include "nodes/connection.hpp"
 
 #include <nlohmann/json.hpp>
 

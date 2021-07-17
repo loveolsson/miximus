@@ -1,8 +1,7 @@
 #pragma once
-#include "application/app_state.hpp"
+#include "core/app_state.hpp"
 #include "gpu/types.hpp"
-#include "types/interface_type.hpp"
-#include "types/node_map.hpp"
+#include "nodes/node_map.hpp"
 
 #include <climits>
 #include <optional>
@@ -12,8 +11,23 @@
 
 namespace miximus::nodes {
 
+enum class interface_type_e
+{
+    invalid = -1,
+    f64     = 0,
+    i64,
+    vec2,
+    rect,
+    texture,
+    framebuffer,
+};
+
 class interface_i
 {
+  protected:
+    template <typename T>
+    static interface_type_e get_interface_type();
+
   public:
     enum class dir_e
     {
@@ -24,8 +38,8 @@ class interface_i
     interface_i()          = default;
     virtual ~interface_i() = default;
 
-    bool         add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
-    interface_i* resolve_connection(app_state_s&, const node_map_t&, const con_set_t&) const;
+    bool               add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
+    const interface_i* resolve_connection(core::app_state_s&, const node_map_t&, const con_set_t&) const;
 
     virtual dir_e            direction() const = 0;
     virtual interface_type_e type() const      = 0;
@@ -43,7 +57,10 @@ class input_interface_s : public interface_i
     interface_type_e type() const final { return get_interface_type<T>(); }
     bool             accepts(interface_type_e type) const final;
 
-    T resolve_value(app_state_s&, const node_map_t& nodes, const con_set_t& connections, const T& fallback = T()) const;
+    T resolve_value(core::app_state_s&,
+                    const node_map_t& nodes,
+                    const con_set_t&  connections,
+                    const T&          fallback = T()) const;
 };
 
 template <typename T>

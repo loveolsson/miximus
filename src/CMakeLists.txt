@@ -12,7 +12,7 @@ add_subdirectory(messages)
 add_subdirectory(nodes)
 add_subdirectory(gpu)
 add_subdirectory(wrapper)
-add_subdirectory(application)
+add_subdirectory(core)
 
 set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
 

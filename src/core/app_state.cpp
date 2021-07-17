@@ -1,6 +1,6 @@
-#include "application/app_state.hpp"
+#include "core/app_state.hpp"
 
-namespace miximus {
+namespace miximus::core {
 
 app_state_s::app_state_s()
 {
@@ -15,4 +15,4 @@ app_state_s::~app_state_s()
     gpu::context::terminate();
 }
 
-} // namespace miximus
+} // namespace miximus::core

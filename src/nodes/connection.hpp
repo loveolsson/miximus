@@ -23,7 +23,7 @@ struct connection_hash
     std::size_t operator()(const connection_s& c) const;
 };
 
-void to_json(nlohmann::json& j, const miximus::nodes::connection_s& con);
-void from_json(const nlohmann::json& j, miximus::nodes::connection_s& con);
+void to_json(nlohmann::json& j, const connection_s& con);
+void from_json(const nlohmann::json& j, connection_s& con);
 
 } // namespace miximus::nodes

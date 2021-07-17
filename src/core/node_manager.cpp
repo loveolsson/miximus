@@ -1,4 +1,4 @@
-#include "nodes/manager.hpp"
+#include "core/node_manager.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -9,7 +9,7 @@
 
 #include <set>
 
-namespace miximus::nodes {
+namespace miximus::core {
 using nlohmann::json;
 
 static auto log() { return spdlog::get("app"); };
@@ -28,13 +28,13 @@ static bool is_valid_common_option(std::string_view name, const json& value)
     return false;
 }
 
-error_e node_manager_s::handle_add_node(node_type_e           type,
+error_e node_manager_s::handle_add_node(nodes::node_i::type_e type,
                                         const std::string&    id,
                                         const nlohmann::json& options,
                                         int64_t               client_id)
 {
     std::unique_lock lock(nodes_mutex_);
-    log()->info("Creating {} node with id {}", type_to_string(type), id);
+    log()->info("Creating {} node with id {}", nodes::node_i::type_to_string(type), id);
 
     if (nodes_.count(id) > 0) {
         log()->warn("Node id {} already in use", id);
@@ -42,20 +42,20 @@ error_e node_manager_s::handle_add_node(node_type_e           type,
     }
 
     error_e error = error_e::no_error;
-    auto    node  = create_node(type, error);
+    auto    node  = nodes::create_node(type, error);
 
     if (error != error_e::no_error) {
         return error;
     }
 
-    node_record_s record;
+    nodes::node_record_s record;
     record.state.options = node->get_default_options();
 
     for (auto option = options.begin(); option != options.end(); ++option) {
         const auto& key   = option.key();
         const auto& value = option.value();
 
-        if (is_valid_common_option(key, value) || node->check_option(key, value)) {
+        if (is_valid_common_option(key, value) || node->test_option(key, value)) {
             record.state.options[key] = value;
         }
     }
@@ -66,7 +66,7 @@ error_e node_manager_s::handle_add_node(node_type_e           type,
 
     // Prime the state with a con_set_t for each interface
     for (const auto& [id, _] : node->get_interfaces()) {
-        record.state.con_map.emplace(id, con_set_t{});
+        record.state.con_map.emplace(id, nodes::con_set_t{});
     }
 
     record.node = std::move(node);
@@ -79,7 +79,7 @@ error_e node_manager_s::handle_remove_node(const std::string& id, int64_t client
 {
     std::unique_lock lock(nodes_mutex_);
 
-    std::vector<connection_s> removed_connections;
+    std::vector<nodes::connection_s> removed_connections;
 
     log()->info("Removing node with id {}", id);
 
@@ -129,7 +129,7 @@ error_e node_manager_s::handle_update_node(const std::string& id, const nlohmann
         const auto& key   = option.key();
         const auto& value = option.value();
 
-        if (is_valid_common_option(key, value) || node->check_option(key, value)) {
+        if (is_valid_common_option(key, value) || node->test_option(key, value)) {
             state.options[key] = value;
         }
     }
@@ -141,12 +141,12 @@ error_e node_manager_s::handle_update_node(const std::string& id, const nlohmann
     return error_e::no_error;
 }
 
-static bool is_connection_circular(node_map_t&                 nodes,
+static bool is_connection_circular(nodes::node_map_t&          nodes,
                                    std::set<std::string_view>* cleared_nodes,
                                    std::string_view            target_node_id,
-                                   const connection_s&         con)
+                                   const nodes::connection_s&  con)
 {
-    using dir_e = interface_i::dir_e;
+    using dir_e = nodes::interface_i::dir_e;
 
     if (cleared_nodes->count(con.from_node) > 0) {
         return false;
@@ -183,9 +183,9 @@ static bool is_connection_circular(node_map_t&                 nodes,
     return false;
 }
 
-error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_id)
+error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t client_id)
 {
-    using dir_e = interface_i::dir_e;
+    using dir_e = nodes::interface_i::dir_e;
     std::unique_lock lock(nodes_mutex_);
 
     if (connections_.count(con) > 0) {
@@ -241,7 +241,7 @@ error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_i
         return error_e::circular_connection;
     }
 
-    con_set_t removed_connections;
+    nodes::con_set_t removed_connections;
     connections_.emplace(con);
 
     auto& from_connections = from_node_it->second.state.con_map[con.from_interface];
@@ -261,7 +261,7 @@ error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_i
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_remove_connection(const connection_s& con, int64_t client_id, bool do_lock)
+error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id, bool do_lock)
 {
     auto lock = do_lock ? std::unique_lock<std::mutex>(nodes_mutex_) : std::unique_lock<std::mutex>();
 
@@ -302,7 +302,7 @@ json node_manager_s::get_config()
     for (const auto& [id, record] : nodes_) {
         nodes.emplace_back(json{
             {"id", id},
-            {"type", type_to_string(record.node->type())},
+            {"type", nodes::node_i::type_to_string(record.node->type())},
             {"options", record.state.options},
         });
     }
@@ -329,11 +329,11 @@ void node_manager_s::set_config(const nlohmann::json& settings)
         std::string id      = node_obj["id"];
         const auto& options = node_obj["options"];
 
-        handle_add_node(type_from_string(type), id, options, -1);
+        handle_add_node(nodes::node_i::type_from_string(type), id, options, -1);
     }
 
     for (const auto& con_obj : connections) {
-        auto con = con_obj.get<connection_s>();
+        auto con = con_obj.get<nodes::connection_s>();
 
         handle_add_connection(con, -1);
     }
@@ -367,7 +367,7 @@ void node_manager_s::tick_one_frame(app_state_s& app)
         nodes_copy_ = nodes_;
     }
 
-    std::vector<node_record_s*> must_execute;
+    std::vector<nodes::node_record_s*> must_execute;
 
     // Call prepare on all nodes, and collect the ones that must execute
     for (auto& [_, record] : nodes_copy_) {
@@ -387,4 +387,4 @@ void node_manager_s::tick_one_frame(app_state_s& app)
     }
 }
 
-} // namespace miximus::nodes
+} // namespace miximus::core

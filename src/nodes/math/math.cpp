@@ -39,7 +39,7 @@ bool validate_num_option<miximus::gpu::vec2>(const nlohmann::json& val)
 
 namespace miximus::nodes::math {
 
-template <typename T, node_type_e Type>
+template <typename T, node_i::type_e Type>
 class node_impl : public node_i
 {
     using dir = interface_i::dir_e;
@@ -56,9 +56,9 @@ class node_impl : public node_i
         interfaces_.emplace("res", &iface_res_);
     }
 
-    bool prepare(app_state_s&, const node_state_s&) final { return true; }
+    bool prepare(core::app_state_s&, const node_state_s&) final { return true; }
 
-    void execute(app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
     {
         T res{};
 
@@ -90,13 +90,13 @@ class node_impl : public node_i
     {
         std::string_view name("Math");
         switch (type()) {
-            case node_type_e::math_f64:
+            case type_e::math_f64:
                 name = "Floating point math";
                 break;
-            case node_type_e::math_i64:
+            case type_e::math_i64:
                 name = "Integer math";
                 break;
-            case node_type_e::math_vec2:
+            case type_e::math_vec2:
                 name = "Vector math";
                 break;
             default:
@@ -109,7 +109,7 @@ class node_impl : public node_i
         };
     }
 
-    bool check_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, const nlohmann::json& value) const final
     {
         if (name == "operation") {
             if (!value.is_string()) {
@@ -127,18 +127,20 @@ class node_impl : public node_i
         return false;
     }
 
-    node_type_e type() const final { return Type; }
+    type_e type() const final { return Type; }
 };
 
-std::shared_ptr<node_i> create_node(node_type_e type)
+std::shared_ptr<node_i> create_node(node_i::type_e type)
 {
+    using type_e = node_i::type_e;
+
     switch (type) {
-        case node_type_e::math_f64:
-            return std::make_shared<node_impl<double, node_type_e::math_f64>>();
-        case node_type_e::math_i64:
-            return std::make_shared<node_impl<int64_t, node_type_e::math_i64>>();
-        case node_type_e::math_vec2:
-            return std::make_shared<node_impl<gpu::vec2, node_type_e::math_vec2>>();
+        case type_e::math_f64:
+            return std::make_shared<node_impl<double, type_e::math_f64>>();
+        case type_e::math_i64:
+            return std::make_shared<node_impl<int64_t, type_e::math_i64>>();
+        case type_e::math_vec2:
+            return std::make_shared<node_impl<gpu::vec2, type_e::math_vec2>>();
 
         default:
             return nullptr;

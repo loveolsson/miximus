@@ -1,10 +1,10 @@
-#include "nodes/adapters/adapter_websocket.hpp"
+#include "core/adapters/adapter_websocket.hpp"
 #include "logger/logger.hpp"
 #include "messages/payload.hpp"
 #include "messages/templates.hpp"
 #include "utils/bind.hpp"
 
-namespace miximus::nodes {
+namespace miximus::core {
 
 using namespace message;
 using nlohmann::json;
@@ -38,7 +38,7 @@ void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
     try {
         auto& node_obj = msg["node"];
 
-        auto  type    = type_from_string(node_obj["type"].get<std::string_view>());
+        auto  type    = nodes::node_i::type_from_string(node_obj["type"].get<std::string_view>());
         auto  id      = node_obj["id"].get<std::string>();
         auto& options = node_obj["options"];
 
@@ -104,7 +104,7 @@ void websocket_config_s::handle_add_connection(json&& msg, int64_t client_id)
 
     try {
         auto& con_obj = msg["connection"];
-        auto  con     = con_obj.get<connection_s>();
+        auto  con     = con_obj.get<nodes::connection_s>();
 
         auto res = manager_.handle_add_connection(con, client_id);
 
@@ -126,7 +126,7 @@ void websocket_config_s::handle_remove_connection(json&& msg, int64_t client_id)
 
     try {
         auto& con_obj = msg["connection"];
-        auto  con     = con_obj.get<connection_s>();
+        auto  con     = con_obj.get<nodes::connection_s>();
 
         auto res = manager_.handle_remove_connection(con, client_id);
 
@@ -152,13 +152,16 @@ void websocket_config_s::handle_config(json&& msg, int64_t client_id)
     server_.send_message_sync(response, client_id);
 }
 
-void websocket_config_s::emit_add_node(node_type_e type, std::string_view id, const json& options, int64_t client_id)
+void websocket_config_s::emit_add_node(nodes::node_i::type_e type,
+                                       std::string_view      id,
+                                       const json&           options,
+                                       int64_t               client_id)
 {
     auto payload         = create_command_base_payload(topic_e::add_node);
     payload["origin_id"] = client_id;
 
     payload["node"] = {
-        {"type", type_to_string(type)},
+        {"type", nodes::node_i::type_to_string(type)},
         {"id", id},
         {"options", options},
     };
@@ -185,7 +188,7 @@ void websocket_config_s::emit_update_node(std::string_view id, const json& optio
     server_.broadcast_message_sync(payload);
 }
 
-void websocket_config_s::emit_add_connection(const connection_s& con, int64_t client_id)
+void websocket_config_s::emit_add_connection(const nodes::connection_s& con, int64_t client_id)
 {
     auto payload          = create_command_base_payload(topic_e::add_connection);
     payload["origin_id"]  = client_id;
@@ -199,7 +202,7 @@ void websocket_config_s::emit_add_connection(const connection_s& con, int64_t cl
     server_.broadcast_message_sync(payload);
 }
 
-void websocket_config_s::emit_remove_connection(const connection_s& con, int64_t client_id)
+void websocket_config_s::emit_remove_connection(const nodes::connection_s& con, int64_t client_id)
 {
     auto payload          = create_command_base_payload(topic_e::remove_connection);
     payload["origin_id"]  = client_id;
@@ -213,4 +216,4 @@ void websocket_config_s::emit_remove_connection(const connection_s& con, int64_t
     server_.broadcast_message_sync(payload);
 }
 
-} // namespace miximus::nodes
+} // namespace miximus::core
