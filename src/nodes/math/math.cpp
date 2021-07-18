@@ -39,24 +39,33 @@ bool validate_num_option<miximus::gpu::vec2>(const nlohmann::json& val)
 
 namespace miximus::nodes::math {
 
-template <typename T, node_i::type_e Type>
+template <typename T>
 class node_impl : public node_i
 {
     using dir = interface_i::dir_e;
 
-    input_interface_s<T>  iface_a_;
-    input_interface_s<T>  iface_b_;
-    output_interface_s<T> iface_res_;
+    input_interface_s<T>   iface_a_;
+    input_interface_s<T>   iface_b_;
+    output_interface_s<T>  iface_res_;
+    const std::string_view type_;
+    const std::string_view name_;
 
   public:
-    explicit node_impl()
+    explicit node_impl(std::string_view type, std::string_view name)
+        : type_(type)
+        , name_(name)
     {
         interfaces_.emplace("a", &iface_a_);
         interfaces_.emplace("b", &iface_b_);
         interfaces_.emplace("res", &iface_res_);
     }
 
-    bool prepare(core::app_state_s&, const node_state_s&) final { return true; }
+    traits_s prepare(core::app_state_s&, const node_state_s&) final
+    {
+        traits_s res = {};
+        res.must_run = true;
+        return res;
+    }
 
     void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
     {
@@ -88,23 +97,8 @@ class node_impl : public node_i
 
     nlohmann::json get_default_options() const final
     {
-        std::string_view name("Math");
-        switch (type()) {
-            case type_e::math_f64:
-                name = "Floating point math";
-                break;
-            case type_e::math_i64:
-                name = "Integer math";
-                break;
-            case type_e::math_vec2:
-                name = "Vector math";
-                break;
-            default:
-                break;
-        }
-
         return {
-            {"name", name},
+            {"name", name_},
             {"operation", "add"},
         };
     }
@@ -127,24 +121,18 @@ class node_impl : public node_i
         return false;
     }
 
-    type_e type() const final { return Type; }
+    std::string_view type() const final { return type_; }
 };
 
-std::shared_ptr<node_i> create_node(node_i::type_e type)
+std::shared_ptr<node_i> create_i64_node() { return std::make_shared<node_impl<int64_t>>("math_i64", "Integer math"); }
+
+std::shared_ptr<node_i> create_f64_node()
 {
-    using type_e = node_i::type_e;
-
-    switch (type) {
-        case type_e::math_f64:
-            return std::make_shared<node_impl<double, type_e::math_f64>>();
-        case type_e::math_i64:
-            return std::make_shared<node_impl<int64_t, type_e::math_i64>>();
-        case type_e::math_vec2:
-            return std::make_shared<node_impl<gpu::vec2, type_e::math_vec2>>();
-
-        default:
-            return nullptr;
-    };
+    return std::make_shared<node_impl<double>>("math_f64", "Floating point math");
+}
+std::shared_ptr<node_i> create_vec2_node()
+{
+    return std::make_shared<node_impl<gpu::vec2>>("math_vec2", "Vector math");
 }
 
 } // namespace miximus::nodes::math

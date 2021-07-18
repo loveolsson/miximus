@@ -76,7 +76,6 @@ int main(int argc, char** argv)
         }
 
         logger::init_loggers(log_level);
-
         nodes::decklink::log_device_names();
 
         {

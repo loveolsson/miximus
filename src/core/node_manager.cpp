@@ -1,6 +1,7 @@
 #include "core/node_manager.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/math/math.hpp"
 #include "nodes/node.hpp"
 #include "utils/bind.hpp"
 #include "web_server/server.hpp"
@@ -28,13 +29,20 @@ static bool is_valid_common_option(std::string_view name, const json& value)
     return false;
 }
 
-error_e node_manager_s::handle_add_node(nodes::node_i::type_e type,
-                                        const std::string&    id,
-                                        const nlohmann::json& options,
-                                        int64_t               client_id)
+node_manager_s::node_manager_s()
+{
+    using namespace nodes;
+
+    register_node_type("math_i64", math::create_i64_node);
+    register_node_type("math_f64", math::create_f64_node);
+    register_node_type("math_vec2", math::create_vec2_node);
+}
+
+error_e
+node_manager_s::handle_add_node(std::string_view type, const std::string& id, const json& options, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
-    log()->info("Creating {} node with id {}", nodes::node_i::type_to_string(type), id);
+    log()->info("Creating {} node with id {}", type, id);
 
     if (nodes_.count(id) > 0) {
         log()->warn("Node id {} already in use", id);
@@ -42,7 +50,7 @@ error_e node_manager_s::handle_add_node(nodes::node_i::type_e type,
     }
 
     error_e error = error_e::no_error;
-    auto    node  = nodes::create_node(type, error);
+    auto    node  = create_node(type, error);
 
     if (error != error_e::no_error) {
         return error;
@@ -110,7 +118,7 @@ error_e node_manager_s::handle_remove_node(const std::string& id, int64_t client
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_update_node(const std::string& id, const nlohmann::json& options, int64_t client_id)
+error_e node_manager_s::handle_update_node(const std::string& id, const json& options, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
 
@@ -278,18 +286,21 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
         return false;
     };
 
+    auto con_it = connections_.find(con);
+    if (con_it == connections_.end()) {
+        return error_e::not_found;
+    }
+
     remove_from_interface(con.from_node, con.from_interface);
     remove_from_interface(con.to_node, con.to_interface);
 
-    if (connections_.erase(con) > 0) {
-        for (auto& adapter : adapters_) {
-            adapter->emit_remove_connection(con, client_id);
-        }
-
-        return error_e::no_error;
+    for (auto& adapter : adapters_) {
+        adapter->emit_remove_connection(con, client_id);
     }
 
-    return error_e::not_found;
+    connections_.erase(con_it);
+
+    return error_e::no_error;
 }
 
 json node_manager_s::get_config()
@@ -302,15 +313,13 @@ json node_manager_s::get_config()
     for (const auto& [id, record] : nodes_) {
         nodes.emplace_back(json{
             {"id", id},
-            {"type", nodes::node_i::type_to_string(record.node->type())},
+            {"type", record.node->type()},
             {"options", record.state.options},
         });
     }
 
     for (const auto& con : connections_) {
-        json j = con;
-
-        connections.emplace_back(std::move(j));
+        connections.emplace_back(con);
     }
 
     return {
@@ -319,17 +328,17 @@ json node_manager_s::get_config()
     };
 }
 
-void node_manager_s::set_config(const nlohmann::json& settings)
+void node_manager_s::set_config(const json& settings)
 {
     const auto& nodes       = settings["nodes"];
     const auto& connections = settings["connections"];
 
     for (const auto& node_obj : nodes) {
-        std::string type    = node_obj["type"];
-        std::string id      = node_obj["id"];
+        auto        type    = node_obj["type"].get<std::string_view>();
+        auto        id      = node_obj["id"].get<std::string>();
         const auto& options = node_obj["options"];
 
-        handle_add_node(nodes::node_i::type_from_string(type), id, options, -1);
+        handle_add_node(type, id, options, -1);
     }
 
     for (const auto& con_obj : connections) {
@@ -371,7 +380,8 @@ void node_manager_s::tick_one_frame(app_state_s& app)
 
     // Call prepare on all nodes, and collect the ones that must execute
     for (auto& [_, record] : nodes_copy_) {
-        if (record.node->prepare(app, record.state)) {
+        auto traits = record.node->prepare(app, record.state);
+        if (traits.must_run) {
             must_execute.emplace_back(&record);
         }
     }
@@ -385,6 +395,22 @@ void node_manager_s::tick_one_frame(app_state_s& app)
     for (auto& [_, record] : nodes_copy_) {
         record.node->complete();
     }
+}
+
+void node_manager_s::register_node_type(std::string_view name, constructor_t&& constructor)
+{
+    constructors_.emplace(name, std::move(constructor));
+}
+
+std::shared_ptr<nodes::node_i> node_manager_s::create_node(std::string_view type, error_e& error)
+{
+    auto it = constructors_.find(type);
+    if (it == constructors_.end()) {
+        error = error_e::invalid_type;
+        return nullptr;
+    }
+
+    return it->second();
 }
 
 } // namespace miximus::core

@@ -24,10 +24,8 @@ class websocket_config_s : public node_manager_s::adapter_i
     websocket_config_s(node_manager_s& manager, web_server::server_s& server);
     ~websocket_config_s();
 
-    void emit_add_node(nodes::node_i::type_e type,
-                       std::string_view      id,
-                       const nlohmann::json& options,
-                       int64_t               client_id) final;
+    void
+    emit_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id) final;
     void emit_remove_node(std::string_view id, int64_t client_id) final;
     void emit_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id) final;
     void emit_add_connection(const nodes::connection_s& con, int64_t client_id) final;

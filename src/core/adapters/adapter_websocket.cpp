@@ -38,7 +38,7 @@ void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
     try {
         auto& node_obj = msg["node"];
 
-        auto  type    = nodes::node_i::type_from_string(node_obj["type"].get<std::string_view>());
+        auto  type    = node_obj["type"].get<std::string_view>();
         auto  id      = node_obj["id"].get<std::string>();
         auto& options = node_obj["options"];
 
@@ -152,16 +152,16 @@ void websocket_config_s::handle_config(json&& msg, int64_t client_id)
     server_.send_message_sync(response, client_id);
 }
 
-void websocket_config_s::emit_add_node(nodes::node_i::type_e type,
-                                       std::string_view      id,
-                                       const json&           options,
-                                       int64_t               client_id)
+void websocket_config_s::emit_add_node(std::string_view type,
+                                       std::string_view id,
+                                       const json&      options,
+                                       int64_t          client_id)
 {
     auto payload         = create_command_base_payload(topic_e::add_node);
     payload["origin_id"] = client_id;
 
     payload["node"] = {
-        {"type", nodes::node_i::type_to_string(type)},
+        {"type", type},
         {"id", id},
         {"options", options},
     };
