@@ -43,7 +43,7 @@ class web_server_impl
 
   public:
     web_server_impl();
-    ~web_server_impl();
+    ~web_server_impl() = default;
 
     void subscribe(topic_e topic, const callback_t& callback);
     void start(uint16_t port, boost::asio::io_service& service);

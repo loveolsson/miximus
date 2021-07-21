@@ -34,3 +34,5 @@ add_library(static_files SHARED
 target_include_directories(static_files PUBLIC include)
 target_include_directories(static_files PRIVATE ${CMAKE_SOURCE_DIR}/submodules/gzip-hpp/include)
 target_link_libraries(static_files ZLIB::ZLIB)
+
+add_sanitizers(static_files)

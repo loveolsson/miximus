@@ -23,7 +23,7 @@ static volatile std::sig_atomic_t g_signal_status = 0;
 
 static void signal_handler(int /*signal*/) { g_signal_status = 1; }
 
-static void load_settings(core::node_manager_s& manager, const path& settings_path)
+static void load_settings(core::node_manager_s* manager, const path& settings_path)
 {
     auto log = spdlog::get("app");
 
@@ -32,7 +32,7 @@ static void load_settings(core::node_manager_s& manager, const path& settings_pa
         log->info("Reading settings from {}", settings_path.u8string());
 
         try {
-            manager.set_config(json::parse(file));
+            manager->set_config(json::parse(file));
         } catch (json::exception& e) {
             // This error should panic as we don't want to run the app with a partial config, or overwrite
             // the broken file with an empty config on exit
@@ -43,14 +43,14 @@ static void load_settings(core::node_manager_s& manager, const path& settings_pa
     }
 }
 
-static void save_settings(core::node_manager_s& manager, const path& settings_path)
+static void save_settings(core::node_manager_s* manager, const path& settings_path)
 {
     auto log = spdlog::get("app");
 
     std::ofstream file(settings_path);
     if (file.is_open()) {
         log->info("Writing settings to {}", settings_path.u8string());
-        file << std::setfill(' ') << std::setw(2) << manager.get_config();
+        file << std::setfill(' ') << std::setw(2) << manager->get_config();
     } else {
         log->error("Failed to write settings to {}", settings_path.u8string());
     }
@@ -81,7 +81,7 @@ int main(int argc, char** argv)
         web_server::server_s web_server;
 
         core::node_manager_s node_manager;
-        load_settings(node_manager, settings_path);
+        load_settings(&node_manager, settings_path);
 
         {
             core::app_state_s app;
@@ -103,7 +103,7 @@ int main(int argc, char** argv)
 
         node_manager.clear_adapters();
 
-        save_settings(node_manager, settings_path);
+        save_settings(&node_manager, settings_path);
     } catch (std::exception& e) {
         log->error("Panic: {}", e.what());
     }

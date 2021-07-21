@@ -2,18 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(miximus)
 
 set(CMAKE_CXX_STANDARD 17)
-#set(MIXIMUS_CLANG_TIDY "clang-tidy;-checks=*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-readability-magic-numbers, -cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-hicpp-no-array-decay")
-
-set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}
-    CACHE STRING "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel tsan asan lsan msan ubsan"
-    FORCE)
-
-set(CMAKE_CXX_FLAGS_TSAN
-    "-fsanitize=thread -g -O1"
-    CACHE STRING "Flags used by the C++ compiler during ThreadSanitizer builds."
-    FORCE)
-
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/submodules/sanitizers-cmake/cmake")
+#set(MIXIMUS_CLANG_TIDY "clang-tidy;-checks=*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-readability-magic-numbers, -cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-hicpp-no-array-decay")
 
 find_package(Sanitizers REQUIRED)
 find_package(ZLIB REQUIRED)

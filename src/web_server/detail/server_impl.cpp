@@ -42,8 +42,6 @@ web_server_impl::web_server_impl()
     endpoint_.set_message_handler(utils::bind(&web_server_impl::on_message, this));
 }
 
-web_server_impl::~web_server_impl() {}
-
 void web_server_impl::terminate_and_log(const con_hdl_t& hdl, const std::string& msg)
 {
     using namespace websocketpp::log;
@@ -51,7 +49,7 @@ void web_server_impl::terminate_and_log(const con_hdl_t& hdl, const std::string&
 
     std::error_code ec;
     endpoint_.get_alog().write(alevel::fail, msg);
-    endpoint_.close(std::move(hdl), status::protocol_error, msg, ec);
+    endpoint_.close(hdl, status::protocol_error, msg, ec);
     if (ec) {
         endpoint_.get_alog().write(alevel::fail, ec.message());
     }

@@ -21,8 +21,6 @@ websocket_config_s::websocket_config_s(node_manager_s& manager, web_server::serv
     server_.subscribe(topic_e::config, utils::bind(&websocket_config_s::handle_config, this));
 }
 
-websocket_config_s::~websocket_config_s() {}
-
 void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
 {
     auto token = get_token_from_payload(msg);

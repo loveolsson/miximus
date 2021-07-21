@@ -153,13 +153,11 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
     return error_e::no_error;
 }
 
-static bool is_connection_circular(nodes::node_map_t&          nodes,
+static bool is_connection_circular(const nodes::node_map_t&    nodes,
                                    std::set<std::string_view>* cleared_nodes,
                                    std::string_view            target_node_id,
                                    const nodes::connection_s&  con)
 {
-    using dir_e = nodes::interface_i::dir_e;
-
     if (cleared_nodes->count(con.from_node) > 0) {
         return false;
     }
@@ -173,6 +171,7 @@ static bool is_connection_circular(nodes::node_map_t&          nodes,
         const auto& con_map = node_it->second.state.con_map;
 
         for (const auto& [id, iface] : node->get_interfaces()) {
+            using dir_e = nodes::interface_i::dir_e;
             if (iface->direction() == dir_e::output) {
                 continue;
             }
@@ -212,11 +211,11 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
         return error_e::not_found;
     }
 
-    auto& from_node = from_node_it->second.node;
-    auto& to_node   = to_node_it->second.node;
+    const auto& from_node = from_node_it->second.node;
+    const auto& to_node   = to_node_it->second.node;
 
-    auto* from_iface = from_node->find_interface(con.from_interface);
-    auto* to_iface   = to_node->find_interface(con.to_interface);
+    const auto* from_iface = from_node->find_interface(con.from_interface);
+    const auto* to_iface   = to_node->find_interface(con.to_interface);
 
     if (from_iface == nullptr || to_iface == nullptr) {
         log()->warn("Interface pair not found: {}, {}", con.from_interface, con.to_interface);
@@ -275,7 +274,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
 
 error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id)
 {
-    std::unique_lock<std::mutex>(nodes_mutex_);
+    std::unique_lock lock(nodes_mutex_);
 
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
         if (auto node_it = nodes_.find(node_name); node_it != nodes_.end()) {
@@ -339,7 +338,7 @@ void node_manager_s::set_config(const json& settings)
 
     for (const auto& node_obj : nodes) {
         auto        type    = node_obj.at("type").get<std::string_view>();
-        auto        id      = node_obj.at("id").get<std::string>();
+        auto        id      = node_obj.at("id").get<std::string_view>();
         const auto& options = node_obj.at("options");
 
         handle_add_node(type, id, options, -1);

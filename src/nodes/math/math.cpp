@@ -60,7 +60,7 @@ class node_impl : public node_i
         interfaces_.emplace("res", &iface_res_);
     }
 
-    traits_s prepare(core::app_state_s&, const node_state_s&) final
+    traits_s prepare(core::app_state_s& /*app*/, const node_state_s& /*nodes*/) final
     {
         traits_s res = {};
         res.must_run = true;

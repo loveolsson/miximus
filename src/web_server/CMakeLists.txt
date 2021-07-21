@@ -23,3 +23,5 @@ target_include_directories(web_server
 PUBLIC
     include
 )
+
+add_sanitizers(web_server)

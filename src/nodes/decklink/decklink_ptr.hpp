@@ -90,9 +90,11 @@ class decklink_ptr
 
     T& operator*() { return *ptr_; }
     T* operator->() { return ptr_; }
+    T& operator*() const { return *ptr_; }
+    T* operator->() const { return ptr_; }
 
     template <typename R>
-    decklink_ptr<R> query_interface(REFIID iid)
+    decklink_ptr<R> query_interface(REFIID iid) const
     {
         if (!ptr_) {
             return nullptr;

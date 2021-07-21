@@ -29,6 +29,6 @@ class websocket_config_s : public node_manager_s::adapter_i
 
   public:
     websocket_config_s(node_manager_s& manager, web_server::server_s& server);
-    ~websocket_config_s();
+    ~websocket_config_s() = default;
 };
 } // namespace miximus::core

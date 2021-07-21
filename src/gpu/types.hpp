@@ -13,6 +13,6 @@ struct rect
 } // namespace miximus::gpu
 
 namespace glm {
-void to_json(nlohmann::json& j, const dvec2& con);
-void from_json(const nlohmann::json& j, dvec2& con);
+void to_json(nlohmann::json& j, const dvec2& v);
+void from_json(const nlohmann::json& j, dvec2& v);
 } // namespace glm

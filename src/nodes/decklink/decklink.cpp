@@ -41,7 +41,7 @@ decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
 #endif
 }
 
-static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
+static std::string get_decklink_name(const decklink_ptr<IDeckLink>& device)
 {
     std::stringstream ss;
 
