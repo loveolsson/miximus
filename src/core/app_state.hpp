@@ -1,5 +1,5 @@
 #pragma once
-#include <boost/asio/io_service.hpp>
+#include "utils/asio.hpp"
 
 #include <memory>
 #include <thread>

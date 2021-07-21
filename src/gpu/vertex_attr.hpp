@@ -1,5 +1,5 @@
 #pragma once
-#include <glad/glad.h>
+#include "gpu/glad.hpp"
 
 namespace miximus::gpu {
 

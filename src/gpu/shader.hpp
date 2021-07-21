@@ -1,12 +1,7 @@
 #pragma once
+#include "gpu/glad.hpp"
 #include "gpu/vertex.hpp"
 #include "static_files/files.hpp"
-
-#ifdef _WIN32
-#include <Windows.h>
-#endif
-
-#include <glad/glad.h>
 
 #include <string>
 #include <string_view>

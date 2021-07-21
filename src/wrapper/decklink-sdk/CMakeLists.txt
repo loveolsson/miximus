@@ -30,7 +30,11 @@ if(WIN32)
                 GENERATED TRUE
         )
 
-    add_library(decklink ${MIDL_OUTPUT})
+    add_library(decklink 
+        ${MIDL_OUTPUT}
+        decklink_inc.hpp
+        decklink_ptr.hpp
+    )
 
     add_dependencies(decklink
     midl-cmplr
@@ -55,6 +59,8 @@ else()
 
     add_library(decklink
         ${DECKLINK_SOURCES}
+        decklink_inc.hpp
+        decklink_ptr.hpp
     )
 
     target_include_directories(decklink PUBLIC 

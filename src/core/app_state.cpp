@@ -1,7 +1,7 @@
 #include "core/app_state.hpp"
 #include "gpu/context.hpp"
 #include "gpu/shader.hpp"
-#include "nodes/decklink/decklink.hpp"
+#include "nodes/decklink/registry.hpp"
 
 namespace miximus::core {
 

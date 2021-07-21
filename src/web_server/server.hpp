@@ -1,7 +1,7 @@
 #pragma once
 #include "types/topic.hpp"
+#include "utils/asio.hpp"
 
-#include <boost/asio/io_service.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <functional>

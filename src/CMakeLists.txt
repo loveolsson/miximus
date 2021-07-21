@@ -1,7 +1,7 @@
 if(WIN32) 
 # Set project wide definitions to make Windows includes behave
-add_compile_definitions(_WIN32_WINNT=0x0A00)
-add_compile_definitions(WIN32_LEAN_AND_MEAN)
+# add_compile_definitions(_WIN32_WINNT=0x0A00)
+#add_compile_definitions(WIN32_LEAN_AND_MEAN)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})

@@ -1,32 +1,35 @@
 #pragma once
-#include "decklink_ptr.hpp"
+#include "wrapper/decklink-sdk/decklink_ptr.hpp"
 
 #include <map>
 #include <shared_mutex>
 #include <string>
 #include <vector>
 
+struct IDeckLink;
+struct IDeckLinkInput;
+struct IDeckLinkOutput;
+struct IDeckLinkDiscovery;
+
 namespace miximus::nodes::decklink {
 
-class decklink_registry_s : public IDeckLinkDeviceNotificationCallback
-{
-    decklink_ptr<IDeckLinkDiscovery> discovery_;
-    std::shared_mutex                device_mutex_;
+class discovery_callback;
 
+class decklink_registry_s
+{
+    decklink_ptr<IDeckLinkDiscovery>    discovery_;
+    std::unique_ptr<discovery_callback> callback_;
+
+    std::shared_mutex                                    device_mutex_;
     std::map<IDeckLink*, std::string>                    names_;
     std::map<std::string, decklink_ptr<IDeckLinkInput>>  inputs_;
     std::map<std::string, decklink_ptr<IDeckLinkOutput>> outputs_;
 
+    friend class discovery_callback;
+
   public:
     decklink_registry_s();
     ~decklink_registry_s();
-
-    HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final;
-    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final;
-
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final { return E_NOTIMPL; }
-    ULONG                     AddRef() final { return 1; }
-    ULONG                     Release() final { return 1; }
 
     decklink_ptr<IDeckLinkInput>  get_input(const std::string& name);
     decklink_ptr<IDeckLinkOutput> get_output(const std::string& name);

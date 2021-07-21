@@ -1,7 +1,10 @@
-#include "decklink.hpp"
+#include "registry.hpp"
 #include "logger/logger.hpp"
+#include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <sstream>
+
+namespace miximus::nodes::decklink {
 
 #if _WIN32
 static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
@@ -21,9 +24,7 @@ static std::string bstr_to_mbs(BSTR bstr)
 }
 #endif
 
-namespace miximus::nodes::decklink {
-
-decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
+static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
 {
 #if _WIN32
     IDeckLinkDiscovery* discovery = nullptr;
@@ -72,15 +73,71 @@ static std::string get_decklink_name(const decklink_ptr<IDeckLink>& device)
     return ss.str();
 }
 
+class discovery_callback : public IDeckLinkDeviceNotificationCallback
+{
+    decklink_registry_s& registry_;
+
+  public:
+    discovery_callback(decklink_registry_s& registry)
+        : registry_(registry)
+    {
+    }
+
+    HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final
+    {
+        std::unique_lock lock(registry_.device_mutex_);
+
+        auto log = spdlog::get("decklink");
+
+        auto device = decklink_ptr<IDeckLink>::make_owner(deckLinkDevice);
+
+        auto name   = get_decklink_name(device);
+        auto input  = QUERY_INTERFACE(device, IDeckLinkInput);
+        auto output = QUERY_INTERFACE(device, IDeckLinkOutput);
+
+        if (input) {
+            registry_.inputs_.emplace(name, std::move(input));
+            log->info("Discovered DeckLink input: \"{}\"", name);
+        }
+
+        if (output) {
+            registry_.outputs_.emplace(name, std::move(output));
+            log->info("Discovered DeckLink output: \"{}\"", name);
+        }
+
+        return S_OK;
+    }
+
+    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final
+    {
+        std::unique_lock lock(registry_.device_mutex_);
+
+        auto it = registry_.names_.find(deckLinkDevice);
+        if (it == registry_.names_.end()) {
+            return S_OK;
+        }
+
+        auto& name = it->second;
+        registry_.inputs_.erase(name);
+        registry_.outputs_.erase(name);
+        registry_.names_.erase(it);
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final { return E_NOTIMPL; }
+    ULONG                     AddRef() final { return 1; }
+    ULONG                     Release() final { return 1; }
+};
+
 decklink_registry_s::decklink_registry_s()
     : discovery_(get_device_discovery())
+    , callback_(std::make_unique<discovery_callback>(*this))
 {
     std::unique_lock lock(device_mutex_);
 
     if (discovery_) {
         spdlog::get("decklink")->debug("Installing DeckLink discovery");
-
-        discovery_->InstallDeviceNotifications(this);
+        discovery_->InstallDeviceNotifications(callback_.get());
     }
 }
 
@@ -93,51 +150,8 @@ decklink_registry_s::~decklink_registry_s()
 
     if (discovery_) {
         spdlog::get("decklink")->debug("Uninstalling DeckLink discovery");
-
         discovery_->UninstallDeviceNotifications();
     }
-}
-
-HRESULT decklink_registry_s::DeckLinkDeviceArrived(IDeckLink* deckLinkDevice)
-{
-    std::unique_lock lock(device_mutex_);
-
-    auto log = spdlog::get("decklink");
-
-    auto device = decklink_ptr<IDeckLink>::make_owner(deckLinkDevice);
-
-    auto name   = get_decklink_name(device);
-    auto input  = QUERY_INTERFACE(device, IDeckLinkInput);
-    auto output = QUERY_INTERFACE(device, IDeckLinkOutput);
-
-    if (input) {
-        inputs_.emplace(name, std::move(input));
-        log->info("Discovered DeckLink input: \"{}\"", name);
-    }
-
-    if (output) {
-        outputs_.emplace(name, std::move(output));
-        log->info("Discovered DeckLink output: \"{}\"", name);
-    }
-
-    return S_OK;
-}
-
-HRESULT decklink_registry_s::DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice)
-{
-    std::unique_lock lock(device_mutex_);
-
-    auto it = names_.find(deckLinkDevice);
-    if (it == names_.end()) {
-        return S_OK;
-    }
-
-    auto& name = it->second;
-    inputs_.erase(name);
-    outputs_.erase(name);
-
-    names_.erase(it);
-    return S_OK;
 }
 
 decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& name)

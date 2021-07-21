@@ -1,11 +1,4 @@
 #pragma once
-#ifdef _WIN32
-#include <unknwn.h>
-
-#include <DeckLinkAPI_i.h>
-#else
-#include <DeckLinkAPI.h>
-#endif
 
 namespace miximus::nodes::decklink {
 
@@ -93,7 +86,7 @@ class decklink_ptr
     T& operator*() const { return *ptr_; }
     T* operator->() const { return ptr_; }
 
-    template <typename R>
+    template <typename R, typename REFIID>
     decklink_ptr<R> query_interface(REFIID iid) const
     {
         if (!ptr_) {
@@ -102,7 +95,7 @@ class decklink_ptr
 
         R* t = nullptr;
 
-        if (SUCCEEDED(ptr_->QueryInterface(iid, (void**)&t))) {
+        if (ptr_->QueryInterface(iid, (void**)&t) >= 0) {
             return t;
         }
 
