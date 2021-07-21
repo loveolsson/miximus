@@ -1,3 +1,9 @@
+if(WIN32) 
+# Set project wide definitions to make Windows includes behave
+add_compile_definitions(_WIN32_WINNT=0x0A00)
+add_compile_definitions(WIN32_LEAN_AND_MEAN)
+endif()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 set(MIXIMUS_MAIN_SOURCES
@@ -38,9 +44,7 @@ target_link_libraries(miximus
     ${CMAKE_DL_LIBS}
 )
 
-target_include_directories(miximus PRIVATE
-    ${FFMPEG_INCLUDE_DIRS}
-)
+add_sanitizers(miximus)
 
 macro(copy_library_to_binary_dir NAME)
 add_custom_command(TARGET miximus POST_BUILD

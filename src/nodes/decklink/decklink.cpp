@@ -51,7 +51,7 @@ static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
     ss << bstr_to_mbs(name);
 #else
     const char* name = nullptr;
-    dl_ptr->GetDisplayName(&name);
+    device->GetDisplayName(&name);
     ss << name;
 #endif
 
@@ -75,14 +75,25 @@ static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 decklink_registry_s::decklink_registry_s()
     : discovery_(get_device_discovery())
 {
+    std::unique_lock lock(device_mutex_);
+
     if (discovery_) {
+        spdlog::get("decklink")->debug("Installing DeckLink discovery");
+
         discovery_->InstallDeviceNotifications(this);
     }
 }
 
 decklink_registry_s::~decklink_registry_s()
 {
+    std::unique_lock lock(device_mutex_);
+
+    inputs_.clear();
+    outputs_.clear();
+
     if (discovery_) {
+        spdlog::get("decklink")->debug("Uninstalling DeckLink discovery");
+
         discovery_->UninstallDeviceNotifications();
     }
 }
@@ -91,7 +102,9 @@ HRESULT decklink_registry_s::DeckLinkDeviceArrived(IDeckLink* deckLinkDevice)
 {
     std::unique_lock lock(device_mutex_);
 
-    decklink_ptr device(deckLinkDevice);
+    auto log = spdlog::get("decklink");
+
+    auto device = decklink_ptr<IDeckLink>::make_owner(deckLinkDevice);
 
     auto name   = get_decklink_name(device);
     auto input  = QUERY_INTERFACE(device, IDeckLinkInput);
@@ -99,10 +112,12 @@ HRESULT decklink_registry_s::DeckLinkDeviceArrived(IDeckLink* deckLinkDevice)
 
     if (input) {
         inputs_.emplace(name, std::move(input));
+        log->info("Discovered DeckLink input: \"{}\"", name);
     }
 
     if (output) {
         outputs_.emplace(name, std::move(output));
+        log->info("Discovered DeckLink output: \"{}\"", name);
     }
 
     return S_OK;

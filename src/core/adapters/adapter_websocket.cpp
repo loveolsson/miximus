@@ -21,15 +21,7 @@ websocket_config_s::websocket_config_s(node_manager_s& manager, web_server::serv
     server_.subscribe(topic_e::config, utils::bind(&websocket_config_s::handle_config, this));
 }
 
-websocket_config_s::~websocket_config_s()
-{
-    server_.subscribe(topic_e::add_node, nullptr);
-    server_.subscribe(topic_e::remove_node, nullptr);
-    server_.subscribe(topic_e::add_connection, nullptr);
-    server_.subscribe(topic_e::remove_connection, nullptr);
-    server_.subscribe(topic_e::update_node, nullptr);
-    server_.subscribe(topic_e::config, nullptr);
-}
+websocket_config_s::~websocket_config_s() {}
 
 void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
 {

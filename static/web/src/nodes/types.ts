@@ -4,23 +4,32 @@ import { type_e } from "@/messages";
 import { F64MathNode, I64MathNode, Vec2MathNode } from "./MathNode";
 
 /**
+ * Color-blind optimized palette
  * https://personal.sron.nl/~pault/#fig:scheme_muted
- * Indigo    #332288
- * Cyan      #88ccee
- * Teal      #44aa99 *
- * Green     #117733 *
- * Olive     #999933 *
- * Sand      #ddcc77
- * Rose      #cc6677
- * Wine      #882255
- * Purple    #aa4499
- * Pale Gray #dddddd
  */
+const Color = {
+  Indigo: "#332288",
+  Cyan: "#88ccee",
+  Teal: "#44aa99", // used
+  Green: "#117733", // used
+  Olive: "#999933", // used
+  Sand: "#ddcc77",
+  Rose: "#cc6677",
+  Wine: "#882255",
+  Purple: "#aa4499",
+  PaleGray: "#dddddd",
+};
 
-export function register_connection_types(iface: InterfaceTypePlugin) {
-  iface.addType("i64", "#44aa99");
-  iface.addType("f64", "#117733");
-  iface.addType("vec2", "#999933");
+export const connectionColorMap = new Map<string, string>([
+  ["i64", Color.Teal],
+  ["f64", Color.Green],
+  ["vec2", Color.Olive],
+]);
+
+export function register_connection_types(iface: InterfaceTypePlugin): void {
+  connectionColorMap.forEach((color, name) => {
+    iface.addType(name, color);
+  });
 
   iface.addConversion("i64", "f64");
   iface.addConversion("f64", "i64");
@@ -28,7 +37,7 @@ export function register_connection_types(iface: InterfaceTypePlugin) {
   iface.addConversion("f64", "vec2");
 }
 
-export function register_types(editor: Editor) {
+export function register_types(editor: Editor): void {
   editor.registerNodeType(type_e.math_i64, I64MathNode, "Math");
   editor.registerNodeType(type_e.math_f64, F64MathNode, "Math");
   editor.registerNodeType(type_e.math_vec2, Vec2MathNode, "Math");

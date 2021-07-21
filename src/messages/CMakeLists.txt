@@ -1,6 +1,6 @@
-add_library(messages INTERFACE
-    payload.hpp
-    templates.hpp
+list(APPEND MIXIMUS_MAIN_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/payload.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/templates.hpp
 )
 
-target_link_libraries(messages INTERFACE nlohmann_json::nlohmann_json)
+set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

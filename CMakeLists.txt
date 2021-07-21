@@ -13,8 +13,9 @@ set(CMAKE_CXX_FLAGS_TSAN
     CACHE STRING "Flags used by the C++ compiler during ThreadSanitizer builds."
     FORCE)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/submodules/sanitizers-cmake/cmake")
 
+find_package(Sanitizers REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
@@ -23,8 +24,6 @@ find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(websocketpp REQUIRED)
 find_package(Threads REQUIRED)
-
-add_definitions(-D_WIN32_WINNT=0x0A00 -DWIN32_LEAN_AND_MEAN)
 
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_DEBUG_LIBS OFF)

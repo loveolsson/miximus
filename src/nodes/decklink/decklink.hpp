@@ -24,9 +24,9 @@ class decklink_registry_s : public IDeckLinkDeviceNotificationCallback
     HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final;
     HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final;
 
-    HRESULT QueryInterface(const IID&, void**) final { return E_NOTIMPL; }
-    ULONG   AddRef() final { return 1; }
-    ULONG   Release() final { return 1; }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final { return E_NOTIMPL; }
+    ULONG                     AddRef() final { return 1; }
+    ULONG                     Release() final { return 1; }
 
     decklink_ptr<IDeckLinkInput>  get_input(const std::string& name);
     decklink_ptr<IDeckLinkOutput> get_output(const std::string& name);

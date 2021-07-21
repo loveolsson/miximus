@@ -90,10 +90,7 @@ import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import { OptionPlugin } from "@baklavajs/plugin-options-vue";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { ws_wrapper } from "./websocket";
-import {
-  register_connection_types,
-  register_types,
-} from "./nodes/register_types";
+import { register_connection_types, register_types } from "./nodes/types";
 import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/types";
 import { view_intercept } from "./view_intercept";
 import { helpers } from "./helpers";
@@ -119,11 +116,7 @@ export default class Miximus extends Vue {
   viewPlugin = new ViewPlugin();
   intfTypePlugin = new InterfaceTypePlugin();
   wsWrapper = new ws_wrapper();
-  view_intercept = new view_intercept(
-    this.viewPlugin,
-    this.intfTypePlugin,
-    this.wsWrapper
-  );
+  view_intercept = new view_intercept(this.viewPlugin, this.wsWrapper);
   nodes_mutated = true;
   node_to_be_added?: Node;
   node_to_be_removed?: Node;
@@ -132,7 +125,7 @@ export default class Miximus extends Vue {
   connections = new Set<Connection>();
   connected = false;
 
-  created() {
+  created(): void {
     this.editor.use(this.viewPlugin);
     this.editor.use(this.intfTypePlugin);
     this.editor.use(new OptionPlugin());
@@ -226,11 +219,11 @@ export default class Miximus extends Vue {
     );
   }
 
-  destroyed() {
+  destroyed(): void {
     this.wsWrapper.destroy();
   }
 
-  clear_nodes() {
+  clear_nodes(): void {
     while (this.editor.connections.length > 0) {
       this.connection_to_be_removed = this.editor.connections[0];
       this.editor.removeConnection(this.editor.connections[0]);
@@ -242,7 +235,7 @@ export default class Miximus extends Vue {
     }
   }
 
-  center_view() {
+  center_view(): void {
     // Scale and center the graph on the page
     // NOTE(Love): This code is horrendous, remember to fix it
     if (this.editor.nodes.length > 0) {
@@ -285,7 +278,7 @@ export default class Miximus extends Vue {
     }
   }
 
-  handle_connected(id: number) {
+  handle_connected(): void {
     this.connected = true;
 
     const payload: command_config_s = {
@@ -311,14 +304,14 @@ export default class Miximus extends Vue {
     });
   }
 
-  handle_disconnected(code: number, reason: string) {
+  handle_disconnected(code: number, reason: string): void {
     console.log("WebSocket disconnected: ", code, reason);
 
     this.connected = false;
     this.clear_nodes();
   }
 
-  handle_server_add_node(type: string, id: string) {
+  handle_server_add_node(type: string, id: string): void {
     const node_type = this.editor.nodeTypes.get(type);
     if (!node_type) {
       return console.error(`Node type ${type} not found`);
@@ -331,7 +324,7 @@ export default class Miximus extends Vue {
     this.editor.addNode(node);
   }
 
-  handle_server_remove_node(id: string) {
+  handle_server_remove_node(id: string): void {
     const node = helpers.find_node(this.editor, id);
     if (!node) {
       return console.error(`Node ${id} not found`);
@@ -345,7 +338,7 @@ export default class Miximus extends Vue {
     id: string,
     options: options_s,
     is_origin: boolean
-  ) {
+  ): void {
     const node = this.editor.nodes.find((node) => node.id === id);
     if (!node) return;
 
@@ -390,7 +383,7 @@ export default class Miximus extends Vue {
     }
   }
 
-  handle_server_add_connection(con: connection_s) {
+  handle_server_add_connection(con: connection_s): void {
     const from = helpers.find_interface(
       this.editor,
       con.from_node,
@@ -414,7 +407,7 @@ export default class Miximus extends Vue {
     }
   }
 
-  handle_server_remove_connection(con: connection_s) {
+  handle_server_remove_connection(con: connection_s): void {
     const from = helpers.find_interface(
       this.editor,
       con.from_node,
@@ -446,7 +439,7 @@ export default class Miximus extends Vue {
 
     // This needs to be put on a timer, otherwise the position is not set
     setTimeout(() => {
-      const position = (node as any).position;
+      const position = (node as unknown as IViewNode).position;
 
       const payload: command_add_node_s = {
         action: action_e.command,

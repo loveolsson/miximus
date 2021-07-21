@@ -1,6 +1,5 @@
 import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import NodeView from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/src/components/node/Node.vue";
-import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 
 import { ws_wrapper } from "./websocket";
 import {
@@ -11,6 +10,7 @@ import {
   topic_e,
 } from "./messages";
 import isEqual from "deep-equal";
+import { connectionColorMap } from "./nodes/types";
 
 const enum wait_state_t {
   no_change,
@@ -28,11 +28,7 @@ interface NodeInfo {
 export class view_intercept {
   infos = new Map<string, NodeInfo>();
 
-  constructor(
-    view_plugin: ViewPlugin,
-    type_plugin: InterfaceTypePlugin,
-    private ws: ws_wrapper
-  ) {
+  constructor(view_plugin: ViewPlugin, private ws: ws_wrapper) {
     view_plugin.hooks.renderNode.tap(this, (view) => {
       const info = this.get_or_create_info(view);
       const new_pos = view_intercept.transform_position(view);
@@ -48,9 +44,10 @@ export class view_intercept {
     });
 
     view_plugin.hooks.renderConnection.tap(this, (con) => {
-      const f = type_plugin as any;
-      const color = f.types.get(con.connection.from.type).color;
-      con.$el.setAttribute("style", "stroke: " + color);
+      const color = connectionColorMap.get(con.connection.from.type);
+      if (color !== undefined) {
+        con.$el.setAttribute("style", "stroke: " + color);
+      }
 
       return con;
     });
@@ -63,12 +60,12 @@ export class view_intercept {
 
   get_or_create_info(view: NodeView): NodeInfo {
     const id = view.data.id;
-    let info = this.infos.get(id);
+    const info = this.infos.get(id);
     if (info) {
       return info;
     }
 
-    info = {
+    const newInfo: NodeInfo = {
       view,
       options: {
         position: view_intercept.transform_position(view),
@@ -80,33 +77,33 @@ export class view_intercept {
     // Disgusting hack
     const old_done_rename = view.doneRenaming;
     view.doneRenaming = () => {
-      if (info!.options.name !== view.tempName)
-        info!.options.name = view.tempName;
-      this.handle_value_change(info!, "name", view.tempName);
+      if (newInfo.options.name !== view.tempName)
+        newInfo.options.name = view.tempName;
+      this.handle_value_change(newInfo, "name", view.tempName);
       old_done_rename.call(view);
     };
 
     view.data.events.update.addListener({}, (ev) => {
       if (ev.option) {
         const value = ev.option.value;
-        if (info!.options[ev.name] !== value) {
-          this.handle_value_change(info!, ev.name, value);
+        if (newInfo.options[ev.name] !== value) {
+          this.handle_value_change(newInfo, ev.name, value);
         }
       }
 
       if (ev.interface) {
         const value = ev.interface.value;
-        if (info!.options[ev.name] !== value) {
-          this.handle_value_change(info!, ev.name, value);
+        if (newInfo.options[ev.name] !== value) {
+          this.handle_value_change(newInfo, ev.name, value);
         }
       }
     });
 
-    this.infos.set(id, info);
-    return info;
+    this.infos.set(id, newInfo);
+    return newInfo;
   }
 
-  handle_value_change(info: NodeInfo, key: string, value: any) {
+  handle_value_change(info: NodeInfo, key: string, value: unknown): void {
     info.options[key] = value;
 
     console.log(key, value);
@@ -118,11 +115,11 @@ export class view_intercept {
       options: {},
     };
 
-    payload.options![key] = value;
+    payload.options[key] = value;
     this.ws.send(payload);
   }
 
-  handle_move(info: NodeInfo, position: position_t) {
+  handle_move(info: NodeInfo, position: position_t): void {
     info.options.position = position;
     info.new_position = true;
 
@@ -131,7 +128,7 @@ export class view_intercept {
     }
   }
 
-  send_position(id: string, info: NodeInfo) {
+  send_position(id: string, info: NodeInfo): void {
     if (!info.new_position) {
       info.waiting = wait_state_t.no_change;
       return;
@@ -149,7 +146,7 @@ export class view_intercept {
     info.new_position = false;
     info.waiting = wait_state_t.waiting;
 
-    this.ws.send(payload, (msg) => {
+    this.ws.send(payload, () => {
       info.waiting = wait_state_t.delayed;
       setTimeout(() => {
         this.send_position(id, info);
@@ -176,7 +173,7 @@ export class view_intercept {
     return true;
   }
 
-  remove(id: string) {
+  remove(id: string): void {
     this.infos.delete(id);
   }
 }

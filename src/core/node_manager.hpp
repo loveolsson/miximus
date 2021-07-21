@@ -20,16 +20,18 @@ class node_manager_s
   public:
     class adapter_i
     {
+        virtual void
+                     emit_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id) = 0;
+        virtual void emit_remove_node(std::string_view id, int64_t client_id)                                = 0;
+        virtual void emit_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id) = 0;
+        virtual void emit_add_connection(const nodes::connection_s& con, int64_t client_id)                  = 0;
+        virtual void emit_remove_connection(const nodes::connection_s& con, int64_t client_id)               = 0;
+
       public:
         adapter_i()          = default;
         virtual ~adapter_i() = default;
 
-        virtual void
-        emit_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id) = 0;
-        virtual void emit_remove_node(std::string_view id, int64_t client_id)                                       = 0;
-        virtual void emit_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id)        = 0;
-        virtual void emit_add_connection(const nodes::connection_s& con, int64_t client_id)                         = 0;
-        virtual void emit_remove_connection(const nodes::connection_s& con, int64_t client_id)                      = 0;
+        friend class node_manager_s;
     };
 
   private:
@@ -49,7 +51,7 @@ class node_manager_s
     ~node_manager_s() = default;
 
     error_e
-    handle_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id);
+            handle_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id);
     error_e handle_remove_node(std::string_view id, int64_t client_id);
     error_e handle_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id);
     error_e handle_add_connection(nodes::connection_s con, int64_t client_id);

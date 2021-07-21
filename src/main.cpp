@@ -79,15 +79,15 @@ int main(int argc, char** argv)
 
     try {
         web_server::server_s web_server;
+
         core::node_manager_s node_manager;
+        load_settings(node_manager, settings_path);
 
         {
             core::app_state_s app;
-
-            load_settings(node_manager, settings_path);
+            web_server.start(7351, app.get_config_executor());
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            web_server.start(7351, app.get_config_executor());
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, web_server));
 
             while (g_signal_status == 0) {
@@ -99,8 +99,9 @@ int main(int argc, char** argv)
             log->info("Exiting...");
 
             web_server.stop();
-            node_manager.clear_adapters();
         }
+
+        node_manager.clear_adapters();
 
         save_settings(node_manager, settings_path);
     } catch (std::exception& e) {

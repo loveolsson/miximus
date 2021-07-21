@@ -81,10 +81,14 @@ class decklink_ptr
         ptr_ = ptr;
     }
 
-    operator bool() { return ptr_ != nullptr; }
+    operator bool() const { return ptr_ != nullptr; }
+
+    bool operator==(const decklink_ptr& o) const { return ptr_ == o.ptr_; }
+    bool operator!=(const decklink_ptr& o) const { return ptr_ != o.ptr_; }
+    bool operator==(const T* o) const { return ptr_ == o; }
+    bool operator!=(const T* o) const { return ptr_ != o; }
 
     T& operator*() { return *ptr_; }
-
     T* operator->() { return ptr_; }
 
     template <typename R>

@@ -16,3 +16,6 @@
 [submodule "submodules/frozen"]
 	path = submodules/frozen
 	url = https://github.com/serge-sans-paille/frozen.git
+[submodule "submodules/sanitizers-cmake"]
+	path = submodules/sanitizers-cmake
+	url = git://github.com/arsenm/sanitizers-cmake.git

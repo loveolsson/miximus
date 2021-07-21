@@ -1,4 +1,4 @@
-#include "server_impl.hpp"
+#include "web_server/detail/server_impl.hpp"
 #include "messages/templates.hpp"
 #include "utils/bind.hpp"
 
@@ -44,7 +44,7 @@ web_server_impl::web_server_impl()
 
 web_server_impl::~web_server_impl() {}
 
-void web_server_impl::terminate_and_log(connection_hdl hdl, const std::string& msg)
+void web_server_impl::terminate_and_log(const con_hdl_t& hdl, const std::string& msg)
 {
     using namespace websocketpp::log;
     using namespace websocketpp::close;
@@ -57,13 +57,16 @@ void web_server_impl::terminate_and_log(connection_hdl hdl, const std::string& m
     }
 }
 
-void web_server_impl::on_http(const connection_hdl& hdl)
+void web_server_impl::on_http(const con_hdl_t& hdl)
 {
     using namespace websocketpp::http;
     using namespace websocketpp::log;
 
     // Upgrade our connection handle to a full connection_ptr
-    server::connection_ptr con = endpoint_.get_con_from_hdl(hdl);
+    auto con = endpoint_.get_con_from_hdl(hdl);
+    if (!con) {
+        return;
+    }
 
     std::string_view resource = con->get_resource();
 
@@ -94,7 +97,7 @@ void web_server_impl::on_http(const connection_hdl& hdl)
     con->set_status(status_code::ok);
 }
 
-void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& msg)
+void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
 {
     using namespace websocketpp::frame;
 
@@ -108,8 +111,8 @@ void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& m
     }
 
     const auto& payload = msg->get_payload();
-    auto        doc     = nlohmann::json::parse(payload, nullptr, false);
 
+    auto doc = nlohmann::json::parse(payload, nullptr, false);
     if (doc.is_discarded()) {
         return terminate_and_log(hdl, "invalid JSON payload");
     }
@@ -163,7 +166,7 @@ void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& m
 
             if (topic == topic_e::invalid) {
                 err = error_e::invalid_topic;
-            } else if (!subscriptions_[static_cast<int>(topic)]) {
+            } else if (!subscription_by_topic_[static_cast<int>(topic)]) {
                 err = error_e::internal_error;
             }
 
@@ -173,7 +176,7 @@ void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& m
                 break;
             }
 
-            subscriptions_[static_cast<int>(topic)](std::move(doc), con->second.id);
+            subscription_by_topic_[static_cast<int>(topic)](std::move(doc), con->second.id);
         } break;
 
         default: {
@@ -182,7 +185,7 @@ void web_server_impl::on_message(const connection_hdl& hdl, const message_ptr& m
     }
 }
 
-void web_server_impl::on_open(const connection_hdl& hdl)
+void web_server_impl::on_open(const con_hdl_t& hdl)
 {
     using namespace websocketpp::log;
 
@@ -196,7 +199,7 @@ void web_server_impl::on_open(const connection_hdl& hdl)
     send(hdl, message::create_socket_info_payload(id));
 }
 
-void web_server_impl::on_close(const connection_hdl& hdl)
+void web_server_impl::on_close(const con_hdl_t& hdl)
 {
     using namespace websocketpp::log;
 
@@ -215,17 +218,18 @@ void web_server_impl::on_close(const connection_hdl& hdl)
     connections_.erase(con);
 }
 
-void web_server_impl::send(const connection_hdl& hdl, const std::string& msg)
+void web_server_impl::send(const con_hdl_t& hdl, const std::string& msg)
 {
     using namespace websocketpp::frame;
     endpoint_.send(hdl, msg, opcode::text);
 }
 
-void web_server_impl::send(const connection_hdl& hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
+void web_server_impl::send(const con_hdl_t& hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 {
-    endpoint_.get_io_service().post([this, topic, callback]() { subscriptions_[static_cast<int>(topic)] = callback; });
+    endpoint_.get_io_service().post(
+        [this, topic, callback]() { subscription_by_topic_[static_cast<int>(topic)] = callback; });
 }
 
 void web_server_impl::start(uint16_t port, boost::asio::io_service& service)
@@ -313,8 +317,8 @@ void web_server_impl::broadcast_message_sync(topic_e topic, const std::string& m
         return;
     }
 
-    auto& topic_set = connections_by_topic_[static_cast<int>(topic)];
-    for (const auto& hdl : topic_set) {
+    auto& con_set = connections_by_topic_[static_cast<int>(topic)];
+    for (const auto& hdl : con_set) {
         send(hdl, msg);
     }
 }

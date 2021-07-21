@@ -1,5 +1,5 @@
 #pragma once
-#include "./custom-logger.hpp"
+#include "web_server/detail/custom-logger.hpp"
 #include <websocketpp/concurrency/basic.hpp>
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>

@@ -1,5 +1,5 @@
 #include "web_server/server.hpp"
-#include "server_impl.hpp"
+#include "web_server/detail/server_impl.hpp"
 
 namespace miximus::web_server {
 server_s::server_s()
