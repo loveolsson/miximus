@@ -24,6 +24,8 @@ find_package(nlohmann_json REQUIRED)
 find_package(websocketpp REQUIRED)
 find_package(Threads REQUIRED)
 
+add_definitions(-D_WIN32_WINNT=0x0A00 -DWIN32_LEAN_AND_MEAN)
+
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_DEBUG_LIBS OFF)
 set(Boost_USE_RELEASE_LIBS ON)

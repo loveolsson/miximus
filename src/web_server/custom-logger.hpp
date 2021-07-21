@@ -43,7 +43,6 @@ class custom_logger : public basic<concurrency, names>
      */
     void write(level channel, char const* msg)
     {
-        scoped_lock_type lock(base::m_lock);
         if (!this->dynamic_test(channel)) {
             return;
         }

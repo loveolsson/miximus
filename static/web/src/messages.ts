@@ -34,7 +34,7 @@ export interface options_s {
 export interface node_s {
   id: string;
   type: type_e;
-  options?: options_s;
+  options: options_s;
 }
 
 export interface connection_s {
@@ -78,7 +78,7 @@ export interface command_add_node_s extends command_s {
 export interface command_update_node_s extends command_s {
   topic: topic_e.update_node;
   id: string;
-  options?: options_s;
+  options: options_s;
 }
 
 export interface command_remove_node_s extends command_s {

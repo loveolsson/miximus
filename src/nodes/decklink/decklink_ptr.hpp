@@ -1,6 +1,7 @@
 #pragma once
+#ifdef _WIN32
+#include <unknwn.h>
 
-#if _WIN32
 #include <DeckLinkAPI_i.h>
 #else
 #include <DeckLinkAPI.h>
@@ -9,7 +10,7 @@
 namespace miximus::nodes::decklink {
 
 #define IID_FROM_TYPE(x) IID_##x
-#define QUERY_INTERFACE(D, T) D.query_interface<T>(D, IID_FROM_TYPE(T))
+#define QUERY_INTERFACE(D, T) D.query_interface<T>(IID_FROM_TYPE(T))
 
 template <typename T>
 class decklink_ptr
@@ -86,13 +87,14 @@ class decklink_ptr
 
     T* operator->() { return ptr_; }
 
-    decklink_ptr<T> query_interface(REFIID iid)
+    template <typename R>
+    decklink_ptr<R> query_interface(REFIID iid)
     {
         if (!ptr_) {
             return nullptr;
         }
 
-        T* t;
+        R* t = nullptr;
 
         if (SUCCEEDED(ptr_->QueryInterface(iid, (void**)&t))) {
             return t;

@@ -90,7 +90,10 @@ import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import { OptionPlugin } from "@baklavajs/plugin-options-vue";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { ws_wrapper } from "./websocket";
-import { register_connection_types, register_types } from "./nodes/register_types";
+import {
+  register_connection_types,
+  register_types,
+} from "./nodes/register_types";
 import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/types";
 import { view_intercept } from "./view_intercept";
 import { helpers } from "./helpers";
@@ -116,7 +119,11 @@ export default class Miximus extends Vue {
   viewPlugin = new ViewPlugin();
   intfTypePlugin = new InterfaceTypePlugin();
   wsWrapper = new ws_wrapper();
-  view_intercept = new view_intercept(this.viewPlugin, this.intfTypePlugin, this.wsWrapper);
+  view_intercept = new view_intercept(
+    this.viewPlugin,
+    this.intfTypePlugin,
+    this.wsWrapper
+  );
   nodes_mutated = true;
   node_to_be_added?: Node;
   node_to_be_removed?: Node;
@@ -250,7 +257,6 @@ export default class Miximus extends Vue {
         y0 = Math.min(y0, pos.y);
         x1 = Math.max(x1, pos.x + 200);
         y1 = Math.max(y1, pos.y + 200);
-
       }
 
       if (this.$refs.editorArea instanceof Element) {
@@ -337,49 +343,47 @@ export default class Miximus extends Vue {
 
   handle_server_update_node(
     id: string,
-    options: options_s | undefined,
+    options: options_s,
     is_origin: boolean
   ) {
     const node = this.editor.nodes.find((node) => node.id === id);
-    if (!options || !node) return;
+    if (!node) return;
 
-    if (options) {
-      for (let key in options) {
-        const value = options[key];
-        switch (key) {
-          case "position":
-            {
-              if (is_origin) {
-                continue;
-              }
-
-              if (!this.view_intercept.set_position(id, value)) {
-                // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
-                const view = node as unknown as IViewNode;
-                view.position.x = value[0];
-                view.position.y = value[1];
-              }
+    for (let key in options) {
+      const value = options[key];
+      switch (key) {
+        case "position":
+          {
+            if (is_origin) {
+              continue;
             }
+
+            if (!this.view_intercept.set_position(id, value)) {
+              // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
+              const view = node as unknown as IViewNode;
+              view.position.x = value[0];
+              view.position.y = value[1];
+            }
+          }
+          break;
+
+        case "name":
+          {
+            node.name = value;
+          }
+          break;
+
+        default: {
+          const opt = node.options.get(key);
+          if (opt) {
+            opt.value = value;
             break;
+          }
 
-          case "name":
-            {
-              node.name = value;
-            }
+          const iface = node.getInterface(key);
+          if (iface && iface.isInput) {
+            iface.value = value;
             break;
-
-          default: {
-            const opt = node.options.get(key);
-            if (opt) {
-              opt.value = value;
-              break;
-            }
-            
-            const iface = node.getInterface(key);
-            if (iface && iface.isInput) {
-              iface.value = value;
-              break;
-            }
           }
         }
       }

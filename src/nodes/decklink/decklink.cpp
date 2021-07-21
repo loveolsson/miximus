@@ -1,6 +1,8 @@
 #include "decklink.hpp"
 #include "logger/logger.hpp"
 
+#include <sstream>
+
 #if _WIN32
 static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
 {
@@ -17,90 +19,158 @@ static std::string bstr_to_mbs(BSTR bstr)
     int wslen = ::SysStringLen(bstr);
     return wcs_tp_mbs((wchar_t*)bstr, wslen);
 }
-
 #endif
 
 namespace miximus::nodes::decklink {
-decklink_ptr<IDeckLinkIterator> get_device_iterator()
+
+decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
 {
 #if _WIN32
-    IDeckLinkIterator* iteratror = NULL;
+    IDeckLinkDiscovery* discovery = nullptr;
 
-    auto res = CoCreateInstance(CLSID_CDeckLinkIterator, NULL, CLSCTX_ALL, IID_IDeckLinkIterator, (LPVOID*)&iteratror);
+    auto res =
+        CoCreateInstance(CLSID_CDeckLinkDiscovery, NULL, CLSCTX_ALL, IID_IDeckLinkDiscovery, (LPVOID*)&discovery);
 
     if (SUCCEEDED(res)) {
-        return iteratror;
+        return discovery;
     }
 
     return nullptr;
 #else
-    return CreateDeckLinkIteratorInstance();
+    return CreateDeckLinkDiscoveryInstance();
 #endif
 }
 
-decklink_ptr<IDeckLink> get_device_by_index(int i)
+static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 {
-    int  c        = 0;
-    auto iterator = get_device_iterator();
+    std::stringstream ss;
 
-    if (!iterator) {
-        return nullptr;
-    }
+#if _WIN32
+    BSTR name;
+    device->GetDisplayName(&name);
+    ss << bstr_to_mbs(name);
+#else
+    const char* name = nullptr;
+    dl_ptr->GetDisplayName(&name);
+    ss << name;
+#endif
 
-    IDeckLink* ptr = nullptr;
-    while (iterator->Next(&ptr) == S_OK) {
-        decklink_ptr dl_ptr(ptr);
-
-        if (c++ == i) {
-            return dl_ptr;
+    /**
+     * In some hardware configurations with multiple physical cards the devices will not have unique names,
+     * and the order of the devices may change with reboots.
+     * To combat this, the persistent ID of the device is appended to the name to serve as a unique and repeatable name.
+     */
+    auto profile    = QUERY_INTERFACE(device, IDeckLinkProfile);
+    auto attributes = QUERY_INTERFACE(profile, IDeckLinkProfileAttributes);
+    if (attributes) {
+        int64_t id = 0;
+        if (SUCCEEDED(attributes->GetInt(BMDDeckLinkPersistentID, &id))) {
+            ss << " [" << id << "]";
         }
     }
 
+    return ss.str();
+}
+
+decklink_registry_s::decklink_registry_s()
+    : discovery_(get_device_discovery())
+{
+    if (discovery_) {
+        discovery_->InstallDeviceNotifications(this);
+    }
+}
+
+decklink_registry_s::~decklink_registry_s()
+{
+    if (discovery_) {
+        discovery_->UninstallDeviceNotifications();
+    }
+}
+
+HRESULT decklink_registry_s::DeckLinkDeviceArrived(IDeckLink* deckLinkDevice)
+{
+    std::unique_lock lock(device_mutex_);
+
+    decklink_ptr device(deckLinkDevice);
+
+    auto name   = get_decklink_name(device);
+    auto input  = QUERY_INTERFACE(device, IDeckLinkInput);
+    auto output = QUERY_INTERFACE(device, IDeckLinkOutput);
+
+    if (input) {
+        inputs_.emplace(name, std::move(input));
+    }
+
+    if (output) {
+        outputs_.emplace(name, std::move(output));
+    }
+
+    return S_OK;
+}
+
+HRESULT decklink_registry_s::DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice)
+{
+    std::unique_lock lock(device_mutex_);
+
+    auto it = names_.find(deckLinkDevice);
+    if (it == names_.end()) {
+        return S_OK;
+    }
+
+    auto& name = it->second;
+    inputs_.erase(name);
+    outputs_.erase(name);
+
+    names_.erase(it);
+    return S_OK;
+}
+
+decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& name)
+{
+    std::shared_lock lock(device_mutex_);
+    auto             it = inputs_.find(name);
+    if (it != inputs_.end()) {
+        return it->second;
+    }
     return nullptr;
 }
 
-static std::vector<std::string> get_device_names_impl()
+decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(const std::string& name)
 {
-    std::vector<std::string> res;
-
-    auto iterator = get_device_iterator();
-
-    if (!iterator) {
-        return res;
+    std::shared_lock lock(device_mutex_);
+    auto             it = outputs_.find(name);
+    if (it != outputs_.end()) {
+        return it->second;
     }
+    return nullptr;
+}
 
-    IDeckLink* ptr = nullptr;
-    while (iterator->Next(&ptr) == S_OK) {
-        decklink_ptr dl_ptr(ptr);
+std::vector<std::string> decklink_registry_s::get_input_names()
+{
+    std::shared_lock lock(device_mutex_);
 
-#if _WIN32
-        BSTR name;
-        dl_ptr->GetDisplayName(&name);
-        res.emplace_back(bstr_to_mbs(name));
-#else
-        const char* name = nullptr;
-        dl_ptr->GetDisplayName(&name);
-        res.emplace_back(name);
-#endif
+    std::vector<std::string> res;
+    res.reserve(inputs_.size());
+
+    for (const auto& [name, _] : inputs_) {
+        res.push_back(name);
     }
 
     return res;
 }
 
-std::vector<std::string> get_device_names()
+std::vector<std::string> decklink_registry_s::get_output_names()
 {
-    static auto names = get_device_names_impl();
-    return names;
-}
+    std::shared_lock lock(device_mutex_);
 
-void log_device_names()
-{
-    auto log   = spdlog::get("app");
-    auto names = nodes::decklink::get_device_names();
-    log->info("Found {} DeckLink device(s)", names.size());
-    for (auto& name : names) {
-        log->info(" -- \"{}\"", name);
+    std::vector<std::string> res;
+    res.reserve(outputs_.size());
+
+    for (const auto& [name, _] : outputs_) {
+        res.push_back(name);
     }
+
+    return res;
 }
 
 } // namespace miximus::nodes::decklink

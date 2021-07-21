@@ -36,11 +36,11 @@ void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
     auto token = get_token_from_payload(msg);
 
     try {
-        auto& node_obj = msg["node"];
+        auto& node_obj = msg.at("node");
 
-        auto  type    = node_obj["type"].get<std::string_view>();
-        auto  id      = node_obj["id"].get<std::string>();
-        auto& options = node_obj["options"];
+        auto  type    = node_obj.at("type").get<std::string_view>();
+        auto  id      = node_obj.at("id").get<std::string_view>();
+        auto& options = node_obj.at("options");
 
         auto res = manager_.handle_add_node(type, id, options, client_id);
 
@@ -60,7 +60,7 @@ void websocket_config_s::handle_remove_node(json&& msg, int64_t client_id)
     auto token = get_token_from_payload(msg);
 
     try {
-        std::string id = msg["id"];
+        auto id = msg.at("id").get<std::string_view>();
 
         auto res = manager_.handle_remove_node(id, client_id);
 
@@ -81,8 +81,8 @@ void websocket_config_s::handle_update_node(json&& msg, int64_t client_id)
     auto token = get_token_from_payload(msg);
 
     try {
-        std::string id      = msg["id"];
-        auto&       options = msg["options"];
+        auto  id      = msg.at("id").get<std::string_view>();
+        auto& options = msg.at("options");
 
         auto res = manager_.handle_update_node(id, options, client_id);
 
@@ -103,7 +103,7 @@ void websocket_config_s::handle_add_connection(json&& msg, int64_t client_id)
     auto token = get_token_from_payload(msg);
 
     try {
-        auto& con_obj = msg["connection"];
+        auto& con_obj = msg.at("connection");
         auto  con     = con_obj.get<nodes::connection_s>();
 
         auto res = manager_.handle_add_connection(con, client_id);
@@ -125,7 +125,7 @@ void websocket_config_s::handle_remove_connection(json&& msg, int64_t client_id)
     auto token = get_token_from_payload(msg);
 
     try {
-        auto& con_obj = msg["connection"];
+        auto& con_obj = msg.at("connection");
         auto  con     = con_obj.get<nodes::connection_s>();
 
         auto res = manager_.handle_remove_connection(con, client_id);
@@ -192,12 +192,7 @@ void websocket_config_s::emit_add_connection(const nodes::connection_s& con, int
 {
     auto payload          = create_command_base_payload(topic_e::add_connection);
     payload["origin_id"]  = client_id;
-    payload["connection"] = json{
-        {"from_node", con.from_node},
-        {"from_interface", con.from_interface},
-        {"to_node", con.to_node},
-        {"to_interface", con.to_interface},
-    };
+    payload["connection"] = con;
 
     server_.broadcast_message_sync(payload);
 }
@@ -206,12 +201,7 @@ void websocket_config_s::emit_remove_connection(const nodes::connection_s& con, 
 {
     auto payload          = create_command_base_payload(topic_e::remove_connection);
     payload["origin_id"]  = client_id;
-    payload["connection"] = json{
-        {"from_node", con.from_node},
-        {"from_interface", con.from_interface},
-        {"to_node", con.to_node},
-        {"to_interface", con.to_interface},
-    };
+    payload["connection"] = con;
 
     server_.broadcast_message_sync(payload);
 }

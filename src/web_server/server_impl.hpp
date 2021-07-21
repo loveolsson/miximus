@@ -35,8 +35,7 @@ class web_server_impl
 
     static_files::file_map_t files_;
 
-    server                       endpoint_;
-    std::unique_ptr<std::thread> run_thread_;
+    server endpoint_;
 
     con_list_t          connections_;
     con_by_id_t         connections_by_id_;
@@ -48,7 +47,7 @@ class web_server_impl
     ~web_server_impl();
 
     void subscribe(topic_e topic, const callback_t& callback);
-    void start(uint16_t port);
+    void start(uint16_t port, boost::asio::io_service& service);
     void stop();
 
     void send_message(const nlohmann::json& msg, int64_t connection_id);

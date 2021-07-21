@@ -10,12 +10,10 @@ namespace miximus::logger {
 
 void init_loggers(level::level_enum level_)
 {
-    init_thread_pool(8192, 1);
-
     auto sink = std::make_shared<sinks::stdout_color_sink_mt>();
 
     {
-        auto log = std::make_shared<async_logger>("app", sink, thread_pool());
+        auto log = std::make_shared<spdlog::logger>("app", sink);
         log->flush_on(level_);
         log->set_level(level_);
         register_logger(log);
@@ -24,14 +22,14 @@ void init_loggers(level::level_enum level_)
     }
 
     {
-        auto log = std::make_shared<async_logger>("http", sink, thread_pool());
+        auto log = std::make_shared<spdlog::logger>("http", sink);
         log->flush_on(level_);
         log->set_level(level_);
         register_logger(log);
     }
 
     {
-        auto log = std::make_shared<async_logger>("gpu", sink, thread_pool());
+        auto log = std::make_shared<spdlog::logger>("gpu", sink);
         log->flush_on(level_);
         log->set_level(level_);
         register_logger(log);

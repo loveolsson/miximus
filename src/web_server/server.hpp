@@ -1,6 +1,7 @@
 #pragma once
 #include "types/topic.hpp"
 
+#include <boost/asio/io_service.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <functional>
@@ -24,7 +25,7 @@ class server_s
 
     void subscribe(topic_e topic, const callback_t& callback);
 
-    void start(uint16_t port);
+    void start(uint16_t port, boost::asio::io_service& service);
     void stop();
 
     /**

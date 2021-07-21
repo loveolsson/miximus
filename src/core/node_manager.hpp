@@ -37,23 +37,23 @@ class node_manager_s
     using constructor_t     = std::function<std::shared_ptr<nodes::node_i>()>;
     using constructor_map_t = std::map<std::string_view, constructor_t>;
 
-    std::mutex        nodes_mutex_;
-    nodes::node_map_t nodes_;
-    nodes::node_map_t nodes_copy_;
-    nodes::con_set_t  connections_;
-    adapter_list_t    adapters_;
-    constructor_map_t constructors_;
+    std::recursive_mutex nodes_mutex_;
+    nodes::node_map_t    nodes_;
+    nodes::node_map_t    nodes_copy_;
+    nodes::con_set_t     connections_;
+    adapter_list_t       adapters_;
+    constructor_map_t    constructors_;
 
   public:
     node_manager_s();
     ~node_manager_s() = default;
 
     error_e
-    handle_add_node(std::string_view type, const std::string& id, const nlohmann::json& options, int64_t client_id);
-    error_e handle_remove_node(const std::string& id, int64_t client_id);
-    error_e handle_update_node(const std::string& id, const nlohmann::json& options, int64_t client_id);
+    handle_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id);
+    error_e handle_remove_node(std::string_view id, int64_t client_id);
+    error_e handle_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id);
     error_e handle_add_connection(nodes::connection_s con, int64_t client_id);
-    error_e handle_remove_connection(const nodes::connection_s& con, int64_t client_id, bool do_lock = true);
+    error_e handle_remove_connection(const nodes::connection_s& con, int64_t client_id);
 
     nlohmann::json get_config();
     void           set_config(const nlohmann::json&);

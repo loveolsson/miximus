@@ -35,9 +35,6 @@ web_server_impl::web_server_impl()
     endpoint_.set_access_channels(alevel::app);
     endpoint_.set_reuse_addr(true);
 
-    // Initialize the Asio transport policy
-    endpoint_.init_asio();
-
     // Bind the handlers we are using
     endpoint_.set_open_handler(utils::bind(&web_server_impl::on_open, this));
     endpoint_.set_close_handler(utils::bind(&web_server_impl::on_close, this));
@@ -45,7 +42,7 @@ web_server_impl::web_server_impl()
     endpoint_.set_message_handler(utils::bind(&web_server_impl::on_message, this));
 }
 
-web_server_impl::~web_server_impl() { stop(); }
+web_server_impl::~web_server_impl() {}
 
 void web_server_impl::terminate_and_log(connection_hdl hdl, const std::string& msg)
 {
@@ -231,15 +228,19 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
     endpoint_.get_io_service().post([this, topic, callback]() { subscriptions_[static_cast<int>(topic)] = callback; });
 }
 
-void web_server_impl::start(uint16_t port)
+void web_server_impl::start(uint16_t port, boost::asio::io_service& service)
 {
     using namespace websocketpp::log;
+    // Initialize the Asio transport policy
+    std::error_code ec;
+    endpoint_.init_asio(&service, ec);
+    if (ec) {
+        endpoint_.get_alog().write(alevel::fail, ec.message());
+    }
 
     endpoint_.get_alog().write(alevel::app, fmt::format("Starting web server on port {}", port));
     endpoint_.listen(port);
     endpoint_.start_accept();
-
-    run_thread_ = std::make_unique<std::thread>(&server::run, &endpoint_);
 }
 
 void web_server_impl::stop()
@@ -247,10 +248,6 @@ void web_server_impl::stop()
     using namespace websocketpp::log;
     using namespace websocketpp::close;
     using websocketpp::lib::error_code;
-
-    if (!run_thread_) {
-        return;
-    }
 
     endpoint_.get_alog().write(alevel::app, "Stopping server");
 
@@ -265,11 +262,6 @@ void web_server_impl::stop()
             }
         }
     });
-
-    if (run_thread_ && run_thread_->joinable()) {
-        run_thread_->join();
-        run_thread_.reset();
-    }
 }
 
 void web_server_impl::send_message(const nlohmann::json& msg, int64_t connection_id)

@@ -26,6 +26,7 @@ class node_i
     struct traits_s
     {
         bool must_run : 1;
+        bool wait_for_sync : 1;
     };
 
     virtual std::string_view type() const                                                        = 0;

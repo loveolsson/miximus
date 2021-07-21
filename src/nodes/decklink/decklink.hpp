@@ -1,17 +1,38 @@
 #pragma once
 #include "decklink_ptr.hpp"
 
+#include <map>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
 namespace miximus::nodes::decklink {
 
-decklink_ptr<IDeckLinkIterator> get_device_iterator();
+class decklink_registry_s : public IDeckLinkDeviceNotificationCallback
+{
+    decklink_ptr<IDeckLinkDiscovery> discovery_;
+    std::shared_mutex                device_mutex_;
 
-decklink_ptr<IDeckLink> get_device_by_index(int i);
+    std::map<IDeckLink*, std::string>                    names_;
+    std::map<std::string, decklink_ptr<IDeckLinkInput>>  inputs_;
+    std::map<std::string, decklink_ptr<IDeckLinkOutput>> outputs_;
 
-std::vector<std::string> get_device_names();
+  public:
+    decklink_registry_s();
+    ~decklink_registry_s();
 
-void log_device_names();
+    HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final;
+    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final;
+
+    HRESULT QueryInterface(const IID&, void**) final { return E_NOTIMPL; }
+    ULONG   AddRef() final { return 1; }
+    ULONG   Release() final { return 1; }
+
+    decklink_ptr<IDeckLinkInput>  get_input(const std::string& name);
+    decklink_ptr<IDeckLinkOutput> get_output(const std::string& name);
+
+    std::vector<std::string> get_input_names();
+    std::vector<std::string> get_output_names();
+};
 
 } // namespace miximus::nodes::decklink

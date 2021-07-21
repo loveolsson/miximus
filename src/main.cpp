@@ -1,8 +1,8 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "core/app_state.hpp"
 #include "core/node_manager.hpp"
+#include "gpu/context.hpp"
 #include "logger/logger.hpp"
-#include "nodes/decklink/decklink.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json.hpp>
@@ -60,34 +60,35 @@ int main(int argc, char** argv)
 {
     std::signal(SIGINT, signal_handler);
 
-    try {
-        auto log_level     = spdlog::level::info;
-        auto settings_path = path(argv[0]).parent_path() / "settings.json";
+    auto log_level     = spdlog::level::info;
+    auto settings_path = path(argv[0]).parent_path() / "settings.json";
 
-        for (int i = 1; i < argc; ++i) {
-            std::string_view param(argv[i]);
-            if (param == "--log-debug") {
-                log_level = spdlog::level::debug;
-            }
-
-            if (param == "--settings" && i + 1 < argc) {
-                settings_path = argv[++i];
-            }
+    for (int i = 1; i < argc; ++i) {
+        std::string_view param(argv[i]);
+        if (param == "--log-debug") {
+            log_level = spdlog::level::debug;
         }
 
-        logger::init_loggers(log_level);
-        nodes::decklink::log_device_names();
+        if (param == "--settings" && i + 1 < argc) {
+            settings_path = argv[++i];
+        }
+    }
+
+    logger::init_loggers(log_level);
+    auto log = spdlog::get("app");
+
+    try {
+        web_server::server_s web_server;
+        core::node_manager_s node_manager;
 
         {
-            core::app_state_s    app;
-            web_server::server_s web_server;
-            core::node_manager_s node_manager;
+            core::app_state_s app;
 
             load_settings(node_manager, settings_path);
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
+            web_server.start(7351, app.get_config_executor());
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, web_server));
-            web_server.start(7351);
 
             while (g_signal_status == 0) {
                 gpu::context::poll();
@@ -95,18 +96,18 @@ int main(int argc, char** argv)
                 std::this_thread::sleep_for(16ms);
             }
 
+            log->info("Exiting...");
+
             web_server.stop();
             node_manager.clear_adapters();
-
-            save_settings(node_manager, settings_path);
-
-            spdlog::get("app")->info("Exiting...");
         }
 
-        spdlog::shutdown();
+        save_settings(node_manager, settings_path);
     } catch (std::exception& e) {
-        std::cout << std::endl << "Panic: " << e.what() << std::endl;
+        log->error("Panic: {}", e.what());
     }
 
-    return 0;
+    spdlog::shutdown();
+
+    return EXIT_SUCCESS;
 }

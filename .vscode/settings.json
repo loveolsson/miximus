@@ -114,6 +114,8 @@
         "ciso646": "cpp",
         "climits": "cpp",
         "filesystem": "cpp",
-        "cstdbool": "cpp"
+        "cstdbool": "cpp",
+        "charconv": "cpp",
+        "stop_token": "cpp"
     }
 }

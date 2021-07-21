@@ -18,7 +18,7 @@ static auto log() { return spdlog::get("app"); };
 static bool is_valid_common_option(std::string_view name, const json& value)
 {
     if (name == "position") {
-        if (value.is_array() && value.size() == 2 && value[0].is_number() && value[1].is_number()) {
+        if (value.is_array() && value.size() == 2 && value.at(0).is_number() && value.at(1).is_number()) {
             return true;
         }
     } else if (name == "name") {
@@ -39,12 +39,14 @@ node_manager_s::node_manager_s()
 }
 
 error_e
-node_manager_s::handle_add_node(std::string_view type, const std::string& id, const json& options, int64_t client_id)
+node_manager_s::handle_add_node(std::string_view type, std::string_view id, const json& options, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
     log()->info("Creating {} node with id {}", type, id);
 
-    if (nodes_.count(id) > 0) {
+    std::string id_str(id);
+
+    if (nodes_.count(id_str) > 0) {
         log()->warn("Node id {} already in use", id);
         return error_e::duplicate_id;
     }
@@ -83,30 +85,30 @@ node_manager_s::handle_add_node(std::string_view type, const std::string& id, co
     return error;
 }
 
-error_e node_manager_s::handle_remove_node(const std::string& id, int64_t client_id)
+error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
 
-    std::vector<nodes::connection_s> removed_connections;
-
     log()->info("Removing node with id {}", id);
+    std::string id_str(id);
 
-    auto node_it = nodes_.find(id);
+    auto node_it = nodes_.find(id_str);
     if (node_it == nodes_.end()) {
         log()->warn("Node with id {} not found", id);
         return error_e::not_found;
     }
 
-    auto& node = node_it->second.node;
+    nodes::con_set_t removed_connections;
+    auto&            node = node_it->second.node;
 
     const auto& ifaces = node->get_interfaces();
     for (const auto& [id, iface] : ifaces) {
-        const auto& cons = node_it->second.state.con_map[id];
-        removed_connections.insert(removed_connections.end(), cons.begin(), cons.end());
+        const auto& cons = node_it->second.state.con_map.at(id);
+        removed_connections.insert(cons.begin(), cons.end());
     }
 
     for (const auto& rcon : removed_connections) {
-        handle_remove_connection(rcon, client_id, false);
+        handle_remove_connection(rcon, client_id);
     }
 
     for (auto& adapter : adapters_) {
@@ -118,17 +120,19 @@ error_e node_manager_s::handle_remove_node(const std::string& id, int64_t client
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_update_node(const std::string& id, const json& options, int64_t client_id)
+error_e node_manager_s::handle_update_node(std::string_view id, const json& options, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
 
-    log()->info("Updating node with id {}", id);
+    std::string id_str(id);
 
-    auto node_it = nodes_.find(id);
+    auto node_it = nodes_.find(id_str);
     if (node_it == nodes_.end()) {
-        log()->warn("Node with id {} not found", id);
+        log()->warn("Update node: Id {} not found", id);
         return error_e::not_found;
     }
+
+    log()->info("Updating node with id {}", id);
 
     auto& node  = node_it->second.node;
     auto& state = node_it->second.state;
@@ -252,14 +256,14 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     nodes::con_set_t removed_connections;
     connections_.emplace(con);
 
-    auto& from_connections = from_node_it->second.state.con_map[con.from_interface];
-    auto& to_connections   = to_node_it->second.state.con_map[con.to_interface];
+    auto& from_connections = from_node_it->second.state.con_map.at(con.from_interface);
+    auto& to_connections   = to_node_it->second.state.con_map.at(con.to_interface);
 
     from_iface->add_connection(&from_connections, con, removed_connections);
     to_iface->add_connection(&to_connections, con, removed_connections);
 
     for (const auto& rcon : removed_connections) {
-        handle_remove_connection(rcon, client_id, false);
+        handle_remove_connection(rcon, client_id);
     }
 
     for (auto& adapter : adapters_) {
@@ -269,9 +273,9 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id, bool do_lock)
+error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id)
 {
-    auto lock = do_lock ? std::unique_lock<std::mutex>(nodes_mutex_) : std::unique_lock<std::mutex>();
+    std::unique_lock<std::mutex>(nodes_mutex_);
 
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
         if (auto node_it = nodes_.find(node_name); node_it != nodes_.end()) {
@@ -330,13 +334,13 @@ json node_manager_s::get_config()
 
 void node_manager_s::set_config(const json& settings)
 {
-    const auto& nodes       = settings["nodes"];
-    const auto& connections = settings["connections"];
+    const auto& nodes       = settings.at("nodes");
+    const auto& connections = settings.at("connections");
 
     for (const auto& node_obj : nodes) {
-        auto        type    = node_obj["type"].get<std::string_view>();
-        auto        id      = node_obj["id"].get<std::string>();
-        const auto& options = node_obj["options"];
+        auto        type    = node_obj.at("type").get<std::string_view>();
+        auto        id      = node_obj.at("id").get<std::string>();
+        const auto& options = node_obj.at("options");
 
         handle_add_node(type, id, options, -1);
     }
@@ -378,7 +382,7 @@ void node_manager_s::tick_one_frame(app_state_s& app)
 
     std::vector<nodes::node_record_s*> must_execute;
 
-    // Call prepare on all nodes, and collect the ones that must execute
+    // Call prepare on all nodes, and collect their traits
     for (auto& [_, record] : nodes_copy_) {
         auto traits = record.node->prepare(app, record.state);
         if (traits.must_run) {

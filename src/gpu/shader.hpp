@@ -2,6 +2,10 @@
 #include "gpu/vertex.hpp"
 #include "static_files/files.hpp"
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 #include <glad/glad.h>
 
 #include <string>

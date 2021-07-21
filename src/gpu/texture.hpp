@@ -1,6 +1,10 @@
 #pragma once
 #include "gpu/sync.hpp"
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 #include <glad/glad.h>
 
 #include <memory>
