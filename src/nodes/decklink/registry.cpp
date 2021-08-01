@@ -87,7 +87,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
     {
         std::unique_lock lock(registry_.device_mutex_);
 
-        auto log = spdlog::get("decklink");
+        auto log = getlog("decklink");
 
         auto device = decklink_ptr<IDeckLink>::make_owner(deckLinkDevice);
 
@@ -136,7 +136,7 @@ decklink_registry_s::decklink_registry_s()
     std::unique_lock lock(device_mutex_);
 
     if (discovery_) {
-        spdlog::get("decklink")->debug("Installing DeckLink discovery");
+        getlog("decklink")->debug("Installing DeckLink discovery");
         discovery_->InstallDeviceNotifications(callback_.get());
     }
 }
@@ -149,7 +149,7 @@ decklink_registry_s::~decklink_registry_s()
     outputs_.clear();
 
     if (discovery_) {
-        spdlog::get("decklink")->debug("Uninstalling DeckLink discovery");
+        getlog("decklink")->debug("Uninstalling DeckLink discovery");
         discovery_->UninstallDeviceNotifications();
     }
 }

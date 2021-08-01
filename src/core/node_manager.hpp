@@ -64,6 +64,7 @@ class node_manager_s
     void clear_adapters();
 
     void tick_one_frame(app_state_s&);
+    void clear_nodes(app_state_s&);
 
     void                           register_node_type(std::string_view name, constructor_t&& constructor);
     std::shared_ptr<nodes::node_i> create_node(std::string_view type, error_e& error);

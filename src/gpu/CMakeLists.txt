@@ -1,8 +1,14 @@
 list(APPEND MIXIMUS_MAIN_SOURCES
+${CMAKE_CURRENT_SOURCE_DIR}/vertex_buffer.hpp
+${CMAKE_CURRENT_SOURCE_DIR}/vertex_buffer.cpp
+${CMAKE_CURRENT_SOURCE_DIR}/vertex_array.hpp
+${CMAKE_CURRENT_SOURCE_DIR}/vertex_array.cpp
 ${CMAKE_CURRENT_SOURCE_DIR}/context.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/context.cpp
 ${CMAKE_CURRENT_SOURCE_DIR}/shader.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/shader.cpp
+${CMAKE_CURRENT_SOURCE_DIR}/framebuffer.hpp
+${CMAKE_CURRENT_SOURCE_DIR}/framebuffer.cpp
 ${CMAKE_CURRENT_SOURCE_DIR}/vertex.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/vertex_attr.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/sync.hpp
@@ -11,6 +17,10 @@ ${CMAKE_CURRENT_SOURCE_DIR}/texture.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/texture.cpp
 ${CMAKE_CURRENT_SOURCE_DIR}/types.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/types.cpp
+${CMAKE_CURRENT_SOURCE_DIR}/draw_state.hpp
+${CMAKE_CURRENT_SOURCE_DIR}/draw_state.cpp
 )
+
+add_subdirectory(transfer)
 
 set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

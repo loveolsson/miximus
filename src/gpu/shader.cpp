@@ -1,5 +1,6 @@
 #include "gpu/shader.hpp"
 #include "logger/logger.hpp"
+#include "static_files/files.hpp"
 
 #include <array>
 #include <stdexcept>
@@ -13,9 +14,11 @@ class shader
     GLuint id_;
 
   public:
-    shader(const static_files::file_map_t& files, std::string_view name, GLenum type)
+    shader(std::string_view name, GLenum type)
         : id_(0)
     {
+        static const auto files = static_files::get_shader_files();
+
         auto it = files.find(name);
 
         if (it == files.end()) {
@@ -51,24 +54,17 @@ class shader
         }
     }
 
-    shader(const shader&) = delete;
-    shader(shader&&)      = delete;
-    void operator=(const shader&) = delete;
-    void operator=(shader&&) = delete;
-
     GLuint id() const { return id_; }
 };
 
-shader_program_s::shader_program_s(const static_files::file_map_t& files,
-                                   std::string_view                vert_name,
-                                   std::string_view                frag_name)
+shader_program_s::shader_program_s(std::string_view vert_name, std::string_view frag_name)
     : program_(0)
 {
-    auto log = spdlog::get("gpu");
+    auto log = getlog("gpu");
     log->debug(R"(Compiling shader "{}"/"{}")", vert_name, frag_name);
 
-    shader vert(files, vert_name, GL_VERTEX_SHADER);
-    shader frag(files, frag_name, GL_FRAGMENT_SHADER);
+    shader vert(vert_name, GL_VERTEX_SHADER);
+    shader frag(frag_name, GL_FRAGMENT_SHADER);
 
     program_ = glCreateProgram();
     glAttachShader(program_, vert.id());
@@ -147,25 +143,17 @@ shader_program_s::shader_program_s(shader_program_s&& o) noexcept
 shader_program_s::~shader_program_s()
 {
     if (program_ != 0) {
-        glUseProgram(0);
         glDeleteProgram(program_);
     }
 }
 
-shader_store_s::shader_store_s()
-{
-    auto files = static_files::get_shader_files();
-    shaders_.emplace("basic", shader_program_s{files, "basic_vert.glsl", "basic_frag.glsl"});
-}
+void shader_program_s::use() { glUseProgram(program_); }
 
-shader_program_s& shader_store_s::get_shader(std::string_view name)
+void shader_program_s::set_uniform(const std::string& name, const vec2_t& val)
 {
-    auto it = shaders_.find(name);
-    if (it == shaders_.end()) {
-        throw std::runtime_error("shader not found");
+    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
+        glProgramUniform2f(program_, it->second.loc, val.x, val.y);
     }
-
-    return it->second;
 }
 
 } // namespace miximus::gpu

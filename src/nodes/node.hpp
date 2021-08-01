@@ -30,9 +30,9 @@ class node_i
     };
 
     virtual std::string_view type() const                                                        = 0;
-    virtual traits_s         prepare(core::app_state_s&, const node_state_s&)                    = 0;
+    virtual void             prepare(core::app_state_s&, const node_state_s&, traits_s*)         = 0;
     virtual void             execute(core::app_state_s&, const node_map_t&, const node_state_s&) = 0;
-    virtual void             complete(){};
+    virtual void             complete(core::app_state_s&)                                        = 0;
 
     virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }
     virtual bool           test_option(std::string_view name, const nlohmann::json& value) const = 0;

@@ -1,6 +1,6 @@
 #include "web_server/detail/server_impl.hpp"
-#include "messages/templates.hpp"
 #include "utils/bind.hpp"
+#include "web_server/templates.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -115,7 +115,7 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
         return terminate_and_log(hdl, "invalid JSON payload");
     }
 
-    auto action = message::get_action_from_payload(doc);
+    auto action = get_action_from_payload(doc);
 
     switch (action) {
         case action_e::invalid: {
@@ -123,44 +123,44 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
         } break;
 
         case action_e::ping: {
-            auto pong_payload = message::create_ping_response_payload().dump();
+            auto pong_payload = create_ping_response_payload().dump();
             send(hdl, pong_payload);
         } break;
 
         case action_e::subscribe: {
             nlohmann::json response;
 
-            auto topic = message::get_topic_from_payload(doc);
-            auto token = message::get_token_from_payload(doc);
+            auto topic = get_topic_from_payload(doc);
+            auto token = get_token_from_payload(doc);
 
             if (topic != topic_e::invalid) {
                 con->second.topics.emplace(topic);
                 connections_by_topic_[static_cast<int>(topic)].emplace(hdl);
-                response = message::create_result_base_payload(token);
+                response = create_result_base_payload(token);
             } else {
-                response = message::create_error_base_payload(token, error_e::invalid_topic);
+                response = create_error_base_payload(token, error_e::invalid_topic);
             }
 
             send(hdl, response);
         } break;
 
         case action_e::unsubscribe: {
-            auto topic = message::get_topic_from_payload(doc);
-            auto token = message::get_token_from_payload(doc);
+            auto topic = get_topic_from_payload(doc);
+            auto token = get_token_from_payload(doc);
 
             if (topic == topic_e::invalid) {
-                send(hdl, message::create_error_base_payload(token, error_e::invalid_topic));
+                send(hdl, create_error_base_payload(token, error_e::invalid_topic));
                 break;
             }
 
             con->second.topics.erase(topic);
             connections_by_topic_[static_cast<int>(topic)].erase(hdl);
-            send(hdl, message::create_result_base_payload(token));
+            send(hdl, create_result_base_payload(token));
         } break;
 
         case action_e::command: {
             auto err   = error_e::no_error;
-            auto topic = message::get_topic_from_payload(doc);
+            auto topic = get_topic_from_payload(doc);
 
             if (topic == topic_e::invalid) {
                 err = error_e::invalid_topic;
@@ -169,8 +169,8 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             }
 
             if (err != error_e::no_error) {
-                auto token = message::get_token_from_payload(doc);
-                send(hdl, message::create_error_base_payload(token, err));
+                auto token = get_token_from_payload(doc);
+                send(hdl, create_error_base_payload(token, err));
                 break;
             }
 
@@ -194,7 +194,7 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
     connections_.emplace(hdl, websocket_connection{id, {}});
     connections_by_id_.emplace(id, hdl);
 
-    send(hdl, message::create_socket_info_payload(id));
+    send(hdl, create_socket_info_payload(id));
 }
 
 void web_server_impl::on_close(const con_hdl_t& hdl)
@@ -296,7 +296,7 @@ void web_server_impl::send_message_sync(const std::string& msg, int64_t connecti
 
 void web_server_impl::broadcast_message(const nlohmann::json& msg)
 {
-    auto topic      = message::get_topic_from_payload(msg);
+    auto topic      = get_topic_from_payload(msg);
     auto serialized = msg.dump();
     endpoint_.get_io_service().post(
         [this, topic, serialized = std::move(serialized)]() { broadcast_message_sync(topic, serialized); });
@@ -304,7 +304,7 @@ void web_server_impl::broadcast_message(const nlohmann::json& msg)
 
 void web_server_impl::broadcast_message_sync(const nlohmann::json& msg)
 {
-    auto topic      = message::get_topic_from_payload(msg);
+    auto topic      = get_topic_from_payload(msg);
     auto serialized = msg.dump();
     broadcast_message_sync(topic, serialized);
 }

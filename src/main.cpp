@@ -25,7 +25,7 @@ static void signal_handler(int /*signal*/) { g_signal_status = 1; }
 
 static void load_settings(core::node_manager_s* manager, const path& settings_path)
 {
-    auto log = spdlog::get("app");
+    auto log = getlog("app");
 
     std::ifstream file(settings_path);
     if (file.is_open()) {
@@ -45,7 +45,7 @@ static void load_settings(core::node_manager_s* manager, const path& settings_pa
 
 static void save_settings(core::node_manager_s* manager, const path& settings_path)
 {
-    auto log = spdlog::get("app");
+    auto log = getlog("app");
 
     std::ofstream file(settings_path);
     if (file.is_open()) {
@@ -75,39 +75,57 @@ int main(int argc, char** argv)
     }
 
     logger::init_loggers(log_level);
-    auto log = spdlog::get("app");
 
     try {
         web_server::server_s web_server;
 
-        core::node_manager_s node_manager;
-        load_settings(&node_manager, settings_path);
-
         {
             core::app_state_s app;
-            web_server.start(7351, app.get_config_executor());
+            web_server.start(7351, app.cfg_executor());
+
+            core::node_manager_s node_manager;
+            load_settings(&node_manager, settings_path);
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, web_server));
 
+            auto    time     = std::chrono::steady_clock::now();
+            int64_t frame_no = 0;
+
             while (g_signal_status == 0) {
-                gpu::context::poll();
+                // getlog("app")->info("Frame no {}", frame_no++);
+
+                gpu::context_s::poll();
                 node_manager.tick_one_frame(app);
-                std::this_thread::sleep_for(16ms);
+
+                time += std::chrono::milliseconds(16);
+
+                auto now = std::chrono::steady_clock::now();
+                if (time < now) {
+                    getlog("app")->info("Late frame");
+                    time = now;
+                } else {
+                    std::this_thread::sleep_until(time);
+                }
+
+                if (frame_no++ == 500) {
+                    // g_signal_status = 1;
+                }
             }
 
-            log->info("Exiting...");
+            getlog("app")->info("Exiting...");
 
             web_server.stop();
+            node_manager.clear_adapters();
+            save_settings(&node_manager, settings_path);
+            node_manager.clear_nodes(app);
         }
 
-        node_manager.clear_adapters();
-
-        save_settings(&node_manager, settings_path);
     } catch (std::exception& e) {
-        log->error("Panic: {}", e.what());
+        std::cout << "Panic: " << e.what() << std::endl;
     }
 
+    // gpu::context_s::terminate();
     spdlog::shutdown();
 
     return EXIT_SUCCESS;

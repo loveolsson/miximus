@@ -5,7 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace miximus::message {
+namespace miximus::web_server {
 
 static inline nlohmann::json create_ping_response_payload()
 {
@@ -47,4 +47,4 @@ static inline nlohmann::json create_error_base_payload(std::string_view token, e
         {"error", error_to_string(error)},
     };
 }
-} // namespace miximus::message
+} // namespace miximus::web_server

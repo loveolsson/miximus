@@ -10,6 +10,7 @@ struct IDeckLink;
 struct IDeckLinkInput;
 struct IDeckLinkOutput;
 struct IDeckLinkDiscovery;
+struct IDeckLinkVideoConversion;
 
 namespace miximus::nodes::decklink {
 

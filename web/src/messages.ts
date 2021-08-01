@@ -21,6 +21,9 @@ export const enum type_e {
   math_i64 = "math_i64",
   math_f64 = "math_f64",
   math_vec2 = "math_vec2",
+  screen_output = "screen_output",
+  decklink_input = "decklink_input",
+  decklink_output = "decklink_output",
 }
 
 export type position_t = [number, number];

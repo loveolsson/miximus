@@ -4,7 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
-namespace miximus::message {
+namespace miximus::web_server {
 static inline action_e get_action_from_payload(const nlohmann::json& payload)
 {
     auto act = payload.find("action");
@@ -35,4 +35,4 @@ static inline std::string_view get_token_from_payload(const nlohmann::json& payl
     return token->get<std::string_view>();
 }
 
-} // namespace miximus::message
+} // namespace miximus::web_server

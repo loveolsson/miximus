@@ -1,8 +1,13 @@
 #include "core/node_manager.hpp"
+#include "gpu/context.hpp"
+#include "gpu/sync.hpp"
 #include "logger/logger.hpp"
+#include "nodes/decklink/input.hpp"
+#include "nodes/decklink/output.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/math/math.hpp"
 #include "nodes/node.hpp"
+#include "nodes/screen/screen.hpp"
 #include "utils/bind.hpp"
 #include "web_server/server.hpp"
 
@@ -13,7 +18,7 @@
 namespace miximus::core {
 using nlohmann::json;
 
-static auto log() { return spdlog::get("app"); };
+static auto log() { return getlog("app"); };
 
 static bool is_valid_common_option(std::string_view name, const json& value)
 {
@@ -36,6 +41,11 @@ node_manager_s::node_manager_s()
     register_node_type("math_i64", math::create_i64_node);
     register_node_type("math_f64", math::create_f64_node);
     register_node_type("math_vec2", math::create_vec2_node);
+
+    register_node_type("screen_output", screen::create_node);
+
+    register_node_type("decklink_input", decklink::create_input_node);
+    // register_node_type("decklink_output", decklink::create_output_node);
 }
 
 error_e
@@ -256,9 +266,9 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     connections_.emplace(con);
 
     auto& from_connections = from_node_it->second.state.con_map.at(con.from_interface);
-    auto& to_connections   = to_node_it->second.state.con_map.at(con.to_interface);
-
     from_iface->add_connection(&from_connections, con, removed_connections);
+
+    auto& to_connections = to_node_it->second.state.con_map.at(con.to_interface);
     to_iface->add_connection(&to_connections, con, removed_connections);
 
     for (const auto& rcon : removed_connections) {
@@ -276,6 +286,11 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
 {
     std::unique_lock lock(nodes_mutex_);
 
+    auto con_it = connections_.find(con);
+    if (con_it == connections_.end()) {
+        return error_e::not_found;
+    }
+
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
         if (auto node_it = nodes_.find(node_name); node_it != nodes_.end()) {
             auto& node  = node_it->second.node;
@@ -288,11 +303,6 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
 
         return false;
     };
-
-    auto con_it = connections_.find(con);
-    if (con_it == connections_.end()) {
-        return error_e::not_found;
-    }
 
     remove_from_interface(con.from_node, con.from_interface);
     remove_from_interface(con.to_node, con.to_interface);
@@ -379,11 +389,15 @@ void node_manager_s::tick_one_frame(app_state_s& app)
         nodes_copy_ = nodes_;
     }
 
+    app.ctx().make_current();
+
     std::vector<nodes::node_record_s*> must_execute;
 
     // Call prepare on all nodes, and collect their traits
     for (auto& [_, record] : nodes_copy_) {
-        auto traits = record.node->prepare(app, record.state);
+        nodes::node_i::traits_s traits = {};
+        record.node->prepare(app, record.state, &traits);
+
         if (traits.must_run) {
             must_execute.emplace_back(&record);
         }
@@ -395,9 +409,27 @@ void node_manager_s::tick_one_frame(app_state_s& app)
         }
     }
 
+    gpu::sync_s sync;
+    sync.cpu_wait(std::chrono::milliseconds(50));
+
     for (auto& [_, record] : nodes_copy_) {
-        record.node->complete();
+        record.node->complete(app);
     }
+
+    glFinish();
+
+    gpu::context_s::rewind_current();
+}
+
+void node_manager_s::clear_nodes(app_state_s& app)
+{
+    app.ctx().make_current();
+
+    nodes_copy_.clear();
+    nodes_.clear();
+    connections_.clear();
+
+    gpu::context_s::rewind_current();
 }
 
 void node_manager_s::register_node_type(std::string_view name, constructor_t&& constructor)

@@ -47,7 +47,7 @@ class custom_logger : public basic<concurrency, names>
             return;
         }
 
-        auto log = spdlog::get("http");
+        auto log = getlog("http");
         if (!log) {
             return;
         }
@@ -80,8 +80,7 @@ class custom_logger : public basic<concurrency, names>
     }
 
   private:
-    typedef typename base::scoped_lock_type scoped_lock_type;
-    channel_type_hint::value                m_channel_type_hint;
+    channel_type_hint::value m_channel_type_hint;
 };
 
 } // namespace websocketpp::log

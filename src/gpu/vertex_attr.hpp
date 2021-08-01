@@ -8,7 +8,7 @@ struct vertex_attr
     GLint     size;
     GLenum    type;
     GLboolean norm;
-    GLsizei   offset;
+    size_t    offset;
     GLenum    base_type;
 };
 

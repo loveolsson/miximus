@@ -1,13 +1,13 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "logger/logger.hpp"
-#include "messages/payload.hpp"
-#include "messages/templates.hpp"
 #include "utils/bind.hpp"
+#include "web_server/payload.hpp"
+#include "web_server/templates.hpp"
 
 namespace miximus::core {
 
-using namespace message;
 using nlohmann::json;
+using namespace web_server;
 
 websocket_config_s::websocket_config_s(node_manager_s& manager, web_server::server_s& server)
     : manager_(manager)
@@ -40,7 +40,7 @@ void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
             server_.send_message_sync(create_error_base_payload(token, res), client_id);
         }
     } catch (json::exception& e) {
-        spdlog::get("http")->warn("Received malformed payload for create node: {}", e.what());
+        getlog("http")->warn("Received malformed payload for create node: {}", e.what());
         server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
     }
 }
@@ -61,7 +61,7 @@ void websocket_config_s::handle_remove_node(json&& msg, int64_t client_id)
         }
 
     } catch (json::exception& e) {
-        spdlog::get("http")->warn("Received malformed payload for remove node: {}", e.what());
+        getlog("http")->warn("Received malformed payload for remove node: {}", e.what());
         server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
     }
 }
@@ -83,7 +83,7 @@ void websocket_config_s::handle_update_node(json&& msg, int64_t client_id)
         }
 
     } catch (json::exception& e) {
-        spdlog::get("http")->warn("Received malformed payload for update node: {}", e.what());
+        getlog("http")->warn("Received malformed payload for update node: {}", e.what());
         server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
     }
 }
@@ -105,7 +105,7 @@ void websocket_config_s::handle_add_connection(json&& msg, int64_t client_id)
         }
 
     } catch (json::exception& e) {
-        spdlog::get("http")->warn("Received malformed payload for add connection: {}", e.what());
+        getlog("http")->warn("Received malformed payload for add connection: {}", e.what());
         server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
     }
 }
@@ -127,7 +127,7 @@ void websocket_config_s::handle_remove_connection(json&& msg, int64_t client_id)
         }
 
     } catch (json::exception& e) {
-        spdlog::get("http")->warn("Received malformed payload for remove connection: {}", e.what());
+        getlog("http")->warn("Received malformed payload for remove connection: {}", e.what());
         server_.send_message_sync(create_error_base_payload(token, error_e::malformed_payload), client_id);
     }
 }

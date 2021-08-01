@@ -10,5 +10,7 @@ list(APPEND MIXIMUS_MAIN_SOURCES
 
 add_subdirectory(decklink)
 add_subdirectory(math)
+add_subdirectory(screen)
+add_subdirectory(utils)
 
 set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

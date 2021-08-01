@@ -12,14 +12,14 @@ namespace miximus::gpu {
 template <typename T>
 constexpr auto get_vertex_type_info();
 
-struct vertex_col_uv
+struct vertex_uv
 {
     glm::vec2 pos;
     glm::vec2 uv;
 };
 
 template <>
-inline constexpr auto get_vertex_type_info<vertex_col_uv>()
+inline constexpr auto get_vertex_type_info<vertex_uv>()
 {
     return frozen::map<std::string_view, vertex_attr, 2>{
         {"pos",
@@ -27,7 +27,7 @@ inline constexpr auto get_vertex_type_info<vertex_col_uv>()
              2,
              GL_FLOAT,
              GL_FALSE,
-             offsetof(vertex_col_uv, pos),
+             offsetof(vertex_uv, pos),
              GL_FLOAT_VEC2,
          }},
         {"uv",
@@ -35,10 +35,39 @@ inline constexpr auto get_vertex_type_info<vertex_col_uv>()
              2,
              GL_FLOAT,
              GL_FALSE,
-             offsetof(vertex_col_uv, uv),
+             offsetof(vertex_uv, uv),
              GL_FLOAT_VEC2,
          }},
     };
 }
+
+constexpr vertex_uv full_screen_quad_verts[] = {
+    {
+        {0, 0},
+        {0, 0},
+    },
+    {
+        {1.f, 0},
+        {1.f, 0},
+    },
+    {
+        {0, 1.f},
+        {0, 1.f},
+    },
+
+    {
+        {0, 1.f},
+        {0, 1.f},
+    },
+    {
+        {1.f, 0},
+        {1.f, 0},
+    },
+    {
+        {1.f, 1.f},
+        {1.f, 1.f},
+    },
+
+};
 
 } // namespace miximus::gpu

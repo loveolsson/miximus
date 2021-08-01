@@ -1,15 +1,17 @@
 import { Editor } from "@baklavajs/core";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { type_e } from "@/messages";
-import { F64MathNode, I64MathNode, Vec2MathNode } from "./MathNode";
+import { F64MathNode, I64MathNode, Vec2MathNode } from "./math";
+import { ScreenOutputNode } from "./screen";
+import { DeckLinkInputNode } from "./decklink";
 
 /**
  * Color-blind optimized palette
  * https://personal.sron.nl/~pault/#fig:scheme_muted
  */
 const Color = {
-  Indigo: "#332288",
-  Cyan: "#88ccee",
+  Indigo: "#332288", // used
+  Cyan: "#88ccee", // used
   Teal: "#44aa99", // used
   Green: "#117733", // used
   Olive: "#999933", // used
@@ -21,6 +23,8 @@ const Color = {
 };
 
 export const connectionColorMap = new Map<string, string>([
+  ["texture", Color.Indigo],
+  ["framebuffer", Color.Cyan],
   ["i64", Color.Teal],
   ["f64", Color.Green],
   ["vec2", Color.Olive],
@@ -41,4 +45,7 @@ export function register_types(editor: Editor): void {
   editor.registerNodeType(type_e.math_i64, I64MathNode, "Math");
   editor.registerNodeType(type_e.math_f64, F64MathNode, "Math");
   editor.registerNodeType(type_e.math_vec2, Vec2MathNode, "Math");
+
+  editor.registerNodeType(type_e.screen_output, ScreenOutputNode, "Outputs");
+  editor.registerNodeType(type_e.decklink_input, DeckLinkInputNode, "Inputs");
 }

@@ -23,6 +23,7 @@ find_package(Boost COMPONENTS system REQUIRED)
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/frozen/include
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/stb
+    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/concurrentqueue
 )
 
 option(MIXIMUS_TUNE_NATIVE OFF)

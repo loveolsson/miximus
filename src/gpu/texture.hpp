@@ -1,28 +1,46 @@
 #pragma once
-#include "gpu/glad.hpp"
-#include "gpu/sync.hpp"
-
-
-#include <memory>
+#include "glad.hpp"
+#include "types.hpp"
 
 namespace miximus::gpu {
 
-class texture
+class texture_s
 {
-    GLuint texture_;
-    GLint  width_;
-    GLint  height_;
-    GLenum format_;
-    GLenum type_;
+  public:
+    enum class color_type_e
+    {
+        RGB,
+        RGBA,
+        BGRA,
+        UYVY,
+    };
 
-    std::unique_ptr<sync> sync_;
+  private:
+    GLuint       id_{};
+    vec2i_t      display_dimensions_{};
+    vec2i_t      texture_dimensions_{};
+    GLenum       format_{};
+    GLenum       type_{};
+    color_type_e color_type_;
 
   public:
-    texture();
-    ~texture();
+    texture_s(vec2i_t dimensions, color_type_e color);
+    ~texture_s();
 
-    texture(const texture&) = delete;
-    texture(texture&&)      = delete;
+    texture_s(const texture_s&) = delete;
+    texture_s(texture_s&&)      = delete;
+
+    void         init();
+    vec2i_t      display_dimensions() { return display_dimensions_; }
+    vec2i_t      texture_dimensions() { return texture_dimensions_; }
+    GLenum       format() { return format_; }
+    GLenum       type() { return type_; }
+    color_type_e color_type() { return color_type_; }
+    GLuint       id() { return id_; }
+
+    void bind(GLuint sampler);
+    void unbind(GLuint sampler);
+    void generate_mip_maps();
 };
 
 } // namespace miximus::gpu

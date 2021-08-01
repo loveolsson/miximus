@@ -10,6 +10,14 @@ class decklink_ptr
 {
     T* ptr_;
 
+    void free_ptr()
+    {
+        if (ptr_) {
+            ptr_->Release();
+            ptr_ = nullptr;
+        }
+    }
+
   public:
     decklink_ptr()
         : ptr_(nullptr)
@@ -44,34 +52,37 @@ class decklink_ptr
         return ptr;
     }
 
-    ~decklink_ptr()
-    {
-        if (ptr_) {
-            ptr_->Release();
-            ptr_ = nullptr;
-        }
-    }
+    ~decklink_ptr() { free_ptr(); }
 
     decklink_ptr& operator=(decklink_ptr&& o)
     {
-        ~decklink_ptr();
+        free_ptr();
+
         ptr_   = o.ptr_;
         o.ptr_ = nullptr;
+
+        return *this;
     }
 
     decklink_ptr& operator=(const decklink_ptr& o)
     {
-        ~decklink_ptr();
+        free_ptr();
+
         ptr_ = o.ptr_;
         if (ptr_) {
             ptr_->AddRef();
         }
+
+        return *this;
     }
 
     decklink_ptr& operator=(T* ptr)
     {
-        ~decklink_ptr();
+        free_ptr();
+
         ptr_ = ptr;
+
+        return *this;
     }
 
     operator bool() const { return ptr_ != nullptr; }
@@ -85,6 +96,8 @@ class decklink_ptr
     T* operator->() { return ptr_; }
     T& operator*() const { return *ptr_; }
     T* operator->() const { return ptr_; }
+
+    T* ptr() const { return ptr_; }
 
     template <typename R, typename REFIID>
     decklink_ptr<R> query_interface(REFIID iid) const

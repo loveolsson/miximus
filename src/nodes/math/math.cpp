@@ -24,12 +24,24 @@ bool validate_num_option<double>(const nlohmann::json& val)
 }
 
 template <>
-bool validate_num_option<miximus::gpu::vec2>(const nlohmann::json& val)
+bool validate_num_option<miximus::gpu::vec2_t>(const nlohmann::json& val)
 {
     if (!val.is_array() || val.size() != 2) {
         return false;
     }
     if (!val[0].is_number() || !val[1].is_number()) {
+        return false;
+    }
+    return true;
+}
+
+template <>
+bool validate_num_option<miximus::gpu::vec2i_t>(const nlohmann::json& val)
+{
+    if (!val.is_array() || val.size() != 2) {
+        return false;
+    }
+    if (!val[0].is_number_integer() || !val[1].is_number_integer()) {
         return false;
     }
     return true;
@@ -60,12 +72,7 @@ class node_impl : public node_i
         interfaces_.emplace("res", &iface_res_);
     }
 
-    traits_s prepare(core::app_state_s& /*app*/, const node_state_s& /*nodes*/) final
-    {
-        traits_s res = {};
-        res.must_run = true;
-        return res;
-    }
+    void prepare(core::app_state_s& /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
     {
@@ -93,7 +100,7 @@ class node_impl : public node_i
         iface_res_.set_value(res);
     }
 
-    void complete() final { node_i::complete(); }
+    void complete(core::app_state_s& /*app*/) final {}
 
     nlohmann::json get_default_options() const final
     {
@@ -132,7 +139,7 @@ std::shared_ptr<node_i> create_f64_node()
 }
 std::shared_ptr<node_i> create_vec2_node()
 {
-    return std::make_shared<node_impl<gpu::vec2>>("math_vec2", "Vector math");
+    return std::make_shared<node_impl<gpu::vec2_t>>("math_vec2", "Vector math");
 }
 
 } // namespace miximus::nodes::math

@@ -1,7 +1,7 @@
 #pragma once
-#include "messages/payload.hpp"
 #include "static_files/files.hpp"
 #include "web_server/detail/custom-config.hpp"
+#include "web_server/payload.hpp"
 #include "web_server/server.hpp"
 #include "websocket_connection.hpp"
 
