@@ -1,9 +1,8 @@
 list(APPEND MIXIMUS_MAIN_SOURCES
 ${CMAKE_CURRENT_SOURCE_DIR}/detail/allocator.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/detail/allocator.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/input.hpp
+${CMAKE_CURRENT_SOURCE_DIR}/decklink.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/input.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/output.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/output.cpp
 ${CMAKE_CURRENT_SOURCE_DIR}/registry.hpp
 ${CMAKE_CURRENT_SOURCE_DIR}/registry.cpp

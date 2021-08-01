@@ -20,6 +20,7 @@ class interface_i
         f64     = 0,
         i64,
         vec2,
+        vec2i,
         rect,
         texture,
         framebuffer,

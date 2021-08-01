@@ -1,12 +1,16 @@
 #include "allocator.hpp"
+#include "logger/logger.hpp"
 
 #include <cassert>
 
 namespace miximus::nodes::decklink::detail {
 
-allocator_s::allocator_s(const std::shared_ptr<gpu::context_s>& ctx, gpu::transfer::transfer_i::direction_e dir)
+constexpr size_t MAX_ALLOCATIONS = 4;
+static int       allocations_g   = 0;
+
+allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir)
     : transfer_type_(transfer_i::get_prefered_type())
-    , ctx_(ctx)
+    , ctx_(std::move(ctx))
     , direction_(dir)
 {
 }
@@ -32,10 +36,15 @@ HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
         }
     }
 
+    if (allocated_transfers_.size() > MAX_ALLOCATIONS) {
+        gpu::context_s::rewind_current();
+        return E_OUTOFMEMORY;
+    }
+
+    getlog("gpu")->debug("Allocating transfer, currently {}", ++allocations_g);
     auto tr          = transfer_i::create_transfer(transfer_type_, bufferSize, direction_);
     *allocatedBuffer = tr->ptr();
     assert(*allocatedBuffer != nullptr);
-
     allocated_transfers_.emplace(*allocatedBuffer, std::move(tr));
 
     gpu::context_s::rewind_current();
@@ -44,8 +53,7 @@ HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
 
 HRESULT allocator_s::ReleaseBuffer(void* buffer)
 {
-    auto lock = ctx_->get_lock();
-
+    auto lock        = ctx_->get_lock();
     auto has_current = gpu::context_s::has_current();
 
     if (!has_current) {
@@ -54,8 +62,10 @@ HRESULT allocator_s::ReleaseBuffer(void* buffer)
 
     auto it = allocated_transfers_.find(buffer);
     if (it != allocated_transfers_.end()) {
-        if (active_ && free_transfers_.size() < 2 && it->second->size() == last_allocation_size_) {
+        if (active_ && it->second->size() == last_allocation_size_) {
             free_transfers_.emplace_back(std::move(it->second));
+        } else {
+            getlog("gpu")->debug("Releasing transfer, {} left", --allocations_g);
         }
 
         allocated_transfers_.erase(it);
@@ -70,14 +80,14 @@ HRESULT allocator_s::ReleaseBuffer(void* buffer)
     return S_OK;
 }
 
-HRESULT allocator_s::Commit(void)
+HRESULT allocator_s::Commit()
 {
     auto lock = ctx_->get_lock();
     active_   = true;
     return S_OK;
 }
 
-HRESULT allocator_s::Decommit(void)
+HRESULT allocator_s::Decommit()
 {
     auto lock = ctx_->get_lock();
     free_transfers_.clear();
@@ -101,22 +111,22 @@ gpu::transfer::transfer_i* allocator_s::get_transfer(void* ptr)
     return nullptr;
 }
 
-bool allocator_s::register_texture(const gpu::texture_s& texture)
+bool allocator_s::register_texture(gpu::texture_s* texture)
 {
     return transfer_i::register_texture(transfer_type_, texture);
 }
 
-bool allocator_s::unregister_texture(const gpu::texture_s& texture)
+bool allocator_s::unregister_texture(gpu::texture_s* texture)
 {
     return transfer_i::unregister_texture(transfer_type_, texture);
 }
 
-bool allocator_s::begin_texture_use(const gpu::texture_s& texture)
+bool allocator_s::begin_texture_use(gpu::texture_s* texture)
 {
     return transfer_i::begin_texture_use(transfer_type_, texture);
 }
 
-bool allocator_s::end_texture_use(const gpu::texture_s& texture)
+bool allocator_s::end_texture_use(gpu::texture_s* texture)
 {
     return transfer_i::end_texture_use(transfer_type_, texture);
 }

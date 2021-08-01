@@ -1,61 +1,19 @@
 #include "nodes/math/math.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/validate_option.hpp"
 
 #include <glm/glm.hpp>
 
 #include <functional>
 
 namespace {
-
-template <typename T>
-bool validate_num_option(const nlohmann::json&);
-
-template <>
-bool validate_num_option<int64_t>(const nlohmann::json& val)
-{
-    return val.is_number_integer();
-}
-
-template <>
-bool validate_num_option<double>(const nlohmann::json& val)
-{
-    return val.is_number();
-}
-
-template <>
-bool validate_num_option<miximus::gpu::vec2_t>(const nlohmann::json& val)
-{
-    if (!val.is_array() || val.size() != 2) {
-        return false;
-    }
-    if (!val[0].is_number() || !val[1].is_number()) {
-        return false;
-    }
-    return true;
-}
-
-template <>
-bool validate_num_option<miximus::gpu::vec2i_t>(const nlohmann::json& val)
-{
-    if (!val.is_array() || val.size() != 2) {
-        return false;
-    }
-    if (!val[0].is_number_integer() || !val[1].is_number_integer()) {
-        return false;
-    }
-    return true;
-}
-
-} // namespace
-
-namespace miximus::nodes::math {
+using namespace miximus;
+using namespace miximus::nodes;
 
 template <typename T>
 class node_impl : public node_i
 {
-    using dir = interface_i::dir_e;
-
     input_interface_s<T>   iface_a_;
     input_interface_s<T>   iface_b_;
     output_interface_s<T>  iface_res_;
@@ -122,7 +80,7 @@ class node_impl : public node_i
                 return true;
             }
         } else if (name == "a" || name == "b") {
-            return validate_num_option<T>(value);
+            return detail::validate_option<T>(value);
         }
 
         return false;
@@ -131,15 +89,25 @@ class node_impl : public node_i
     std::string_view type() const final { return type_; }
 };
 
+} // namespace
+
+namespace miximus::nodes::math {
+
 std::shared_ptr<node_i> create_i64_node() { return std::make_shared<node_impl<int64_t>>("math_i64", "Integer math"); }
 
 std::shared_ptr<node_i> create_f64_node()
 {
     return std::make_shared<node_impl<double>>("math_f64", "Floating point math");
 }
+
 std::shared_ptr<node_i> create_vec2_node()
 {
     return std::make_shared<node_impl<gpu::vec2_t>>("math_vec2", "Vector math");
+}
+
+std::shared_ptr<node_i> create_vec2i_node()
+{
+    return std::make_shared<node_impl<gpu::vec2_t>>("math_vec2i", "Vector integer math");
 }
 
 } // namespace miximus::nodes::math

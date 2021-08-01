@@ -11,7 +11,7 @@ server_s::~server_s() { impl.reset(); }
 
 void server_s::subscribe(topic_e topic, const callback_t& callback) { impl->subscribe(topic, callback); }
 
-void server_s::start(uint16_t port, boost::asio::io_service& service) { impl->start(port, service); }
+void server_s::start(uint16_t port, boost::asio::io_service* service) { impl->start(port, service); }
 
 void server_s::stop() { impl->stop(); }
 

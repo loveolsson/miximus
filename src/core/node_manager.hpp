@@ -2,6 +2,7 @@
 #include "core/app_state.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
+#include "nodes/register.hpp"
 #include "types/error.hpp"
 
 #include <nlohmann/json_fwd.hpp>
@@ -35,16 +36,14 @@ class node_manager_s
     };
 
   private:
-    using adapter_list_t    = std::vector<std::unique_ptr<adapter_i>>;
-    using constructor_t     = std::function<std::shared_ptr<nodes::node_i>()>;
-    using constructor_map_t = std::map<std::string_view, constructor_t>;
+    using adapter_list_t = std::vector<std::unique_ptr<adapter_i>>;
 
-    std::recursive_mutex nodes_mutex_;
-    nodes::node_map_t    nodes_;
-    nodes::node_map_t    nodes_copy_;
-    nodes::con_set_t     connections_;
-    adapter_list_t       adapters_;
-    constructor_map_t    constructors_;
+    std::recursive_mutex     nodes_mutex_;
+    nodes::node_map_t        nodes_;
+    nodes::node_map_t        nodes_copy_;
+    nodes::con_set_t         connections_;
+    nodes::constructor_map_t constructors_;
+    adapter_list_t           adapters_;
 
   public:
     node_manager_s();
@@ -66,7 +65,6 @@ class node_manager_s
     void tick_one_frame(app_state_s&);
     void clear_nodes(app_state_s&);
 
-    void                           register_node_type(std::string_view name, constructor_t&& constructor);
     std::shared_ptr<nodes::node_i> create_node(std::string_view type, error_e& error);
 };
 

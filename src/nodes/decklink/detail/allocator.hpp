@@ -32,7 +32,7 @@ class allocator_s : public IDeckLinkMemoryAllocator
     std::atomic_ulong ref_count_{1};
 
   public:
-    allocator_s(const std::shared_ptr<gpu::context_s>& ctx, gpu::transfer::transfer_i::direction_e dir);
+    allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir);
     ~allocator_s() = default;
 
     HRESULT AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer) final;
@@ -53,10 +53,10 @@ class allocator_s : public IDeckLinkMemoryAllocator
 
     transfer_i* get_transfer(void* ptr);
 
-    bool register_texture(const gpu::texture_s& texture);
-    bool unregister_texture(const gpu::texture_s& texture);
-    bool begin_texture_use(const gpu::texture_s& texture);
-    bool end_texture_use(const gpu::texture_s& texture);
+    bool register_texture(gpu::texture_s* texture);
+    bool unregister_texture(gpu::texture_s* texture);
+    bool begin_texture_use(gpu::texture_s* texture);
+    bool end_texture_use(gpu::texture_s* texture);
 
     size_t destroy_free_transfers();
 };

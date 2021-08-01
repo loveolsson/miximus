@@ -1,6 +1,6 @@
 list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/framebuffer.cpp
 )
+
+add_subdirectory(font)
 
 set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

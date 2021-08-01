@@ -3,7 +3,29 @@ project(miximus)
 
 set(CMAKE_CXX_STANDARD 17)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/submodules/sanitizers-cmake/cmake")
-#set(MIXIMUS_CLANG_TIDY "clang-tidy;-checks=*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-readability-magic-numbers, -cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-hicpp-no-array-decay")
+
+set(MIXIMUS_CLANG_TIDY_PARAMS
+    -checks=*
+    -fuchsia-default-arguments-calls
+    -modernize-use-trailing-return-type
+    -cppcoreguidelines-pro-bounds-pointer-arithmetic
+    -cppcoreguidelines-avoid-magic-numbers
+    -readability-magic-numbers
+    -cppcoreguidelines-pro-type-reinterpret-cast
+    -google-build-using-namespace
+    -modernize-use-nodiscard
+    -fuchsia-overloaded-operator
+    -cppcoreguidelines-pro-bounds-array-to-pointer-decay
+    -hicpp-no-array-decay
+    -cppcoreguidelines-pro-type-union-access
+    -fuchsia-statically-constructed-objects
+    -cppcoreguidelines-no-malloc
+    -hicpp-no-malloc
+    -cppcoreguidelines-owning-memory
+)
+
+list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)
+#set(MIXIMUS_CLANG_TIDY "clang-tidy;${MIXIMUS_CLANG_TIDY_PARAMS_STR}")
 
 find_package(Sanitizers REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -14,6 +36,8 @@ find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(websocketpp REQUIRED)
 find_package(Threads REQUIRED)
+find_package(Fontconfig REQUIRED)
+find_package(Freetype REQUIRED)
 
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_DEBUG_LIBS OFF)

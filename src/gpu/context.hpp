@@ -53,7 +53,7 @@ class context_s
 
     auto get_lock() { return std::unique_lock(mtx_); };
 
-    shader_program_s& get_shader(shader_program_s::name_e name);
+    shader_program_s* get_shader(shader_program_s::name_e name);
 };
 
 } // namespace miximus::gpu

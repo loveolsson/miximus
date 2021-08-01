@@ -7,21 +7,16 @@ namespace miximus::gpu::transfer {
 transfer_i::transfer_i(size_t size, direction_e direction)
     : size_(size)
     , direction_(direction)
-    , ptr_(aligned_alloc(16, size))
+    , ptr_(aligned_alloc(ALIGNMENT, size))
 {
 }
 
-transfer_i::~transfer_i() { free(ptr_); }
-
-bool transfer_i::register_texture(type_e type, const texture_s& texture)
+transfer_i::~transfer_i()
 {
-    switch (type) {
-        default:
-            return true;
-    }
+    free(ptr_); //
 }
 
-bool transfer_i::unregister_texture(type_e type, const texture_s& texture)
+bool transfer_i::register_texture(type_e type, gpu::texture_s* /*texture*/)
 {
     switch (type) {
         default:
@@ -29,7 +24,7 @@ bool transfer_i::unregister_texture(type_e type, const texture_s& texture)
     }
 }
 
-bool transfer_i::begin_texture_use(type_e type, const texture_s& texture)
+bool transfer_i::unregister_texture(type_e type, gpu::texture_s* /*texture*/)
 {
     switch (type) {
         default:
@@ -37,7 +32,15 @@ bool transfer_i::begin_texture_use(type_e type, const texture_s& texture)
     }
 }
 
-bool transfer_i::end_texture_use(type_e type, const texture_s& texture)
+bool transfer_i::begin_texture_use(type_e type, gpu::texture_s* /*texture*/)
+{
+    switch (type) {
+        default:
+            return true;
+    }
+}
+
+bool transfer_i::end_texture_use(type_e type, gpu::texture_s* /*texture*/)
 {
     switch (type) {
         default:

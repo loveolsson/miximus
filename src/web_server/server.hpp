@@ -25,7 +25,7 @@ class server_s
 
     void subscribe(topic_e topic, const callback_t& callback);
 
-    void start(uint16_t port, boost::asio::io_service& service);
+    void start(uint16_t port, boost::asio::io_service* service);
     void stop();
 
     /**

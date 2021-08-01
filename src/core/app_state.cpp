@@ -1,6 +1,4 @@
-#include "core/app_state.hpp"
-#include "gpu/context.hpp"
-#include "nodes/decklink/registry.hpp"
+#include "app_state.hpp"
 
 using namespace boost::asio;
 

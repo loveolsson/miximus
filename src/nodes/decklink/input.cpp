@@ -1,4 +1,4 @@
-#include "input.hpp"
+#include "decklink.hpp"
 #include "detail/allocator.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -14,31 +14,40 @@
 #include <optional>
 #include <queue>
 
-namespace miximus::nodes::decklink {
+namespace {
+using namespace miximus;
+using namespace miximus::nodes;
+using namespace miximus::nodes::decklink;
 
 using texture_ptr_t = std::unique_ptr<gpu::texture_s>;
+using frame_info_t  = std::pair<decklink_ptr<IDeckLinkVideoFrame>, gpu::transfer::transfer_i*>;
 
 class node_impl;
 
 class callback_s : public IDeckLinkInputCallback
 {
-    std::weak_ptr<node_impl> node_;
-    std::atomic_ulong        ref_count_{1};
+    std::atomic_ulong                 ref_count_{1};
+    std::shared_ptr<gpu::context_s>   ctx_;
+    std::mutex                        frame_mutex_;
+    std::queue<frame_info_t>          frame_queue_;
+    decklink_ptr<detail::allocator_s> allocator_;
+    BMDDisplayMode                    new_display_mode_{0};
 
   public:
-    callback_s(std::weak_ptr<node_impl> node)
-        : node_(std::move(node))
+    callback_s(std::shared_ptr<gpu::context_s> ctx, decklink_ptr<detail::allocator_s> allocator)
+        : ctx_(std::move(ctx))
+        , allocator_(std::move(allocator))
     {
     }
 
     /**
      * IUnknown
      */
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*iid*/, LPVOID* /*ppv*/) final { return E_NOTIMPL; }
 
-    ULONG STDMETHODCALLTYPE AddRef(void) final { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
 
-    ULONG STDMETHODCALLTYPE Release(void) final
+    ULONG STDMETHODCALLTYPE Release() final
     {
         ULONG count = --ref_count_;
         if (count == 0) {
@@ -51,21 +60,74 @@ class callback_s : public IDeckLinkInputCallback
      * IDeckLinkInputCallback
      */
     HRESULT
-    VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame, IDeckLinkAudioInputPacket* audioPacket) final;
+    VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame, IDeckLinkAudioInputPacket* /*audioPacket*/) final
+    {
+        if (videoFrame == nullptr) {
+            return S_OK;
+        }
+
+        auto lock = ctx_->get_lock();
+
+        void* ptr{};
+        videoFrame->GetBytes(&ptr);
+
+        auto* transfer = allocator_->get_transfer(ptr);
+        if (transfer == nullptr) {
+            return S_OK;
+        }
+
+        ctx_->make_current();
+
+        {
+            std::unique_lock lock(frame_mutex_);
+            if (frame_queue_.size() < 2) {
+                transfer->perform_copy();
+                frame_queue_.emplace(decklink_ptr<IDeckLinkVideoFrame>::make_owner(videoFrame), transfer);
+            }
+        }
+
+        gpu::context_s::rewind_current();
+        return S_OK;
+    }
 
     HRESULT
-    VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
-                            IDeckLinkDisplayMode*            newDisplayMode,
-                            BMDDetectedVideoInputFormatFlags detectedSignalFlags) final;
+    VideoInputFormatChanged(BMDVideoInputFormatChangedEvents /*notificationEvents*/,
+                            IDeckLinkDisplayMode* newDisplayMode,
+                            BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
+    {
+        std::unique_lock lock(frame_mutex_);
+        new_display_mode_ = newDisplayMode->GetDisplayMode();
+
+        return S_OK;
+    }
+
+    std::optional<frame_info_t> get_frame_from_queue()
+    {
+        std::unique_lock lock(frame_mutex_);
+
+        if (frame_queue_.empty()) {
+            return std::nullopt;
+        }
+
+        auto res = std::move(frame_queue_.front());
+        frame_queue_.pop();
+
+        return res;
+    }
+
+    BMDDisplayMode get_new_display_mode()
+    {
+        std::unique_lock lock(frame_mutex_);
+
+        auto res          = new_display_mode_;
+        new_display_mode_ = 0;
+
+        return res;
+    }
 };
 
-class node_impl
-    : public node_i
-    , public std::enable_shared_from_this<node_impl>
+class node_impl : public node_i
 {
-    using if_dir       = interface_i::dir_e;
-    using frame_info_t = std::pair<decklink_ptr<IDeckLinkVideoFrame>, gpu::transfer::transfer_i*>;
-
     static inline std::set<IDeckLinkInput*> devices_in_use;
     decklink_ptr<IDeckLinkInput>            device_;
     decklink_ptr<callback_s>                callback_;
@@ -76,33 +138,32 @@ class node_impl
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
 
-    std::mutex                  frame_mutex_;
-    std::queue<frame_info_t>    frame_queue_;
     std::optional<frame_info_t> processed_frame_;
 
     output_interface_s<gpu::texture_s*> iface_tex_;
 
     void free_device()
     {
-        device_->SetCallback(nullptr);
+        devices_in_use.erase(device_.ptr());
+
         device_->StopStreams();
+        device_->FlushStreams();
         device_->DisableAudioInput();
         device_->DisableVideoInput();
-        device_->FlushStreams();
         device_->SetVideoInputFrameMemoryAllocator(nullptr);
+        device_->SetCallback(nullptr);
 
-        {
-            std::unique_lock lock(frame_mutex_);
-            while (!frame_queue_.empty()) {
-                frame_queue_.pop();
-            }
-            processed_frame_ = std::nullopt;
+        processed_frame_ = std::nullopt;
+
+        if (texture_ && allocator_) {
+            allocator_->unregister_texture(texture_.get());
         }
 
         device_    = nullptr;
         allocator_ = nullptr;
         allocator_ctx_.reset();
-        devices_in_use.erase(device_.ptr());
+        texture_.reset();
+        framebuffer_.reset();
     }
 
     friend class callback_s;
@@ -110,7 +171,12 @@ class node_impl
   public:
     explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
 
-    ~node_impl()
+    node_impl(const node_impl&) = delete;
+    node_impl(node_impl&&)      = delete;
+    void operator=(const node_impl&) = delete;
+    void operator=(node_impl&&) = delete;
+
+    ~node_impl() override
     {
         if (device_) {
             free_device();
@@ -121,17 +187,21 @@ class node_impl
     {
         traits->must_run = true;
 
-        if (device_) {
-            std::unique_lock lock(frame_mutex_);
-            if (!frame_queue_.empty()) {
-                processed_frame_ = std::move(frame_queue_.front());
-                frame_queue_.pop();
+        if (callback_) {
+            processed_frame_ = callback_->get_frame_from_queue();
+
+            auto new_mode = callback_->get_new_display_mode();
+            if (new_mode != 0 && device_) {
+                device_->PauseStreams();
+                device_->EnableVideoInput(new_mode, bmdFormat8BitYUV, bmdVideoInputEnableFormatDetection);
+                device_->StartStreams();
             }
         }
 
-        auto device_name = state.get_option<std::string>("device_name", "");
+        auto device_name = state.get_option<std::string>("device_name");
+        auto enabled     = state.get_option<bool>("enabled");
 
-        auto device = app.decklink_registry().get_input(device_name);
+        auto device = enabled ? app.decklink_registry()->get_input(device_name) : nullptr;
         if (device == device_) {
             return;
         }
@@ -152,18 +222,18 @@ class node_impl
         device_ = device;
         devices_in_use.emplace(device_.ptr());
 
-        allocator_ctx_ = std::make_shared<gpu::context_s>(false, &app.ctx());
+        allocator_ctx_ = std::make_shared<gpu::context_s>(false, app.ctx());
         allocator_     = new detail::allocator_s(allocator_ctx_, gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
         device_->SetVideoInputFrameMemoryAllocator(allocator_.ptr());
 
-        callback_ = new callback_s(this->shared_from_this());
+        callback_ = new callback_s(allocator_ctx_, allocator_);
         device_->SetCallback(callback_.ptr());
 
         device_->EnableVideoInput(bmdModeNTSC, bmdFormat8BitYUV, bmdVideoInputEnableFormatDetection);
         device_->StartStreams();
     }
 
-    void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(core::app_state_s& app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         if (!allocator_) {
             return;
@@ -175,28 +245,28 @@ class node_impl
 
             if (!texture_ || texture_->display_dimensions() != frame_dims) {
                 if (texture_) {
-                    allocator_->unregister_texture(*texture_);
+                    allocator_->unregister_texture(texture_.get());
                 }
 
                 using color_e = gpu::texture_s::color_type_e;
 
                 texture_     = std::make_unique<gpu::texture_s>(frame_dims, color_e::UYVY);
                 framebuffer_ = std::make_unique<gpu::framebuffer_s>(frame_dims, color_e::RGB);
-                allocator_->register_texture(*texture_);
+                allocator_->register_texture(texture_.get());
             }
 
             auto* transfer = processed_frame_->second;
             transfer->wait_for_transfer();
-            transfer->perform_transfer(*texture_);
-            allocator_->begin_texture_use(*texture_);
+            transfer->perform_transfer(texture_.get());
+            allocator_->begin_texture_use(texture_.get());
             framebuffer_->bind();
 
             glViewport(0, 0, frame_dims.x, frame_dims.y);
 
             if (!draw_state_) {
                 draw_state_  = std::make_unique<gpu::draw_state_s>();
-                auto& shader = app.ctx().get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
-                draw_state_->set_shader_program(&shader);
+                auto* shader = app.ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
+                draw_state_->set_shader_program(shader);
                 draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
             }
 
@@ -206,7 +276,7 @@ class node_impl
 
             texture_->bind(0);
             draw_state_->draw();
-            texture_->unbind(0);
+            gpu::texture_s::unbind(0);
 
             gpu::framebuffer_s::unbind();
 
@@ -221,7 +291,7 @@ class node_impl
     void complete(core::app_state_s& /*app*/) final
     {
         if (processed_frame_ && allocator_ && texture_) {
-            allocator_->end_texture_use(*texture_);
+            allocator_->end_texture_use(texture_.get());
         }
 
         processed_frame_ = std::nullopt;
@@ -242,66 +312,18 @@ class node_impl
             return value.is_string();
         }
 
+        if (name == "enabled") {
+            return value.is_boolean();
+        }
+
         return false;
     }
 
     std::string_view type() const final { return "decklink_input"; }
 };
+} // namespace
 
-HRESULT
-callback_s::VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame, IDeckLinkAudioInputPacket* audioPacket)
-{
-    auto node = node_.lock();
-    if (!node || videoFrame == nullptr) {
-        return S_OK;
-    }
-
-    auto lock = node->allocator_ctx_->get_lock();
-
-    void* ptr{};
-    videoFrame->GetBytes(&ptr);
-
-    auto* transfer = node->allocator_->get_transfer(ptr);
-    if (transfer == nullptr) {
-        return S_OK;
-    }
-
-    node->allocator_ctx_->make_current();
-
-    {
-        std::unique_lock lock(node->frame_mutex_);
-        if (node->frame_queue_.size() < 2) {
-            transfer->perform_copy();
-            node->frame_queue_.emplace(decklink_ptr<IDeckLinkVideoFrame>::make_owner(videoFrame), transfer);
-        }
-    }
-
-    gpu::context_s::rewind_current();
-    return S_OK;
-}
-
-HRESULT
-callback_s::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
-                                    IDeckLinkDisplayMode*            newDisplayMode,
-                                    BMDDetectedVideoInputFormatFlags detectedSignalFlags)
-{
-    auto node = node_.lock();
-    if (!node || newDisplayMode == nullptr) {
-        return S_OK;
-    }
-
-    std::unique_lock lock(node->frame_mutex_);
-
-    if (node->device_) {
-        node->device_->PauseStreams();
-        node->device_->FlushStreams();
-        node->device_->EnableVideoInput(
-            newDisplayMode->GetDisplayMode(), bmdFormat8BitYUV, bmdVideoInputEnableFormatDetection);
-        node->device_->StartStreams();
-    }
-
-    return S_OK;
-}
+namespace miximus::nodes::decklink {
 
 std::shared_ptr<node_i> create_input_node() { return std::make_shared<node_impl>(); }
 

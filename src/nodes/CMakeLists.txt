@@ -5,7 +5,10 @@ list(APPEND MIXIMUS_MAIN_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/interface.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/connection.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/connection.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/register.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/register.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/node_map.hpp    
+    ${CMAKE_CURRENT_SOURCE_DIR}/validate_option.hpp    
 )
 
 add_subdirectory(decklink)

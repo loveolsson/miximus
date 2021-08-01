@@ -12,12 +12,12 @@
 
 #include <memory>
 
-namespace miximus::nodes::screen {
+namespace {
+using namespace miximus;
+using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    using dir = interface_i::dir_e;
-
     std::unique_ptr<gpu::draw_state_s> draw_state_;
     input_interface_s<gpu::texture_s*> iface_tex_;
     std::unique_ptr<gpu::context_s>    context_;
@@ -25,7 +25,12 @@ class node_impl : public node_i
   public:
     explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
 
-    ~node_impl() = default;
+    ~node_impl() override = default;
+
+    node_impl(const node_impl&) = delete;
+    node_impl(node_impl&&)      = delete;
+    void operator=(const node_impl&) = delete;
+    void operator=(node_impl&&) = delete;
 
     void prepare(core::app_state_s& app, const node_state_s& state, traits_s* traits) final
     {
@@ -35,10 +40,10 @@ class node_impl : public node_i
             traits->must_run = true;
 
             if (!context_) {
-                context_ = std::make_unique<gpu::context_s>(true, &app.ctx());
+                context_ = std::make_unique<gpu::context_s>(true, app.ctx());
             }
 
-            gpu::recti_s rect;
+            gpu::recti_s rect{};
             auto         fullscreen   = state.get_option<bool>("fullscreen", false);
             auto         monitor_name = state.get_option<std::string>("monitor_name");
             rect.pos.x                = state.get_option<int>("posx", 0);
@@ -51,13 +56,13 @@ class node_impl : public node_i
             } else {
                 context_->set_window_rect(rect);
             }
-        } else {
-            if (context_) {
+        } else if (context_) {
+            if (draw_state_) {
                 context_->make_current();
                 draw_state_.reset();
                 gpu::context_s::rewind_current();
-                context_.reset();
             }
+            context_.reset();
         }
     }
 
@@ -75,14 +80,15 @@ class node_impl : public node_i
         sync.gpu_wait();
 
         glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0, 1.f, 0, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClearColor(0, 1.0, 0, 1.0);
+
+        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
 
         if (texture != nullptr) {
             if (!draw_state_) {
                 draw_state_  = std::make_unique<gpu::draw_state_s>();
-                auto& shader = app.ctx().get_shader(gpu::shader_program_s::name_e::basic);
-                draw_state_->set_shader_program(&shader);
+                auto* shader = app.ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+                draw_state_->set_shader_program(shader);
                 draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
             }
 
@@ -92,17 +98,11 @@ class node_impl : public node_i
 
             texture->bind(0);
             draw_state_->draw();
-            texture->unbind(0);
+            gpu::texture_s::unbind(0);
         }
 
         context_->swap_buffers();
         gpu::context_s::rewind_current();
-
-        // auto a_opt = state.get_option<T>("a");
-
-        // auto a = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
-
-        // iface_res_.set_value(res);
     }
 
     void complete(core::app_state_s& app) final {}
@@ -139,6 +139,10 @@ class node_impl : public node_i
 
     std::string_view type() const final { return "screen_output"; }
 };
+
+} // namespace
+
+namespace miximus::nodes::screen {
 
 std::shared_ptr<node_i> create_node() { return std::make_shared<node_impl>(); }
 

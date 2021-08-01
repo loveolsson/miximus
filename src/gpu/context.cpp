@@ -8,23 +8,30 @@
 
 namespace miximus::gpu {
 
+constexpr int GL_VERSION_MAJOR   = 4;
+constexpr int GL_VERSION_MINOR   = 5;
+constexpr int DEFAULT_CTX_WIDTH  = 640;
+constexpr int DEFAULT_CTX_HEIGHT = 480;
+
 static std::once_flag                      glfw_init, glad_init;
 static std::map<std::string, GLFWmonitor*> monitors_g;
 
 static void error_callback(int error, const char* description)
 {
-    getlog("gpu")->error("Error: {}", description); //
+    getlog("gpu")->error("Error: [{}]:{}", error, description); //
 }
 
-void GLAPIENTRY opengl_error_callback(GLenum        source,
-                                      GLenum        type,
-                                      GLuint        id,
+void GLAPIENTRY opengl_error_callback(GLenum source,
+                                      GLenum type,
+                                      GLuint /*id*/,
                                       GLenum        severity,
                                       GLsizei       length,
                                       const GLchar* message,
                                       const void* /*userParam*/)
 {
-    std::string_view source_str, type_str, severity_str;
+    std::string_view source_str;
+    std::string_view type_str;
+    std::string_view severity_str;
 
     switch (source) {
         case GL_DEBUG_SOURCE_API:
@@ -85,40 +92,25 @@ void GLAPIENTRY opengl_error_callback(GLenum        source,
             break;
     }
 
-    getlog("gpu")->error("OpenGL error: source = {}, type = {}, severity = {}, message = {}",
-                         source_str,
-                         type_str,
-                         severity_str,
-                         std::string_view(message, length));
+    if (type == GL_DEBUG_TYPE_ERROR) {
+        getlog("gpu")->error("OpenGL error: source = {}, type = {}, severity = {}, message = {}",
+                             source_str,
+                             type_str,
+                             severity_str,
+                             std::string_view(message, length));
+
+    } else {
+        getlog("gpu")->warn("OpenGL error: source = {}, type = {}, severity = {}, message = {}",
+                            source_str,
+                            type_str,
+                            severity_str,
+                            std::string_view(message, length));
+    }
 }
-
-// static void framebuffer_size_callback(GLFWwindow* window, int w, int h)
-// {
-//     auto* context = reinterpret_cast<context_s*>(glfwGetWindowUserPointer(window));
-//     if (context) {
-//         context->framebuffer_size_changed(w, h);
-//     }
-// }
-
-// static void window_size_callback(GLFWwindow* window, int width, int height)
-// {
-//     auto* context = reinterpret_cast<context_s*>(glfwGetWindowUserPointer(window));
-//     if (context) {
-//         context->window_size_changed(width, height);
-//     }
-// }
-
-// static void window_position_callback(GLFWwindow* window, int x, int y)
-// {
-//     auto* context = reinterpret_cast<context_s*>(glfwGetWindowUserPointer(window));
-//     if (context) {
-//         context->window_position_changed(x, y);
-//     }
-// }
 
 static void monitor_config_callback(GLFWmonitor* monitor, int event)
 {
-    auto* name = glfwGetMonitorName(monitor);
+    const auto* name = glfwGetMonitorName(monitor);
     if (event == GLFW_CONNECTED) {
         monitors_g.emplace(name, monitor);
     } else {
@@ -137,19 +129,19 @@ context_s::context_s(bool visible, context_s* parent)
         glfwSetErrorCallback(error_callback);
         glfwSetMonitorCallback(monitor_config_callback);
 
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, GL_VERSION_MAJOR);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, GL_VERSION_MINOR);
         glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-        glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
+        // glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
         glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        int   count;
+        int   count{};
         auto* monitors = glfwGetMonitors(&count);
         for (int i = 0; i < count; ++i) {
-            auto* monitor = monitors[i];
-            auto* name    = glfwGetMonitorName(monitor);
+            auto*       monitor = monitors[i];
+            const auto* name    = glfwGetMonitorName(monitor);
 
             getlog("gpu")->info("Found monitor: {}", name);
 
@@ -168,14 +160,11 @@ context_s::context_s(bool visible, context_s* parent)
         parent_window = parent->window_;
     }
 
-    window_ = glfwCreateWindow(640, 480, "Miximus", nullptr, parent_window);
+    window_ = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
     if (window_ == nullptr) {
         throw std::runtime_error("Failed to create GLFW window");
     }
 
-    // glfwSetFramebufferSizeCallback(window_, framebuffer_size_callback);
-    // glfwSetWindowSizeCallback(window_, window_size_callback);
-    // glfwSetWindowPosCallback(window_, window_position_callback);
     glfwSetWindowUserPointer(window_, this);
 
     make_current();
@@ -186,16 +175,12 @@ context_s::context_s(bool visible, context_s* parent)
         }
 
         glEnable(GL_DEBUG_OUTPUT);
-        glDebugMessageCallback(opengl_error_callback, 0);
+        glDebugMessageCallback(opengl_error_callback, nullptr);
     });
 
     if (visible) {
         glfwSwapInterval(0);
     }
-
-    // glfwGetWindowPos(window_, &window_rect_.pos.x, &window_rect_.pos.y);
-    // glfwGetWindowSize(window_, &window_rect_.size.x, &window_rect_.size.y);
-    // glfwGetFramebufferSize(window_, &framebuffer_size_.x, &framebuffer_size_.y);
 
     rewind_current();
 }
@@ -210,12 +195,6 @@ context_s::~context_s()
     }
 }
 
-// void context_s::framebuffer_size_changed(int w, int h) { framebuffer_size_ = {w, h}; }
-
-// void context_s::window_size_changed(int w, int h) { window_rect_.size = {w, h}; }
-
-// void context_s::window_position_changed(int x, int y) { window_rect_.pos = {x, y}; }
-
 vec2i_t context_s::get_framebuffer_size()
 {
     vec2i_t res;
@@ -225,7 +204,7 @@ vec2i_t context_s::get_framebuffer_size()
 
 recti_s context_s::get_window_rect()
 {
-    recti_s res;
+    recti_s res{};
     glfwGetWindowPos(window_, &res.pos.x, &res.pos.y);
     glfwGetWindowSize(window_, &res.size.x, &res.size.y);
     return res;
@@ -233,7 +212,6 @@ recti_s context_s::get_window_rect()
 
 void context_s::set_window_rect(recti_s rect)
 {
-    // window_rect_ = rect;
     glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
 }
 
@@ -245,11 +223,10 @@ void context_s::set_fullscreen_monitor(const std::string& name, recti_s rect)
             return;
         }
 
-        auto* mode = glfwGetVideoMode(it->second);
+        const auto* mode = glfwGetVideoMode(it->second);
         glfwSetWindowMonitor(window_, it->second, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
 
     } else {
-        // window_rect_ = rect;
         glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
     }
 }
@@ -301,13 +278,13 @@ void context_s::poll() { glfwPollEvents(); }
 
 void context_s::terminate() { glfwTerminate(); }
 
-shader_program_s& context_s::get_shader(shader_program_s::name_e name)
+shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 {
     using name_e = shader_program_s::name_e;
 
     auto it = shaders_.find(name);
     if (it != shaders_.end()) {
-        return *(it->second);
+        return it->second.get();
     }
 
     std::unique_ptr<shader_program_s> shader;
@@ -326,7 +303,7 @@ shader_program_s& context_s::get_shader(shader_program_s::name_e name)
     }
 
     auto [new_it, _] = shaders_.emplace(name, std::move(shader));
-    return *(new_it->second);
+    return new_it->second.get();
 }
 
 } // namespace miximus::gpu

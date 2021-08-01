@@ -19,6 +19,8 @@ using namespace std::filesystem;
 using namespace std::chrono_literals;
 using nlohmann::json;
 
+constexpr int HTTP_PORT = 7351;
+
 static volatile std::sig_atomic_t g_signal_status = 0;
 
 static void signal_handler(int /*signal*/) { g_signal_status = 1; }
@@ -56,7 +58,7 @@ static void save_settings(core::node_manager_s* manager, const path& settings_pa
     }
 }
 
-int main(int argc, char** argv)
+int main(int argc, char* argv[])
 {
     std::signal(SIGINT, signal_handler);
 
@@ -81,7 +83,7 @@ int main(int argc, char** argv)
 
         {
             core::app_state_s app;
-            web_server.start(7351, app.cfg_executor());
+            web_server.start(HTTP_PORT, app.cfg_executor());
 
             core::node_manager_s node_manager;
             load_settings(&node_manager, settings_path);
@@ -95,15 +97,16 @@ int main(int argc, char** argv)
             while (g_signal_status == 0) {
                 // getlog("app")->info("Frame no {}", frame_no++);
 
-                gpu::context_s::poll();
                 node_manager.tick_one_frame(app);
+
+                gpu::context_s::poll();
 
                 time += std::chrono::milliseconds(16);
 
                 auto now = std::chrono::steady_clock::now();
                 if (time < now) {
                     getlog("app")->info("Late frame");
-                    time = now;
+                    // time = now;
                 } else {
                     std::this_thread::sleep_until(time);
                 }

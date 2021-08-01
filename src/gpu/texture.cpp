@@ -7,8 +7,8 @@ texture_s::texture_s(vec2i_t dimensions, color_type_e color)
     , color_type_(color)
 {
     texture_dimensions_ = dimensions;
-    GLenum  internal_format;
-    GLsizei mip_map_levels = 5;
+    GLenum  internal_format{};
+    GLsizei mip_map_levels = MIP_MAP_LEVELS;
 
     glCreateTextures(GL_TEXTURE_2D, 1, &id_);
 
@@ -57,10 +57,10 @@ texture_s::texture_s(vec2i_t dimensions, color_type_e color)
 
 texture_s::~texture_s() { glDeleteTextures(1, &id_); }
 
-void texture_s::bind(GLuint sampler) { glBindTextureUnit(sampler, id_); }
+void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
 
 void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 
-void texture_s::generate_mip_maps() { glGenerateTextureMipmap(id_); }
+void texture_s::generate_mip_maps() const { glGenerateTextureMipmap(id_); }
 
 } // namespace miximus::gpu

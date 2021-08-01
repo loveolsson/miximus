@@ -44,10 +44,13 @@ class shader_program_s
     ~shader_program_s();
 
     shader_program_s(const shader_program_s&) = delete;
-    shader_program_s(shader_program_s&&) noexcept;
+    shader_program_s(shader_program_s&&)      = delete;
+    void operator=(const shader_program_s&) = delete;
+    void operator=(shader_program_s&&) = delete;
 
-    void   use();
-    GLuint get_id() { return program_; }
+    void        use() const;
+    static void unuse();
+    GLuint      get_id() { return program_; }
 
     template <typename T>
     void set_vertex_type();

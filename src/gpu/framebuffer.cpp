@@ -33,7 +33,7 @@ framebuffer_s::~framebuffer_s()
     glDeleteRenderbuffers(1, &rbo_id_);
 }
 
-void framebuffer_s::bind() { glBindFramebuffer(GL_FRAMEBUFFER, id_); }
+void framebuffer_s::bind() const { glBindFramebuffer(GL_FRAMEBUFFER, id_); }
 
 void framebuffer_s::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
 

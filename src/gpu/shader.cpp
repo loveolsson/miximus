@@ -9,12 +9,14 @@
 
 namespace miximus::gpu {
 
-class shader
+constexpr size_t MAX_NAME_LEN = 16;
+
+class shader_s
 {
     GLuint id_;
 
   public:
-    shader(std::string_view name, GLenum type)
+    shader_s(std::string_view name, GLenum type)
         : id_(0)
     {
         static const auto files = static_files::get_shader_files();
@@ -47,12 +49,17 @@ class shader
         }
     }
 
-    ~shader()
+    ~shader_s()
     {
         if (id_ != 0) {
             glDeleteShader(id_);
         }
     }
+
+    shader_s(const shader_s&) = delete;
+    shader_s(shader_s&&)      = delete;
+    void operator=(const shader_s&) = delete;
+    void operator=(shader_s&&) = delete;
 
     GLuint id() const { return id_; }
 };
@@ -63,8 +70,8 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     auto log = getlog("gpu");
     log->debug(R"(Compiling shader "{}"/"{}")", vert_name, frag_name);
 
-    shader vert(vert_name, GL_VERTEX_SHADER);
-    shader frag(frag_name, GL_FRAGMENT_SHADER);
+    shader_s vert(vert_name, GL_VERTEX_SHADER);
+    shader_s frag(frag_name, GL_FRAGMENT_SHADER);
 
     program_ = glCreateProgram();
     glAttachShader(program_, vert.id());
@@ -86,17 +93,17 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
         throw std::runtime_error(std::string(log.data()));
     }
 
-    GLint                  count       = 0;
-    GLint                  size        = 0;
-    GLenum                 type        = 0;
-    GLsizei                name_length = 0;
-    std::array<GLchar, 16> name{};
+    GLint                            count       = 0;
+    GLint                            size        = 0;
+    GLenum                           type        = 0;
+    GLsizei                          name_length = 0;
+    std::array<GLchar, MAX_NAME_LEN> name{};
 
     glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTES, &count);
     log->debug("Active Attributes: {}", count);
 
     for (GLuint i = 0; i < count; i++) {
-        glGetActiveAttrib(program_, i, name.size(), &name_length, &size, &type, name.data());
+        glGetActiveAttrib(program_, i, MAX_NAME_LEN, &name_length, &size, &type, name.data());
 
         log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, name.data());
 
@@ -116,7 +123,7 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     log->debug("Active Uniforms: {}", count);
 
     for (GLuint i = 0; i < count; i++) {
-        glGetActiveUniform(program_, i, name.size(), &name_length, &size, &type, name.data());
+        glGetActiveUniform(program_, i, MAX_NAME_LEN, &name_length, &size, &type, name.data());
 
         log->debug(" -- Uniform {} Type: {} Name: \"{}\"", i, type, name.data());
 
@@ -132,14 +139,6 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     }
 }
 
-shader_program_s::shader_program_s(shader_program_s&& o) noexcept
-{
-    program_    = o.program_;
-    o.program_  = 0;
-    attributes_ = std::move(o.attributes_);
-    uniforms_   = std::move(o.uniforms_);
-}
-
 shader_program_s::~shader_program_s()
 {
     if (program_ != 0) {
@@ -147,7 +146,9 @@ shader_program_s::~shader_program_s()
     }
 }
 
-void shader_program_s::use() { glUseProgram(program_); }
+void shader_program_s::use() const { glUseProgram(program_); }
+
+void shader_program_s::unuse() { glUseProgram(0); }
 
 void shader_program_s::set_uniform(const std::string& name, const vec2_t& val)
 {

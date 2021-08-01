@@ -75,17 +75,17 @@ static std::string get_decklink_name(const decklink_ptr<IDeckLink>& device)
 
 class discovery_callback : public IDeckLinkDeviceNotificationCallback
 {
-    decklink_registry_s& registry_;
+    decklink_registry_s* registry_;
 
   public:
-    discovery_callback(decklink_registry_s& registry)
+    explicit discovery_callback(decklink_registry_s* registry)
         : registry_(registry)
     {
     }
 
     HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final
     {
-        std::unique_lock lock(registry_.device_mutex_);
+        std::unique_lock lock(registry_->device_mutex_);
 
         auto log = getlog("decklink");
 
@@ -96,12 +96,12 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         auto output = QUERY_INTERFACE(device, IDeckLinkOutput);
 
         if (input) {
-            registry_.inputs_.emplace(name, std::move(input));
+            registry_->inputs_.emplace(name, std::move(input));
             log->info("Discovered DeckLink input: \"{}\"", name);
         }
 
         if (output) {
-            registry_.outputs_.emplace(name, std::move(output));
+            registry_->outputs_.emplace(name, std::move(output));
             log->info("Discovered DeckLink output: \"{}\"", name);
         }
 
@@ -110,28 +110,28 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
     HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final
     {
-        std::unique_lock lock(registry_.device_mutex_);
+        std::unique_lock lock(registry_->device_mutex_);
 
-        auto it = registry_.names_.find(deckLinkDevice);
-        if (it == registry_.names_.end()) {
+        auto it = registry_->names_.find(deckLinkDevice);
+        if (it == registry_->names_.end()) {
             return S_OK;
         }
 
         auto& name = it->second;
-        registry_.inputs_.erase(name);
-        registry_.outputs_.erase(name);
-        registry_.names_.erase(it);
+        registry_->inputs_.erase(name);
+        registry_->outputs_.erase(name);
+        registry_->names_.erase(it);
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*iid*/, LPVOID* /*ppv*/) final { return E_NOTIMPL; }
     ULONG                     AddRef() final { return 1; }
     ULONG                     Release() final { return 1; }
 };
 
 decklink_registry_s::decklink_registry_s()
     : discovery_(get_device_discovery())
-    , callback_(std::make_unique<discovery_callback>(*this))
+    , callback_(std::make_unique<discovery_callback>(this))
 {
     std::unique_lock lock(device_mutex_);
 

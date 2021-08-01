@@ -21,6 +21,7 @@ export const enum type_e {
   math_i64 = "math_i64",
   math_f64 = "math_f64",
   math_vec2 = "math_vec2",
+  math_vec2i = "math_vec2i",
   screen_output = "screen_output",
   decklink_input = "decklink_input",
   decklink_output = "decklink_output",

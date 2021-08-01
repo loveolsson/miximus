@@ -2,12 +2,7 @@
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
 #include "logger/logger.hpp"
-#include "nodes/decklink/input.hpp"
-#include "nodes/decklink/output.hpp"
 #include "nodes/interface.hpp"
-#include "nodes/math/math.hpp"
-#include "nodes/node.hpp"
-#include "nodes/screen/screen.hpp"
 #include "utils/bind.hpp"
 #include "web_server/server.hpp"
 
@@ -34,19 +29,7 @@ static bool is_valid_common_option(std::string_view name, const json& value)
     return false;
 }
 
-node_manager_s::node_manager_s()
-{
-    using namespace nodes;
-
-    register_node_type("math_i64", math::create_i64_node);
-    register_node_type("math_f64", math::create_f64_node);
-    register_node_type("math_vec2", math::create_vec2_node);
-
-    register_node_type("screen_output", screen::create_node);
-
-    register_node_type("decklink_input", decklink::create_input_node);
-    // register_node_type("decklink_output", decklink::create_output_node);
-}
+node_manager_s::node_manager_s() { nodes::register_nodes(&constructors_); }
 
 error_e
 node_manager_s::handle_add_node(std::string_view type, std::string_view id, const json& options, int64_t client_id)
@@ -389,7 +372,7 @@ void node_manager_s::tick_one_frame(app_state_s& app)
         nodes_copy_ = nodes_;
     }
 
-    app.ctx().make_current();
+    app.ctx()->make_current();
 
     std::vector<nodes::node_record_s*> must_execute;
 
@@ -416,25 +399,18 @@ void node_manager_s::tick_one_frame(app_state_s& app)
         record.node->complete(app);
     }
 
-    glFinish();
-
     gpu::context_s::rewind_current();
 }
 
 void node_manager_s::clear_nodes(app_state_s& app)
 {
-    app.ctx().make_current();
+    app.ctx()->make_current();
 
     nodes_copy_.clear();
     nodes_.clear();
     connections_.clear();
 
     gpu::context_s::rewind_current();
-}
-
-void node_manager_s::register_node_type(std::string_view name, constructor_t&& constructor)
-{
-    constructors_.emplace(name, std::move(constructor));
 }
 
 std::shared_ptr<nodes::node_i> node_manager_s::create_node(std::string_view type, error_e& error)

@@ -18,6 +18,7 @@ add_subdirectory(nodes)
 add_subdirectory(gpu)
 add_subdirectory(wrapper)
 add_subdirectory(core)
+add_subdirectory(render)
 
 set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
 
@@ -39,6 +40,8 @@ target_link_libraries(miximus
     cef
     video-sdk
     Boost::system
+    Fontconfig::Fontconfig
+    Freetype::Freetype
 
     ${CMAKE_DL_LIBS}
 )

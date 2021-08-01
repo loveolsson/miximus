@@ -13,8 +13,8 @@ class vertex_array_s
     vertex_array_s();
     ~vertex_array_s();
 
-    void bind();
-    void unbind();
+    void        bind() const;
+    static void unbind();
 };
 
 } // namespace miximus::gpu

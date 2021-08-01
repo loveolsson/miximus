@@ -230,12 +230,12 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
         [this, topic, callback]() { subscription_by_topic_[static_cast<int>(topic)] = callback; });
 }
 
-void web_server_impl::start(uint16_t port, boost::asio::io_service& service)
+void web_server_impl::start(uint16_t port, boost::asio::io_service* service)
 {
     using namespace websocketpp::log;
     // Initialize the Asio transport policy
     std::error_code ec;
-    endpoint_.init_asio(&service, ec);
+    endpoint_.init_asio(service, ec);
     if (ec) {
         endpoint_.get_alog().write(alevel::fail, ec.message());
     }

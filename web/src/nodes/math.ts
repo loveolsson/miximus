@@ -50,3 +50,20 @@ export class Vec2MathNode extends Node {
     this.addOutputInterface("res", { type: "vec2" });
   }
 }
+
+export class Vec2iMathNode extends Node {
+  type: string;
+  name: string;
+
+  constructor() {
+    super();
+    this.type = "math_vec2i";
+    this.name = "";
+    this.addInputInterface("a", undefined, 0, { type: "vec2i" });
+    this.addInputInterface("b", undefined, 0, { type: "vec2i" });
+    this.addOption("operation", "SelectOption", "add", undefined, {
+      items: ["add", "sub", "mul", "min", "max"],
+    });
+    this.addOutputInterface("res", { type: "vec2i" });
+  }
+}

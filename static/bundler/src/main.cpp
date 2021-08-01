@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+constexpr size_t BYTES_PER_LINE = 18;
+
 static std::string tab(size_t i) { return std::string(i * 4, ' '); }
 
 static std::vector<std::string> get_file_paths(const std::string& root)
@@ -110,7 +112,7 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
         for (int i = 0; i < compressed.size();) {
             target << tab(1);
             // Add the bytes in rows of 18
-            for (int j = 0; j < 18 && i < compressed.size(); ++j, ++i) {
+            for (size_t j = 0; j < BYTES_PER_LINE && i < compressed.size(); ++j, ++i) {
                 target << "0x" << std::hex << std::setw(2) << std::setfill('0')
                        << static_cast<int>(static_cast<uint8_t>(compressed[i])) << ", ";
             }
@@ -122,10 +124,10 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
         map << tab(2) << "{ " << comment.str() << endl;
         map << tab(3) << "\"" << unix_name << "\"," << endl;
         map << tab(3) << "{" << endl;
-        map << tab(4) << "{reinterpret_cast<const char *>(fileData" << fi << ".data()), " << compressed.size() << "},"
+        map << tab(4) << "{reinterpret_cast<const char *>(fileData" << fi << ".data()), fileData" << fi << ".size()},"
             << endl;
-        map << tab(4) << "gzip::decompress(reinterpret_cast<const char *>(fileData" << fi << ".data()), "
-            << compressed.size() << ")," << endl;
+        map << tab(4) << "gzip::decompress(reinterpret_cast<const char *>(fileData" << fi << ".data()), fileData" << fi
+            << ".size())," << endl;
         map << tab(4) << "\"" << get_mime(src + filename) << "\"," << endl;
         map << tab(3) << "}," << endl;
         map << tab(2) << "}," << endl;

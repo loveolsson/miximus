@@ -23,9 +23,8 @@ class vertex_buffer_s
         set_data(arr, sizeof(T), N);
     }
 
-    void bind();
-    void unbind();
-    void draw();
+    void bind() const;
+    void draw() const;
 };
 
 } // namespace miximus::gpu

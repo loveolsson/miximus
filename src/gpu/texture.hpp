@@ -4,6 +4,8 @@
 
 namespace miximus::gpu {
 
+constexpr GLuint MIP_MAP_LEVELS = 5;
+
 class texture_s
 {
   public:
@@ -29,6 +31,8 @@ class texture_s
 
     texture_s(const texture_s&) = delete;
     texture_s(texture_s&&)      = delete;
+    void operator=(const texture_s&) = delete;
+    void operator=(texture_s&&) = delete;
 
     void         init();
     vec2i_t      display_dimensions() { return display_dimensions_; }
@@ -38,9 +42,9 @@ class texture_s
     color_type_e color_type() { return color_type_; }
     GLuint       id() { return id_; }
 
-    void bind(GLuint sampler);
-    void unbind(GLuint sampler);
-    void generate_mip_maps();
+    void        bind(GLuint sampler) const;
+    static void unbind(GLuint sampler);
+    void        generate_mip_maps() const;
 };
 
 } // namespace miximus::gpu
