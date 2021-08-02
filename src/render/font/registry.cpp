@@ -13,7 +13,7 @@ void font_registry_s::log_fonts()
         log->debug("  \"{}\"", name);
 
         for (const auto& [v_name, variant] : font.variants) {
-            log->debug("   -- {}: \"{}\"", v_name, variant.path.u8string());
+            log->debug("   -- {}: \"{}\", {}", v_name, variant.path.u8string(), variant.index);
         }
     }
 }

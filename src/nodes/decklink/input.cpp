@@ -129,10 +129,10 @@ class callback_s : public IDeckLinkInputCallback
 
 class node_impl : public node_i
 {
-    static inline std::set<IDeckLinkInput*> devices_in_use;
-    decklink_ptr<IDeckLinkInput>            device_;
-    decklink_ptr<callback_s>                callback_;
-    decklink_ptr<detail::allocator_s>       allocator_;
+    static inline std::unordered_set<IDeckLinkInput*> devices_in_use;
+    decklink_ptr<IDeckLinkInput>                      device_;
+    decklink_ptr<callback_s>                          callback_;
+    decklink_ptr<detail::allocator_s>                 allocator_;
 
     std::unique_ptr<gpu::texture_s>     texture_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;

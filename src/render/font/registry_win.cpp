@@ -145,7 +145,7 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
     if (it != data->files.end()) {
         auto variant = it->second;
         variant.name = style;
-        variants.emplace(style, std::move(variant));
+        data->font->variants.emplace(style, std::move(variant));
     }
 
     return 1;
