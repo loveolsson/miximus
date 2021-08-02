@@ -136,13 +136,11 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
     auto* data = reinterpret_cast<init_data_s*>(lParam);
     auto* info = reinterpret_cast<const ENUMLOGFONTEXW*>(lpelfe);
 
-    auto style = wchar_to_string(info->elfStyle);
-
+    auto style     = wchar_to_string(info->elfStyle);
     auto full_name = wchar_to_string(info->elfFullName);
 
     auto it = data->files.find(full_name);
-
-    if (it != data->files.end()) {
+    if (it != data->files.end() && data->font != nullptr) {
         auto variant = it->second;
         variant.name = style;
         data->font->variants.emplace(style, std::move(variant));
@@ -154,12 +152,10 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
 static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW* lpntme, DWORD FontType, LPARAM lParam)
 {
     auto* data = reinterpret_cast<init_data_s*>(lParam);
-
-    auto name = wchar_to_string(lpelfe->lfFaceName);
+    auto  name = wchar_to_string(lpelfe->lfFaceName);
 
     font_info_s font;
-    font.name = name;
-
+    font.name  = name;
     data->font = &font;
 
     LOGFONTW d = *lpelfe;
@@ -169,6 +165,8 @@ static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW
     if (!font.variants.empty()) {
         data->fonts.emplace(name, std::move(font));
     }
+
+    data->font = nullptr;
 
     return 1;
 }

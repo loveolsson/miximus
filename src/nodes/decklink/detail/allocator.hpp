@@ -33,7 +33,7 @@ class allocator_s : public IDeckLinkMemoryAllocator
 
   public:
     allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir);
-    ~allocator_s() = default;
+    ~allocator_s();
 
     HRESULT AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer) final;
     HRESULT ReleaseBuffer(void* buffer) final;

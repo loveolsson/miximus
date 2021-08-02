@@ -147,11 +147,11 @@ class node_impl : public node_i
         devices_in_use.erase(device_.ptr());
 
         device_->StopStreams();
-        device_->FlushStreams();
         device_->DisableAudioInput();
         device_->DisableVideoInput();
-        device_->SetVideoInputFrameMemoryAllocator(nullptr);
-        device_->SetCallback(nullptr);
+        device_->FlushStreams();
+        // device_->SetVideoInputFrameMemoryAllocator(nullptr);
+        // device_->SetCallback(nullptr);
 
         processed_frame_ = std::nullopt;
 

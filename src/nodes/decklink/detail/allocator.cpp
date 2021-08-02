@@ -5,14 +5,20 @@
 
 namespace miximus::nodes::decklink::detail {
 
-constexpr size_t MAX_ALLOCATIONS = 4;
-static int       allocations_g   = 0;
+constexpr size_t       MAX_ALLOCATIONS = 4;
+static std::atomic_int allocations_g{0};
 
 allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir)
     : transfer_type_(transfer_i::get_prefered_type())
     , ctx_(std::move(ctx))
     , direction_(dir)
 {
+}
+
+allocator_s::~allocator_s()
+{
+    assert(free_transfers_.empty());
+    assert(allocated_transfers_.empty());
 }
 
 HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
@@ -34,6 +40,8 @@ HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
             gpu::context_s::rewind_current();
             return S_OK;
         }
+
+        allocations_g--;
     }
 
     if (allocated_transfers_.size() > MAX_ALLOCATIONS) {
@@ -90,7 +98,12 @@ HRESULT allocator_s::Commit()
 HRESULT allocator_s::Decommit()
 {
     auto lock = ctx_->get_lock();
+
+    allocations_g -= free_transfers_.size();
     free_transfers_.clear();
+
+    getlog("gpu")->debug("Decommitting transfers, {} left", allocations_g);
+
     active_ = false;
     return S_OK;
 }

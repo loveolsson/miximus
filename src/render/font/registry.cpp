@@ -55,7 +55,7 @@ std::vector<std::string_view> font_registry_s::get_font_names() const
     return res;
 }
 
-std::vector<std::string_view> font_registry_s::get_font_variants(const std::string& name) const
+std::vector<std::string_view> font_registry_s::get_font_variant_names(const std::string& name) const
 {
     std::vector<std::string_view> res;
 
