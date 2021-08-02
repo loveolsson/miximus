@@ -1,6 +1,33 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/registry.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/registry.cpp  
+set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
+
+find_package(Freetype REQUIRED)
+
+add_library(font
+    registry.cpp
+    registry.hpp
 )
 
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)
+target_link_libraries(font 
+PRIVATE
+    Freetype::Freetype
+    logger
+) 
+
+if(WIN32)
+    target_sources(font PRIVATE
+        registry_win.cpp
+    )
+else()
+    target_sources(font PRIVATE
+        registry_fontconfig.cpp
+    )
+
+    find_package(Fontconfig REQUIRED)
+
+    target_link_libraries(font 
+    PUBLIC
+        Fontconfig::Fontconfig
+    ) 
+endif()
+
+add_sanitizers(font)

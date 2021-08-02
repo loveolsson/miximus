@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <queue>
+#include <unordered_set>
 
 namespace {
 using namespace miximus;
@@ -31,7 +32,7 @@ class callback_s : public IDeckLinkInputCallback
     std::mutex                        frame_mutex_;
     std::queue<frame_info_t>          frame_queue_;
     decklink_ptr<detail::allocator_s> allocator_;
-    BMDDisplayMode                    new_display_mode_{0};
+    BMDDisplayMode                    new_display_mode_{bmdModeUnknown};
 
   public:
     callback_s(std::shared_ptr<gpu::context_s> ctx, decklink_ptr<detail::allocator_s> allocator)
@@ -120,7 +121,7 @@ class callback_s : public IDeckLinkInputCallback
         std::unique_lock lock(frame_mutex_);
 
         auto res          = new_display_mode_;
-        new_display_mode_ = 0;
+        new_display_mode_ = bmdModeUnknown;
 
         return res;
     }
@@ -128,10 +129,10 @@ class callback_s : public IDeckLinkInputCallback
 
 class node_impl : public node_i
 {
-    static inline std::set<IDeckLinkInput*> devices_in_use;
-    decklink_ptr<IDeckLinkInput>            device_;
-    decklink_ptr<callback_s>                callback_;
-    decklink_ptr<detail::allocator_s>       allocator_;
+    static inline std::unordered_set<IDeckLinkInput*> devices_in_use;
+    decklink_ptr<IDeckLinkInput>                      device_;
+    decklink_ptr<callback_s>                          callback_;
+    decklink_ptr<detail::allocator_s>                 allocator_;
 
     std::shared_ptr<gpu::context_s>     allocator_ctx_;
     std::unique_ptr<gpu::texture_s>     texture_;

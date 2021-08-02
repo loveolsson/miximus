@@ -1,50 +1,21 @@
 #include "registry.hpp"
 #include "logger/logger.hpp"
 
-#include <fontconfig/fontconfig.h>
-
 namespace miximus::render::font {
 
-font_registry_s::font_registry_s()
+font_registry_s::~font_registry_s() {}
+
+void font_registry_s::log_fonts()
 {
     auto log = getlog("app");
-    log->debug("Scanning for system fonts");
-
-    FcInit();
-    FcConfig*    config = FcInitLoadConfigAndFonts();
-    FcPattern*   pat    = FcPatternCreate();
-    FcObjectSet* os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, (char*)0);
-    FcFontSet*   fs     = FcFontList(config, pat, os);
-    for (int i = 0; fs && i < fs->nfont; ++i) {
-        FcPattern* font = fs->fonts[i];
-        FcChar8 *  file, *style, *family;
-
-        if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch &&
-            FcPatternGetString(font, FC_FAMILY, 0, &family) == FcResultMatch &&
-            FcPatternGetString(font, FC_STYLE, 0, &style) == FcResultMatch) {
-            fonts_[reinterpret_cast<const char*>(family)].variants.emplace(
-                reinterpret_cast<const char*>(style),
-                font_variant_s{reinterpret_cast<const char*>(style), reinterpret_cast<const char*>(file)});
-        }
-    }
-    if (fs)
-        FcFontSetDestroy(fs);
-
-    FcObjectSetDestroy(os);
-    FcPatternDestroy(pat);
-    FcConfigDestroy(config);
-    FcFini();
-
     for (const auto& [name, font] : fonts_) {
         log->debug("Found font: {}", name);
 
         for (const auto& [v_name, variant] : font.variants) {
-            log->debug("  --- {}", v_name);
+            log->debug("  --- {}: \"{}\"", v_name, variant.path.u8string());
         }
     }
 }
-
-font_registry_s::~font_registry_s() {}
 
 const font_s* font_registry_s::find_font(const std::string& name) const
 {

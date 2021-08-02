@@ -1,4 +1,5 @@
 #pragma once
+
 #include <filesystem>
 #include <map>
 #include <string>
@@ -22,6 +23,8 @@ struct font_s
 class font_registry_s
 {
     std::map<std::string, font_s> fonts_;
+
+    void log_fonts();
 
   public:
     font_registry_s();

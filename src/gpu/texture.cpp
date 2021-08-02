@@ -1,5 +1,7 @@
 #include "texture.hpp"
 
+#include <stdexcept>
+
 namespace miximus::gpu {
 
 texture_s::texture_s(vec2i_t dimensions, color_type_e color)

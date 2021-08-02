@@ -36,8 +36,6 @@ find_package(spdlog REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(websocketpp REQUIRED)
 find_package(Threads REQUIRED)
-find_package(Fontconfig REQUIRED)
-find_package(Freetype REQUIRED)
 
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_DEBUG_LIBS OFF)

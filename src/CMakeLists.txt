@@ -34,14 +34,13 @@ target_link_libraries(miximus
     web_server
     static_files
     logger
+    font
 
     ffmpeg
     decklink
     cef
     video-sdk
     Boost::system
-    Fontconfig::Fontconfig
-    Freetype::Freetype
 
     ${CMAKE_DL_LIBS}
 )

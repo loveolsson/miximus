@@ -1,4 +1,4 @@
-#pragma one
+#pragma once
 #include "gpu/context.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/transfer.hpp"
