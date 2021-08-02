@@ -4,11 +4,10 @@
 
 #ifdef _MSC_VER
 #include <malloc.h>
-#define aligned_malloc_impl(a, s) _aligned_malloc(s, a)
+#define aligned_alloc_impl(a, s) _aligned_malloc(s, a)
 #define aligned_free_impl(p) _aligned_free(p)
 #else
-#include <stdlib.h>
-#define aligned_malloc_impl(a, s) aligned_malloc(a, s)
+#define aligned_alloc_impl(a, s) aligned_alloc(a, s)
 #define aligned_free_impl(p) free(p)
 #endif
 
@@ -17,7 +16,7 @@ namespace miximus::gpu::transfer {
 transfer_i::transfer_i(size_t size, direction_e direction)
     : size_(size)
     , direction_(direction)
-    , ptr_(aligned_malloc_impl(ALIGNMENT, size))
+    , ptr_(aligned_alloc_impl(ALIGNMENT, size))
 {
 }
 

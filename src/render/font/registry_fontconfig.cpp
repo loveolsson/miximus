@@ -11,12 +11,12 @@ font_registry_s::font_registry_s()
     log->debug("Scanning for system fonts");
 
     FcInit();
-    auto* config_ = FcInitLoadConfigAndFonts();
-    auto* pat_    = FcPatternCreate();
-    auto* os_     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, (char*)0);
-    auto* fs_     = FcFontList(config_, pat_, os_);
+    auto* config = FcInitLoadConfigAndFonts();
+    auto* pat    = FcPatternCreate();
+    auto* os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, (char*)0);
+    auto* fs     = FcFontList(config, pat, os);
     for (int i = 0; fs && i < fs->nfont; ++i) {
-        FcPattern* font = fs_->fonts[i];
+        FcPattern* font = fs->fonts[i];
         FcChar8 *  file, *style, *family;
 
         if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch &&
@@ -30,20 +30,20 @@ font_registry_s::font_registry_s()
 
     log_fonts();
 
-    if (fs_) {
-        FcFontSetDestroy(fs_);
+    if (fs) {
+        FcFontSetDestroy(fs);
     }
 
-    if (os_) {
-        FcObjectSetDestroy(os_);
+    if (os) {
+        FcObjectSetDestroy(os);
     }
 
-    if (pat_) {
-        FcPatternDestroy(pat_);
+    if (pat) {
+        FcPatternDestroy(pat);
     }
 
-    if (config_) {
-        FcConfigDestroy(config_);
+    if (config) {
+        FcConfigDestroy(config);
     }
 
     FcFini();
