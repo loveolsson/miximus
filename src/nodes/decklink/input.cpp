@@ -129,10 +129,10 @@ class callback_s : public IDeckLinkInputCallback
 
 class node_impl : public node_i
 {
-    static inline std::unordered_set<IDeckLinkInput*> devices_in_use;
-    decklink_ptr<IDeckLinkInput>                      device_;
-    decklink_ptr<callback_s>                          callback_;
-    decklink_ptr<detail::allocator_s>                 allocator_;
+    static inline std::set<IDeckLinkInput*> devices_in_use;
+    decklink_ptr<IDeckLinkInput>            device_;
+    decklink_ptr<callback_s>                callback_;
+    decklink_ptr<detail::allocator_s>       allocator_;
 
     std::shared_ptr<gpu::context_s>     allocator_ctx_;
     std::unique_ptr<gpu::texture_s>     texture_;
@@ -192,7 +192,7 @@ class node_impl : public node_i
             processed_frame_ = callback_->get_frame_from_queue();
 
             auto new_mode = callback_->get_new_display_mode();
-            if (new_mode != 0 && device_) {
+            if (new_mode != bmdModeUnknown && device_) {
                 device_->PauseStreams();
                 device_->EnableVideoInput(new_mode, bmdFormat8BitYUV, bmdVideoInputEnableFormatDetection);
                 device_->StartStreams();
