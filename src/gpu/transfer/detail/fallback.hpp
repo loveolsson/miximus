@@ -11,7 +11,7 @@ class fallback_transfer_s : public transfer_i
 
     bool perform_copy() final { return true; }
     bool perform_transfer(texture_s*) final;
-    bool wait_for_transfer() final { return true; }
+    bool wait_for_copy() final { return true; }
 };
 
 } // namespace miximus::gpu::transfer::detail

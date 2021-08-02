@@ -258,7 +258,7 @@ void context_s::rewind_current()
     } else {
         GLFWwindow* prior = current_stack_[current_stack_.size() - 2];
 
-        if (prior != current_stack_.back()) {
+        if (prior != current_stack_[current_stack_.size() - 1]) {
             glfwMakeContextCurrent(prior);
         }
     }

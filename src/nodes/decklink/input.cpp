@@ -134,7 +134,6 @@ class node_impl : public node_i
     decklink_ptr<callback_s>                callback_;
     decklink_ptr<detail::allocator_s>       allocator_;
 
-    std::shared_ptr<gpu::context_s>     allocator_ctx_;
     std::unique_ptr<gpu::texture_s>     texture_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
@@ -162,7 +161,7 @@ class node_impl : public node_i
 
         device_    = nullptr;
         allocator_ = nullptr;
-        allocator_ctx_.reset();
+        callback_  = nullptr;
         texture_.reset();
         framebuffer_.reset();
     }
@@ -223,11 +222,12 @@ class node_impl : public node_i
         device_ = device;
         devices_in_use.emplace(device_.ptr());
 
-        allocator_ctx_ = std::make_shared<gpu::context_s>(false, app.ctx());
-        allocator_     = new detail::allocator_s(allocator_ctx_, gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
+        auto ctx = std::make_shared<gpu::context_s>(false, app.ctx());
+
+        allocator_ = new detail::allocator_s(ctx, gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
         device_->SetVideoInputFrameMemoryAllocator(allocator_.ptr());
 
-        callback_ = new callback_s(allocator_ctx_, allocator_);
+        callback_ = new callback_s(ctx, allocator_);
         device_->SetCallback(callback_.ptr());
 
         device_->EnableVideoInput(bmdModeNTSC, bmdFormat8BitYUV, bmdVideoInputEnableFormatDetection);
@@ -257,16 +257,17 @@ class node_impl : public node_i
             }
 
             auto* transfer = processed_frame_->second;
-            transfer->wait_for_transfer();
+            transfer->wait_for_copy();
             transfer->perform_transfer(texture_.get());
             allocator_->begin_texture_use(texture_.get());
-            framebuffer_->bind();
 
+            framebuffer_->bind();
             glViewport(0, 0, frame_dims.x, frame_dims.y);
 
             if (!draw_state_) {
-                draw_state_  = std::make_unique<gpu::draw_state_s>();
-                auto* shader = app.ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
+                using shader_name = gpu::shader_program_s::name_e;
+                draw_state_       = std::make_unique<gpu::draw_state_s>();
+                auto* shader      = app.ctx()->get_shader(shader_name::yuv_to_rgb);
                 draw_state_->set_shader_program(shader);
                 draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
             }
@@ -278,7 +279,6 @@ class node_impl : public node_i
             texture_->bind(0);
             draw_state_->draw();
             gpu::texture_s::unbind(0);
-
             gpu::framebuffer_s::unbind();
 
             framebuffer_->get_texture()->generate_mip_maps();

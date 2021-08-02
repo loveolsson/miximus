@@ -5,6 +5,7 @@ find_package(Freetype REQUIRED)
 add_library(font
     registry.cpp
     registry.hpp
+    font_info.hpp
 )
 
 target_link_libraries(font 

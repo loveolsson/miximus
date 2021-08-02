@@ -68,7 +68,7 @@ bool pinned_transfer_s::perform_transfer(texture_s* texture)
     return true;
 }
 
-bool pinned_transfer_s::wait_for_transfer()
+bool pinned_transfer_s::wait_for_copy()
 {
     if (sync_) {
         sync_->gpu_wait();

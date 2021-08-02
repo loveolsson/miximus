@@ -8,16 +8,17 @@ font_registry_s::~font_registry_s() {}
 void font_registry_s::log_fonts()
 {
     auto log = getlog("app");
+    log->debug("Found system fonts:");
     for (const auto& [name, font] : fonts_) {
-        log->debug("Found font: {}", name);
+        log->debug("  \"{}\"", name);
 
         for (const auto& [v_name, variant] : font.variants) {
-            log->debug("  --- {}: \"{}\"", v_name, variant.path.u8string());
+            log->debug("   -- {}: \"{}\"", v_name, variant.path.u8string());
         }
     }
 }
 
-const font_s* font_registry_s::find_font(const std::string& name) const
+const font_info_s* font_registry_s::find_font(const std::string& name) const
 {
     auto it = fonts_.find(name);
     if (it != fonts_.end()) {

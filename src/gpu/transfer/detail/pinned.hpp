@@ -17,7 +17,7 @@ class pinned_transfer_s : public transfer_i
 
     bool perform_copy() final;
     bool perform_transfer(texture_s*) final;
-    bool wait_for_transfer() final;
+    bool wait_for_copy() final;
 };
 
 } // namespace miximus::gpu::transfer::detail

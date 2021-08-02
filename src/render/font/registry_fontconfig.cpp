@@ -7,9 +7,6 @@ namespace miximus::render::font {
 
 font_registry_s::font_registry_s()
 {
-    auto log = getlog("app");
-    log->debug("Scanning for system fonts");
-
     FcInit();
     auto* config = FcInitLoadConfigAndFonts();
     auto* pat    = FcPatternCreate();
@@ -22,9 +19,16 @@ font_registry_s::font_registry_s()
         if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch &&
             FcPatternGetString(font, FC_FAMILY, 0, &family) == FcResultMatch &&
             FcPatternGetString(font, FC_STYLE, 0, &style) == FcResultMatch) {
-            fonts_[reinterpret_cast<const char*>(family)].variants.emplace(
-                reinterpret_cast<const char*>(style),
-                font_variant_s{reinterpret_cast<const char*>(style), reinterpret_cast<const char*>(file)});
+            std::string family_str(reinterpret_cast<const char*>(family));
+            std::string style_str(reinterpret_cast<const char*>(style));
+            std::string path_str(reinterpret_cast<const char*>(file));
+
+            font_variant_s v;
+            v.index = 0;
+            v.name  = style_str;
+            v.path  = path_str;
+
+            fonts_[family_str].variants.emplace(style_str, std::move(v));
         }
     }
 

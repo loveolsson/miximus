@@ -31,7 +31,7 @@ class transfer_i
     void*        ptr() const { return ptr_; }
     virtual bool perform_copy()               = 0;
     virtual bool perform_transfer(texture_s*) = 0;
-    virtual bool wait_for_transfer()          = 0;
+    virtual bool wait_for_copy()              = 0;
 
     static type_e get_prefered_type();
     static bool   register_texture(type_e type, gpu::texture_s* texture);

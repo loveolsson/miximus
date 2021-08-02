@@ -1,4 +1,3 @@
-#include "logger/logger.hpp"
 #include "registry.hpp"
 
 #define WIN32_LEAN_AND_MEAN
@@ -11,10 +10,10 @@ namespace miximus::render::font {
 
 struct init_data_s
 {
-    HDC                                hdc;
-    std::map<std::string, std::string> files;
-    std::map<std::string, font_s>      fonts;
-    font_s*                            font;
+    HDC                                   hdc;
+    std::map<std::string, font_variant_s> files;
+    std::map<std::string, font_info_s>    fonts;
+    font_info_s*                          font;
 };
 
 static std::string wchar_to_string(std::wstring_view wstr)
@@ -102,11 +101,18 @@ static void read_registry_fonts(init_data_s* data)
 
         wsValueName = wsValueName.substr(0, end_pos);
 
+        int i = 0;
+
         do {
             end_pos = wsValueName.find(L" & ");
 
             auto val = wsValueName.substr(0, end_pos);
-            data->files.emplace(wchar_to_string(val), path + wchar_to_string(wsValueData));
+
+            font_variant_s v = {};
+            v.index          = i++;
+            v.path           = path + wchar_to_string(wsValueData);
+
+            data->files.emplace(wchar_to_string(val), std::move(v));
 
             if (end_pos != std::wstring_view::npos) {
                 wsValueName = wsValueName.substr(end_pos + 3);
@@ -137,10 +143,8 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
     auto it = data->files.find(full_name);
 
     if (it != data->files.end()) {
-        auto&          variants = data->font->variants;
-        font_variant_s variant;
+        auto variant = it->second;
         variant.name = style;
-        variant.path = it->second;
         variants.emplace(style, std::move(variant));
     }
 
@@ -153,8 +157,8 @@ static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW
 
     auto name = wchar_to_string(lpelfe->lfFaceName);
 
-    font_s font;
-    font.name  = name;
+    font_info_s font;
+    font.name = name;
 
     data->font = &font;
 
@@ -173,9 +177,6 @@ font_registry_s::font_registry_s()
 {
     init_data_s data = {};
     read_registry_fonts(&data);
-
-    auto log = getlog("app");
-    log->debug("Scanning for system fonts");
 
     data.hdc = GetDC(nullptr);
 
