@@ -249,7 +249,7 @@ class node_impl : public node_i
                     allocator_->unregister_texture(texture_.get());
                 }
 
-                using color_e = gpu::texture_s::color_type_e;
+                using color_e = gpu::texture_s::colorspace_e;
 
                 texture_     = std::make_unique<gpu::texture_s>(frame_dims, color_e::UYVY);
                 framebuffer_ = std::make_unique<gpu::framebuffer_s>(frame_dims, color_e::RGB);

@@ -61,7 +61,7 @@ class input_interface_s : public interface_i
     type_e type() const final { return get_interface_type<T>(); }
     bool   accepts(type_e type) const final;
 
-    T resolve_value(core::app_state_s*, const node_map_t& nodes, const con_set_t& connections, T fallback = T()) const;
+    T resolve_value(core::app_state_s*, const node_map_t& nodes, const con_set_t& connections, T fallback = T{}) const;
 };
 
 template <typename T>

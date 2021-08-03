@@ -1,5 +1,5 @@
 target_sources(nodes
-PUBLIC
+PRIVATE
     screen.hpp
     screen.cpp
 )

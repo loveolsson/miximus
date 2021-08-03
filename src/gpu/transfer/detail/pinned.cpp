@@ -35,9 +35,14 @@ bool pinned_transfer_s::perform_copy()
 
             glCreateBuffers(1, &id_);
             glNamedBufferStorage(id_, size_, nullptr, flags);
+
+            flags |= GLbitfield(GL_MAP_FLUSH_EXPLICIT_BIT);
             mapped_ptr_ = glMapNamedBufferRange(id_, 0, size_, flags);
 
             assert(mapped_ptr_ != nullptr);
+
+            sync_s sync;
+            sync.cpu_wait(std::chrono::milliseconds(100));
         }
 
         auto* c = reinterpret_cast<char*>(ptr_);

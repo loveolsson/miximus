@@ -4,6 +4,8 @@ import { type_e } from "@/messages";
 import { F64MathNode, I64MathNode, Vec2iMathNode, Vec2MathNode } from "./math";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode } from "./decklink";
+import { FrameBufferNode } from "./utils";
+import { TeleprompterNode } from "./teleprompter";
 
 /**
  * Color-blind optimized palette
@@ -44,6 +46,7 @@ export function register_connection_types(iface: InterfaceTypePlugin): void {
   iface.addConversion("i64", "vec2i");
   iface.addConversion("f64", "vec2i");
   iface.addConversion("vec2", "vec2i");
+  iface.addConversion("framebuffer", "texture");
 }
 
 export function register_types(editor: Editor): void {
@@ -54,4 +57,8 @@ export function register_types(editor: Editor): void {
 
   editor.registerNodeType(type_e.screen_output, ScreenOutputNode, "Outputs");
   editor.registerNodeType(type_e.decklink_input, DeckLinkInputNode, "Inputs");
+
+  editor.registerNodeType(type_e.framebuffer, FrameBufferNode, "Util");
+
+  editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
 }

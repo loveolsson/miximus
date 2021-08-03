@@ -22,19 +22,15 @@ set(MIXIMUS_CLANG_TIDY_PARAMS
     -cppcoreguidelines-no-malloc
     -hicpp-no-malloc
     -cppcoreguidelines-owning-memory
+    -cppcoreguidelines-macro-usage
+    -cppcoreguidelines-pro-type-vararg
+    -hicpp-vararg
 )
 
 list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)
 #set(MIXIMUS_CLANG_TIDY "clang-tidy;${MIXIMUS_CLANG_TIDY_PARAMS_STR}")
 
 find_package(Sanitizers REQUIRED)
-find_package(ZLIB REQUIRED)
-find_package(glfw3 REQUIRED)
-find_package(glm REQUIRED)
-find_package(CUDA REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(nlohmann_json REQUIRED)
-find_package(websocketpp REQUIRED)
 find_package(Threads REQUIRED)
 
 set(Boost_USE_STATIC_LIBS ON)

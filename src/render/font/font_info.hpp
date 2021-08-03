@@ -3,7 +3,7 @@
 #include <map>
 #include <string>
 
-namespace miximus::render::font {
+namespace miximus::render {
 
 struct font_variant_s
 {
@@ -18,4 +18,4 @@ struct font_info_s
     std::map<std::string, font_variant_s> variants;
 };
 
-} // namespace miximus::render::font
+} // namespace miximus::render

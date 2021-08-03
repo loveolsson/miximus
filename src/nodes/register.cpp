@@ -3,6 +3,7 @@
 #include "nodes/math/math.hpp"
 #include "nodes/node.hpp"
 #include "nodes/screen/screen.hpp"
+#include "nodes/teleprompter/teleprompter.hpp"
 #include "nodes/utils/utils.hpp"
 
 namespace miximus::nodes {
@@ -21,6 +22,8 @@ void register_nodes(constructor_map_t* map)
     reg("framebuffer", utils::create_framebuffer_node);
 
     reg("screen_output", screen::create_node);
+
+    reg("teleprompter", teleprompter::create_teleprompter_node);
 
     reg("decklink_input", decklink::create_input_node);
     // register_node_type("decklink_output", decklink::create_output_node);

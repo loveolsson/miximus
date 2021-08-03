@@ -15,9 +15,15 @@ add_subdirectory(decklink)
 add_subdirectory(math)
 add_subdirectory(screen)
 add_subdirectory(utils)
+add_subdirectory(teleprompter)
+
+find_package(nlohmann_json REQUIRED)
 
 target_link_libraries(nodes
 PRIVATE
     gpu
     decklink
+    render
+PUBLIC
+    nlohmann_json::nlohmann_json
 )

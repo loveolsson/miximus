@@ -6,6 +6,8 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
+
 add_subdirectory(logger)
 add_subdirectory(types)
 add_subdirectory(utils)
@@ -16,7 +18,6 @@ add_subdirectory(wrapper)
 add_subdirectory(core)
 add_subdirectory(render)
 
-set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
 
 add_executable(miximus
     main.cpp
@@ -31,8 +32,6 @@ target_link_libraries(miximus
 
     msquic
     Boost::system
-
-    ${CMAKE_DL_LIBS}
 )
 
 add_sanitizers(miximus)

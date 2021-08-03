@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-namespace miximus::render::font {
+namespace miximus::render {
 
 class font_registry_s
 {
@@ -14,7 +14,7 @@ class font_registry_s
 
   public:
     font_registry_s();
-    ~font_registry_s();
+    ~font_registry_s() = default;
 
     const font_info_s*            find_font(const std::string& name) const;
     const font_variant_s*         find_font_variant(const std::string& name, const std::string& variant) const;
@@ -24,4 +24,4 @@ class font_registry_s
     static std::unique_ptr<font_registry_s> create_font_registry();
 };
 
-} // namespace miximus::render::font
+} // namespace miximus::render

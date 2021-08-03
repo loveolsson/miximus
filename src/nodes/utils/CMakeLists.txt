@@ -1,5 +1,5 @@
 target_sources(nodes
-PUBLIC
+PRIVATE
     utils.hpp
     framebuffer.cpp
 )

@@ -32,6 +32,8 @@ class decklink_registry_s
     decklink_registry_s();
     ~decklink_registry_s();
 
+    void uninstall();
+
     decklink_ptr<IDeckLinkInput>  get_input(const std::string& name);
     decklink_ptr<IDeckLinkOutput> get_output(const std::string& name);
 

@@ -1,9 +1,7 @@
-#include "registry.hpp"
+#include "font_registry.hpp"
 #include "logger/logger.hpp"
 
-namespace miximus::render::font {
-
-font_registry_s::~font_registry_s() {}
+namespace miximus::render {
 
 void font_registry_s::log_fonts()
 {
@@ -48,7 +46,7 @@ std::vector<std::string_view> font_registry_s::get_font_names() const
     std::vector<std::string_view> res;
     res.reserve(fonts_.size());
 
-    for (auto& [name, _] : fonts_) {
+    for (const auto& [name, _] : fonts_) {
         res.emplace_back(name);
     }
 
@@ -72,4 +70,4 @@ std::vector<std::string_view> font_registry_s::get_font_variant_names(const std:
 
 std::unique_ptr<font_registry_s> font_registry_s::create_font_registry() { return std::make_unique<font_registry_s>(); }
 
-} // namespace miximus::render::font
+} // namespace miximus::render

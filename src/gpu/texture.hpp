@@ -9,7 +9,7 @@ constexpr GLuint MIP_MAP_LEVELS = 5;
 class texture_s
 {
   public:
-    enum class color_type_e
+    enum class colorspace_e
     {
         RGB,
         RGBA,
@@ -23,10 +23,10 @@ class texture_s
     vec2i_t      texture_dimensions_{};
     GLenum       format_{};
     GLenum       type_{};
-    color_type_e color_type_;
+    colorspace_e colorspace_;
 
   public:
-    texture_s(vec2i_t dimensions, color_type_e color);
+    texture_s(vec2i_t dimensions, colorspace_e color);
     ~texture_s();
 
     texture_s(const texture_s&) = delete;
@@ -39,7 +39,7 @@ class texture_s
     vec2i_t      texture_dimensions() { return texture_dimensions_; }
     GLenum       format() { return format_; }
     GLenum       type() { return type_; }
-    color_type_e color_type() { return color_type_; }
+    colorspace_e color_type() { return colorspace_; }
     GLuint       id() { return id_; }
 
     void        bind(GLuint sampler) const;

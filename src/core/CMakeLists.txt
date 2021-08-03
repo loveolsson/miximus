@@ -8,8 +8,9 @@ add_library(app
 add_subdirectory(adapters)
 
 target_link_libraries(app 
-PUBLIC 
+PRIVATE
     gpu
     render
+PUBLIC 
     nodes
 )

@@ -373,7 +373,7 @@ export default class Miximus extends Vue {
             break;
           }
 
-          const iface = node.getInterface(key);
+          const iface = node.interfaces.get(key);
           if (iface && iface.isInput) {
             iface.value = value;
             break;

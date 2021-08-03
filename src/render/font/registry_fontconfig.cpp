@@ -1,20 +1,22 @@
+#include "font_registry.hpp"
 #include "logger/logger.hpp"
-#include "registry.hpp"
 
 #include <fontconfig/fontconfig.h>
 
-namespace miximus::render::font {
+namespace miximus::render {
 
 font_registry_s::font_registry_s()
 {
     FcInit();
     auto* config = FcInitLoadConfigAndFonts();
     auto* pat    = FcPatternCreate();
-    auto* os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, (char*)0);
+    auto* os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, nullptr);
     auto* fs     = FcFontList(config, pat, os);
-    for (int i = 0; fs && i < fs->nfont; ++i) {
-        FcPattern* font = fs->fonts[i];
-        FcChar8 *  file, *style, *family;
+    for (int i = 0; fs != nullptr && i < fs->nfont; ++i) {
+        FcPattern* font   = fs->fonts[i];
+        FcChar8*   file   = nullptr;
+        FcChar8*   style  = nullptr;
+        FcChar8*   family = nullptr;
 
         if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch &&
             FcPatternGetString(font, FC_FAMILY, 0, &family) == FcResultMatch &&
@@ -34,23 +36,23 @@ font_registry_s::font_registry_s()
 
     log_fonts();
 
-    if (fs) {
+    if (fs != nullptr) {
         FcFontSetDestroy(fs);
     }
 
-    if (os) {
+    if (os != nullptr) {
         FcObjectSetDestroy(os);
     }
 
-    if (pat) {
+    if (pat != nullptr) {
         FcPatternDestroy(pat);
     }
 
-    if (config) {
+    if (config != nullptr) {
         FcConfigDestroy(config);
     }
 
     FcFini();
 }
 
-} // namespace miximus::render::font
+} // namespace miximus::render

@@ -1,7 +1,7 @@
 target_sources(render 
 PRIVATE
-    registry.cpp
-    registry.hpp
+    font_registry.cpp
+    font_registry.hpp
     font_instance.cpp
     font_instance.hpp
     font_loader.cpp

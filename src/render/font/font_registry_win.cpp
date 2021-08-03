@@ -6,7 +6,7 @@
 
 #include <string_view>
 
-namespace miximus::render::font {
+namespace miximus::render {
 
 struct init_data_s
 {
@@ -188,4 +188,4 @@ font_registry_s::font_registry_s()
     log_fonts();
 }
 
-} // namespace miximus::render::font
+} // namespace miximus::render

@@ -1,5 +1,3 @@
-set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
-
 add_library(web_server
     server.hpp
     server.cpp
@@ -12,6 +10,9 @@ add_library(web_server
     detail/custom-logger.hpp
 )
 
+find_package(websocketpp REQUIRED)
+find_package(nlohmann_json REQUIRED)
+
 target_link_libraries(web_server 
 PRIVATE
     static_files
@@ -19,6 +20,8 @@ PRIVATE
     Threads::Threads
     websocketpp::websocketpp
     logger
+PUBLIC
+    nlohmann_json::nlohmann_json
 ) 
 
 add_sanitizers(web_server)

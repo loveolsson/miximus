@@ -3,7 +3,7 @@
 
 #include "gpu/context_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
-#include "render/font/registry_fwd.hpp"
+#include "render/font/font_registry_fwd.hpp"
 
 #include <memory>
 #include <thread>
@@ -20,7 +20,7 @@ class app_state_s
 
     std::unique_ptr<gpu::context_s>                       ctx_;
     std::unique_ptr<nodes::decklink::decklink_registry_s> decklink_registry_;
-    std::unique_ptr<render::font::font_registry_s>        font_registry_;
+    std::unique_ptr<render::font_registry_s>              font_registry_;
 
   public:
     app_state_s();

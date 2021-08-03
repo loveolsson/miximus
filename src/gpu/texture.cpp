@@ -4,9 +4,9 @@
 
 namespace miximus::gpu {
 
-texture_s::texture_s(vec2i_t dimensions, color_type_e color)
+texture_s::texture_s(vec2i_t dimensions, colorspace_e color)
     : display_dimensions_(dimensions)
-    , color_type_(color)
+    , colorspace_(color)
 {
     texture_dimensions_ = dimensions;
     GLenum  internal_format{};
@@ -17,29 +17,29 @@ texture_s::texture_s(vec2i_t dimensions, color_type_e color)
     glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    switch (color_type_) {
-        case color_type_e::RGB:
+    switch (colorspace_) {
+        case colorspace_e::RGB:
             internal_format = GL_RGB8;
             format_         = GL_RGB;
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             break;
-        case color_type_e::RGBA:
+        case colorspace_e::RGBA:
             internal_format = GL_RGBA8;
             format_         = GL_RGBA;
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             break;
-        case color_type_e::BGRA:
+        case colorspace_e::BGRA:
             internal_format = GL_RGBA8;
             format_         = GL_BGRA;
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             break;
-        case color_type_e::UYVY:
+        case colorspace_e::UYVY:
             internal_format = GL_RGBA8;
             format_         = GL_BGRA;
             type_           = GL_UNSIGNED_INT_8_8_8_8_REV;

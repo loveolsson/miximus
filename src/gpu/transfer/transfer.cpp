@@ -4,11 +4,11 @@
 
 #ifdef _MSC_VER
 #include <malloc.h>
-#define aligned_alloc_impl(a, s) _aligned_malloc(s, a)
-#define aligned_free_impl(p) _aligned_free(p)
+#define ALIGNED_ALLOC(a, s) _aligned_malloc(s, a)
+#define ALIGNED_FREE(p) _aligned_free(p)
 #else
-#define aligned_alloc_impl(a, s) aligned_alloc(a, s)
-#define aligned_free_impl(p) free(p)
+#define ALIGNED_ALLOC(a, s) aligned_alloc(a, s)
+#define ALIGNED_FREE(p) free(p)
 #endif
 
 namespace miximus::gpu::transfer {
@@ -16,14 +16,11 @@ namespace miximus::gpu::transfer {
 transfer_i::transfer_i(size_t size, direction_e direction)
     : size_(size)
     , direction_(direction)
-    , ptr_(aligned_alloc_impl(ALIGNMENT, size))
+    , ptr_(ALIGNED_ALLOC(ALIGNMENT, size))
 {
 }
 
-transfer_i::~transfer_i()
-{
-    aligned_free_impl(ptr_); //
-}
+transfer_i::~transfer_i() { ALIGNED_FREE(ptr_); }
 
 bool transfer_i::register_texture(type_e type, gpu::texture_s* /*texture*/)
 {
@@ -57,7 +54,11 @@ bool transfer_i::end_texture_use(type_e type, gpu::texture_s* /*texture*/)
     }
 }
 
-transfer_i::type_e transfer_i::get_prefered_type() { return type_e::pinned; }
+transfer_i::type_e transfer_i::get_prefered_type()
+{
+    static type_e type = []() { return type_e::pinned; }();
+    return type;
+}
 
 std::unique_ptr<transfer_i>
 transfer_i::create_transfer(transfer_i::type_e type, size_t size, transfer_i::direction_e dir)

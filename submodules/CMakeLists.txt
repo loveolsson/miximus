@@ -4,3 +4,8 @@ set(QUIC_BUILD_PERF OFF)
 add_subdirectory(msquic)
 
 add_subdirectory(glad)
+
+target_link_libraries(glad
+PRIVATE
+    ${CMAKE_DL_LIBS}
+)

@@ -12,7 +12,7 @@ class framebuffer_s
     std::unique_ptr<texture_s> texture_;
 
   public:
-    framebuffer_s(vec2i_t dimensions, texture_s::color_type_e color);
+    framebuffer_s(vec2i_t dimensions, texture_s::colorspace_e color);
     ~framebuffer_s();
 
     void        bind() const;

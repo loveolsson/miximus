@@ -1,5 +1,5 @@
 target_sources(nodes
-PUBLIC
+PRIVATE
     math.hpp
     math.cpp
 )

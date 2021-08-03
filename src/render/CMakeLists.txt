@@ -1,13 +1,12 @@
-add_library(render
-    surface.cpp
-    surface.hpp
-)
+add_library(render)
+
+add_subdirectory(font)
+add_subdirectory(surface)
 
 target_link_libraries(render
 PRIVATE
     logger
+    gpu
 )
-
-add_subdirectory(font)
 
 add_sanitizers(render)

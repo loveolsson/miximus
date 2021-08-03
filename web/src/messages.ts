@@ -25,6 +25,8 @@ export const enum type_e {
   screen_output = "screen_output",
   decklink_input = "decklink_input",
   decklink_output = "decklink_output",
+  framebuffer = "framebuffer",
+  teleprompter = "teleprompter",
 }
 
 export type position_t = [number, number];

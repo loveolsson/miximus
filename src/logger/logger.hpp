@@ -1,7 +1,7 @@
 #pragma once
 #include <spdlog/spdlog.h>
 
-static auto& getlog = spdlog::get;
+std::shared_ptr<spdlog::logger> getlog(const std::string& name);
 
 namespace miximus::logger {
 

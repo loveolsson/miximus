@@ -143,10 +143,13 @@ decklink_registry_s::decklink_registry_s()
 
 decklink_registry_s::~decklink_registry_s()
 {
-    std::unique_lock lock(device_mutex_);
-
     inputs_.clear();
     outputs_.clear();
+}
+
+void decklink_registry_s::uninstall()
+{
+    std::shared_lock lock(device_mutex_);
 
     if (discovery_) {
         getlog("decklink")->debug("Uninstalling DeckLink discovery");
