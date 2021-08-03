@@ -1,10 +1,9 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-${CMAKE_CURRENT_SOURCE_DIR}/transfer.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/transfer.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/detail/fallback.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/detail/fallback.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/detail/pinned.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/detail/pinned.cpp
+target_sources(gpu 
+PRIVATE
+    transfer.hpp
+    transfer.cpp
+    detail/fallback.hpp
+    detail/fallback.cpp
+    detail/pinned.hpp
+    detail/pinned.cpp
 )
-
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

@@ -183,7 +183,7 @@ class node_impl : public node_i
         }
     }
 
-    void prepare(core::app_state_s& app, const node_state_s& state, traits_s* traits) final
+    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
         traits->must_run = true;
 
@@ -201,7 +201,7 @@ class node_impl : public node_i
         auto device_name = state.get_option<std::string>("device_name");
         auto enabled     = state.get_option<bool>("enabled");
 
-        auto device = enabled ? app.decklink_registry()->get_input(device_name) : nullptr;
+        auto device = enabled ? app->decklink_registry()->get_input(device_name) : nullptr;
         if (device == device_) {
             return;
         }
@@ -222,7 +222,7 @@ class node_impl : public node_i
         device_ = device;
         devices_in_use.emplace(device_.ptr());
 
-        auto ctx = std::make_shared<gpu::context_s>(false, app.ctx());
+        auto ctx = gpu::context_s::create_shared_context(false, app->ctx());
 
         allocator_ = new detail::allocator_s(ctx, gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
         device_->SetVideoInputFrameMemoryAllocator(allocator_.ptr());
@@ -234,7 +234,7 @@ class node_impl : public node_i
         device_->StartStreams();
     }
 
-    void execute(core::app_state_s& app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
+    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         if (!allocator_) {
             return;
@@ -267,7 +267,7 @@ class node_impl : public node_i
             if (!draw_state_) {
                 using shader_name = gpu::shader_program_s::name_e;
                 draw_state_       = std::make_unique<gpu::draw_state_s>();
-                auto* shader      = app.ctx()->get_shader(shader_name::yuv_to_rgb);
+                auto* shader      = app->ctx()->get_shader(shader_name::yuv_to_rgb);
                 draw_state_->set_shader_program(shader);
                 draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
             }
@@ -289,7 +289,7 @@ class node_impl : public node_i
         }
     }
 
-    void complete(core::app_state_s& /*app*/) final
+    void complete(core::app_state_s* /*app*/) final
     {
         if (processed_frame_ && allocator_ && texture_) {
             allocator_->end_texture_use(texture_.get());

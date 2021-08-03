@@ -202,4 +202,9 @@ std::vector<std::string> decklink_registry_s::get_output_names()
     return res;
 }
 
+std::unique_ptr<decklink_registry_s> decklink_registry_s::create_decklink_registry()
+{
+    return std::make_unique<decklink_registry_s>();
+}
+
 } // namespace miximus::nodes::decklink

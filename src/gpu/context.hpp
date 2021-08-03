@@ -27,7 +27,7 @@ class context_s
     // recti_s window_rect_{};
 
   public:
-    context_s(bool visible = false, context_s* parent = nullptr);
+    context_s(bool visible, context_s* parent);
     ~context_s();
 
     // void framebuffer_size_changed(int w, int h);
@@ -54,6 +54,9 @@ class context_s
     auto get_lock() { return std::unique_lock(mtx_); };
 
     shader_program_s* get_shader(shader_program_s::name_e name);
+
+    static std::unique_ptr<context_s> create_unique_context(bool visible = false, context_s* parent = nullptr);
+    static std::shared_ptr<context_s> create_shared_context(bool visible = false, context_s* parent = nullptr);
 };
 
 } // namespace miximus::gpu

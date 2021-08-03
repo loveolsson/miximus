@@ -1,6 +1,5 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/framebuffer.cpp
+target_sources(nodes
+PUBLIC
+    utils.hpp
+    framebuffer.cpp
 )
-
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

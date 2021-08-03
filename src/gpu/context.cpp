@@ -306,4 +306,14 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
     return new_it->second.get();
 }
 
+std::unique_ptr<context_s> context_s::create_unique_context(bool visible, context_s* parent)
+{
+    return std::make_unique<context_s>(visible, parent);
+}
+
+std::shared_ptr<context_s> context_s::create_shared_context(bool visible, context_s* parent)
+{
+    return std::make_shared<context_s>(visible, parent);
+}
+
 } // namespace miximus::gpu

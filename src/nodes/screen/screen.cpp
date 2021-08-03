@@ -32,7 +32,7 @@ class node_impl : public node_i
     void operator=(const node_impl&) = delete;
     void operator=(node_impl&&) = delete;
 
-    void prepare(core::app_state_s& app, const node_state_s& state, traits_s* traits) final
+    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
         auto enabled = state.get_option<bool>("enabled", false);
 
@@ -40,7 +40,7 @@ class node_impl : public node_i
             traits->must_run = true;
 
             if (!context_) {
-                context_ = std::make_unique<gpu::context_s>(true, app.ctx());
+                context_ = gpu::context_s::create_unique_context(true, app->ctx());
             }
 
             gpu::recti_s rect{};
@@ -66,7 +66,7 @@ class node_impl : public node_i
         }
     }
 
-    void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         if (!context_) {
             return;
@@ -87,7 +87,7 @@ class node_impl : public node_i
         if (texture != nullptr) {
             if (!draw_state_) {
                 draw_state_  = std::make_unique<gpu::draw_state_s>();
-                auto* shader = app.ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+                auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
                 draw_state_->set_shader_program(shader);
                 draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
             }
@@ -104,8 +104,6 @@ class node_impl : public node_i
         context_->swap_buffers();
         gpu::context_s::rewind_current();
     }
-
-    void complete(core::app_state_s& app) final {}
 
     nlohmann::json get_default_options() const final
     {

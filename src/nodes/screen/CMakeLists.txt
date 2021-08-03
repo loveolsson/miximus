@@ -1,6 +1,5 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/screen.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/screen.cpp
+target_sources(nodes
+PUBLIC
+    screen.hpp
+    screen.cpp
 )
-
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

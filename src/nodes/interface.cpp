@@ -54,7 +54,7 @@ bool interface_i::add_connection(con_set_t* connections, const connection_s& con
 }
 
 const interface_i*
-interface_i::resolve_connection(core::app_state_s& app, const node_map_t& nodes, const con_set_t& connections) const
+interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes, const con_set_t& connections) const
 {
     if (direction() == dir_e::output) {
         throw std::runtime_error("resolve_connection called on output interface");
@@ -164,7 +164,7 @@ bool input_interface_s<gpu::framebuffer_s*>::accepts(type_e type) const
 }
 
 template <>
-double input_interface_s<double>::resolve_value(core::app_state_s& app,
+double input_interface_s<double>::resolve_value(core::app_state_s* app,
                                                 const node_map_t&  nodes,
                                                 const con_set_t&   connections,
                                                 double             fallback) const
@@ -198,7 +198,7 @@ double input_interface_s<double>::resolve_value(core::app_state_s& app,
 }
 
 template <>
-int64_t input_interface_s<int64_t>::resolve_value(core::app_state_s& app,
+int64_t input_interface_s<int64_t>::resolve_value(core::app_state_s* app,
                                                   const node_map_t&  nodes,
                                                   const con_set_t&   connections,
                                                   int64_t            fallback) const
@@ -232,7 +232,7 @@ int64_t input_interface_s<int64_t>::resolve_value(core::app_state_s& app,
 }
 
 template <>
-gpu::vec2_t input_interface_s<gpu::vec2_t>::resolve_value(core::app_state_s& app,
+gpu::vec2_t input_interface_s<gpu::vec2_t>::resolve_value(core::app_state_s* app,
                                                           const node_map_t&  nodes,
                                                           const con_set_t&   connections,
                                                           gpu::vec2_t        fallback) const
@@ -286,7 +286,7 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::resolve_value(core::app_state_s& app
 }
 
 template <>
-gpu::vec2i_t input_interface_s<gpu::vec2i_t>::resolve_value(core::app_state_s& app,
+gpu::vec2i_t input_interface_s<gpu::vec2i_t>::resolve_value(core::app_state_s* app,
                                                             const node_map_t&  nodes,
                                                             const con_set_t&   connections,
                                                             gpu::vec2i_t       fallback) const
@@ -340,7 +340,7 @@ gpu::vec2i_t input_interface_s<gpu::vec2i_t>::resolve_value(core::app_state_s& a
 }
 
 template <>
-gpu::texture_s* input_interface_s<gpu::texture_s*>::resolve_value(core::app_state_s& app,
+gpu::texture_s* input_interface_s<gpu::texture_s*>::resolve_value(core::app_state_s* app,
                                                                   const node_map_t&  nodes,
                                                                   const con_set_t&   connections,
                                                                   gpu::texture_s*    fallback) const
@@ -378,7 +378,7 @@ gpu::texture_s* input_interface_s<gpu::texture_s*>::resolve_value(core::app_stat
 }
 
 template <>
-gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::resolve_value(core::app_state_s&  app,
+gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::resolve_value(core::app_state_s*  app,
                                                                           const node_map_t&   nodes,
                                                                           const con_set_t&    connections,
                                                                           gpu::framebuffer_s* fallback) const

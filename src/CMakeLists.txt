@@ -6,10 +6,6 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-set(MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-)
-
 add_subdirectory(logger)
 add_subdirectory(types)
 add_subdirectory(utils)
@@ -23,23 +19,17 @@ add_subdirectory(render)
 set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
 
 add_executable(miximus
-    ${MIXIMUS_MAIN_SOURCES}
+    main.cpp
 )
 
 target_link_libraries(miximus
-    glfw
-    glad
-    glm::glm
-    msquic
     web_server
-    static_files
     logger
-    font
+    render
+    app
+    glad
 
-    ffmpeg
-    decklink
-    cef
-    video-sdk
+    msquic
     Boost::system
 
     ${CMAKE_DL_LIBS}

@@ -1,26 +1,33 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-${CMAKE_CURRENT_SOURCE_DIR}/vertex_buffer.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/vertex_buffer.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/vertex_array.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/vertex_array.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/context.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/context.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/shader.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/shader.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/framebuffer.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/framebuffer.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/vertex.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/vertex_attr.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/sync.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/sync.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/texture.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/texture.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/types.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/types.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/draw_state.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/draw_state.cpp
+add_library(gpu
+    vertex_buffer.hpp
+    vertex_buffer.cpp
+    vertex_array.hpp
+    vertex_array.cpp
+    context.hpp
+    context.cpp
+    shader.hpp
+    shader.cpp
+    framebuffer.hpp
+    framebuffer.cpp
+    vertex.hpp
+    vertex_attr.hpp
+    sync.hpp
+    sync.cpp
+    texture.hpp
+    texture.cpp
+    types.hpp
+    types.cpp
+    draw_state.hpp
+    draw_state.cpp
 )
 
-add_subdirectory(transfer)
+target_link_libraries(gpu
+PRIVATE
+    static_files
+    glfw
+PUBLIC
+    glad
+    glm::glm
+)   
 
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)
+add_subdirectory(transfer)

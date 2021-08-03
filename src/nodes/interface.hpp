@@ -36,7 +36,7 @@ class interface_i
     virtual ~interface_i() = default;
 
     bool               add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
-    const interface_i* resolve_connection(core::app_state_s&, const node_map_t&, const con_set_t&) const;
+    const interface_i* resolve_connection(core::app_state_s*, const node_map_t&, const con_set_t&) const;
     void               set_max_connection_count(int count) { max_connection_count_ = count; }
 
     virtual dir_e  direction() const = 0;
@@ -61,7 +61,7 @@ class input_interface_s : public interface_i
     type_e type() const final { return get_interface_type<T>(); }
     bool   accepts(type_e type) const final;
 
-    T resolve_value(core::app_state_s&, const node_map_t& nodes, const con_set_t& connections, T fallback = T()) const;
+    T resolve_value(core::app_state_s*, const node_map_t& nodes, const con_set_t& connections, T fallback = T()) const;
 };
 
 template <typename T>

@@ -24,9 +24,9 @@ class node_impl : public node_i
         interfaces_.emplace("fb", &iface_fb_);
     }
 
-    void prepare(core::app_state_s& /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
+    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
-    void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         auto size_opt = state.get_option<gpu::vec2i_t>("size");
         auto size     = iface_size_.resolve_value(app, nodes, state.get_connection_set("size"), size_opt);
@@ -40,7 +40,7 @@ class node_impl : public node_i
         iface_fb_.set_value(framebuffer_.get());
     }
 
-    void complete(core::app_state_s& /*app*/) final {}
+    void complete(core::app_state_s* /*app*/) final {}
 
     nlohmann::json get_default_options() const final
     {

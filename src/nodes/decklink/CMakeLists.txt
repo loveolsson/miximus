@@ -1,11 +1,16 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-${CMAKE_CURRENT_SOURCE_DIR}/detail/allocator.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/detail/allocator.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/decklink.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/input.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/output.cpp
-${CMAKE_CURRENT_SOURCE_DIR}/registry.hpp
-${CMAKE_CURRENT_SOURCE_DIR}/registry.cpp
+target_sources(nodes
+PRIVATE
+    detail/allocator.hpp
+    detail/allocator.cpp
+    decklink.hpp
+    input.cpp
+    output.cpp
+    registry_fwd.hpp
+    registry.hpp
+    registry.cpp
 )
 
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)
+target_link_libraries(nodes
+PUBLIC
+    decklink
+)

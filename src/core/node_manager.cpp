@@ -358,7 +358,7 @@ void node_manager_s::clear_adapters()
     adapters_.clear();
 }
 
-void node_manager_s::tick_one_frame(app_state_s& app)
+void node_manager_s::tick_one_frame(app_state_s* app)
 {
     {
         /**
@@ -372,7 +372,7 @@ void node_manager_s::tick_one_frame(app_state_s& app)
         nodes_copy_ = nodes_;
     }
 
-    app.ctx()->make_current();
+    app->ctx()->make_current();
 
     std::vector<nodes::node_record_s*> must_execute;
 
@@ -402,9 +402,9 @@ void node_manager_s::tick_one_frame(app_state_s& app)
     gpu::context_s::rewind_current();
 }
 
-void node_manager_s::clear_nodes(app_state_s& app)
+void node_manager_s::clear_nodes(app_state_s* app)
 {
-    app.ctx()->make_current();
+    app->ctx()->make_current();
 
     nodes_copy_.clear();
     nodes_.clear();

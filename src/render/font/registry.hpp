@@ -20,6 +20,8 @@ class font_registry_s
     const font_variant_s*         find_font_variant(const std::string& name, const std::string& variant) const;
     std::vector<std::string_view> get_font_names() const;
     std::vector<std::string_view> get_font_variant_names(const std::string& name) const;
+
+    static std::unique_ptr<font_registry_s> create_font_registry();
 };
 
 } // namespace miximus::render::font

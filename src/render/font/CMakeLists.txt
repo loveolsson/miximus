@@ -1,34 +1,34 @@
-set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
-
-find_package(Freetype REQUIRED)
-
-add_library(font
+target_sources(render 
+PRIVATE
     registry.cpp
     registry.hpp
+    font_instance.cpp
+    font_instance.hpp
+    font_loader.cpp
+    font_loader.hpp
     font_info.hpp
 )
 
-target_link_libraries(font 
+find_package(Freetype REQUIRED)
+
+target_link_libraries(render 
 PRIVATE
     Freetype::Freetype
-    logger
 ) 
 
 if(WIN32)
-    target_sources(font PRIVATE
+    target_sources(render PRIVATE
         registry_win.cpp
     )
 else()
-    target_sources(font PRIVATE
-        registry_fontconfig.cpp
-    )
-
     find_package(Fontconfig REQUIRED)
-
-    target_link_libraries(font 
-    PUBLIC
+    
+    target_link_libraries(render 
+    PRIVATE
         Fontconfig::Fontconfig
     ) 
-endif()
 
-add_sanitizers(font)
+    target_sources(render PRIVATE
+        registry_fontconfig.cpp
+    )
+endif()

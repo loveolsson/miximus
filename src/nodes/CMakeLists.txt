@@ -1,14 +1,14 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/node.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/node.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/interface.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/interface.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/connection.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/connection.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/register.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/register.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/node_map.hpp    
-    ${CMAKE_CURRENT_SOURCE_DIR}/validate_option.hpp    
+add_library(nodes
+    node.hpp
+    node.cpp
+    interface.hpp
+    interface.cpp
+    connection.hpp
+    connection.cpp
+    register.hpp
+    register.cpp
+    node_map.hpp    
+    validate_option.hpp    
 )
 
 add_subdirectory(decklink)
@@ -16,4 +16,8 @@ add_subdirectory(math)
 add_subdirectory(screen)
 add_subdirectory(utils)
 
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)
+target_link_libraries(nodes
+PRIVATE
+    gpu
+    decklink
+)

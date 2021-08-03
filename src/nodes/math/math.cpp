@@ -30,9 +30,9 @@ class node_impl : public node_i
         interfaces_.emplace("res", &iface_res_);
     }
 
-    void prepare(core::app_state_s& /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
+    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
-    void execute(core::app_state_s& app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         T res{};
 
@@ -57,8 +57,6 @@ class node_impl : public node_i
 
         iface_res_.set_value(res);
     }
-
-    void complete(core::app_state_s& /*app*/) final {}
 
     nlohmann::json get_default_options() const final
     {

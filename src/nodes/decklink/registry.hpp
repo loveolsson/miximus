@@ -37,6 +37,8 @@ class decklink_registry_s
 
     std::vector<std::string> get_input_names();
     std::vector<std::string> get_output_names();
+
+    static std::unique_ptr<decklink_registry_s> create_decklink_registry();
 };
 
 } // namespace miximus::nodes::decklink

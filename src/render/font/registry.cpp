@@ -70,4 +70,6 @@ std::vector<std::string_view> font_registry_s::get_font_variant_names(const std:
     return res;
 }
 
+std::unique_ptr<font_registry_s> font_registry_s::create_font_registry() { return std::make_unique<font_registry_s>(); }
+
 } // namespace miximus::render::font

@@ -1,6 +1,5 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/math.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/math.cpp
+target_sources(nodes
+PUBLIC
+    math.hpp
+    math.cpp
 )
-
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

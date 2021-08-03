@@ -62,8 +62,8 @@ class node_manager_s
     void add_adapter(std::unique_ptr<adapter_i>&& adapter);
     void clear_adapters();
 
-    void tick_one_frame(app_state_s&);
-    void clear_nodes(app_state_s&);
+    void tick_one_frame(app_state_s*);
+    void clear_nodes(app_state_s*);
 
     std::shared_ptr<nodes::node_i> create_node(std::string_view type, error_e& error);
 };

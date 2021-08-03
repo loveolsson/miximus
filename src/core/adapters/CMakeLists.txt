@@ -1,6 +1,5 @@
-list(APPEND MIXIMUS_MAIN_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/adapter_websocket.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/adapter_websocket.cpp
+target_sources(app
+PUBLIC
+    adapter_websocket.hpp
+    adapter_websocket.cpp
 )
-
-set(MIXIMUS_MAIN_SOURCES ${MIXIMUS_MAIN_SOURCES} PARENT_SCOPE)

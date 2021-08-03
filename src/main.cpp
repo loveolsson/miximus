@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
             while (g_signal_status == 0) {
                 // getlog("app")->info("Frame no {}", frame_no++);
 
-                node_manager.tick_one_frame(app);
+                node_manager.tick_one_frame(&app);
 
                 gpu::context_s::poll();
 
@@ -121,7 +121,7 @@ int main(int argc, char* argv[])
             web_server.stop();
             node_manager.clear_adapters();
             save_settings(&node_manager, settings_path);
-            node_manager.clear_nodes(app);
+            node_manager.clear_nodes(&app);
         }
 
     } catch (std::exception& e) {
