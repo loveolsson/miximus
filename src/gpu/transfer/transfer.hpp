@@ -23,7 +23,7 @@ class transfer_i
         cpu_to_gpu,
     };
 
-    virtual ~transfer_i();
+    virtual ~transfer_i() = default;
 
     size_t      size() const { return size_; }
     direction_e direction() const { return direction_; }
@@ -44,9 +44,12 @@ class transfer_i
   protected:
     transfer_i(size_t size, direction_e direction);
 
+    void allocate_ptr();
+    void free_ptr();
+
     const size_t      size_;
     const direction_e direction_;
-    void* const       ptr_;
+    void*             ptr_;
 };
 } // namespace transfer
 } // namespace miximus::gpu

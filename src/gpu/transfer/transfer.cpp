@@ -16,11 +16,12 @@ namespace miximus::gpu::transfer {
 transfer_i::transfer_i(size_t size, direction_e direction)
     : size_(size)
     , direction_(direction)
-    , ptr_(ALIGNED_ALLOC(ALIGNMENT, size))
 {
 }
 
-transfer_i::~transfer_i() { ALIGNED_FREE(ptr_); }
+void transfer_i::allocate_ptr() { ptr_ = ALIGNED_ALLOC(ALIGNMENT, size_); }
+
+void transfer_i::free_ptr() { ALIGNED_FREE(ptr_); }
 
 bool transfer_i::register_texture(type_e type, gpu::texture_s* /*texture*/)
 {

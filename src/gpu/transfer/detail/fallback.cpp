@@ -6,7 +6,10 @@ namespace miximus::gpu::transfer::detail {
 fallback_transfer_s::fallback_transfer_s(size_t size, direction_e dir)
     : transfer_i(size, dir)
 {
+    allocate_ptr();
 }
+
+fallback_transfer_s::~fallback_transfer_s() { free_ptr(); }
 
 bool fallback_transfer_s::perform_transfer(texture_s* texture)
 {

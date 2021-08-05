@@ -7,6 +7,7 @@ namespace miximus::gpu::transfer::detail {
 pinned_transfer_s::pinned_transfer_s(size_t size, direction_e dir)
     : transfer_i(size, dir)
 {
+    allocate_ptr();
 }
 
 pinned_transfer_s::~pinned_transfer_s()
@@ -25,6 +26,8 @@ pinned_transfer_s::~pinned_transfer_s()
         glBindBuffer(target, 0);
         glDeleteBuffers(1, &id_);
     }
+
+    free_ptr();
 }
 
 bool pinned_transfer_s::perform_copy()
