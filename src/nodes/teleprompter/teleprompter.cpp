@@ -11,12 +11,10 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 
-#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 #include <locale>
-#include <queue>
 
 namespace {
 using namespace miximus;
@@ -28,7 +26,11 @@ std::u32string decode_utf8(const std::string& utf8_string)
     struct destructible_codecvt : public std::codecvt<char32_t, char, std::mbstate_t>
     {
         using std::codecvt<char32_t, char, std::mbstate_t>::codecvt;
-        ~destructible_codecvt() = default;
+        ~destructible_codecvt() override                  = default;
+        destructible_codecvt(const destructible_codecvt&) = delete;
+        destructible_codecvt(destructible_codecvt&&)      = delete;
+        void operator=(const destructible_codecvt&) = delete;
+        void operator=(destructible_codecvt&&) = delete;
     };
 
     std::wstring_convert<destructible_codecvt, char32_t> utf32_converter;
@@ -39,10 +41,7 @@ class node_impl : public node_i
 {
     struct line_info_s
     {
-        std::mutex                         mtx;
-        std::atomic_bool                   queued{false};
-        std::atomic_bool                   ready{false};
-        bool                               transfered{false};
+        std::future<bool>                  ready;
         int                                line_no{-1};
         std::unique_ptr<render::surface_s> surface;
     };
@@ -58,46 +57,42 @@ class node_impl : public node_i
     input_interface_s<gpu::framebuffer_s*>  iface_fb_in_;
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_;
 
-    std::unique_ptr<gpu::draw_state_s> draw_state_;
-    render::font_loader_s              font_loader_;
-
-    gpu::vec2i_t last_framebuffer_size{0, 0};
-    int          font_size_{80};
-    int          line_height_extra_{50};
-    std::string  file_path_;
-
+    std::unique_ptr<gpu::draw_state_s>        draw_state_;
+    std::mutex                                font_mtx_;
+    render::font_loader_s                     font_loader_;
     std::future<text_s>                       text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
 
-    std::mutex               process_mtx_;
-    std::condition_variable  process_cv_;
-    std::queue<line_info_s*> process_lines_;
-    std::thread              process_thread_;
-    bool                     process_thread_run_{true};
+    gpu::vec2i_t last_framebuffer_size{0, 0};
+    int          font_size_{80};
+    int          line_height_extra_{50};
+    std::string  last_file_path_;
 
   public:
     explicit node_impl()
-        : process_thread_([this] { run_thread(); })
     {
         interfaces_.emplace("scroll_pos", &iface_scroll_pos_in_);
         interfaces_.emplace("fb_in", &iface_fb_in_);
         interfaces_.emplace("fb_out", &iface_fb_out_);
     }
 
-    ~node_impl()
+    node_impl(const node_impl&) = delete;
+    node_impl(node_impl&&)      = delete;
+    void operator=(const node_impl&) = delete;
+    void operator=(node_impl&&) = delete;
+
+    ~node_impl() override
     {
         if (text_future_.valid()) {
             text_future_.wait();
         }
 
-        {
-            std::unique_lock lock(process_mtx_);
-            process_thread_run_ = false;
+        for (auto& rl : render_lines_) {
+            if (rl->ready.valid()) {
+                rl->ready.get();
+            }
         }
-
-        process_cv_.notify_one();
-        process_thread_.join();
     }
 
     void prepare(core::app_state_s* app, const node_state_s& /*nodes*/, traits_s* /*traits*/) final
@@ -117,18 +112,19 @@ class node_impl : public node_i
         auto* fb = iface_fb_in_.resolve_value(app, nodes, state.get_connection_set("fb_in"));
         iface_fb_out_.set_value(fb);
 
-        double scroll_pos = state.get_option<double>("scroll_pos", 0);
-        scroll_pos = iface_scroll_pos_in_.resolve_value(app, nodes, state.get_connection_set("scroll_pos"), scroll_pos);
-
         if (fb == nullptr) {
             return;
         }
 
-        auto dim = fb->get_texture()->texture_dimensions();
+        auto scroll_pos = state.get_option<double>("scroll_pos", 0);
+        scroll_pos = iface_scroll_pos_in_.resolve_value(app, nodes, state.get_connection_set("scroll_pos"), scroll_pos);
 
-        if (file_path != file_path_ || dim != last_framebuffer_size) {
-            file_path_            = file_path;
-            last_framebuffer_size = dim;
+        gpu::vec2i_t fb_dim = fb->get_texture()->texture_dimensions();
+        gpu::vec2i_t tx_dim = {fb_dim.x, font_size_ * 2};
+
+        if (file_path != last_file_path_ || fb_dim != last_framebuffer_size) {
+            last_file_path_       = file_path;
+            last_framebuffer_size = fb_dim;
 
             for (auto& rl : render_lines_) {
                 rl->line_no = -1;
@@ -138,8 +134,14 @@ class node_impl : public node_i
                 text_future_.wait();
             }
 
-            text_        = {};
-            text_future_ = std::async(load_file, &font_loader_, app->font_registry(), file_path_, font_size_, dim.x);
+            text_ = {};
+
+            const auto* font_info = app->font_registry()->find_font_variant("Ubuntu", "Regular");
+            if (font_info == nullptr) {
+                return;
+            }
+
+            text_future_ = std::async(load_file, &font_loader_, font_info, last_file_path_, font_size_, fb_dim.x);
             assert(text_future_.valid());
         }
 
@@ -155,77 +157,86 @@ class node_impl : public node_i
             return;
         }
 
-        gpu::vec2i_t tx_dim{dim.x, font_size_ * 2};
-        int          count = (dim.y + font_size_ - 1) / font_size_;
-
         {
-            std::unique_lock lock(process_mtx_);
+            // Resize render line vector, this can not be a simple resize, since
+            // we need to wait for the future to finish
+            int total_line_height       = font_size_ + line_height_extra_;
+            int visible_lines_plus_four = (fb_dim.y + total_line_height - 1) / total_line_height + 4;
 
-            while (render_lines_.size() < count + 4) {
+            while (render_lines_.size() < visible_lines_plus_four) {
                 render_lines_.emplace_back(std::make_unique<line_info_s>());
             }
 
-            while (render_lines_.size() > count + 4 && !render_lines_.back()->queued) {
-                render_lines_.pop_back();
-            }
-
-            for (auto& rl : render_lines_) {
-                if (!rl->surface || rl->surface->dimensions() != tx_dim) {
-                    rl->surface = std::make_unique<render::surface_s>(tx_dim);
-                    rl->line_no = -1;
+            while (render_lines_.size() > visible_lines_plus_four) {
+                auto& rl = render_lines_.back();
+                if (rl->ready.valid()) {
+                    rl->ready.get();
                 }
+
+                render_lines_.pop_back();
             }
         }
 
-        int first_line = std::floor(scroll_pos);
-
         auto* shader = draw_state_->get_shader_program();
-        shader->set_uniform("scale", gpu::vec2_t{1, (float)-tx_dim.y / dim.y});
+        shader->set_uniform("scale", gpu::vec2_t{1, static_cast<float>(-tx_dim.y) / fb_dim.y});
 
         fb->bind();
 
-        for (int i = -2; i < count + 2; ++i) {
-            int l = first_line + i;
-            if (l < 0 || l >= text_.lines.size()) {
+        /**
+         * Iterate over render lines, starting 2 lines over visible area, ending 2 lines below
+         * The size of render_lines_ is (visible lines + 4)
+         */
+        for (int i = -2; i < static_cast<int>(render_lines_.size()) - 2; ++i) {
+            int txt_line_index = static_cast<int>(std::floor(scroll_pos)) + i;
+            if (txt_line_index < 0 || txt_line_index >= text_.lines.size()) {
                 continue;
             }
 
-            int r = l % render_lines_.size();
+            auto& rl = render_lines_[txt_line_index % render_lines_.size()];
 
-            auto& rl = render_lines_[r];
-            if (rl->line_no != l && !rl->queued) {
-                rl->queued     = true;
-                rl->ready      = false;
-                rl->transfered = false;
-                rl->line_no    = l;
-                {
-                    std::unique_lock lock(process_mtx_);
-                    process_lines_.push(rl.get());
+            if (rl->line_no != txt_line_index && !rl->ready.valid()) {
+                // The render line contains the wrong text line AND is available for processing
+                rl->line_no = txt_line_index;
+
+                if (!rl->surface || rl->surface->dimensions() != tx_dim) {
+                    rl->surface = std::make_unique<render::surface_s>(tx_dim);
                 }
 
-                process_cv_.notify_one();
-            }
+                auto&          t = text_.lines[txt_line_index];
+                std::u32string view(text_.str.data() + t.first, t.second);
 
-            if (!rl->ready) {
+                rl->ready = std::async(&node_impl::process_line, this, rl.get(), std::move(view));
                 continue;
             }
 
             auto* texture = rl->surface->texture();
 
-            if (!rl->transfered) {
-                std::unique_lock lock(rl->mtx);
-                auto*            transfer = rl->surface->transfer();
-                transfer->perform_copy();
-                transfer->wait_for_copy();
-                transfer->perform_transfer(texture);
-                rl->transfered = true;
+            if (rl->ready.valid()) {
+                // Render line has active processing
+
+                if (rl->ready.wait_for(0ms) == std::future_status::ready) {
+                    // Processing is done
+                    if (rl->ready.get() && rl->line_no == txt_line_index) {
+                        /**
+                         * Render line contains corrent line number after processing.
+                         * During high speed scrolling this might get out of sync, so it
+                         * can't be assumed that the line no is correct.
+                         */
+                        auto* transfer = rl->surface->transfer();
+                        transfer->perform_copy();
+                        transfer->wait_for_copy();
+                        transfer->perform_transfer(texture);
+                    }
+                } else {
+                    continue;
+                }
             }
 
             texture->bind(0);
 
             int    line_height_px = font_size_ + line_height_extra_;
-            double line_height    = (double)line_height_px / dim.y;
-            double pos            = line_height * ((double)l - scroll_pos);
+            double line_height    = static_cast<double>(line_height_px) / fb_dim.y;
+            double pos            = line_height * (static_cast<double>(txt_line_index) - scroll_pos);
 
             shader->set_uniform("offset", gpu::vec2_t{0, 1.0 - pos});
             draw_state_->draw();
@@ -240,7 +251,6 @@ class node_impl : public node_i
     {
         return {
             {"name", "Teleprompter"},
-            {"size", nlohmann::json::array({1280, 720})},
         };
     }
 
@@ -263,11 +273,11 @@ class node_impl : public node_i
 
     std::string_view type() const final { return "teleprompter"; }
 
-    static text_s load_file(render::font_loader_s*   loader,
-                            render::font_registry_s* registry,
-                            std::filesystem::path    path,
-                            int                      font_size,
-                            int                      width)
+    static text_s load_file(render::font_loader_s*        loader,
+                            const render::font_variant_s* font_info,
+                            std::filesystem::path&&       path,
+                            int                           font_size,
+                            int                           width)
     {
         text_s res = {};
 
@@ -280,11 +290,6 @@ class node_impl : public node_i
             std::string str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             res.str = decode_utf8(str);
         } catch (const std::ifstream::failure& e) {
-            return res;
-        }
-
-        auto font_info = registry->find_font_variant("Ubuntu", "Regular");
-        if (!font_info) {
             return res;
         }
 
@@ -307,37 +312,15 @@ class node_impl : public node_i
         return res;
     }
 
-    void run_thread()
+    bool process_line(line_info_s* line, std::u32string&& str)
     {
-        while (true) {
-            line_info_s* line{};
+        std::unique_lock lock(font_mtx_);
 
-            {
-                std::unique_lock lock(process_mtx_);
-                process_cv_.wait(lock, [&]() { return !process_thread_run_ || !process_lines_.empty(); });
-                if (!process_thread_run_) {
-                    break;
-                }
+        line->surface->clear({0, 0, 0, 0});
 
-                if (process_lines_.empty()) {
-                    continue;
-                }
+        text_.font->draw_line(str, line->surface.get(), {0, font_size_});
 
-                line = process_lines_.front();
-                process_lines_.pop();
-            }
-
-            std::unique_lock lock(line->mtx);
-
-            line->surface->clear({0, 0, 0, 0});
-
-            auto&               tl = text_.lines[line->line_no];
-            std::u32string_view view(text_.str.data() + tl.first, tl.second);
-            text_.font->draw_line(view, line->surface.get(), {0, font_size_});
-
-            line->queued = false;
-            line->ready  = true;
-        }
+        return true;
     }
 };
 
