@@ -1,4 +1,4 @@
-#include "registry.hpp"
+#include "font_registry.hpp"
 
 #define WIN32_LEAN_AND_MEAN
 #include <Shlobj.h>

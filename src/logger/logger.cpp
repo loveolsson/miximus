@@ -6,13 +6,6 @@
 
 using namespace spdlog;
 
-std::shared_ptr<spdlog::logger> getlog(const std::string& name)
-{
-    auto log = spdlog::get(name);
-    assert(log);
-    return log;
-}
-
 namespace miximus::logger {
 
 void init_loggers(level::level_enum level_)

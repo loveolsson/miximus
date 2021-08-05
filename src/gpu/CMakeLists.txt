@@ -21,7 +21,7 @@ add_library(gpu
     draw_state.cpp
 )
 
-find_package(glfw3 REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
 find_package(glm REQUIRED)
 
 target_link_libraries(gpu

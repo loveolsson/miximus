@@ -11,7 +11,7 @@ namespace miximus::render {
 
 font_instance_s::font_instance_s(FT_Library library, const std::filesystem::path& path, int index)
 {
-    auto error = FT_New_Face(library, path.c_str(), index, &face_);
+    auto error = FT_New_Face(library, path.u8string().c_str(), index, &face_);
     if (error == 0) {
         valid_ = true;
     }

@@ -24,11 +24,12 @@ add_executable(miximus
 )
 
 target_link_libraries(miximus
+PRIVATE
     web_server
     logger
     render
     app
-    glad
+    gpu
 
     msquic
     Boost::system

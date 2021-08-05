@@ -7,5 +7,5 @@ find_package(spdlog REQUIRED)
 
 target_link_libraries(logger 
 PUBLIC
-    spdlog::spdlog 
+spdlog::spdlog_header_only
 ) 

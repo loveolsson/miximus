@@ -46,7 +46,6 @@ if(WIN32)
 
     target_link_libraries(decklink PRIVATE
         ${DECKLINK_DVP_LIB}
-        glfw
         glad    
     )
 
@@ -75,7 +74,6 @@ else()
     )
 
     target_link_libraries(decklink PRIVATE
-        glfw
         glad
     )
 
