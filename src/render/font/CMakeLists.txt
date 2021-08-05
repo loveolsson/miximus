@@ -18,7 +18,7 @@ PRIVATE
 
 if(WIN32)
     target_sources(render PRIVATE
-        registry_win.cpp
+        font_registry_win.cpp
     )
 else()
     find_package(Fontconfig REQUIRED)
@@ -29,6 +29,6 @@ else()
     ) 
 
     target_sources(render PRIVATE
-        registry_fontconfig.cpp
+        font_registry_fontconfig.cpp
     )
 endif()
