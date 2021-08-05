@@ -5,6 +5,7 @@
 #include "nodes/decklink/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
 
+#include <chrono>
 #include <memory>
 #include <thread>
 
@@ -30,6 +31,11 @@ class app_state_s
     auto* ctx() { return ctx_.get(); }
     auto* decklink_registry() { return decklink_registry_.get(); }
     auto* font_registry() { return font_registry_.get(); }
+
+    struct
+    {
+        std::chrono::steady_clock::time_point pts;
+    } frame_info;
 };
 
 } // namespace miximus::core

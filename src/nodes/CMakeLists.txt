@@ -16,6 +16,7 @@ add_subdirectory(math)
 add_subdirectory(screen)
 add_subdirectory(utils)
 add_subdirectory(teleprompter)
+add_subdirectory(debug)
 
 find_package(nlohmann_json REQUIRED)
 

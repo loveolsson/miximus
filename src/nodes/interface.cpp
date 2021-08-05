@@ -366,7 +366,13 @@ gpu::texture_s* input_interface_s<gpu::texture_s*>::resolve_value(core::app_stat
                 if (fb == nullptr) {
                     break;
                 }
-                return fb->get_texture();
+
+                auto* texture = fb->get_texture();
+                if (texture != nullptr) {
+                    texture->generate_mip_maps();
+                }
+
+                return texture;
             }
 
             default:

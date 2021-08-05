@@ -80,7 +80,7 @@ class node_impl : public node_i
         sync.gpu_wait();
 
         glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0, 1.0, 0, 1.0);
+        glClearColor(0, 0, 0, 0);
 
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
 
@@ -142,6 +142,6 @@ class node_impl : public node_i
 
 namespace miximus::nodes::screen {
 
-std::shared_ptr<node_i> create_node() { return std::make_shared<node_impl>(); }
+std::shared_ptr<node_i> create_screen_output_node() { return std::make_shared<node_impl>(); }
 
 } // namespace miximus::nodes::screen

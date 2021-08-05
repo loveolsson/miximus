@@ -11,7 +11,10 @@ export class TeleprompterNode extends Node {
     this.addInputInterface("fb_in", undefined, undefined, {
       type: "framebuffer",
     });
+    this.addInputInterface("scroll_pos", "NumberOption", 0, {
+      type: "f64",
+    });
     this.addOutputInterface("fb_out", { type: "framebuffer" });
-    this.addOption("text", "InputOption", "");
+    this.addOption("file_path", "InputOption", "");
   }
 }

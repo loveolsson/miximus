@@ -6,6 +6,7 @@ import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode } from "./decklink";
 import { FrameBufferNode } from "./utils";
 import { TeleprompterNode } from "./teleprompter";
+import { SinusSourceNode } from "./debug";
 
 /**
  * Color-blind optimized palette
@@ -61,4 +62,6 @@ export function register_types(editor: Editor): void {
   editor.registerNodeType(type_e.framebuffer, FrameBufferNode, "Util");
 
   editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
+
+  editor.registerNodeType(type_e.sinus_source, SinusSourceNode, "Debug");
 }

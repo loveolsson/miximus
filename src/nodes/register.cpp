@@ -1,4 +1,5 @@
 #include "register.hpp"
+#include "nodes/debug/debug.hpp"
 #include "nodes/decklink/decklink.hpp"
 #include "nodes/math/math.hpp"
 #include "nodes/node.hpp"
@@ -10,23 +11,27 @@ namespace miximus::nodes {
 
 void register_nodes(constructor_map_t* map)
 {
-    using namespace nodes;
+    // Math nodes
+    map->emplace("math_i64", math::create_i64_node);
+    map->emplace("math_f64", math::create_f64_node);
+    map->emplace("math_vec2", math::create_vec2_node);
+    map->emplace("math_vec2i", math::create_vec2i_node);
 
-    auto reg = [map](std::string_view name, constructor_t&& c) { map->emplace(name, std::move(c)); };
+    // Utility nodes
+    map->emplace("framebuffer", utils::create_framebuffer_node);
 
-    reg("math_i64", math::create_i64_node);
-    reg("math_f64", math::create_f64_node);
-    reg("math_vec2", math::create_vec2_node);
-    reg("math_vec2i", math::create_vec2i_node);
+    // Input nodes
+    map->emplace("decklink_input", decklink::create_input_node);
 
-    reg("framebuffer", utils::create_framebuffer_node);
+    // Output nodes
+    map->emplace("screen_output", screen::create_screen_output_node);
+    // map->emplace("decklink_output", decklink::create_output_node);
 
-    reg("screen_output", screen::create_node);
+    // Render nodes
+    map->emplace("teleprompter", teleprompter::create_teleprompter_node);
 
-    reg("teleprompter", teleprompter::create_teleprompter_node);
-
-    reg("decklink_input", decklink::create_input_node);
-    // register_node_type("decklink_output", decklink::create_output_node);
+    // Debug nodes
+    map->emplace("sinus_source", debug::create_sinus_source_node);
 }
 
 } // namespace miximus::nodes

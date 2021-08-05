@@ -3,6 +3,6 @@
 
 namespace miximus::nodes::screen {
 
-std::shared_ptr<node_i> create_node();
+std::shared_ptr<node_i> create_screen_output_node();
 
 } // namespace miximus::nodes::screen

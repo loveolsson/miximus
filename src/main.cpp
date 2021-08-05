@@ -91,8 +91,8 @@ int main(int argc, char* argv[])
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, web_server));
 
-            auto    time     = std::chrono::steady_clock::now();
-            int64_t frame_no = 0;
+            app.frame_info.pts = std::chrono::steady_clock::now();
+            int64_t frame_no   = 0;
 
             while (g_signal_status == 0) {
                 // getlog("app")->info("Frame no {}", frame_no++);
@@ -101,14 +101,14 @@ int main(int argc, char* argv[])
 
                 gpu::context_s::poll();
 
-                time += std::chrono::milliseconds(16);
+                app.frame_info.pts += std::chrono::milliseconds(16);
 
                 auto now = std::chrono::steady_clock::now();
-                if (time < now) {
+                if (app.frame_info.pts < now) {
                     getlog("app")->info("Late frame");
-                    // time = now;
+                    app.frame_info.pts = now;
                 } else {
-                    std::this_thread::sleep_until(time);
+                    std::this_thread::sleep_until(app.frame_info.pts);
                 }
 
                 if (frame_no++ == 500) {

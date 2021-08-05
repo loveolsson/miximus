@@ -40,7 +40,7 @@ class node_impl : public node_i
         framebuffer_->bind();
         auto dim = framebuffer_->get_texture()->texture_dimensions();
         glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0.5, 0, 0, 1.0);
+        glClearColor(0, 0, 0, 0);
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
         gpu::framebuffer_s::unbind();
 

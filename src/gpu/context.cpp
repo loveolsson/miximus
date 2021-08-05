@@ -132,6 +132,7 @@ context_s::context_s(bool visible, context_s* parent)
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, GL_VERSION_MAJOR);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, GL_VERSION_MINOR);
         glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+        glfwWindowHint(GLFW_SAMPLES, 4);
         // glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
         glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
@@ -181,6 +182,11 @@ context_s::context_s(bool visible, context_s* parent)
     if (visible) {
         glfwSwapInterval(0);
     }
+
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glEnablei(GL_BLEND, 0);
+    glEnable(GL_MULTISAMPLE);
 
     rewind_current();
 }
