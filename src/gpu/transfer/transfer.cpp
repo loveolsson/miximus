@@ -1,6 +1,9 @@
 #include "transfer.hpp"
 #include "detail/fallback.hpp"
-#include "detail/pinned.hpp"
+#include "detail/persistent.hpp"
+#include "gpu/context.hpp"
+
+#include <string_view>
 
 #ifdef _MSC_VER
 #include <malloc.h>
@@ -57,7 +60,17 @@ bool transfer_i::end_texture_use(type_e type, gpu::texture_s* /*texture*/)
 
 transfer_i::type_e transfer_i::get_prefered_type()
 {
-    static type_e type = []() { return type_e::pinned; }();
+    static type_e type = []() {
+        const GLubyte*   renderer = glGetString(GL_RENDERER);
+        std::string_view renderer_view(reinterpret_cast<const char*>(renderer));
+
+        bool has_dvp        = renderer_view.find("Quadro") != std::string_view::npos;
+        bool has_amd_pinned = gpu::context_s::has_extension("GL_AMD_pinned_memory");
+
+        // TODO: Implement
+
+        return type_e::persistent;
+    }();
     return type;
 }
 
@@ -68,7 +81,7 @@ transfer_i::create_transfer(transfer_i::type_e type, size_t size, transfer_i::di
         case type_e::basic:
             return std::make_unique<detail::fallback_transfer_s>(size, dir);
 
-        case type_e::pinned:
+        case type_e::persistent:
             return std::make_unique<detail::pinned_transfer_s>(size, dir);
 
         default:

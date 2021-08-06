@@ -36,12 +36,13 @@ find_package(Threads REQUIRED)
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_DEBUG_LIBS OFF)
 set(Boost_USE_RELEASE_LIBS ON)
-find_package(Boost COMPONENTS system REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system fiber)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/frozen/include
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/stb
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/concurrentqueue
+    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/fiberpool/include
 )
 
 option(MIXIMUS_TUNE_NATIVE OFF)

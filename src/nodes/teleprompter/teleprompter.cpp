@@ -20,6 +20,7 @@ namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace std::chrono_literals;
+using namespace boost::fibers;
 
 std::u32string decode_utf8(const std::string& utf8_string)
 {
@@ -41,7 +42,7 @@ class node_impl : public node_i
 {
     struct line_info_s
     {
-        std::future<bool>                  ready;
+        ::future<bool>                     ready;
         int                                line_no{-1};
         std::unique_ptr<render::surface_s> surface;
     };
@@ -60,7 +61,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::draw_state_s>        draw_state_;
     std::mutex                                font_mtx_;
     render::font_loader_s                     font_loader_;
-    std::future<text_s>                       text_future_;
+    ::future<text_s>                          text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
 
@@ -141,12 +142,18 @@ class node_impl : public node_i
                 return;
             }
 
-            text_future_ = std::async(load_file, &font_loader_, font_info, last_file_path_, font_size_, fb_dim.x);
+            auto future =
+                app->thread_pool()->submit(load_file, &font_loader_, font_info, last_file_path_, font_size_, fb_dim.x);
+
+            if (future) {
+                text_future_ = std::move(*future);
+            }
+
             assert(text_future_.valid());
         }
 
         if (text_future_.valid()) {
-            if (text_future_.wait_for(0ms) == std::future_status::ready) {
+            if (text_future_.wait_for(0ms) == ::future_status::ready) {
                 text_ = std::move(text_future_.get());
             } else {
                 return;
@@ -205,7 +212,11 @@ class node_impl : public node_i
                 auto&          t = text_.lines[txt_line_index];
                 std::u32string view(text_.str.data() + t.first, t.second);
 
-                rl->ready = std::async(&node_impl::process_line, this, rl.get(), std::move(view));
+                auto future = app->thread_pool()->submit(&node_impl::process_line, this, rl.get(), std::move(view));
+
+                if (future) {
+                    rl->ready = std::move(*future);
+                }
                 continue;
             }
 
@@ -214,7 +225,7 @@ class node_impl : public node_i
             if (rl->ready.valid()) {
                 // Render line has active processing
 
-                if (rl->ready.wait_for(0ms) == std::future_status::ready) {
+                if (rl->ready.wait_for(0ms) == ::future_status::ready) {
                     // Processing is done
                     if (rl->ready.get() && rl->line_no == txt_line_index) {
                         /**
@@ -243,7 +254,6 @@ class node_impl : public node_i
         }
 
         gpu::texture_s::unbind(0);
-
         gpu::framebuffer_s::unbind();
     }
 

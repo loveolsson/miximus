@@ -14,7 +14,7 @@ void sync_s::gpu_wait() { glWaitSync(sync_, 0, GL_TIMEOUT_IGNORED); }
 bool sync_s::cpu_wait(std::chrono::nanoseconds timeout)
 {
     auto res = glClientWaitSync(sync_, 0, timeout.count());
-    return res != GL_TIMEOUT_EXPIRED && res != GL_WAIT_FAILED;
+    return res != GL_TIMEOUT_EXPIRED;
 }
 
 } // namespace miximus::gpu

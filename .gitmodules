@@ -19,3 +19,6 @@
 [submodule "submodules/sanitizers-cmake"]
 	path = submodules/sanitizers-cmake
 	url = git://github.com/arsenm/sanitizers-cmake.git
+[submodule "submodules/fiberpool"]
+	path = submodules/fiberpool
+	url = https://github.com/moneroexamples/fiberpool.git

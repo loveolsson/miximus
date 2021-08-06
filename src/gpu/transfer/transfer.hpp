@@ -14,7 +14,7 @@ class transfer_i
     enum class type_e
     {
         basic,
-        pinned,
+        persistent,
     };
 
     enum class direction_e

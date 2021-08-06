@@ -21,6 +21,8 @@ add_library(gpu
     draw_state.cpp
 )
 
+add_subdirectory(transfer)
+
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm REQUIRED)
 
@@ -34,4 +36,3 @@ PUBLIC
     glm::glm
 )   
 
-add_subdirectory(transfer)

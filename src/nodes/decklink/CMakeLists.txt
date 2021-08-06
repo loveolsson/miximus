@@ -11,6 +11,8 @@ PRIVATE
 )
 
 target_link_libraries(nodes
+PRIVATE
+    gpu
 PUBLIC
     decklink
 )

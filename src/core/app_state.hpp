@@ -5,6 +5,8 @@
 #include "nodes/decklink/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
 
+#include <FiberPool.hpp>
+
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -17,7 +19,8 @@ class app_state_s
 
     io_service_t                        cfg_executor_;
     std::unique_ptr<io_service_t::work> cfg_work_;
-    std::unique_ptr<std::thread>        cfg_thread_;
+    std::thread                         cfg_thread_;
+    FiberPool::FiberPool<>              thread_pool_;
 
     std::unique_ptr<gpu::context_s>                       ctx_;
     std::unique_ptr<nodes::decklink::decklink_registry_s> decklink_registry_;
@@ -31,6 +34,7 @@ class app_state_s
     auto* ctx() { return ctx_.get(); }
     auto* decklink_registry() { return decklink_registry_.get(); }
     auto* font_registry() { return font_registry_.get(); }
+    auto* thread_pool() { return &thread_pool_; }
 
     struct
     {

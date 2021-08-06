@@ -33,6 +33,7 @@ PRIVATE
 
     msquic
     Boost::system
+    Boost::fiber
 )
 
 add_sanitizers(miximus)

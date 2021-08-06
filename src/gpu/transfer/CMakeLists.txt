@@ -4,6 +4,6 @@ PRIVATE
     transfer.cpp
     detail/fallback.hpp
     detail/fallback.cpp
-    detail/pinned.hpp
-    detail/pinned.cpp
+    detail/persistent.hpp
+    detail/persistent.cpp
 )

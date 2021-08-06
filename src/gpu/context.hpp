@@ -50,6 +50,7 @@ class context_s
     static void flush();
     static void poll();
     static void terminate();
+    static bool has_extension(const char* str);
 
     auto get_lock() { return std::unique_lock(mtx_); };
 

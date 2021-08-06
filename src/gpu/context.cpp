@@ -284,6 +284,8 @@ void context_s::poll() { glfwPollEvents(); }
 
 void context_s::terminate() { glfwTerminate(); }
 
+bool context_s::has_extension(const char* name) { return glfwExtensionSupported(name) != 0; }
+
 shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 {
     using name_e = shader_program_s::name_e;
