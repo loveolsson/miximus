@@ -232,7 +232,7 @@ void context_s::set_fullscreen_monitor(const std::string& name, recti_s rect)
         }
 
         const auto* mode = glfwGetVideoMode(it->second);
-        glfwSetWindowMonitor(window_, it->second, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
+        glfwSetWindowMonitor(window_, it->second, 0, 0, mode->width, mode->height, 60);
 
     } else {
         glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);

@@ -24,7 +24,7 @@ class node_impl : public node_i
     {
         std::unique_ptr<gpu::framebuffer_s> framebuffer;
         std::unique_ptr<gpu::sync_s>        draw_sync;
-        std::unique_ptr<gpu::sync_s>        render_sync;
+        // std::unique_ptr<gpu::sync_s>        render_sync;
     };
 
     input_interface_s<gpu::texture_s*> iface_tex_;
@@ -101,7 +101,8 @@ class node_impl : public node_i
 
         {
             std::unique_lock lock(frame_mtx_);
-            if (frames_free_.empty()) {
+            if (frames_free_.size() < 2) {
+                // getlog("app")->warn("No frame available for render");
                 return;
             }
 
@@ -109,10 +110,10 @@ class node_impl : public node_i
             frames_free_.pop();
         }
 
-        if (frame.render_sync) {
-            frame.render_sync->gpu_wait();
-            frame.render_sync.reset();
-        }
+        // if (frame.render_sync) {
+        //     frame.render_sync->gpu_wait();
+        //     frame.render_sync.reset();
+        // }
 
         if (!frame.framebuffer || frame.framebuffer->get_texture()->texture_dimensions() != dim) {
             frame.framebuffer = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
@@ -188,6 +189,8 @@ class node_impl : public node_i
 
     bool run()
     {
+        auto log = getlog("app");
+
         context_->make_current();
         gpu::draw_state_s draw_state;
         auto*             shader = context_->get_shader(gpu::shader_program_s::name_e::basic);
@@ -211,6 +214,7 @@ class node_impl : public node_i
                     auto& f = frames_rendered_.front();
                     frames_free_.emplace(std::move(f));
                     frames_rendered_.pop();
+                    log->warn("Discarding frame");
                 }
 
                 if (!frames_rendered_.empty()) {
@@ -233,16 +237,19 @@ class node_impl : public node_i
                 draw_state.draw();
                 gpu::texture_s::unbind(0);
 
-                context_->flush();
-
                 context_->swap_buffers();
 
-                frame.render_sync = std::make_unique<gpu::sync_s>();
+                // gpu::sync_s sync;
+                // while (!sync.cpu_wait(0ms)) {
+                //     std::this_thread::sleep_for(1ms);
+                // }
 
                 {
                     std::unique_lock lock(frame_mtx_);
                     frames_free_.push(std::move(frame));
                 }
+
+                // frame.render_sync = std::make_unique<gpu::sync_s>();
             }
         }
 

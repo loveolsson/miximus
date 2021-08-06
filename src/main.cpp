@@ -101,7 +101,7 @@ int main(int argc, char* argv[])
 
                 gpu::context_s::poll();
 
-                app.frame_info.pts += std::chrono::milliseconds(1000) / 30;
+                app.frame_info.pts += std::chrono::milliseconds(1000) / 60;
 
                 auto now = std::chrono::steady_clock::now();
                 if (app.frame_info.pts < now) {
