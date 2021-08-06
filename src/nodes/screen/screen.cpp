@@ -11,21 +11,38 @@
 #include "nodes/interface.hpp"
 
 #include <memory>
+#include <queue>
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
+using namespace std::chrono_literals;
 
 class node_impl : public node_i
 {
-    std::unique_ptr<gpu::draw_state_s> draw_state_;
+    struct fb_info_s
+    {
+        std::unique_ptr<gpu::framebuffer_s> framebuffer;
+        std::unique_ptr<gpu::sync_s>        draw_sync;
+        std::unique_ptr<gpu::sync_s>        render_sync;
+    };
+
     input_interface_s<gpu::texture_s*> iface_tex_;
     std::unique_ptr<gpu::context_s>    context_;
+    std::unique_ptr<gpu::draw_state_s> draw_state_;
+
+    std::mutex              frame_mtx_;
+    std::condition_variable frame_cv_;
+    std::queue<fb_info_s>   frames_rendered_;
+    std::queue<fb_info_s>   frames_free_;
+
+    bool              thread_run_{};
+    std::future<bool> thread_future_{};
 
   public:
     explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
 
-    ~node_impl() override = default;
+    ~node_impl() override { stop_thread(); }
 
     node_impl(const node_impl&) = delete;
     node_impl(node_impl&&)      = delete;
@@ -40,7 +57,16 @@ class node_impl : public node_i
             traits->must_run = true;
 
             if (!context_) {
-                context_ = gpu::context_s::create_unique_context(true, app->ctx());
+                std::unique_lock lock(frame_mtx_);
+
+                context_    = gpu::context_s::create_unique_context(true, app->ctx());
+                thread_run_ = true;
+
+                for (int i = 0; i < 4; ++i) {
+                    frames_free_.emplace();
+                }
+
+                thread_future_ = std::async(&node_impl::run, this);
             }
 
             gpu::recti_s rect{};
@@ -57,11 +83,7 @@ class node_impl : public node_i
                 context_->set_window_rect(rect);
             }
         } else if (context_) {
-            if (draw_state_) {
-                context_->make_current();
-                draw_state_.reset();
-                gpu::context_s::rewind_current();
-            }
+            stop_thread();
             context_.reset();
         }
     }
@@ -75,9 +97,28 @@ class node_impl : public node_i
         auto* texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
         auto  dim     = context_->get_framebuffer_size();
 
-        gpu::sync_s sync;
-        context_->make_current();
-        sync.gpu_wait();
+        fb_info_s frame;
+
+        {
+            std::unique_lock lock(frame_mtx_);
+            if (frames_free_.empty()) {
+                return;
+            }
+
+            frame = std::move(frames_free_.front());
+            frames_free_.pop();
+        }
+
+        if (frame.render_sync) {
+            frame.render_sync->gpu_wait();
+            frame.render_sync.reset();
+        }
+
+        if (!frame.framebuffer || frame.framebuffer->get_texture()->texture_dimensions() != dim) {
+            frame.framebuffer = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
+        }
+
+        frame.framebuffer->bind();
 
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
@@ -101,8 +142,16 @@ class node_impl : public node_i
             gpu::texture_s::unbind(0);
         }
 
-        context_->swap_buffers();
-        gpu::context_s::rewind_current();
+        gpu::framebuffer_s::unbind();
+
+        frame.draw_sync = std::make_unique<gpu::sync_s>();
+
+        {
+            std::unique_lock lock(frame_mtx_);
+            frames_rendered_.emplace(std::move(frame));
+        }
+
+        frame_cv_.notify_one();
     }
 
     nlohmann::json get_default_options() const final
@@ -136,7 +185,94 @@ class node_impl : public node_i
     }
 
     std::string_view type() const final { return "screen_output"; }
-};
+
+    bool run()
+    {
+        context_->make_current();
+        gpu::draw_state_s draw_state;
+        auto*             shader = context_->get_shader(gpu::shader_program_s::name_e::basic);
+        draw_state.set_shader_program(shader);
+        draw_state.set_vertex_data(gpu::full_screen_quad_verts);
+        shader->set_uniform("offset", gpu::vec2_t{0, 0});
+        shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
+
+        while (true) {
+            fb_info_s frame;
+
+            {
+                std::unique_lock lock(frame_mtx_);
+                frame_cv_.wait(lock, [this]() { return !thread_run_ || !frames_rendered_.empty(); });
+
+                if (!thread_run_) {
+                    break;
+                }
+
+                if (frames_rendered_.size() > 2) {
+                    auto& f = frames_rendered_.front();
+                    frames_free_.emplace(std::move(f));
+                    frames_rendered_.pop();
+                }
+
+                if (!frames_rendered_.empty()) {
+                    frame = std::move(frames_rendered_.front());
+                    frames_rendered_.pop();
+                }
+            }
+
+            if (frame.draw_sync && frame.framebuffer) {
+                frame.draw_sync->gpu_wait();
+                frame.draw_sync.reset();
+
+                auto* texture = frame.framebuffer->get_texture();
+                auto  dim     = texture->texture_dimensions();
+
+                glViewport(0, 0, dim.x, dim.y);
+                glClearColor(0, 0, 0, 0);
+
+                texture->bind(0);
+                draw_state.draw();
+                gpu::texture_s::unbind(0);
+
+                context_->flush();
+
+                context_->swap_buffers();
+
+                frame.render_sync = std::make_unique<gpu::sync_s>();
+
+                {
+                    std::unique_lock lock(frame_mtx_);
+                    frames_free_.push(std::move(frame));
+                }
+            }
+        }
+
+        gpu::context_s::rewind_current();
+
+        return true;
+    }
+
+    void stop_thread()
+    {
+        {
+            std::unique_lock lock(frame_mtx_);
+            thread_run_ = false;
+
+            while (!frames_rendered_.empty()) {
+                frames_rendered_.pop();
+            }
+
+            while (!frames_free_.empty()) {
+                frames_free_.pop();
+            }
+        }
+
+        frame_cv_.notify_one();
+
+        if (thread_future_.valid()) {
+            thread_future_.get();
+        }
+    }
+}; // namespace
 
 } // namespace
 

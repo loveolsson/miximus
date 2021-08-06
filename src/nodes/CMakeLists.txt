@@ -25,6 +25,7 @@ PRIVATE
     gpu
     decklink
     render
+    Boost::fiber
 PUBLIC
     nlohmann_json::nlohmann_json
 )

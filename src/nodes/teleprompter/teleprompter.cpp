@@ -137,7 +137,7 @@ class node_impl : public node_i
 
             text_ = {};
 
-            const auto* font_info = app->font_registry()->find_font_variant("Ubuntu", "Regular");
+            const auto* font_info = app->font_registry()->find_font_variant("Ubuntu", "Medium");
             if (font_info == nullptr) {
                 return;
             }
@@ -237,6 +237,7 @@ class node_impl : public node_i
                         transfer->perform_copy();
                         transfer->wait_for_copy();
                         transfer->perform_transfer(texture);
+                        texture->generate_mip_maps();
                     }
                 } else {
                     continue;
