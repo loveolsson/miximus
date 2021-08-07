@@ -33,7 +33,7 @@ bool sync_s::cpu_wait(std::chrono::nanoseconds timeout)
         return false;
     }
 
-    auto res = glClientWaitSync(sync_, 0, timeout.count());
+    auto res = glClientWaitSync(sync_, GL_SYNC_FLUSH_COMMANDS_BIT, timeout.count());
     return res != GL_TIMEOUT_EXPIRED;
 }
 

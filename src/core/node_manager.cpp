@@ -12,6 +12,7 @@
 
 namespace miximus::core {
 using nlohmann::json;
+using namespace std::chrono_literals;
 
 static auto log() { return getlog("app"); };
 
@@ -393,7 +394,7 @@ void node_manager_s::tick_one_frame(app_state_s* app)
     }
 
     gpu::sync_s sync;
-    sync.cpu_wait(std::chrono::milliseconds(50));
+    sync.cpu_wait(100ms);
     // app->ctx()->flush();
 
     for (auto& [_, record] : nodes_copy_) {

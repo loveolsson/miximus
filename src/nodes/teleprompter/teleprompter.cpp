@@ -43,6 +43,7 @@ class node_impl : public node_i
 {
     struct line_info_s
     {
+        std::mutex                         mtx;
         ::future<gpu::sync_s>              ready;
         int                                line_no{-1};
         std::unique_ptr<render::surface_s> surface;
@@ -50,8 +51,7 @@ class node_impl : public node_i
 
     struct text_s
     {
-        std::u32string                           str;
-        std::vector<std::pair<size_t, size_t>>   lines;
+        std::vector<std::u32string>              lines;
         std::unique_ptr<render::font_instance_s> font;
     };
 
@@ -69,8 +69,8 @@ class node_impl : public node_i
     std::unique_ptr<gpu::context_s>           ctx_;
 
     gpu::vec2i_t last_framebuffer_size{0, 0};
-    int          font_size_{80};
-    int          line_height_extra_{50};
+    int          font_size_{100};
+    int          line_height_extra_{70};
     std::string  last_file_path_;
 
   public:
@@ -170,7 +170,7 @@ class node_impl : public node_i
             }
         }
 
-        if (text_.str.empty()) {
+        if (text_.lines.empty()) {
             return;
         }
 
@@ -215,20 +215,18 @@ class node_impl : public node_i
                 // The render line contains the wrong text line AND is available for processing
                 rl->line_no = txt_line_index;
 
-                if (!rl->surface || rl->surface->dimensions() != tx_dim) {
-                    rl->surface = std::make_unique<render::surface_s>(tx_dim);
-                }
+                auto& t = text_.lines[txt_line_index];
 
-                auto&          t = text_.lines[txt_line_index];
-                std::u32string view(text_.str.data() + t.first, t.second);
-
-                auto future = app->thread_pool()->submit(&node_impl::process_line, this, rl.get(), std::move(view));
+                auto future = app->thread_pool()->submit(&node_impl::process_line, this, rl.get(), t, tx_dim);
+                assert(future);
 
                 if (future) {
                     rl->ready = std::move(*future);
                 }
                 continue;
             }
+
+            std::unique_lock lock(rl->mtx);
 
             auto* texture = rl->surface->texture();
 
@@ -302,7 +300,8 @@ class node_impl : public node_i
                             int                           font_size,
                             int                           width)
     {
-        text_s res = {};
+        text_s         res = {};
+        std::u32string str;
 
         try {
             std::ifstream file(path);
@@ -310,8 +309,8 @@ class node_impl : public node_i
                 return res;
             }
 
-            std::string str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            res.str = decode_utf8(str);
+            std::string utf_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            str = decode_utf8(utf_str);
         } catch (const std::ifstream::failure& e) {
             return res;
         }
@@ -326,18 +325,26 @@ class node_impl : public node_i
 
         size_t pos = 0;
 
-        while (pos < res.str.size()) {
-            auto info = res.font->flow_line(res.str.substr(pos), width);
-            res.lines.emplace_back(pos, info.consumed_chars);
+        while (pos < str.size()) {
+            auto info = res.font->flow_line(str.substr(pos), width);
+            res.lines.emplace_back(str.begin() + pos, str.begin() + pos + info.consumed_chars);
             pos += info.consumed_chars;
         }
 
         return res;
     }
 
-    gpu::sync_s process_line(line_info_s* line, std::u32string&& str)
+    gpu::sync_s process_line(line_info_s* line, std::u32string str, gpu::vec2i_t dim)
     {
-        std::unique_lock lock(font_mtx_);
+        std::unique_lock line_lock(line->mtx);
+        std::unique_lock font_lock(font_mtx_);
+
+        if (!line->surface || line->surface->dimensions() != dim) {
+            std::unique_lock lock(ctx_mtx_);
+            ctx_->make_current();
+            line->surface = std::make_unique<render::surface_s>(dim);
+            gpu::context_s::rewind_current();
+        }
 
         line->surface->clear({0, 0, 0, 0});
 
