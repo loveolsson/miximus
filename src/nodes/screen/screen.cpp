@@ -35,6 +35,7 @@ class node_impl : public node_i
     std::condition_variable frame_cv_;
     std::queue<fb_info_s>   frames_rendered_;
     std::queue<fb_info_s>   frames_free_;
+    fb_info_s               frame_;
 
     bool              thread_run_{};
     std::future<bool> thread_future_{};
@@ -103,8 +104,6 @@ class node_impl : public node_i
             int i = 0;
         }
 
-        fb_info_s frame;
-
         {
             std::unique_lock lock(frame_mtx_);
             if (frames_free_.size() < 2) {
@@ -112,20 +111,20 @@ class node_impl : public node_i
                 return;
             }
 
-            frame = std::move(frames_free_.front());
+            frame_ = std::move(frames_free_.front());
             frames_free_.pop();
         }
 
-        if (frame.sync) {
-            frame.sync->gpu_wait();
-            frame.sync.reset();
+        if (frame_.sync) {
+            frame_.sync->gpu_wait();
+            frame_.sync.reset();
         }
 
-        if (!frame.framebuffer || frame.framebuffer->texture()->texture_dimensions() != dim) {
-            frame.framebuffer = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
+        if (!frame_.framebuffer || frame_.framebuffer->texture()->texture_dimensions() != dim) {
+            frame_.framebuffer = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
         }
 
-        frame.framebuffer->bind();
+        frame_.framebuffer->bind();
 
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
@@ -151,23 +150,29 @@ class node_impl : public node_i
 
         gpu::framebuffer_s::unbind();
 
-        auto* fb_tex = frame.framebuffer->texture();
-        if (fb_tex->texture_dimensions() != frame.screen_size) {
+        auto* fb_tex = frame_.framebuffer->texture();
+        if (fb_tex->texture_dimensions() != frame_.screen_size) {
             fb_tex->generate_mip_maps();
         }
 
+        frame_.sync = std::make_unique<gpu::sync_s>();
+
         // EXPERIMENT: behaves better on Linux
-        glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+        // glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
-        frame.sync        = std::make_unique<gpu::sync_s>();
-        frame.screen_size = context_->get_framebuffer_size();
+        frame_.screen_size = context_->get_framebuffer_size();
+    }
 
-        {
-            std::unique_lock lock(frame_mtx_);
-            frames_rendered_.emplace(std::move(frame));
+    void complete(core::app_state_s* /*app*/) final
+    {
+        if (frame_.framebuffer) {
+            {
+                std::unique_lock lock(frame_mtx_);
+                frames_rendered_.emplace(std::move(frame_));
+            }
+
+            frame_cv_.notify_one();
         }
-
-        frame_cv_.notify_one();
     }
 
     nlohmann::json get_default_options() const final
@@ -225,7 +230,7 @@ class node_impl : public node_i
                     break;
                 }
 
-                if (frames_rendered_.size() > 2) {
+                if (frames_rendered_.size() > 1) {
                     auto& f = frames_rendered_.front();
                     f.sync.reset();
                     frames_free_.emplace(std::move(f));
@@ -250,7 +255,7 @@ class node_impl : public node_i
                 glClearColor(0, 0, 0, 0);
 
                 // EXPERIMENT: behaves better on Linux
-                glTextureBarrier();
+                // glTextureBarrier();
 
                 texture->bind(0);
                 draw_state.draw();
@@ -258,10 +263,6 @@ class node_impl : public node_i
 
                 context_->swap_buffers();
 
-                // gpu::sync_s sync;
-                // while (!sync.cpu_wait(0ms)) {
-                //     std::this_thread::sleep_for(1ms);
-                // }
                 frame.sync = std::make_unique<gpu::sync_s>();
 
                 {
@@ -289,6 +290,8 @@ class node_impl : public node_i
             while (!frames_free_.empty()) {
                 frames_free_.pop();
             }
+
+            frame_ = {};
         }
 
         frame_cv_.notify_one();

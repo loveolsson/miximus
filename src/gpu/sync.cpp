@@ -1,11 +1,7 @@
 #include "gpu/sync.hpp"
 
 namespace miximus::gpu {
-sync_s::sync_s()
-{
-    sync_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    glFlush();
-}
+sync_s::sync_s() { sync_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
 
 sync_s::~sync_s()
 {

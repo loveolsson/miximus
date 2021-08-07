@@ -182,7 +182,7 @@ context_s::context_s(bool visible, context_s* parent)
     if (visible) {
         glfwSwapInterval(1);
     } else {
-        glfwSwapInterval(0);
+        //        glfwSwapInterval(0);
     }
 
     glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
