@@ -2,6 +2,7 @@
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
+#include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
@@ -42,7 +43,7 @@ class node_impl : public node_i
 {
     struct line_info_s
     {
-        ::future<bool>                     ready;
+        ::future<gpu::sync_s>              ready;
         int                                line_no{-1};
         std::unique_ptr<render::surface_s> surface;
     };
@@ -59,11 +60,13 @@ class node_impl : public node_i
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_;
 
     std::unique_ptr<gpu::draw_state_s>        draw_state_;
-    std::mutex                                font_mtx_;
+    ::mutex                                   font_mtx_;
     render::font_loader_s                     font_loader_;
     ::future<text_s>                          text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
+    ::mutex                                   ctx_mtx_;
+    std::unique_ptr<gpu::context_s>           ctx_;
 
     gpu::vec2i_t last_framebuffer_size{0, 0};
     int          font_size_{80};
@@ -98,6 +101,10 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& /*nodes*/, traits_s* /*traits*/) final
     {
+        if (!ctx_) {
+            ctx_ = gpu::context_s::create_unique_context(false, app->ctx());
+        }
+
         if (!draw_state_) {
             draw_state_  = std::make_unique<gpu::draw_state_s>();
             auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
@@ -132,12 +139,15 @@ class node_impl : public node_i
             }
 
             if (text_future_.valid()) {
-                text_future_.wait();
+                text_future_.get();
             }
 
             text_ = {};
 
             const auto* font_info = app->font_registry()->find_font_variant("Ubuntu", "Medium");
+            if (font_info == nullptr) {
+                font_info = app->font_registry()->find_font_variant("Arial", "Regular");
+            }
             if (font_info == nullptr) {
                 return;
             }
@@ -227,17 +237,16 @@ class node_impl : public node_i
 
                 if (rl->ready.wait_for(0ms) == ::future_status::ready) {
                     // Processing is done
-                    if (rl->ready.get() && rl->line_no == txt_line_index) {
+                    auto sync = rl->ready.get();
+                    if (rl->line_no == txt_line_index) {
                         /**
                          * Render line contains corrent line number after processing.
                          * During high speed scrolling this might get out of sync, so it
                          * can't be assumed that the line no is correct.
                          */
-                        auto* transfer = rl->surface->transfer();
-                        transfer->perform_copy();
-                        transfer->wait_for_copy();
-                        transfer->perform_transfer(texture);
-                        texture->generate_mip_maps();
+                        sync.gpu_wait();
+                    } else {
+                        continue;
                     }
                 } else {
                     continue;
@@ -323,7 +332,7 @@ class node_impl : public node_i
         return res;
     }
 
-    bool process_line(line_info_s* line, std::u32string&& str)
+    gpu::sync_s process_line(line_info_s* line, std::u32string&& str)
     {
         std::unique_lock lock(font_mtx_);
 
@@ -331,7 +340,24 @@ class node_impl : public node_i
 
         text_.font->draw_line(str, line->surface.get(), {0, font_size_});
 
-        return true;
+        std::optional<gpu::sync_s> sync;
+
+        {
+            std::unique_lock lock(ctx_mtx_);
+            ctx_->make_current();
+
+            auto* texture  = line->surface->texture();
+            auto* transfer = line->surface->transfer();
+            transfer->perform_copy();
+            transfer->wait_for_copy();
+            transfer->perform_transfer(texture);
+            texture->generate_mip_maps();
+            sync.emplace();
+
+            gpu::context_s::rewind_current();
+        }
+
+        return std::move(*sync);
     }
 };
 

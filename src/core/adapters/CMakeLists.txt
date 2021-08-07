@@ -1,5 +1,5 @@
 target_sources(app
-PUBLIC
+PRIVATE
     adapter_websocket.hpp
     adapter_websocket.cpp
 )

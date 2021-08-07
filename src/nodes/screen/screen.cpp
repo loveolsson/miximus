@@ -24,6 +24,7 @@ class node_impl : public node_i
     {
         std::unique_ptr<gpu::framebuffer_s> framebuffer;
         std::unique_ptr<gpu::sync_s>        draw_sync;
+        gpu::vec2i_t                        screen_size;
         // std::unique_ptr<gpu::sync_s>        render_sync;
     };
 
@@ -94,8 +95,11 @@ class node_impl : public node_i
             return;
         }
 
-        auto* texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
-        auto  dim     = context_->get_framebuffer_size();
+        auto*        texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
+        gpu::vec2i_t dim{128, 128};
+        if (texture != nullptr) {
+            dim = texture->texture_dimensions();
+        }
 
         fb_info_s frame;
 
@@ -145,7 +149,8 @@ class node_impl : public node_i
 
         gpu::framebuffer_s::unbind();
 
-        frame.draw_sync = std::make_unique<gpu::sync_s>();
+        frame.draw_sync   = std::make_unique<gpu::sync_s>();
+        frame.screen_size = context_->get_framebuffer_size();
 
         {
             std::unique_lock lock(frame_mtx_);
@@ -228,11 +233,12 @@ class node_impl : public node_i
                 frame.draw_sync.reset();
 
                 auto* texture = frame.framebuffer->get_texture();
-                auto  dim     = texture->texture_dimensions();
+                auto  dim     = frame.screen_size;
 
                 glViewport(0, 0, dim.x, dim.y);
                 glClearColor(0, 0, 0, 0);
 
+                texture->generate_mip_maps();
                 texture->bind(0);
                 draw_state.draw();
                 gpu::texture_s::unbind(0);

@@ -33,8 +33,8 @@ class font_instance_s
 
     void set_size(int size_in_px);
 
-    flow_info_s flow_line(std::u32string_view str, int width);
-    size_t      draw_line(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos);
+    flow_info_s  flow_line(std::u32string_view str, int width);
+    gpu::vec2i_t draw_line(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos);
 };
 
 } // namespace miximus::render

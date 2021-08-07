@@ -94,6 +94,8 @@ int main(int argc, char* argv[])
             app.frame_info.pts = std::chrono::steady_clock::now();
             int64_t frame_no   = 0;
 
+            auto frame_duration = std::chrono::microseconds(1000000) / 60;
+
             while (g_signal_status == 0) {
                 // getlog("app")->info("Frame no {}", frame_no++);
 
@@ -101,12 +103,12 @@ int main(int argc, char* argv[])
 
                 gpu::context_s::poll();
 
-                app.frame_info.pts += std::chrono::milliseconds(1000) / 60;
+                app.frame_info.pts += frame_duration;
 
                 auto now = std::chrono::steady_clock::now();
-                if (app.frame_info.pts < now) {
+                if (app.frame_info.pts + frame_duration / 2 < now) {
                     getlog("app")->info("Late frame");
-                    app.frame_info.pts = now;
+                    // app.frame_info.pts = now;
                 } else {
                     std::this_thread::sleep_until(app.frame_info.pts);
                 }

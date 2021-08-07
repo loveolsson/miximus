@@ -80,7 +80,7 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
     return info;
 }
 
-size_t font_instance_s::draw_line(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos)
+gpu::vec2i_t font_instance_s::draw_line(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos)
 {
     const auto* slot        = face_->glyph;
     FT_UInt     prior_index = 0;
@@ -126,7 +126,7 @@ size_t font_instance_s::draw_line(std::u32string_view str, surface_s* surface, g
         pos.y += static_cast<size_t>(slot->advance.y + kerning.y) / div;
     }
 
-    return str.size();
+    return pos;
 }
 
 } // namespace miximus::render
