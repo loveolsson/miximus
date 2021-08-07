@@ -2,11 +2,15 @@
 #include "glad.hpp"
 #include "logger/logger.hpp"
 #include "shader.hpp"
+#include "static_files/files.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-namespace miximus::gpu {
+#include "stb/stb_image.h"
+
+namespace {
+using namespace miximus;
 
 constexpr int GL_VERSION_MAJOR   = 4;
 constexpr int GL_VERSION_MINOR   = 5;
@@ -118,6 +122,50 @@ static void monitor_config_callback(GLFWmonitor* monitor, int event)
     }
 }
 
+void load_image(GLFWimage* img, std::string_view file)
+{
+    auto& files = static_files::get_resource_files();
+    auto  it    = files.find(file);
+    if (it == files.end()) {
+        throw std::runtime_error("Missing icon file");
+    }
+
+    int  ch   = 0;
+    auto data = it->second.raw();
+    img->pixels =
+        stbi_load_from_memory(reinterpret_cast<stbi_uc*>(data.data()), data.size(), &img->width, &img->height, &ch, 4);
+
+    if (img->pixels == nullptr) {
+        throw std::runtime_error("Failed to load logo file");
+    }
+    if (ch != 4) {
+        throw std::runtime_error("Incorrect number of channels in the logo");
+    }
+}
+
+struct logos_s
+{
+    std::array<GLFWimage, 2> images;
+    logos_s()
+    {
+        load_image(&images[0], "images/miximus_32x32.png");
+        load_image(&images[1], "images/miximus_64x64.png");
+        // load_image(&images[2], "images/miximus_128x128.png");
+        // load_image(&images[3], "images/miximus_256x256.png");
+    }
+
+    ~logos_s()
+    {
+        for (auto& gi : images) {
+            stbi_image_free(gi.pixels);
+        }
+    }
+};
+
+} // namespace
+
+namespace miximus::gpu {
+
 context_s::context_s(bool visible, context_s* parent)
 {
     std::call_once(glfw_init, []() {
@@ -181,6 +229,9 @@ context_s::context_s(bool visible, context_s* parent)
 
     if (visible) {
         glfwSwapInterval(1);
+
+        logos_s logos;
+        glfwSetWindowIcon(window_, logos.images.size(), logos.images.data());
     } else {
         //        glfwSwapInterval(0);
     }
@@ -301,10 +352,10 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 
     switch (name) {
         case name_e::basic:
-            shader = std::make_unique<shader_program_s>("basic_vert.glsl", "basic_frag.glsl");
+            shader = std::make_unique<shader_program_s>("shaders/basic_vert.glsl", "shaders/basic_frag.glsl");
             break;
         case name_e::yuv_to_rgb:
-            shader = std::make_unique<shader_program_s>("basic_vert.glsl", "from_yuv_frag.glsl");
+            shader = std::make_unique<shader_program_s>("shaders/basic_vert.glsl", "shaders/from_yuv_frag.glsl");
             break;
 
         default:

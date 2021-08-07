@@ -19,7 +19,7 @@ class shader_s
     shader_s(std::string_view name, GLenum type)
         : id_(0)
     {
-        const auto& files = static_files::get_shader_files();
+        const auto& files = static_files::get_resource_files();
 
         auto it = files.find(name);
 

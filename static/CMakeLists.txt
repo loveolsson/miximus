@@ -16,11 +16,11 @@ add_custom_command(
 
 add_custom_command(
   OUTPUT 
-    ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp
   COMMAND 
     $<TARGET_FILE:bundler> 
   ARGS 
-    --src ${CMAKE_SOURCE_DIR}/shaders/ --dst ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp --namespace miximus::static_files --mapname get_shader_files
+    --src ${CMAKE_SOURCE_DIR}/resources/ --dst ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp --namespace miximus::static_files --mapname get_resource_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS bundler
 )
@@ -28,7 +28,7 @@ add_custom_command(
 add_library(static_files SHARED
   src/files.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp
   include/static_files/files.hpp
 )
 

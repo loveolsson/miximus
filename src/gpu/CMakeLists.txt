@@ -22,6 +22,7 @@ add_library(gpu
 )
 
 add_subdirectory(transfer)
+add_subdirectory(image)
 
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm REQUIRED)

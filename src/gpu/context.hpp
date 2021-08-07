@@ -2,7 +2,6 @@
 #include "shader.hpp"
 #include "types.hpp"
 
-#include <array>
 #include <map>
 #include <memory>
 #include <mutex>
