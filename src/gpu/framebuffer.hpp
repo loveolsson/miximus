@@ -16,6 +16,7 @@ class framebuffer_s
     ~framebuffer_s();
 
     void        bind() const;
+    void        blit() const;
     static void unbind();
     texture_s*  texture() { return texture_.get(); }
 };

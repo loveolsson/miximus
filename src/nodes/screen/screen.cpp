@@ -94,7 +94,8 @@ class node_impl : public node_i
             return;
         }
 
-        auto*        texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
+        auto* texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
+
         gpu::vec2i_t dim{128, 128};
         if (texture != nullptr) {
             dim = texture->texture_dimensions();
@@ -154,6 +155,9 @@ class node_impl : public node_i
         if (fb_tex->texture_dimensions() != frame.screen_size) {
             fb_tex->generate_mip_maps();
         }
+
+        // EXPERIMENT: behaves better on Linux
+        glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
         frame.sync        = std::make_unique<gpu::sync_s>();
         frame.screen_size = context_->get_framebuffer_size();
@@ -244,6 +248,9 @@ class node_impl : public node_i
 
                 glViewport(0, 0, dim.x, dim.y);
                 glClearColor(0, 0, 0, 0);
+
+                // EXPERIMENT: behaves better on Linux
+                glTextureBarrier();
 
                 texture->bind(0);
                 draw_state.draw();

@@ -35,6 +35,12 @@ framebuffer_s::~framebuffer_s()
 
 void framebuffer_s::bind() const { glBindFramebuffer(GL_FRAMEBUFFER, id_); }
 
+void framebuffer_s::blit() const
+{
+    auto dim = texture_->texture_dimensions();
+    glBlitNamedFramebuffer(id_, 0, 0, 0, dim.x, dim.y, 0, 0, dim.x, dim.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+}
+
 void framebuffer_s::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
 
 } // namespace miximus::gpu
