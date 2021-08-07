@@ -43,9 +43,6 @@ bool pinned_transfer_s::perform_copy()
             mapped_ptr_ = glMapNamedBufferRange(id_, 0, size_, flags);
 
             assert(mapped_ptr_ != nullptr);
-
-            // sync_s sync;
-            // sync.cpu_wait(std::chrono::milliseconds(100));
         }
 
         auto* c = reinterpret_cast<char*>(ptr_);
