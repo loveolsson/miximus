@@ -33,8 +33,6 @@ class web_server_impl
     void send(const con_hdl_t& hdl, const std::string&);
     void send(const con_hdl_t& hdl, const nlohmann::json&);
 
-    static_files::file_map_t files_;
-
     server_t       endpoint_;
     con_map_t      connections_;
     con_by_id_t    connections_by_id_;

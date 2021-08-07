@@ -26,6 +26,7 @@ add_custom_command(
 )
 
 add_library(static_files SHARED
+  src/files.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp
   include/static_files/files.hpp

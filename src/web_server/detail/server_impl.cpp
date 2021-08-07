@@ -26,7 +26,6 @@ static std::string create_404_doc(std::string_view resource)
 }
 
 web_server_impl::web_server_impl()
-    : files_(static_files::get_web_files())
 {
     using namespace websocketpp::log;
 
@@ -74,9 +73,10 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
         resource = "/index.html";
     }
 
-    auto file_it = files_.find(resource.substr(1));
+    const auto& files   = static_files::get_web_files();
+    auto        file_it = files.find(resource.substr(1));
 
-    if (file_it == files_.end()) {
+    if (file_it == files.end()) {
         con->set_body(create_404_doc(resource));
         con->set_status(status_code::not_found);
         return;
@@ -88,7 +88,7 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
         con->replace_header("Content-Encoding", "gzip");
         con->set_body(std::string(file_it->second.gzipped));
     } else {
-        con->set_body(file_it->second.raw);
+        con->set_body(file_it->second.raw());
     }
 
     con->replace_header("Content-Type", std::string(file_it->second.mime));

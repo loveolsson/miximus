@@ -19,7 +19,7 @@ class shader_s
     shader_s(std::string_view name, GLenum type)
         : id_(0)
     {
-        static const auto files = static_files::get_shader_files();
+        const auto& files = static_files::get_shader_files();
 
         auto it = files.find(name);
 
@@ -29,8 +29,9 @@ class shader_s
 
         id_ = glCreateShader(type);
 
-        const char* shader_text = it->second.raw.c_str();
-        glShaderSource(id_, 1, &shader_text, nullptr);
+        auto        shader_text     = it->second.raw();
+        const auto* shader_text_ptr = shader_text.c_str();
+        glShaderSource(id_, 1, &shader_text_ptr, nullptr);
         glCompileShader(id_);
 
         GLint is_compiled = 0;

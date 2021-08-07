@@ -75,14 +75,13 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
 
     target << "#include \"static_files/files.hpp\"" << endl;
     target << "#include <array>" << endl << endl;
-    target << "#include <gzip/decompress.hpp>" << endl << endl;
 
     target << "namespace " << nspace << " {" << endl;
 
     // Create the declaration of the map containing the uncompressed files
-    map << "file_map_t " << mapname << "()" << endl;
+    map << "const file_map_t& " << mapname << "()" << endl;
     map << "{" << endl;
-    map << tab(1) << "file_map_t files {" << endl;
+    map << tab(1) << "static file_map_t files {" << endl;
 
     // Iterate the files in the folder
     for (int fi = 0; fi < files.size(); ++fi) {
@@ -126,8 +125,6 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
         map << tab(3) << "{" << endl;
         map << tab(4) << "{reinterpret_cast<const char *>(fileData" << fi << ".data()), fileData" << fi << ".size()},"
             << endl;
-        map << tab(4) << "gzip::decompress(reinterpret_cast<const char *>(fileData" << fi << ".data()), fileData" << fi
-            << ".size())," << endl;
         map << tab(4) << "\"" << get_mime(src + filename) << "\"," << endl;
         map << tab(3) << "}," << endl;
         map << tab(2) << "}," << endl;
