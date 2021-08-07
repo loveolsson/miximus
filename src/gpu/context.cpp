@@ -7,7 +7,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-#include "stb/stb_image.h"
+#include "stb_image.h"
 
 namespace {
 using namespace miximus;
