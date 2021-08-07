@@ -17,7 +17,7 @@ class framebuffer_s
 
     void        bind() const;
     static void unbind();
-    texture_s*  get_texture() { return texture_.get(); }
+    texture_s*  texture() { return texture_.get(); }
 };
 
 } // namespace miximus::gpu

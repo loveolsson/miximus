@@ -23,9 +23,8 @@ class node_impl : public node_i
     struct fb_info_s
     {
         std::unique_ptr<gpu::framebuffer_s> framebuffer;
-        std::unique_ptr<gpu::sync_s>        draw_sync;
+        std::unique_ptr<gpu::sync_s>        sync;
         gpu::vec2i_t                        screen_size;
-        // std::unique_ptr<gpu::sync_s>        render_sync;
     };
 
     input_interface_s<gpu::texture_s*> iface_tex_;
@@ -63,7 +62,7 @@ class node_impl : public node_i
                 context_    = gpu::context_s::create_unique_context(true, app->ctx());
                 thread_run_ = true;
 
-                for (int i = 0; i < 4; ++i) {
+                for (int i = 0; i < 5; ++i) {
                     frames_free_.emplace();
                 }
 
@@ -99,6 +98,8 @@ class node_impl : public node_i
         gpu::vec2i_t dim{128, 128};
         if (texture != nullptr) {
             dim = texture->texture_dimensions();
+        } else {
+            int i = 0;
         }
 
         fb_info_s frame;
@@ -106,7 +107,7 @@ class node_impl : public node_i
         {
             std::unique_lock lock(frame_mtx_);
             if (frames_free_.size() < 2) {
-                // getlog("app")->warn("No frame available for render");
+                getlog("app")->warn("No frame available for render");
                 return;
             }
 
@@ -114,12 +115,12 @@ class node_impl : public node_i
             frames_free_.pop();
         }
 
-        // if (frame.render_sync) {
-        //     frame.render_sync->gpu_wait();
-        //     frame.render_sync.reset();
-        // }
+        if (frame.sync) {
+            frame.sync->gpu_wait();
+            frame.sync.reset();
+        }
 
-        if (!frame.framebuffer || frame.framebuffer->get_texture()->texture_dimensions() != dim) {
+        if (!frame.framebuffer || frame.framebuffer->texture()->texture_dimensions() != dim) {
             frame.framebuffer = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
         }
 
@@ -149,7 +150,12 @@ class node_impl : public node_i
 
         gpu::framebuffer_s::unbind();
 
-        frame.draw_sync   = std::make_unique<gpu::sync_s>();
+        auto* fb_tex = frame.framebuffer->texture();
+        if (fb_tex->texture_dimensions() != frame.screen_size) {
+            fb_tex->generate_mip_maps();
+        }
+
+        frame.sync        = std::make_unique<gpu::sync_s>();
         frame.screen_size = context_->get_framebuffer_size();
 
         {
@@ -217,6 +223,7 @@ class node_impl : public node_i
 
                 if (frames_rendered_.size() > 2) {
                     auto& f = frames_rendered_.front();
+                    f.sync.reset();
                     frames_free_.emplace(std::move(f));
                     frames_rendered_.pop();
                     log->warn("Discarding frame");
@@ -228,17 +235,16 @@ class node_impl : public node_i
                 }
             }
 
-            if (frame.draw_sync && frame.framebuffer) {
-                frame.draw_sync->gpu_wait();
-                frame.draw_sync.reset();
+            if (frame.sync && frame.framebuffer) {
+                frame.sync->gpu_wait();
+                frame.sync.reset();
 
-                auto* texture = frame.framebuffer->get_texture();
+                auto* texture = frame.framebuffer->texture();
                 auto  dim     = frame.screen_size;
 
                 glViewport(0, 0, dim.x, dim.y);
                 glClearColor(0, 0, 0, 0);
 
-                texture->generate_mip_maps();
                 texture->bind(0);
                 draw_state.draw();
                 gpu::texture_s::unbind(0);
@@ -249,13 +255,12 @@ class node_impl : public node_i
                 // while (!sync.cpu_wait(0ms)) {
                 //     std::this_thread::sleep_for(1ms);
                 // }
+                frame.sync = std::make_unique<gpu::sync_s>();
 
                 {
                     std::unique_lock lock(frame_mtx_);
                     frames_free_.push(std::move(frame));
                 }
-
-                // frame.render_sync = std::make_unique<gpu::sync_s>();
             }
         }
 

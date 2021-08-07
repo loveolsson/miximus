@@ -281,11 +281,11 @@ class node_impl : public node_i
             gpu::texture_s::unbind(0);
             gpu::framebuffer_s::unbind();
 
-            framebuffer_->get_texture()->generate_mip_maps();
+            framebuffer_->texture()->generate_mip_maps();
         }
 
         if (framebuffer_) {
-            iface_tex_.set_value(framebuffer_->get_texture());
+            iface_tex_.set_value(framebuffer_->texture());
         }
     }
 

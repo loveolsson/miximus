@@ -33,12 +33,12 @@ class node_impl : public node_i
 
         size = glm::max(size, gpu::vec2i_t{128, 128});
 
-        if (!framebuffer_ || framebuffer_->get_texture()->texture_dimensions() != size) {
+        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != size) {
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(size, gpu::texture_s::colorspace_e::RGBA);
         }
 
         framebuffer_->bind();
-        auto dim = framebuffer_->get_texture()->texture_dimensions();
+        auto dim = framebuffer_->texture()->texture_dimensions();
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
@@ -51,7 +51,7 @@ class node_impl : public node_i
     {
         return {
             {"name", "Framebuffer"},
-            {"size", nlohmann::json::array({1280, 720})},
+            {"size", nlohmann::json::array({1920, 1080})},
         };
     }
 

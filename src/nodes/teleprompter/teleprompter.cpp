@@ -127,7 +127,7 @@ class node_impl : public node_i
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
         scroll_pos = iface_scroll_pos_in_.resolve_value(app, nodes, state.get_connection_set("scroll_pos"), scroll_pos);
 
-        gpu::vec2i_t fb_dim = fb->get_texture()->texture_dimensions();
+        gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
         gpu::vec2i_t tx_dim = {fb_dim.x, font_size_ * 2};
 
         if (file_path != last_file_path_ || fb_dim != last_framebuffer_size) {
@@ -144,7 +144,7 @@ class node_impl : public node_i
 
             text_ = {};
 
-            const auto* font_info = app->font_registry()->find_font_variant("Ubuntu", "Medium");
+            const auto* font_info = app->font_registry()->find_font_variant("Liberation Sans", "Regular");
             if (font_info == nullptr) {
                 font_info = app->font_registry()->find_font_variant("Arial", "Regular");
             }
@@ -256,8 +256,11 @@ class node_impl : public node_i
             texture->bind(0);
 
             int    line_height_px = font_size_ + line_height_extra_;
-            double line_height    = static_cast<double>(line_height_px) / fb_dim.y;
-            double pos            = line_height * (static_cast<double>(txt_line_index) - scroll_pos);
+            double px_height      = 1.0 / fb_dim.y;
+
+            int px_pos = line_height_px * txt_line_index - (scroll_pos * line_height_px);
+
+            double pos = px_height * px_pos;
 
             shader->set_uniform("offset", gpu::vec2_t{0, 1.0 - pos});
             draw_state_->draw();
