@@ -19,6 +19,7 @@ void register_nodes(constructor_map_t* map)
 
     // Utility nodes
     map->emplace("framebuffer", utils::create_framebuffer_node);
+    map->emplace("framebuffer_to_texture", utils::create_framebuffer_to_texture_node);
 
     // Input nodes
     map->emplace("decklink_input", decklink::create_input_node);

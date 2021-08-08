@@ -4,7 +4,7 @@ import { type_e } from "@/messages";
 import { F64MathNode, I64MathNode, Vec2iMathNode, Vec2MathNode } from "./math";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode } from "./decklink";
-import { FrameBufferNode } from "./utils";
+import { FrameBufferNode, FramebufferToTextureNode } from "./utils";
 import { TeleprompterNode } from "./teleprompter";
 import { SinusSourceNode } from "./debug";
 
@@ -59,7 +59,12 @@ export function register_types(editor: Editor): void {
   editor.registerNodeType(type_e.screen_output, ScreenOutputNode, "Outputs");
   editor.registerNodeType(type_e.decklink_input, DeckLinkInputNode, "Inputs");
 
-  editor.registerNodeType(type_e.framebuffer, FrameBufferNode, "Util");
+  editor.registerNodeType(type_e.framebuffer, FrameBufferNode, "Utils");
+  editor.registerNodeType(
+    type_e.framebuffer_to_texture,
+    FramebufferToTextureNode,
+    "Utils"
+  );
 
   editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
 

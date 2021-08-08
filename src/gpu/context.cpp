@@ -104,7 +104,7 @@ void GLAPIENTRY opengl_error_callback(GLenum source,
                              std::string_view(message, length));
 
     } else {
-        getlog("gpu")->warn("OpenGL error: source = {}, type = {}, severity = {}, message = {}",
+        getlog("gpu")->warn("OpenGL warning: source = {}, type = {}, severity = {}, message = {}",
                             source_str,
                             type_str,
                             severity_str,
@@ -145,13 +145,13 @@ void load_image(GLFWimage* img, std::string_view file)
 
 struct logos_s
 {
-    std::array<GLFWimage, 2> images;
+    std::array<GLFWimage, 4> images;
     logos_s()
     {
         load_image(&images[0], "images/miximus_32x32.png");
         load_image(&images[1], "images/miximus_64x64.png");
-        // load_image(&images[2], "images/miximus_128x128.png");
-        // load_image(&images[3], "images/miximus_256x256.png");
+        load_image(&images[2], "images/miximus_128x128.png");
+        load_image(&images[3], "images/miximus_256x256.png");
     }
 
     ~logos_s()

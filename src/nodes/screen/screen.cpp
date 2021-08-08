@@ -107,7 +107,7 @@ class node_impl : public node_i
         {
             std::unique_lock lock(frame_mtx_);
             if (frames_free_.size() < 2) {
-                getlog("app")->warn("No frame available for render");
+                getlog("nodes")->warn("screen_output: No frame available for render");
                 return;
             }
 
@@ -209,7 +209,7 @@ class node_impl : public node_i
 
     bool run()
     {
-        auto log = getlog("app");
+        auto log = getlog("nodes");
 
         context_->make_current();
         gpu::draw_state_s draw_state;
@@ -235,7 +235,7 @@ class node_impl : public node_i
                     f.sync.reset();
                     frames_free_.emplace(std::move(f));
                     frames_rendered_.pop();
-                    log->warn("Discarding frame");
+                    log->warn("screen_output: Discarding frame");
                 }
 
                 if (!frames_rendered_.empty()) {

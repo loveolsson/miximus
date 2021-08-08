@@ -150,8 +150,6 @@ class node_impl : public node_i
         device_->DisableAudioInput();
         device_->DisableVideoInput();
         device_->FlushStreams();
-        // device_->SetVideoInputFrameMemoryAllocator(nullptr);
-        // device_->SetCallback(nullptr);
 
         processed_frame_ = std::nullopt;
 
@@ -166,15 +164,8 @@ class node_impl : public node_i
         framebuffer_.reset();
     }
 
-    friend class callback_s;
-
   public:
     explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
-
-    node_impl(const node_impl&) = delete;
-    node_impl(node_impl&&)      = delete;
-    void operator=(const node_impl&) = delete;
-    void operator=(node_impl&&) = delete;
 
     ~node_impl() override
     {
@@ -182,6 +173,11 @@ class node_impl : public node_i
             free_device();
         }
     }
+
+    node_impl(const node_impl&) = delete;
+    node_impl(node_impl&&)      = delete;
+    void operator=(const node_impl&) = delete;
+    void operator=(node_impl&&) = delete;
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
@@ -218,7 +214,7 @@ class node_impl : public node_i
             return;
         }
 
-        getlog("app")->info("Setting up DeckLink input {}", device_name);
+        getlog("nodes")->info("Setting up DeckLink input {}", device_name);
         device_ = device;
         devices_in_use.emplace(device_.ptr());
 

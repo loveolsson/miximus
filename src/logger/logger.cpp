@@ -36,6 +36,13 @@ void init_loggers(level::level_enum level_)
     }
 
     {
+        auto log = std::make_shared<spdlog::logger>("nodes", sink);
+        log->flush_on(level_);
+        log->set_level(level_);
+        register_logger(log);
+    }
+
+    {
         auto log = std::make_shared<spdlog::logger>("decklink", sink);
         log->flush_on(level_);
         log->set_level(level_);

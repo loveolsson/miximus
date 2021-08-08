@@ -12,3 +12,16 @@ export class FrameBufferNode extends Node {
     this.addOutputInterface("fb", { type: "framebuffer" });
   }
 }
+
+export class FramebufferToTextureNode extends Node {
+  type: string;
+  name: string;
+
+  constructor() {
+    super();
+    this.type = "framebuffer_to_texture";
+    this.name = "";
+    this.addInputInterface("fb", undefined, undefined, { type: "framebuffer" });
+    this.addOutputInterface("tex", { type: "texture" });
+  }
+}

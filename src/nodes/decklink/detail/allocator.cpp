@@ -49,7 +49,7 @@ HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
         return E_OUTOFMEMORY;
     }
 
-    getlog("gpu")->debug("Allocating transfer, current count {}", ++allocations_g);
+    getlog("decklink")->debug("Allocating transfer, current count {}", ++allocations_g);
     auto tr          = transfer_i::create_transfer(transfer_type_, bufferSize, direction_);
     *allocatedBuffer = tr->ptr();
     assert(*allocatedBuffer != nullptr);
@@ -73,7 +73,7 @@ HRESULT allocator_s::ReleaseBuffer(void* buffer)
         if (active_ && it->second->size() == last_allocation_size_) {
             free_transfers_.emplace_back(std::move(it->second));
         } else {
-            getlog("gpu")->debug("Releasing transfer, current count {}", --allocations_g);
+            getlog("decklink")->debug("Releasing transfer, current count {}", --allocations_g);
         }
 
         allocated_transfers_.erase(it);
@@ -102,7 +102,7 @@ HRESULT allocator_s::Decommit()
     allocations_g -= free_transfers_.size();
     free_transfers_.clear();
 
-    getlog("gpu")->debug("Decommitting transfers, current count {}", allocations_g);
+    getlog("decklink")->debug("Decommitting transfers, current count {}", allocations_g);
 
     active_ = false;
     return S_OK;
