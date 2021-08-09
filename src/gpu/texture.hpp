@@ -4,7 +4,7 @@
 
 namespace miximus::gpu {
 
-constexpr GLuint MIP_MAP_LEVELS = 5;
+constexpr GLuint MIP_MAP_LEVELS = 4;
 
 class texture_s
 {

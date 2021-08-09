@@ -14,9 +14,11 @@ add_library(nodes
 add_subdirectory(decklink)
 add_subdirectory(math)
 add_subdirectory(screen)
+add_subdirectory(ffmpeg)
 add_subdirectory(utils)
 add_subdirectory(teleprompter)
 add_subdirectory(debug)
+add_subdirectory(composite)
 
 find_package(nlohmann_json REQUIRED)
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "core/app_state.hpp"
+#include "core/app_state_fwd.hpp"
 #include "gpu/types.hpp"
 #include "nodes/node_map.hpp"
 
@@ -18,9 +18,7 @@ class interface_i
     {
         invalid = -1,
         f64     = 0,
-        i64,
         vec2,
-        vec2i,
         rect,
         texture,
         framebuffer,

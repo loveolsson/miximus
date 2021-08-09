@@ -1,12 +1,26 @@
 import { Editor } from "@baklavajs/core";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { type_e } from "@/messages";
-import { F64MathNode, I64MathNode, Vec2iMathNode, Vec2MathNode } from "./math";
+import {
+  F64LerpNode,
+  F64MathNode,
+  RectLerpNode,
+  Vec2LerpNode,
+  Vec2MathNode,
+} from "./math";
+import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode } from "./decklink";
-import { FrameBufferNode, FramebufferToTextureNode } from "./utils";
+import {
+  FrameBufferNode,
+  FramebufferToTextureNode,
+  RectNode,
+  Vec2Node,
+} from "./utils";
 import { TeleprompterNode } from "./teleprompter";
 import { SinusSourceNode } from "./debug";
+import Vec2Option from "./options/Vec2Option.vue";
+import { DrawBoxNode } from "./composite";
 
 /**
  * Color-blind optimized palette
@@ -15,11 +29,11 @@ import { SinusSourceNode } from "./debug";
 const Color = {
   Indigo: "#332288", // used
   Cyan: "#88ccee", // used
-  Teal: "#44aa99", // used
+  Teal: "#44aa99",
   Green: "#117733", // used
   Olive: "#999933", // used
-  Sand: "#ddcc77", // used
-  Rose: "#cc6677",
+  Sand: "#ddcc77",
+  Rose: "#cc6677", // used
   Wine: "#882255",
   Purple: "#aa4499",
   PaleGray: "#dddddd",
@@ -28,10 +42,9 @@ const Color = {
 export const connectionColorMap = new Map<string, string>([
   ["texture", Color.Indigo],
   ["framebuffer", Color.Cyan],
-  ["i64", Color.Teal],
   ["f64", Color.Green],
   ["vec2", Color.Olive],
-  ["vec2i", Color.Sand],
+  ["rect", Color.Rose],
 ]);
 
 export function register_connection_types(iface: InterfaceTypePlugin): void {
@@ -39,32 +52,34 @@ export function register_connection_types(iface: InterfaceTypePlugin): void {
     iface.addType(name, color);
   });
 
-  iface.addConversion("i64", "f64");
-  iface.addConversion("f64", "i64");
-  iface.addConversion("i64", "vec2");
   iface.addConversion("f64", "vec2");
-  iface.addConversion("vec2i", "vec2");
-  iface.addConversion("i64", "vec2i");
-  iface.addConversion("f64", "vec2i");
-  iface.addConversion("vec2", "vec2i");
   iface.addConversion("framebuffer", "texture");
 }
 
+export function register_option_types(view: ViewPlugin): void {
+  view.registerOption("Vec2Option", Vec2Option);
+}
+
 export function register_types(editor: Editor): void {
-  editor.registerNodeType(type_e.math_i64, I64MathNode, "Math");
   editor.registerNodeType(type_e.math_f64, F64MathNode, "Math");
   editor.registerNodeType(type_e.math_vec2, Vec2MathNode, "Math");
-  editor.registerNodeType(type_e.math_vec2i, Vec2iMathNode, "Math");
+  editor.registerNodeType(type_e.lerp_f64, F64LerpNode, "Math");
+  editor.registerNodeType(type_e.lerp_vec2, Vec2LerpNode, "Math");
+  editor.registerNodeType(type_e.lerp_rect, RectLerpNode, "Math");
 
   editor.registerNodeType(type_e.screen_output, ScreenOutputNode, "Outputs");
   editor.registerNodeType(type_e.decklink_input, DeckLinkInputNode, "Inputs");
 
+  editor.registerNodeType(type_e.vec2, Vec2Node, "Utils");
+  editor.registerNodeType(type_e.rect, RectNode, "Utils");
   editor.registerNodeType(type_e.framebuffer, FrameBufferNode, "Utils");
   editor.registerNodeType(
     type_e.framebuffer_to_texture,
     FramebufferToTextureNode,
     "Utils"
   );
+
+  editor.registerNodeType(type_e.draw_box, DrawBoxNode, "Composite");
 
   editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
 

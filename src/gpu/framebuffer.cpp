@@ -33,7 +33,11 @@ framebuffer_s::~framebuffer_s()
     glDeleteRenderbuffers(1, &rbo_id_);
 }
 
-void framebuffer_s::bind() const { glBindFramebuffer(GL_FRAMEBUFFER, id_); }
+void framebuffer_s::bind() const
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, id_);
+    glDisable(GL_FRAMEBUFFER_SRGB);
+}
 
 void framebuffer_s::blit() const
 {
@@ -41,6 +45,10 @@ void framebuffer_s::blit() const
     glBlitNamedFramebuffer(id_, 0, 0, 0, dim.x, dim.y, 0, 0, dim.x, dim.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
 
-void framebuffer_s::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
+void framebuffer_s::unbind()
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glEnable(GL_FRAMEBUFFER_SRGB);
+}
 
 } // namespace miximus::gpu

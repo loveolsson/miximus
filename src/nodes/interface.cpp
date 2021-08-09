@@ -14,21 +14,15 @@ interface_i::type_e interface_i::get_interface_type<double>()
 }
 
 template <>
-interface_i::type_e interface_i::get_interface_type<int64_t>()
-{
-    return type_e::i64;
-}
-
-template <>
 interface_i::type_e interface_i::get_interface_type<gpu::vec2_t>()
 {
     return type_e::vec2;
 }
 
 template <>
-interface_i::type_e interface_i::get_interface_type<gpu::vec2i_t>()
+interface_i::type_e interface_i::get_interface_type<gpu::rect_s>()
 {
-    return type_e::vec2i;
+    return type_e::rect;
 }
 
 template <>
@@ -89,20 +83,6 @@ bool input_interface_s<double>::accepts(type_e type) const
 {
     switch (type) {
         case type_e::f64:
-        case type_e::i64:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-template <>
-bool input_interface_s<int64_t>::accepts(type_e type) const
-{
-    switch (type) {
-        case type_e::f64:
-        case type_e::i64:
             return true;
 
         default:
@@ -115,9 +95,7 @@ bool input_interface_s<gpu::vec2_t>::accepts(type_e type) const
 {
     switch (type) {
         case type_e::f64:
-        case type_e::i64:
         case type_e::vec2:
-        case type_e::vec2i:
             return true;
 
         default:
@@ -126,13 +104,10 @@ bool input_interface_s<gpu::vec2_t>::accepts(type_e type) const
 }
 
 template <>
-bool input_interface_s<gpu::vec2i_t>::accepts(type_e type) const
+bool input_interface_s<gpu::rect_s>::accepts(type_e type) const
 {
     switch (type) {
-        case type_e::f64:
-        case type_e::i64:
-        case type_e::vec2:
-        case type_e::vec2i:
+        case type_e::rect:
             return true;
 
         default:
@@ -174,50 +149,6 @@ double input_interface_s<double>::resolve_value(core::app_state_s* app,
             case type_e::f64: {
                 const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface);
                 if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                return cast->get_value();
-            }
-
-            case type_e::i64: {
-                const auto* cast = dynamic_cast<const output_interface_s<int64_t>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                return static_cast<double>(cast->get_value());
-            }
-
-            default:
-                break;
-        }
-    }
-
-    return fallback;
-}
-
-template <>
-int64_t input_interface_s<int64_t>::resolve_value(core::app_state_s* app,
-                                                  const node_map_t&  nodes,
-                                                  const con_set_t&   connections,
-                                                  int64_t            fallback) const
-{
-    if (const auto* iface = resolve_connection(app, nodes, connections)) {
-        switch (iface->type()) {
-            case type_e::f64: {
-                const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                return static_cast<int64_t>(cast->get_value());
-            }
-
-            case type_e::i64: {
-                const auto* cast = dynamic_cast<const output_interface_s<int64_t>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
                     break;
                 }
                 return cast->get_value();
@@ -226,6 +157,8 @@ int64_t input_interface_s<int64_t>::resolve_value(core::app_state_s* app,
             default:
                 break;
         }
+
+        assert(false);
     }
 
     return fallback;
@@ -249,27 +182,8 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::resolve_value(core::app_state_s* app
                 return {val, val};
             }
 
-            case type_e::i64: {
-                const auto* cast = dynamic_cast<const output_interface_s<int64_t>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                auto val = cast->get_value();
-                return {val, val};
-            }
-
             case type_e::vec2: {
                 const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                return cast->get_value();
-            }
-
-            case type_e::vec2i: {
-                const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2i_t>*>(iface);
                 if (cast == nullptr) {
                     assert(false);
                     break;
@@ -280,50 +194,23 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::resolve_value(core::app_state_s* app
             default:
                 break;
         }
+
+        assert(false);
     }
 
     return fallback;
 }
 
 template <>
-gpu::vec2i_t input_interface_s<gpu::vec2i_t>::resolve_value(core::app_state_s* app,
-                                                            const node_map_t&  nodes,
-                                                            const con_set_t&   connections,
-                                                            gpu::vec2i_t       fallback) const
+gpu::rect_s input_interface_s<gpu::rect_s>::resolve_value(core::app_state_s* app,
+                                                          const node_map_t&  nodes,
+                                                          const con_set_t&   connections,
+                                                          gpu::rect_s        fallback) const
 {
     if (const auto* iface = resolve_connection(app, nodes, connections)) {
         switch (iface->type()) {
-            case type_e::f64: {
-                const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                auto val = cast->get_value();
-                return {val, val};
-            }
-
-            case type_e::i64: {
-                const auto* cast = dynamic_cast<const output_interface_s<int64_t>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                auto val = cast->get_value();
-                return {val, val};
-            }
-
-            case type_e::vec2: {
-                const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface);
-                if (cast == nullptr) {
-                    assert(false);
-                    break;
-                }
-                return cast->get_value();
-            }
-
-            case type_e::vec2i: {
-                const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2i_t>*>(iface);
+            case type_e::rect: {
+                const auto* cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface);
                 if (cast == nullptr) {
                     assert(false);
                     break;

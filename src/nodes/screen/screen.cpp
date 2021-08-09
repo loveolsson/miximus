@@ -1,4 +1,5 @@
 #include "screen.hpp"
+#include "core/app_state.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -142,6 +143,7 @@ class node_impl : public node_i
             auto* shader = draw_state_->get_shader_program();
             shader->set_uniform("offset", gpu::vec2_t{0, 0});
             shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
+            shader->set_uniform("opacity", 1.0);
 
             texture->bind(0);
             draw_state_->draw();
@@ -218,6 +220,7 @@ class node_impl : public node_i
         draw_state.set_vertex_data(gpu::full_screen_quad_verts);
         shader->set_uniform("offset", gpu::vec2_t{0, 0});
         shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
+        shader->set_uniform("opacity", 1.0);
 
         while (true) {
             fb_info_s frame;

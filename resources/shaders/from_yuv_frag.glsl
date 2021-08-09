@@ -49,13 +49,33 @@ void textureGatherYUV(sampler2D UYVYsampler, vec2 tc, out vec4 W, out vec4 X, ou
     Z          = texelFetch(UYVYsampler, clamp(tx + ivec2(1, 0), tmin, tmax), 0);
 }
 
+// Converts a color from linear light gamma to sRGB gamma
+vec3 fromLinear(vec3 linearRGB)
+{
+    bvec3 cutoff = lessThan(linearRGB, vec3(0.0031308));
+    vec3  higher = vec3(1.055) * pow(linearRGB, vec3(1.0 / 2.4)) - vec3(0.055);
+    vec3  lower  = linearRGB * vec3(12.92);
+
+    return mix(higher, lower, cutoff);
+}
+
+// Converts a color from sRGB gamma to linear light gamma
+vec3 toLinear(vec3 sRGB)
+{
+    bvec3 cutoff = lessThan(sRGB, vec3(0.04045));
+    vec3  higher = pow((sRGB + vec3(0.055)) / vec3(1.055), vec3(2.4));
+    vec3  lower  = sRGB / vec3(12.92);
+
+    return mix(higher, lower, cutoff);
+}
+
 void main(void)
 {
     /* The shader uses texelFetch to obtain the YUV macropixels to avoid unwanted interpolation
      * introduced by the GPU interpreting the YUV data as RGBA pixels.
      * The YUV macropixels are converted into individual RGB pixels and bilinear interpolation is applied. */
     vec2  tc    = TexCoord;
-    float alpha = 0.7;
+    float alpha = 1.0;
 
     vec4 macro, macro_u, macro_r, macro_ur;
     vec4 pixel, pixel_r, pixel_u, pixel_ur;
@@ -86,5 +106,7 @@ void main(void)
         pixel_ur = rec709YCbCr2rgba(macro_u.a, macro_u.b, macro_u.r, alpha);
     }
 
-    FragColor = bilinear(pixel, pixel_u, pixel_ur, pixel_r, off);
+    vec4 sRGB = bilinear(pixel, pixel_u, pixel_ur, pixel_r, off);
+    FragColor = vec4(toLinear(sRGB.xyz), sRGB.w);
+    // FragColor = sRGB;
 }

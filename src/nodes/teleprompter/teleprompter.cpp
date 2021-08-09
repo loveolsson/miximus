@@ -1,4 +1,5 @@
 #include "teleprompter.hpp"
+#include "core/app_state.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -55,6 +56,7 @@ class node_impl : public node_i
         std::unique_ptr<render::font_instance_s> font;
     };
 
+    input_interface_s<gpu::rect_s>          iface_rect_in_;
     input_interface_s<double>               iface_scroll_pos_in_;
     input_interface_s<gpu::framebuffer_s*>  iface_fb_in_;
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_;
@@ -77,6 +79,7 @@ class node_impl : public node_i
     explicit node_impl()
     {
         interfaces_.emplace("scroll_pos", &iface_scroll_pos_in_);
+        interfaces_.emplace("rect", &iface_rect_in_);
         interfaces_.emplace("fb_in", &iface_fb_in_);
         interfaces_.emplace("fb_out", &iface_fb_out_);
     }
@@ -123,6 +126,9 @@ class node_impl : public node_i
         if (fb == nullptr) {
             return;
         }
+
+        auto draw_rect =
+            iface_rect_in_.resolve_value(app, nodes, state.get_connection_set("rect"), {{0, 0}, {1.0, 1.0}});
 
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
         scroll_pos = iface_scroll_pos_in_.resolve_value(app, nodes, state.get_connection_set("scroll_pos"), scroll_pos);
@@ -196,8 +202,17 @@ class node_impl : public node_i
 
         auto* shader = draw_state_->get_shader_program();
         shader->set_uniform("scale", gpu::vec2_t{1, static_cast<float>(-tx_dim.y) / fb_dim.y});
+        shader->set_uniform("opacity", 1.0);
 
         fb->bind();
+
+        int px = std::round(draw_rect.pos.x * fb_dim.x);
+        int py = std::round(draw_rect.pos.y * fb_dim.y);
+        int sx = std::round(draw_rect.size.x * fb_dim.x);
+        int sy = std::round(draw_rect.size.y * fb_dim.y);
+        sx     = std::max(0, sx);
+        sy     = std::max(0, sy);
+        glViewport(px, py, sx, sy);
 
         /**
          * Iterate over render lines, starting 2 lines over visible area, ending 2 lines below
@@ -258,9 +273,9 @@ class node_impl : public node_i
 
             int px_pos = line_height_px * txt_line_index - (scroll_pos * line_height_px);
 
-            double pos = px_height * px_pos;
+            gpu::vec2_t pos = {0, px_height * px_pos};
 
-            shader->set_uniform("offset", gpu::vec2_t{0, 1.0 - pos});
+            shader->set_uniform("offset", gpu::vec2_t{0, 1.0} - pos);
             draw_state_->draw();
         }
 

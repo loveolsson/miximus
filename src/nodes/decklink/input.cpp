@@ -1,3 +1,4 @@
+#include "core/app_state.hpp"
 #include "decklink.hpp"
 #include "detail/allocator.hpp"
 #include "gpu/draw_state.hpp"
@@ -271,6 +272,7 @@ class node_impl : public node_i
             auto* shader = draw_state_->get_shader_program();
             shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
             shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
+            shader->set_uniform("opacity", 1.0);
 
             texture_->bind(0);
             draw_state_->draw();

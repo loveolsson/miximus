@@ -56,6 +56,7 @@ class shader_program_s
     void set_vertex_type();
 
     void set_uniform(const std::string& name, const vec2_t& val);
+    void set_uniform(const std::string& name, double val);
 };
 
 template <typename T>

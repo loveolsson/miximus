@@ -13,7 +13,7 @@ namespace {
 using namespace miximus;
 
 constexpr int GL_VERSION_MAJOR   = 4;
-constexpr int GL_VERSION_MINOR   = 5;
+constexpr int GL_VERSION_MINOR   = 6;
 constexpr int DEFAULT_CTX_WIDTH  = 640;
 constexpr int DEFAULT_CTX_HEIGHT = 480;
 
@@ -145,13 +145,12 @@ void load_image(GLFWimage* img, std::string_view file)
 
 struct logos_s
 {
-    std::array<GLFWimage, 4> images;
+    std::array<GLFWimage, 3> images;
     logos_s()
     {
         load_image(&images[0], "images/miximus_32x32.png");
         load_image(&images[1], "images/miximus_64x64.png");
         load_image(&images[2], "images/miximus_128x128.png");
-        load_image(&images[3], "images/miximus_256x256.png");
     }
 
     ~logos_s()
@@ -180,7 +179,8 @@ context_s::context_s(bool visible, context_s* parent)
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, GL_VERSION_MAJOR);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, GL_VERSION_MINOR);
         glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-        // glfwWindowHint(GLFW_SAMPLES, 4);
+        glfwWindowHint(GLFW_SAMPLES, 4);
+        glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
         // glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
         glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
@@ -233,13 +233,15 @@ context_s::context_s(bool visible, context_s* parent)
         logos_s logos;
         glfwSetWindowIcon(window_, logos.images.size(), logos.images.data());
     } else {
-        //        glfwSwapInterval(0);
+        // glfwSwapInterval(0);
     }
 
     glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
     glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glEnablei(GL_BLEND, 0);
-    // glEnable(GL_MULTISAMPLE);
+    glEnable(GL_MULTISAMPLE);
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
 
     rewind_current();
 }

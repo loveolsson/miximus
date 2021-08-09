@@ -1,3 +1,4 @@
+#include "core/app_state.hpp"
 #include "debug.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/validate_option.hpp"
@@ -33,9 +34,9 @@ class node_impl : public node_i
     {
         return {
             {"name", "Sinus source"},
-            {"size", 10},
+            {"size", 1},
             {"center", 0},
-            {"speed", 1},
+            {"speed", 0.1},
         };
     }
 

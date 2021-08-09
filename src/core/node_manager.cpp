@@ -1,8 +1,10 @@
 #include "core/node_manager.hpp"
+#include "core/app_state.hpp"
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/validate_option.hpp"
 #include "utils/bind.hpp"
 #include "web_server/server.hpp"
 
@@ -19,14 +21,13 @@ static auto log() { return getlog("app"); };
 static bool is_valid_common_option(std::string_view name, const json& value)
 {
     if (name == "position") {
-        if (value.is_array() && value.size() == 2 && value.at(0).is_number() && value.at(1).is_number()) {
-            return true;
-        }
-    } else if (name == "name") {
-        if (value.is_string()) {
-            return true;
-        }
+        return nodes::detail::validate_option<gpu::vec2_t>(value);
     }
+
+    if (name == "name") {
+        return nodes::detail::validate_option<std::string_view>(value);
+    }
+
     return false;
 }
 

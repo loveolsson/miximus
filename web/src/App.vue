@@ -90,7 +90,11 @@ import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import { OptionPlugin } from "@baklavajs/plugin-options-vue";
 import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
 import { ws_wrapper } from "./websocket";
-import { register_connection_types, register_types } from "./nodes/types";
+import {
+  register_connection_types,
+  register_option_types,
+  register_types,
+} from "./nodes/types";
 import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/types";
 import { view_intercept } from "./view_intercept";
 import { helpers } from "./helpers";
@@ -108,6 +112,7 @@ import {
   options_s,
   command_update_node_s,
   type_e,
+  position_t,
 } from "./messages";
 
 @Component
@@ -117,6 +122,7 @@ export default class Miximus extends Vue {
   intfTypePlugin = new InterfaceTypePlugin();
   wsWrapper = new ws_wrapper();
   view_intercept = new view_intercept(this.viewPlugin, this.wsWrapper);
+  option_plugin = new OptionPlugin();
   nodes_mutated = true;
   node_to_be_added?: Node;
   node_to_be_removed?: Node;
@@ -128,11 +134,12 @@ export default class Miximus extends Vue {
   created(): void {
     this.editor.use(this.viewPlugin);
     this.editor.use(this.intfTypePlugin);
-    this.editor.use(new OptionPlugin());
+    this.editor.use(this.option_plugin);
 
     // Show a minimap in the top right corner
     this.viewPlugin.enableMinimap = true;
 
+    register_option_types(this.viewPlugin);
     register_types(this.editor);
     register_connection_types(this.intfTypePlugin);
 
@@ -350,19 +357,27 @@ export default class Miximus extends Vue {
             if (is_origin) {
               continue;
             }
-
-            if (!this.view_intercept.set_position(id, value)) {
-              // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
-              const view = node as unknown as IViewNode;
-              view.position.x = value[0];
-              view.position.y = value[1];
+            if (
+              Array.isArray(value) &&
+              value.length === 2 &&
+              typeof value[0] === "number" &&
+              typeof value[1] === "number"
+            ) {
+              if (!this.view_intercept.set_position(id, value as position_t)) {
+                // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
+                const view = node as unknown as IViewNode;
+                view.position.x = value[0];
+                view.position.y = value[1];
+              }
             }
           }
           break;
 
         case "name":
           {
-            node.name = value;
+            if (typeof value === "string") {
+              node.name = value;
+            }
           }
           break;
 

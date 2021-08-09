@@ -15,19 +15,13 @@ inline bool validate_option<bool>(const nlohmann::json& val)
 }
 
 template <>
-inline bool validate_option<int64_t>(const nlohmann::json& val)
-{
-    return val.is_number_integer();
-}
-
-template <>
 inline bool validate_option<double>(const nlohmann::json& val)
 {
     return val.is_number();
 }
 
 template <>
-inline bool validate_option<miximus::gpu::vec2_t>(const nlohmann::json& val)
+inline bool validate_option<gpu::vec2_t>(const nlohmann::json& val)
 {
     if (!val.is_array() || val.size() != 2) {
         return false;
@@ -39,14 +33,8 @@ inline bool validate_option<miximus::gpu::vec2_t>(const nlohmann::json& val)
 }
 
 template <>
-inline bool validate_option<miximus::gpu::vec2i_t>(const nlohmann::json& val)
+inline bool validate_option<gpu::rect_s>(const nlohmann::json& val)
 {
-    if (!val.is_array() || val.size() != 2) {
-        return false;
-    }
-    if (!val[0].is_number_integer() || !val[1].is_number_integer()) {
-        return false;
-    }
     return true;
 }
 

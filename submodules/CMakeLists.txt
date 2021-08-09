@@ -1,7 +1,7 @@
 set(QUIC_BUILD_TOOLS OFF)
 set(QUIC_BUILD_TEST OFF)
 set(QUIC_BUILD_PERF OFF)
-add_subdirectory(msquic)
+#add_subdirectory(msquic)
 
 add_subdirectory(glad)
 

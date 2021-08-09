@@ -32,6 +32,10 @@ class node_impl : public node_i
             texture = fb->texture();
         }
 
+        if (texture != nullptr) {
+            texture->generate_mip_maps();
+        }
+
         iface_tex_.set_value(texture);
     }
 

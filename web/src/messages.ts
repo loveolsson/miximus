@@ -18,10 +18,13 @@ export const enum topic_e {
 }
 
 export const enum type_e {
-  math_i64 = "math_i64",
+  vec2 = "vec2",
+  rect = "rect",
   math_f64 = "math_f64",
   math_vec2 = "math_vec2",
-  math_vec2i = "math_vec2i",
+  lerp_f64 = "lerp_f64",
+  lerp_vec2 = "lerp_vec2",
+  lerp_rect = "lerp_rect",
   screen_output = "screen_output",
   decklink_input = "decklink_input",
   decklink_output = "decklink_output",
@@ -29,6 +32,7 @@ export const enum type_e {
   framebuffer_to_texture = "framebuffer_to_texture",
   teleprompter = "teleprompter",
   sinus_source = "sinus_source",
+  draw_box = "draw_box",
 }
 
 export type position_t = [number, number];
@@ -36,7 +40,7 @@ export type position_t = [number, number];
 export interface options_s {
   position?: position_t;
   name?: string;
-  [index: string]: any;
+  [index: string]: unknown;
 }
 
 export interface node_s {

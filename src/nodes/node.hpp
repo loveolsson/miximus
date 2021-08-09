@@ -1,5 +1,5 @@
 #pragma once
-#include "core/app_state.hpp"
+#include "core/app_state_fwd.hpp"
 #include "nodes/node_map.hpp"
 #include "types/error.hpp"
 

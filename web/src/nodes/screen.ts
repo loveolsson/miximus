@@ -1,12 +1,13 @@
+import { type_e } from "@/messages";
 import { Node } from "@baklavajs/core";
 
 export class ScreenOutputNode extends Node {
-  type: string;
+  type: type_e;
   name: string;
 
   constructor() {
     super();
-    this.type = "screen_output";
+    this.type = type_e.screen_output;
     this.name = "";
     this.addInputInterface("tex", undefined, 0, { type: "texture" });
     this.addOption("enabled", "CheckboxOption", false, undefined);

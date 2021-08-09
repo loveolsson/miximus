@@ -31,7 +31,7 @@ PRIVATE
     app
     gpu
 
-    msquic
+#    msquic
     Boost::system
     Boost::fiber
 )
@@ -46,4 +46,4 @@ add_custom_command(TARGET miximus POST_BUILD
 endmacro()
 
 copy_library_to_binary_dir(static_files)
-copy_library_to_binary_dir(msquic)
+#copy_library_to_binary_dir(msquic)

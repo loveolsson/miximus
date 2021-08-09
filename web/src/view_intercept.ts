@@ -93,7 +93,7 @@ export class view_intercept {
 
       if (ev.interface) {
         const value = ev.interface.value;
-        if (newInfo.options[ev.name] !== value) {
+        if (!isEqual(newInfo.options[ev.name], value)) {
           this.handle_value_change(newInfo, ev.name, value);
         }
       }

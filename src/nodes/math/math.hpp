@@ -3,9 +3,10 @@
 
 namespace miximus::nodes::math {
 
-std::shared_ptr<node_i> create_i64_node();
-std::shared_ptr<node_i> create_f64_node();
-std::shared_ptr<node_i> create_vec2_node();
-std::shared_ptr<node_i> create_vec2i_node();
+std::shared_ptr<node_i> create_math_f64_node();
+std::shared_ptr<node_i> create_math_vec2_node();
+std::shared_ptr<node_i> create_lerp_f64_node();
+std::shared_ptr<node_i> create_lerp_vec2_node();
+std::shared_ptr<node_i> create_lerp_rect_node();
 
 } // namespace miximus::nodes::math

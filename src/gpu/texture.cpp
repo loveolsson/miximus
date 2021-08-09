@@ -31,6 +31,7 @@ texture_s::texture_s(vec2i_t dimensions, colorspace_e color)
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            // glTexParameterf(id_, GL_TEXTURE_MAX_ANISOTROPY, 16.f);
             break;
         case colorspace_e::BGRA:
             internal_format = GL_RGBA8;
@@ -63,6 +64,16 @@ void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
 
 void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 
-void texture_s::generate_mip_maps() const { glGenerateTextureMipmap(id_); }
+void texture_s::generate_mip_maps() const
+{
+    switch (colorspace_) {
+        case colorspace_e::UYVY:
+            break;
+
+        default:
+            glGenerateTextureMipmap(id_);
+            break;
+    }
+}
 
 } // namespace miximus::gpu
