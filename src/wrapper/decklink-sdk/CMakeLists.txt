@@ -35,7 +35,7 @@ if(WIN32)
                 GENERATED TRUE
         )
 
-    add_library(decklink 
+    add_library(decklink SHARED
         ${MIDL_OUTPUT}
         ${DECKLINK_COMMON_SOURCES}
     )
@@ -63,7 +63,7 @@ else()
     find_file(DECKLINK_DVP_LIB libdvp.so.1 PATHS ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/x86_64 REQUIRED)
     find_file(DECKLINK_TRANSFER_SRC VideoFrameTransfer.cpp PATHS ${DECKLINK_OS_DIR}/Samples/LoopThroughWithOpenGLCompositing/ REQUIRED)
 
-    add_library(decklink
+    add_library(decklink SHARED
         ${DECKLINK_SOURCES}
         ${DECKLINK_COMMON_SOURCES}
     )

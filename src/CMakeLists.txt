@@ -46,4 +46,6 @@ add_custom_command(TARGET miximus POST_BUILD
 endmacro()
 
 copy_library_to_binary_dir(static_files)
+copy_library_to_binary_dir(decklink)
+copy_library_to_binary_dir(stb)
 #copy_library_to_binary_dir(msquic)
