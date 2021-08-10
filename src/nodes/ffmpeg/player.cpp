@@ -34,10 +34,10 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "file_path") {
-            return detail::validate_option<std::string_view>(value);
+            return validate_option<std::string_view>(value);
         }
 
         return false;

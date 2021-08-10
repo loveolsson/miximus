@@ -91,10 +91,10 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "opacity") {
-            return detail::validate_option<double>(value);
+            return validate_option<double>(value, 0, 1.0);
         }
 
         return false;

@@ -35,7 +35,7 @@ class node_i
     virtual void             complete(core::app_state_s*) {}
 
     virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }
-    virtual bool           test_option(std::string_view name, const nlohmann::json& value) const = 0;
+    virtual bool           test_option(std::string_view name, nlohmann::json* value) const = 0;
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     const interface_i*     find_interface(std::string_view name) const;

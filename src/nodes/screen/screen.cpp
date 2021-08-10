@@ -10,6 +10,7 @@
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/validate_option.hpp"
 
 #include <memory>
 #include <queue>
@@ -186,22 +187,22 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "enabled" || name == "fullscreen") {
-            return value.is_boolean();
+            return validate_option<bool>(value);
         }
 
         if (name == "monitor_name") {
-            return value.is_string();
+            return validate_option<std::string>(value);
         }
 
         if (name == "posx" || name == "posy") {
-            return value.is_number_integer();
+            return validate_option<int>(value);
         }
 
         if (name == "sizex" || name == "sizey") {
-            return value.is_number_integer() && value.get<int>() > 100;
+            return validate_option<bool>(value, 100);
         }
 
         return false;

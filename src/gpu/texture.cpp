@@ -49,6 +49,16 @@ texture_s::texture_s(vec2i_t dimensions, colorspace_e color)
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             mip_map_levels = 1;
             break;
+        case colorspace_e::UYVY10:
+            internal_format = GL_RGB10_A2;
+            format_         = GL_BGRA;
+            type_           = GL_UNSIGNED_INT_10_10_10_2;
+            // TODO: figure out the right calculation
+            texture_dimensions_.x /= 2;
+            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            mip_map_levels = 1;
+            break;
 
         default:
             throw std::runtime_error("Invalid texture type");

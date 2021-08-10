@@ -43,10 +43,10 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "pos" || name == "size") {
-            return detail::validate_option<gpu::vec2_t>(value);
+            return validate_option<gpu::vec2_t>(value);
         }
 
         return false;

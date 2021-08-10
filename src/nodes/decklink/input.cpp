@@ -8,6 +8,7 @@
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/validate_option.hpp"
 #include "registry.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
@@ -237,7 +238,7 @@ class node_impl : public node_i
             return;
         }
 
-        if (processed_frame_ != std::nullopt) {
+        if (processed_frame_) {
             auto*        frame = processed_frame_->first.ptr();
             gpu::vec2i_t frame_dims{frame->GetWidth(), frame->GetHeight()};
 
@@ -305,14 +306,14 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "device_name") {
-            return value.is_string();
+            return validate_option<std::string_view>(value);
         }
 
         if (name == "enabled") {
-            return value.is_boolean();
+            return validate_option<bool>(value);
         }
 
         return false;

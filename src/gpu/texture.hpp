@@ -15,6 +15,7 @@ class texture_s
         RGBA,
         BGRA,
         UYVY,
+        UYVY10,
     };
 
   private:

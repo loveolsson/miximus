@@ -46,7 +46,7 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final { return false; }
+    bool test_option(std::string_view name, nlohmann::json* value) const final { return false; }
 
     std::string_view type() const final { return "framebuffer_to_texture"; }
 };

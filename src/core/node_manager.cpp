@@ -18,14 +18,14 @@ using namespace std::chrono_literals;
 
 static auto log() { return getlog("app"); };
 
-static bool is_valid_common_option(std::string_view name, const json& value)
+static bool is_valid_common_option(std::string_view name, json* value)
 {
     if (name == "position") {
-        return nodes::detail::validate_option<gpu::vec2_t>(value);
+        return nodes::validate_option<gpu::vec2_t>(value);
     }
 
     if (name == "name") {
-        return nodes::detail::validate_option<std::string_view>(value);
+        return nodes::validate_option<std::string_view>(value);
     }
 
     return false;
@@ -58,9 +58,9 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
 
     for (auto option = options.begin(); option != options.end(); ++option) {
         const auto& key   = option.key();
-        const auto& value = option.value();
+        auto        value = option.value();
 
-        if (is_valid_common_option(key, value) || node->test_option(key, value)) {
+        if (is_valid_common_option(key, &value) || node->test_option(key, &value)) {
             record.state.options[key] = value;
         }
     }
@@ -134,9 +134,9 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
 
     for (auto option = options.begin(); option != options.end(); ++option) {
         const auto& key   = option.key();
-        const auto& value = option.value();
+        auto        value = option.value();
 
-        if (is_valid_common_option(key, value) || node->test_option(key, value)) {
+        if (is_valid_common_option(key, &value) || node->test_option(key, &value)) {
             state.options[key] = value;
         }
     }

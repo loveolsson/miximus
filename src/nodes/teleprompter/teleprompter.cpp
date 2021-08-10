@@ -290,18 +290,18 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, const nlohmann::json& value) const final
+    bool test_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "file_path") {
-            return value.is_string();
+            return validate_option<std::string>(value);
         }
 
         if (name == "scroll_pos") {
-            return value.is_number() && value >= 0;
+            return validate_option<double>(value, 0);
         }
 
         if (name == "font_size") {
-            return value.is_number_integer() && value > 10 && value < 100;
+            return validate_option<int>(value, 10, 100);
         }
 
         return false;
