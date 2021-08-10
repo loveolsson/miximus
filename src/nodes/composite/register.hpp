@@ -1,10 +1,8 @@
 #pragma once
 #include "nodes/node.hpp"
 
-#include <memory>
-
 namespace miximus::nodes::composite {
 
-std::shared_ptr<node_i> create_draw_box_node();
+void register_nodes(constructor_map_t* map);
 
 } // namespace miximus::nodes::composite

@@ -1,8 +1,9 @@
 target_sources(nodes
 PRIVATE
+    register.hpp
+    register.cpp
     detail/allocator.hpp
     detail/allocator.cpp
-    decklink.hpp
     input.cpp
     output.cpp
     registry_fwd.hpp

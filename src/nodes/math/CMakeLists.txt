@@ -1,6 +1,7 @@
 target_sources(nodes
 PRIVATE
-    math.hpp
+    register.hpp
+    register.cpp
     math.cpp
     lerp.cpp
 )

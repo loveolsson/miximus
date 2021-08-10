@@ -1,5 +1,6 @@
 target_sources(nodes
 PRIVATE
-    screen.hpp
-    screen.cpp
+    register.hpp
+    register.cpp
+    screen_output.cpp
 )

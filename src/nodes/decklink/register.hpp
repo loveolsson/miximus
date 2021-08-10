@@ -3,6 +3,6 @@
 
 namespace miximus::nodes::decklink {
 
-std::shared_ptr<node_i> create_input_node();
+void register_nodes(constructor_map_t* map);
 
 }

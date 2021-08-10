@@ -1,5 +1,6 @@
 target_sources(nodes
 PRIVATE
-    ffmpeg.hpp
+    register.hpp
+    register.cpp
     player.cpp
 )

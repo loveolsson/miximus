@@ -1,10 +1,8 @@
 #pragma once
 #include "nodes/node.hpp"
 
-namespace miximus::nodes {
-
-class node_i;
+namespace miximus::nodes::math {
 
 void register_nodes(constructor_map_t* map);
 
-} // namespace miximus::nodes
+} // namespace miximus::nodes::math

@@ -1,8 +1,8 @@
 #include "gpu/framebuffer.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
-#include "utils.hpp"
 
 #include <glm/glm.hpp>
 

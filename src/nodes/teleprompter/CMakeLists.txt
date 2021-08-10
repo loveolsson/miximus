@@ -1,5 +1,6 @@
 target_sources(nodes
 PRIVATE
-    teleprompter.hpp
+    register.hpp
+    register.cpp
     teleprompter.cpp
 )

@@ -2,5 +2,7 @@
 #include "nodes/node.hpp"
 
 namespace miximus::nodes::teleprompter {
-std::shared_ptr<node_i> create_teleprompter_node();
+
+void register_nodes(constructor_map_t* map);
+
 } // namespace miximus::nodes::teleprompter

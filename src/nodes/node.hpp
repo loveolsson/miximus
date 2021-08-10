@@ -5,8 +5,10 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <functional>
+#include <map>
+#include <memory>
 #include <string_view>
-#include <unordered_map>
 
 namespace miximus::nodes {
 
@@ -14,7 +16,7 @@ class interface_i;
 
 class node_i
 {
-    using interface_map_t = std::unordered_map<std::string_view, const interface_i*>;
+    using interface_map_t = std::map<std::string_view, const interface_i*>;
 
   protected:
     interface_map_t interfaces_;
@@ -40,5 +42,8 @@ class node_i
     const interface_map_t& get_interfaces() const { return interfaces_; }
     const interface_i*     find_interface(std::string_view name) const;
 };
+
+using constructor_t     = std::function<std::shared_ptr<node_i>()>;
+using constructor_map_t = std::map<std::string_view, constructor_t>;
 
 } // namespace miximus::nodes

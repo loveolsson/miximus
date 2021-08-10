@@ -1,5 +1,4 @@
 #include "core/app_state.hpp"
-#include "decklink.hpp"
 #include "detail/allocator.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -8,6 +7,7 @@
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 #include "registry.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"

@@ -1,6 +1,7 @@
 target_sources(nodes
 PRIVATE
-    utils.hpp
+    register.hpp
+    register.cpp
     rect.cpp
     vec2.cpp
     framebuffer.cpp

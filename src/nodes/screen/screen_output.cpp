@@ -1,4 +1,3 @@
-#include "screen.hpp"
 #include "core/app_state.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -10,6 +9,7 @@
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 
 #include <memory>
@@ -24,9 +24,9 @@ class node_impl : public node_i
 {
     struct fb_info_s
     {
-        std::unique_ptr<gpu::framebuffer_s> framebuffer;
+        std::unique_ptr<gpu::framebuffer_s> fb;
         std::unique_ptr<gpu::sync_s>        sync;
-        gpu::vec2i_t                        screen_size;
+        gpu::vec2i_t                        fb_size;
     };
 
     input_interface_s<gpu::texture_s*> iface_tex_;
@@ -122,11 +122,11 @@ class node_impl : public node_i
             frame_.sync.reset();
         }
 
-        if (!frame_.framebuffer || frame_.framebuffer->texture()->texture_dimensions() != dim) {
-            frame_.framebuffer = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
+        if (!frame_.fb || frame_.fb->texture()->texture_dimensions() != dim) {
+            frame_.fb = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
         }
 
-        frame_.framebuffer->bind();
+        frame_.fb->bind();
 
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
@@ -153,8 +153,8 @@ class node_impl : public node_i
 
         gpu::framebuffer_s::unbind();
 
-        auto* fb_tex = frame_.framebuffer->texture();
-        if (fb_tex->texture_dimensions() != frame_.screen_size) {
+        auto* fb_tex = frame_.fb->texture();
+        if (fb_tex->texture_dimensions() != frame_.fb_size) {
             fb_tex->generate_mip_maps();
         }
 
@@ -163,12 +163,12 @@ class node_impl : public node_i
         // EXPERIMENT: behaves better on Linux
         // glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
 
-        frame_.screen_size = context_->get_framebuffer_size();
+        frame_.fb_size = context_->get_framebuffer_size();
     }
 
     void complete(core::app_state_s* /*app*/) final
     {
-        if (frame_.framebuffer) {
+        if (frame_.fb) {
             {
                 std::unique_lock lock(frame_mtx_);
                 frames_rendered_.emplace(std::move(frame_));
@@ -202,7 +202,7 @@ class node_impl : public node_i
         }
 
         if (name == "sizex" || name == "sizey") {
-            return validate_option<bool>(value, 100);
+            return validate_option<int>(value, 100);
         }
 
         return false;
@@ -248,12 +248,12 @@ class node_impl : public node_i
                 }
             }
 
-            if (frame.sync && frame.framebuffer) {
+            if (frame.sync && frame.fb) {
                 frame.sync->gpu_wait();
                 frame.sync.reset();
 
-                auto* texture = frame.framebuffer->texture();
-                auto  dim     = frame.screen_size;
+                auto* texture = frame.fb->texture();
+                auto  dim     = frame.fb_size;
 
                 glViewport(0, 0, dim.x, dim.y);
                 glClearColor(0, 0, 0, 0);

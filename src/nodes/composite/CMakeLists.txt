@@ -1,5 +1,6 @@
 target_sources(nodes
 PRIVATE
-    composite.hpp
+    register.hpp
+    register.cpp
     draw_box.cpp
 )

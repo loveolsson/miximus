@@ -1,6 +1,6 @@
-#include "nodes/math/math.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 
 #include <glm/common.hpp>

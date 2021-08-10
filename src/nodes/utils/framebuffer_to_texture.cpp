@@ -1,7 +1,7 @@
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "nodes/interface.hpp"
-#include "utils.hpp"
+#include "nodes/node.hpp"
 
 #include <glm/glm.hpp>
 

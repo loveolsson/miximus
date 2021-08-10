@@ -1,5 +1,6 @@
 target_sources(nodes
 PRIVATE
-    debug.hpp
+    register.hpp
+    register.cpp
     sinus_source.cpp
 )

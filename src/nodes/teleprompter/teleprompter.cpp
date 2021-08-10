@@ -1,4 +1,3 @@
-#include "teleprompter.hpp"
 #include "core/app_state.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -8,6 +7,7 @@
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"

@@ -3,6 +3,6 @@
 
 namespace miximus::nodes::screen {
 
-std::shared_ptr<node_i> create_screen_output_node();
+void register_nodes(constructor_map_t* map);
 
 } // namespace miximus::nodes::screen

@@ -3,6 +3,6 @@
 
 namespace miximus::nodes::debug {
 
-std::shared_ptr<node_i> create_sinus_source_node();
+void register_nodes(constructor_map_t* map);
 
 } // namespace miximus::nodes::debug
