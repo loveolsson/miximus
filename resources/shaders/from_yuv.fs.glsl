@@ -1,9 +1,9 @@
-#version 330 core
 out vec4 FragColor;
 
 in vec2 TexCoord; // the input variable from the vertex shader (same name and same type)
 
 uniform sampler2D tex;
+uniform mat3      transfer;
 // UYVY macropixel texture passed as RGBA format
 
 vec4 rec709YCbCr2rgba(float Y, float Cb, float Cr, float a)
@@ -17,10 +17,12 @@ vec4 rec709YCbCr2rgba(float Y, float Cb, float Cr, float a)
     Cr = (Cr * 256.0 - 16.0) / 224.0 - 0.5;
 
     // Convert to RGB using Rec.709 conversion matrix (see eq 26.7 in Poynton 2003)
-    r = Y + 1.5748 * Cr;
-    g = Y - 0.1873 * Cb - 0.4681 * Cr;
-    b = Y + 1.8556 * Cb;
-    return vec4(r, g, b, a);
+    // r = Y + 1.5748 * Cr;
+    // g = Y - 0.1873 * Cb - 0.4681 * Cr;
+    // b = Y + 1.8556 * Cb;
+    // return vec4(r, g, b, a);
+
+    return vec4(transfer * vec3(Y, Cb, Cr), a);
 }
 
 // Perform bilinear interpolation between the provided components.
@@ -47,26 +49,6 @@ void textureGatherYUV(sampler2D UYVYsampler, vec2 tc, out vec4 W, out vec4 X, ou
     X          = texelFetch(UYVYsampler, clamp(tx + ivec2(0, 1), tmin, tmax), 0);
     Y          = texelFetch(UYVYsampler, clamp(tx + ivec2(1, 1), tmin, tmax), 0);
     Z          = texelFetch(UYVYsampler, clamp(tx + ivec2(1, 0), tmin, tmax), 0);
-}
-
-// Converts a color from linear light gamma to sRGB gamma
-vec3 fromLinear(vec3 linearRGB)
-{
-    bvec3 cutoff = lessThan(linearRGB, vec3(0.0031308));
-    vec3  higher = vec3(1.055) * pow(linearRGB, vec3(1.0 / 2.4)) - vec3(0.055);
-    vec3  lower  = linearRGB * vec3(12.92);
-
-    return mix(higher, lower, cutoff);
-}
-
-// Converts a color from sRGB gamma to linear light gamma
-vec3 toLinear(vec3 sRGB)
-{
-    bvec3 cutoff = lessThan(sRGB, vec3(0.04045));
-    vec3  higher = pow((sRGB + vec3(0.055)) / vec3(1.055), vec3(2.4));
-    vec3  lower  = sRGB / vec3(12.92);
-
-    return mix(higher, lower, cutoff);
 }
 
 void main(void)
@@ -108,5 +90,4 @@ void main(void)
 
     vec4 sRGB = bilinear(pixel, pixel_u, pixel_ur, pixel_r, off);
     FragColor = vec4(toLinear(sRGB.xyz), sRGB.w);
-    // FragColor = sRGB;
 }

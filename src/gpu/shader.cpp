@@ -21,6 +21,12 @@ class shader_s
     {
         const auto& files = static_files::get_resource_files();
 
+        auto common_it = files.find("shaders/common.glsl");
+
+        if (common_it == files.end()) {
+            throw std::runtime_error("shader file not found: shaders/common.glsl");
+        }
+
         auto it = files.find(name);
 
         if (it == files.end()) {
@@ -29,9 +35,16 @@ class shader_s
 
         id_ = glCreateShader(type);
 
-        auto        shader_text     = it->second.raw();
-        const auto* shader_text_ptr = shader_text.c_str();
-        glShaderSource(id_, 1, &shader_text_ptr, nullptr);
+        auto common_text = common_it->second.raw();
+        auto shader_text = it->second.raw();
+
+        std::vector<const char*> texts = {
+            "#version 330 core",
+            common_text.c_str(),
+            shader_text.c_str(),
+        };
+
+        glShaderSource(id_, texts.size(), texts.data(), nullptr);
         glCompileShader(id_);
 
         GLint is_compiled = 0;
@@ -155,6 +168,13 @@ void shader_program_s::set_uniform(const std::string& name, const vec2_t& val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
         glProgramUniform2f(program_, it->second.loc, val.x, val.y);
+    }
+}
+
+void shader_program_s::set_uniform(const std::string& name, const mat3& val)
+{
+    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
+        glProgramUniformMatrix3fv(program_, it->second.loc, 1, GL_TRUE, &val[0][0]);
     }
 }
 

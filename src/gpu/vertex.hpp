@@ -43,31 +43,59 @@ inline constexpr auto get_vertex_type_info<vertex_uv>()
 
 constexpr vertex_uv full_screen_quad_verts[] = {
     {
-        {0, 0},
-        {0, 0},
-    },
-    {
-        {1.f, 0},
-        {1.f, 0},
-    },
-    {
         {0, 1.f},
+        {0, 0},
+    },
+    {
+        {1.f, 1.f},
+        {1.f, 0},
+    },
+    {
+        {0, 0},
         {0, 1.f},
     },
 
     {
-        {0, 1.f},
+        {0, 0},
         {0, 1.f},
     },
     {
+        {1.f, 1.f},
         {1.f, 0},
+    },
+    {
         {1.f, 0},
+        {1.f, 1.f},
+    },
+
+};
+
+constexpr vertex_uv full_screen_quad_verts_flip_uv[] = {
+    {
+        {0, 1.f},
+        {0, 1.f},
     },
     {
         {1.f, 1.f},
         {1.f, 1.f},
     },
+    {
+        {0, 0},
+        {0, 0},
+    },
 
+    {
+        {0, 0},
+        {0, 0},
+    },
+    {
+        {1.f, 1.f},
+        {1.f, 1.f},
+    },
+    {
+        {1.f, 0},
+        {1.f, 0},
+    },
 };
 
 } // namespace miximus::gpu

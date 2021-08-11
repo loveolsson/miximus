@@ -19,6 +19,7 @@ add_library(gpu
     types.cpp
     draw_state.hpp
     draw_state.cpp
+    color_transfer.hpp
 )
 
 add_subdirectory(transfer)

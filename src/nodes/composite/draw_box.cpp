@@ -40,7 +40,7 @@ class node_impl : public node_i
             draw_state_  = std::make_unique<gpu::draw_state_s>();
             auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
             draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
+            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
     }
 
@@ -68,11 +68,10 @@ class node_impl : public node_i
         fb->bind();
 
         auto fb_dim = fb->texture()->texture_dimensions();
-
         glViewport(0, 0, fb_dim.x, fb_dim.y);
 
         auto* shader = draw_state_->get_shader_program();
-        shader->set_uniform("offset", gpu::vec2_t{draw_rect.pos.x, 1.0 - draw_rect.pos.y - draw_rect.size.y});
+        shader->set_uniform("offset", draw_rect.pos);
         shader->set_uniform("scale", draw_rect.size);
         shader->set_uniform("opacity", opacity);
 

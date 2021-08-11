@@ -1,5 +1,6 @@
 #include "core/app_state.hpp"
 #include "detail/allocator.hpp"
+#include "gpu/color_transfer.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/glad.hpp"
@@ -27,6 +28,8 @@ using frame_info_t  = std::pair<decklink_ptr<IDeckLinkVideoFrame>, gpu::transfer
 
 class node_impl;
 
+auto log() { return getlog("decklink"); }
+
 class callback_s : public IDeckLinkInputCallback
 {
     std::atomic_ulong                 ref_count_{1};
@@ -35,6 +38,7 @@ class callback_s : public IDeckLinkInputCallback
     std::queue<frame_info_t>          frame_queue_;
     decklink_ptr<detail::allocator_s> allocator_;
     BMDDisplayMode                    new_display_mode_{bmdModeUnknown};
+    BMDDisplayModeFlags               new_display_mode_flags{};
 
   public:
     callback_s(std::shared_ptr<gpu::context_s> ctx, decklink_ptr<detail::allocator_s> allocator)
@@ -94,12 +98,15 @@ class callback_s : public IDeckLinkInputCallback
     }
 
     HRESULT
-    VideoInputFormatChanged(BMDVideoInputFormatChangedEvents /*notificationEvents*/,
-                            IDeckLinkDisplayMode* newDisplayMode,
+    VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
+                            IDeckLinkDisplayMode*            newDisplayMode,
                             BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
     {
-        std::unique_lock lock(frame_mutex_);
-        new_display_mode_ = newDisplayMode->GetDisplayMode();
+        if (notificationEvents & bmdVideoInputDisplayModeChanged) {
+            std::unique_lock lock(frame_mutex_);
+            new_display_mode_      = newDisplayMode->GetDisplayMode();
+            new_display_mode_flags = newDisplayMode->GetFlags();
+        }
 
         return S_OK;
     }
@@ -118,14 +125,15 @@ class callback_s : public IDeckLinkInputCallback
         return res;
     }
 
-    BMDDisplayMode get_new_display_mode()
+    std::pair<BMDDisplayMode, BMDDisplayModeFlags> get_new_display_mode()
     {
         std::unique_lock lock(frame_mutex_);
 
-        auto res          = new_display_mode_;
+        auto res = new_display_mode_;
+
         new_display_mode_ = bmdModeUnknown;
 
-        return res;
+        return {res, new_display_mode_flags};
     }
 };
 
@@ -139,6 +147,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::texture_s>     texture_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
+    gpu::color_transfer_e               color_transfer_ = gpu::color_transfer_e::Rec601;
 
     std::optional<frame_info_t> processed_frame_;
 
@@ -164,6 +173,7 @@ class node_impl : public node_i
         callback_  = nullptr;
         texture_.reset();
         framebuffer_.reset();
+        color_transfer_ = gpu::color_transfer_e::Rec601;
     }
 
   public:
@@ -188,11 +198,17 @@ class node_impl : public node_i
         if (callback_) {
             processed_frame_ = callback_->get_frame_from_queue();
 
-            auto new_mode = callback_->get_new_display_mode();
+            auto [new_mode, flags] = callback_->get_new_display_mode();
             if (new_mode != bmdModeUnknown && device_) {
                 device_->PauseStreams();
                 device_->EnableVideoInput(new_mode, bmdFormat8BitYUV, bmdVideoInputEnableFormatDetection);
                 device_->StartStreams();
+
+                if (flags & bmdDisplayModeColorspaceRec709) {
+                    color_transfer_ = gpu::color_transfer_e::Rec709;
+                } else {
+                    color_transfer_ = gpu::color_transfer_e::Rec601;
+                }
             }
         }
 
@@ -216,7 +232,7 @@ class node_impl : public node_i
             return;
         }
 
-        getlog("nodes")->info("Setting up DeckLink input {}", device_name);
+        log()->info("Setting up DeckLink input {}", device_name);
         device_ = device;
         devices_in_use.emplace(device_.ptr());
 
@@ -274,6 +290,9 @@ class node_impl : public node_i
             shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
             shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
             shader->set_uniform("opacity", 1.0);
+
+            auto color_transfer = gpu::get_color_transfer(color_transfer_);
+            shader->set_uniform("transfer", color_transfer);
 
             texture_->bind(0);
             draw_state_->draw();

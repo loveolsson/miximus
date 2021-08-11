@@ -219,8 +219,8 @@ class node_impl : public node_i
         auto*             shader = context_->get_shader(gpu::shader_program_s::name_e::basic);
         draw_state.set_shader_program(shader);
         draw_state.set_vertex_data(gpu::full_screen_quad_verts);
-        shader->set_uniform("offset", gpu::vec2_t{0, 0});
-        shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
+        shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
+        shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
         shader->set_uniform("opacity", 1.0);
 
         while (true) {

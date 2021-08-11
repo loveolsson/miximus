@@ -112,7 +112,7 @@ class node_impl : public node_i
             draw_state_  = std::make_unique<gpu::draw_state_s>();
             auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
             draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
+            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
     }
 
@@ -201,7 +201,7 @@ class node_impl : public node_i
         }
 
         auto* shader = draw_state_->get_shader_program();
-        shader->set_uniform("scale", gpu::vec2_t{1, static_cast<float>(-tx_dim.y) / fb_dim.y});
+        shader->set_uniform("scale", gpu::vec2_t{1, static_cast<double>(tx_dim.y) / fb_dim.y});
         shader->set_uniform("opacity", 1.0);
 
         fb->bind();
@@ -271,11 +271,11 @@ class node_impl : public node_i
             int    line_height_px = font_size_ + line_height_extra_;
             double px_height      = 1.0 / fb_dim.y;
 
-            int px_pos = line_height_px * txt_line_index - (scroll_pos * line_height_px);
+            int px_pos = line_height_px * (txt_line_index) - (scroll_pos * line_height_px);
 
             gpu::vec2_t pos = {0, px_height * px_pos};
 
-            shader->set_uniform("offset", gpu::vec2_t{0, 1.0} - pos);
+            shader->set_uniform("offset", pos);
             draw_state_->draw();
         }
 

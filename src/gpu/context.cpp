@@ -354,10 +354,10 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 
     switch (name) {
         case name_e::basic:
-            shader = std::make_unique<shader_program_s>("shaders/basic_vert.glsl", "shaders/basic_frag.glsl");
+            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/basic.fs.glsl");
             break;
         case name_e::yuv_to_rgb:
-            shader = std::make_unique<shader_program_s>("shaders/basic_vert.glsl", "shaders/from_yuv_frag.glsl");
+            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl");
             break;
 
         default:
