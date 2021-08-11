@@ -35,7 +35,7 @@ class node_impl : public node_i
         size = glm::max(size, gpu::vec2i_t{128, 128});
 
         if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != size) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(size, gpu::texture_s::colorspace_e::RGBA);
+            framebuffer_ = std::make_unique<gpu::framebuffer_s>(size, gpu::texture_s::format_e::rgba_f16);
         }
 
         framebuffer_->bind();

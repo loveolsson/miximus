@@ -73,6 +73,19 @@ static std::string get_decklink_name(const decklink_ptr<IDeckLink>& device)
     return ss.str();
 }
 
+std::string decklink_registry_s::get_display_mode_name(IDeckLinkDisplayMode* mode)
+{
+#if _WIN32
+    BSTR name;
+    mode->GetName(&name);
+    return bstr_to_mbs(name);
+#else
+    const char* name = nullptr;
+    mode->GetName(&name);
+    return name;
+#endif
+}
+
 class discovery_callback : public IDeckLinkDeviceNotificationCallback
 {
     decklink_registry_s* registry_;

@@ -200,8 +200,10 @@ context_s::context_s(bool visible, context_s* parent)
 
     if (visible) {
         glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+        glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
     } else {
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
     }
 
     GLFWwindow* parent_window = nullptr;
@@ -223,7 +225,7 @@ context_s::context_s(bool visible, context_s* parent)
             throw std::runtime_error("GLAD failed to load OpenGL procs");
         }
 
-        glEnable(GL_DEBUG_OUTPUT);
+        // glEnable(GL_DEBUG_OUTPUT);
         glDebugMessageCallback(opengl_error_callback, nullptr);
     });
 

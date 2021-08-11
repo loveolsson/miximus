@@ -2,6 +2,7 @@ target_sources(nodes
 PRIVATE
     register.hpp
     register.cpp
+    detail/frame.hpp
     detail/allocator.hpp
     detail/allocator.cpp
     input.cpp

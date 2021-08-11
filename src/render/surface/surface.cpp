@@ -10,7 +10,7 @@ surface_s::surface_s(gpu::vec2i_t dim)
     using transfer_i = gpu::transfer::transfer_i;
     size_t size      = dim.x * dim.y * sizeof(rgba_pixel_t);
 
-    texture_  = std::make_unique<gpu::texture_s>(dim, gpu::texture_s::colorspace_e::RGBA);
+    texture_  = std::make_unique<gpu::texture_s>(dim, gpu::texture_s::format_e::rgba_f16);
     transfer_ = transfer_i::create_transfer(transfer_i::get_prefered_type(), size, transfer_i::direction_e::cpu_to_gpu);
 }
 

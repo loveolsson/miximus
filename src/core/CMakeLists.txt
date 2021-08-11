@@ -11,6 +11,5 @@ target_link_libraries(app
 PRIVATE
     gpu
     render
-PUBLIC 
     nodes
 )

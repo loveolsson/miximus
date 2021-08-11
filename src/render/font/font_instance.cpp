@@ -1,10 +1,6 @@
 #include "font_instance.hpp"
 #include "render/surface/surface.hpp"
 
-#include <ft2build.h>
-
-#include FT_FREETYPE_H
-
 #include <cwctype>
 
 namespace miximus::render {

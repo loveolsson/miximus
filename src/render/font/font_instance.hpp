@@ -3,13 +3,11 @@
 #include "gpu/types.hpp"
 #include "render/surface/surface_fwd.hpp"
 
-#include <string_view>
+#include <ft2build.h>
 
-// Fwd declarations
-struct FT_LibraryRec_;
-struct FT_FaceRec_;
-typedef struct FT_LibraryRec_* FT_Library;
-typedef struct FT_FaceRec_*    FT_Face;
+#include FT_FREETYPE_H
+
+#include <string_view>
 
 namespace miximus::render {
 

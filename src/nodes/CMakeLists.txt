@@ -26,6 +26,7 @@ target_link_libraries(nodes
 PRIVATE
     gpu
     decklink
+    ndi
     render
     Boost::fiber
 PUBLIC

@@ -11,6 +11,7 @@ struct IDeckLinkInput;
 struct IDeckLinkOutput;
 struct IDeckLinkDiscovery;
 struct IDeckLinkVideoConversion;
+struct IDeckLinkDisplayMode;
 
 namespace miximus::nodes::decklink {
 
@@ -39,6 +40,8 @@ class decklink_registry_s
 
     std::vector<std::string> get_input_names();
     std::vector<std::string> get_output_names();
+
+    static std::string get_display_mode_name(IDeckLinkDisplayMode* mode);
 
     static std::unique_ptr<decklink_registry_s> create_decklink_registry();
 };

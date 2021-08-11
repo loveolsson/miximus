@@ -28,14 +28,15 @@ static mat3 get_color_transfer(color_transfer_e c)
         case color_transfer_e::Rec601:
             wr = 0.2990f;
             wb = 0.1140f;
-
             break;
 
         case color_transfer_e::Rec709:
             wr = 0.2126f;
             wb = 0.0722f;
+            break;
 
         default:
+            assert(false);
             break;
     }
 

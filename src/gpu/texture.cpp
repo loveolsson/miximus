@@ -4,7 +4,7 @@
 
 namespace miximus::gpu {
 
-texture_s::texture_s(vec2i_t dimensions, colorspace_e color)
+texture_s::texture_s(vec2i_t dimensions, format_e color)
     : display_dimensions_(dimensions)
     , colorspace_(color)
 {
@@ -14,33 +14,33 @@ texture_s::texture_s(vec2i_t dimensions, colorspace_e color)
 
     glCreateTextures(GL_TEXTURE_2D, 1, &id_);
 
-    glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     switch (colorspace_) {
-        case colorspace_e::RGB:
-            internal_format = GL_RGB8;
+        case format_e::rgb_f16:
+            internal_format = GL_RGB16;
             format_         = GL_RGB;
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             break;
-        case colorspace_e::RGBA:
-            internal_format = GL_RGBA8;
+        case format_e::rgba_f16:
+            internal_format = GL_RGBA16;
             format_         = GL_RGBA;
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             // glTexParameterf(id_, GL_TEXTURE_MAX_ANISOTROPY, 16.f);
             break;
-        case colorspace_e::BGRA:
-            internal_format = GL_RGBA16F;
+        case format_e::bgra_u8:
+            internal_format = GL_RGBA8;
             format_         = GL_BGRA;
             type_           = GL_UNSIGNED_BYTE;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             break;
-        case colorspace_e::UYVY:
+        case format_e::uyuv_u8:
             internal_format = GL_RGBA8;
             format_         = GL_BGRA;
             type_           = GL_UNSIGNED_INT_8_8_8_8_REV;
@@ -49,7 +49,7 @@ texture_s::texture_s(vec2i_t dimensions, colorspace_e color)
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             mip_map_levels = 1;
             break;
-        case colorspace_e::UYVY10:
+        case format_e::uyuv_u10:
             internal_format = GL_RGB10_A2;
             format_         = GL_BGRA;
             type_           = GL_UNSIGNED_INT_10_10_10_2;
@@ -77,7 +77,7 @@ void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 void texture_s::generate_mip_maps() const
 {
     switch (colorspace_) {
-        case colorspace_e::UYVY:
+        case format_e::uyuv_u8:
             break;
 
         default:

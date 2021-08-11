@@ -3,7 +3,7 @@
 
 namespace miximus::gpu {
 
-framebuffer_s::framebuffer_s(vec2i_t dimensions, texture_s::colorspace_e color)
+framebuffer_s::framebuffer_s(vec2i_t dimensions, texture_s::format_e color)
 {
     glGenFramebuffers(1, &id_);
     bind();

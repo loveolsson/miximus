@@ -12,7 +12,7 @@ PRIVATE
 find_package(Freetype REQUIRED)
 
 target_link_libraries(render 
-PRIVATE
+PUBLIC
     Freetype::Freetype
 ) 
 

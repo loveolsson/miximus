@@ -1,9 +1,5 @@
 #include "font_loader.hpp"
 
-#include <ft2build.h>
-
-#include FT_FREETYPE_H
-
 namespace miximus::render {
 
 font_loader_s::font_loader_s()

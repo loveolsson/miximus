@@ -90,4 +90,5 @@ void main(void)
 
     vec4 sRGB = bilinear(pixel, pixel_u, pixel_ur, pixel_r, off);
     FragColor = vec4(toLinear(sRGB.xyz), sRGB.w);
+    // FragColor = vec4(sRGB.xyz, sRGB.w);
 }

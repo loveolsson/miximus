@@ -65,7 +65,7 @@ class node_impl : public node_i
                 context_    = gpu::context_s::create_unique_context(true, app->ctx());
                 thread_run_ = true;
 
-                for (int i = 0; i < 5; ++i) {
+                for (int i = 0; i < 3; ++i) {
                     frames_free_.emplace();
                 }
 
@@ -123,7 +123,7 @@ class node_impl : public node_i
         }
 
         if (!frame_.fb || frame_.fb->texture()->texture_dimensions() != dim) {
-            frame_.fb = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::colorspace_e::RGB);
+            frame_.fb = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::rgb_f16);
         }
 
         frame_.fb->bind();
