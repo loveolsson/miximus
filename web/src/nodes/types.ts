@@ -10,7 +10,7 @@ import {
 } from "./math";
 import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
 import { ScreenOutputNode } from "./screen";
-import { DeckLinkInputNode } from "./decklink";
+import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
 import {
   FrameBufferNode,
   FramebufferToTextureNode,
@@ -69,6 +69,11 @@ export function register_types(editor: Editor): void {
 
   editor.registerNodeType(type_e.screen_output, ScreenOutputNode, "Outputs");
   editor.registerNodeType(type_e.decklink_input, DeckLinkInputNode, "Inputs");
+  editor.registerNodeType(
+    type_e.decklink_output,
+    DeckLinkOutputNode,
+    "Outputs"
+  );
 
   editor.registerNodeType(type_e.vec2, Vec2Node, "Utils");
   editor.registerNodeType(type_e.rect, RectNode, "Utils");

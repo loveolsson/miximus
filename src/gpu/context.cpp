@@ -225,7 +225,7 @@ context_s::context_s(bool visible, context_s* parent)
             throw std::runtime_error("GLAD failed to load OpenGL procs");
         }
 
-        // glEnable(GL_DEBUG_OUTPUT);
+        glEnable(GL_DEBUG_OUTPUT);
         glDebugMessageCallback(opengl_error_callback, nullptr);
     });
 
@@ -358,8 +358,13 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
         case name_e::basic:
             shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/basic.fs.glsl");
             break;
+
         case name_e::yuv_to_rgb:
             shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl");
+            break;
+
+        case name_e::apply_gamma:
+            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl");
             break;
 
         default:

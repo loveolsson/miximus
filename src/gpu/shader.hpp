@@ -38,6 +38,7 @@ class shader_program_s
     {
         basic,
         yuv_to_rgb,
+        apply_gamma,
     };
 
     shader_program_s(std::string_view vert_name, std::string_view frag_name);

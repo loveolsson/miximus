@@ -24,20 +24,21 @@ class node_impl : public node_i
 {
     struct fb_info_s
     {
-        std::unique_ptr<gpu::framebuffer_s> fb;
-        std::unique_ptr<gpu::sync_s>        sync;
-        gpu::vec2i_t                        fb_size;
+        GLuint                       id{};
+        std::unique_ptr<gpu::sync_s> sync;
+        gpu::vec2i_t                 tx_size;
+        gpu::vec2i_t                 fb_size;
     };
 
-    input_interface_s<gpu::texture_s*> iface_tex_;
-    std::unique_ptr<gpu::context_s>    context_;
-    std::unique_ptr<gpu::draw_state_s> draw_state_;
+    input_interface_s<gpu::texture_s*>  iface_tex_;
+    std::unique_ptr<gpu::context_s>     context_;
+    std::unique_ptr<gpu::draw_state_s>  draw_state_;
+    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
 
     std::mutex              frame_mtx_;
     std::condition_variable frame_cv_;
     std::queue<fb_info_s>   frames_rendered_;
     std::queue<fb_info_s>   frames_free_;
-    fb_info_s               frame_;
 
     bool              thread_run_{};
     std::future<bool> thread_future_{};
@@ -64,10 +65,6 @@ class node_impl : public node_i
 
                 context_    = gpu::context_s::create_unique_context(true, app->ctx());
                 thread_run_ = true;
-
-                for (int i = 0; i < 3; ++i) {
-                    frames_free_.emplace();
-                }
 
                 thread_future_ = std::async(&node_impl::run, this);
             }
@@ -106,27 +103,41 @@ class node_impl : public node_i
             int i = 0;
         }
 
+        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dim) {
+            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
+        }
+
+        fb_info_s frame;
+
         {
             std::unique_lock lock(frame_mtx_);
-            if (frames_free_.size() < 2) {
-                getlog("nodes")->warn("screen_output: No frame available for render");
-                return;
+            // Avoid blocking the main thread with a wait by not using the 2 most recently
+            // displayed buffers, as it might still be used by the display context
+
+            if (frames_free_.size() > 2) {
+                frame = std::move(frames_free_.front());
+                frames_free_.pop();
             }
-
-            frame_ = std::move(frames_free_.front());
-            frames_free_.pop();
         }
 
-        if (frame_.sync) {
-            frame_.sync->gpu_wait();
-            frame_.sync.reset();
+        if (frame.sync) {
+            // Ensure buffer is done in the display context
+            frame.sync->gpu_wait();
+            frame.sync.reset();
         }
 
-        if (!frame_.fb || frame_.fb->texture()->texture_dimensions() != dim) {
-            frame_.fb = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::rgb_f16);
+        if (frame.tx_size != dim || frame.id == 0) {
+            frame.tx_size = dim;
+
+            glDeleteBuffers(1, &frame.id);
+
+            glCreateBuffers(1, &frame.id);
+            glNamedBufferData(frame.id, dim.x * dim.y * 4, nullptr, GL_DYNAMIC_COPY);
         }
 
-        frame_.fb->bind();
+        frame.fb_size = context_->get_framebuffer_size();
+
+        framebuffer_->bind();
 
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
@@ -151,32 +162,30 @@ class node_impl : public node_i
             gpu::texture_s::unbind(0);
         }
 
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, frame.id);
+        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         gpu::framebuffer_s::unbind();
 
-        auto* fb_tex = frame_.fb->texture();
-        if (fb_tex->texture_dimensions() != frame_.fb_size) {
-            fb_tex->generate_mip_maps();
-        }
-
-        frame_.sync = std::make_unique<gpu::sync_s>();
-
         // EXPERIMENT: behaves better on Linux
-        // glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+        // glMemoryBarrierByRegion(GL_TEXTURE_FETCH_BARRIER_BIT);
 
-        frame_.fb_size = context_->get_framebuffer_size();
-    }
+        {
+            std::unique_lock lock(frame_mtx_);
 
-    void complete(core::app_state_s* /*app*/) final
-    {
-        if (frame_.fb) {
-            {
-                std::unique_lock lock(frame_mtx_);
-                frames_rendered_.emplace(std::move(frame_));
+            if (frames_rendered_.size() < 3) {
+                frame.sync = std::make_unique<gpu::sync_s>();
+                frames_rendered_.emplace(std::move(frame));
+                lock.unlock();
+                frame_cv_.notify_one();
+            } else {
+                // TODO: log or signal this
+                frames_free_.emplace(std::move(frame));
             }
-
-            frame_cv_.notify_one();
         }
     }
+
+    void complete(core::app_state_s* /*app*/) final {}
 
     nlohmann::json get_default_options() const final
     {
@@ -223,40 +232,43 @@ class node_impl : public node_i
         shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
         shader->set_uniform("opacity", 1.0);
 
+        std::unique_ptr<gpu::texture_s> texture;
+
         while (true) {
             fb_info_s frame;
 
             {
                 std::unique_lock lock(frame_mtx_);
-                frame_cv_.wait(lock, [this]() { return !thread_run_ || !frames_rendered_.empty(); });
+                frame_cv_.wait(lock, [this]() { return !thread_run_ || frames_rendered_.size() > 1; });
 
                 if (!thread_run_) {
                     break;
                 }
 
                 if (frames_rendered_.size() > 1) {
-                    auto& f = frames_rendered_.front();
-                    f.sync.reset();
-                    frames_free_.emplace(std::move(f));
-                    frames_rendered_.pop();
-                    log->warn("screen_output: Discarding frame");
-                }
-
-                if (!frames_rendered_.empty()) {
+                    // Avoid waiting by buffering one frame, so that the frame being displayed
+                    // is not currently being rendering
                     frame = std::move(frames_rendered_.front());
                     frames_rendered_.pop();
                 }
             }
 
-            if (frame.sync && frame.fb) {
+            if (frame.sync && frame.id != 0) {
                 frame.sync->gpu_wait();
                 frame.sync.reset();
 
-                auto* texture = frame.fb->texture();
-                auto  dim     = frame.fb_size;
+                if (!texture || texture->texture_dimensions() != frame.tx_size) {
+                    texture = std::make_unique<gpu::texture_s>(frame.tx_size, gpu::texture_s::format_e::bgra_u8);
+                }
 
-                glViewport(0, 0, dim.x, dim.y);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, frame.id);
+                glTextureSubImage2D(
+                    texture->id(), 0, 0, 0, frame.tx_size.x, frame.tx_size.y, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+                glViewport(0, 0, frame.fb_size.x, frame.fb_size.y);
                 glClearColor(0, 0, 0, 0);
+                glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
 
                 // EXPERIMENT: behaves better on Linux
                 // glTextureBarrier();
@@ -271,7 +283,7 @@ class node_impl : public node_i
 
                 {
                     std::unique_lock lock(frame_mtx_);
-                    frames_free_.push(std::move(frame));
+                    frames_free_.emplace(std::move(frame));
                 }
             }
         }
@@ -288,14 +300,14 @@ class node_impl : public node_i
             thread_run_ = false;
 
             while (!frames_rendered_.empty()) {
+                glDeleteBuffers(1, &frames_rendered_.front().id);
                 frames_rendered_.pop();
             }
 
             while (!frames_free_.empty()) {
+                glDeleteBuffers(1, &frames_free_.front().id);
                 frames_free_.pop();
             }
-
-            frame_ = {};
         }
 
         frame_cv_.notify_one();
@@ -304,12 +316,11 @@ class node_impl : public node_i
             thread_future_.get();
         }
     }
-}; // namespace
+};
 
 } // namespace
 
 namespace miximus::nodes::screen {
-
 std::shared_ptr<node_i> create_screen_output_node() { return std::make_shared<node_impl>(); }
 
 } // namespace miximus::nodes::screen

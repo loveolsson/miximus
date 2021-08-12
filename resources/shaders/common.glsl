@@ -1,9 +1,9 @@
 // Converts a color from linear light gamma to sRGB gamma
 vec3 fromLinear(vec3 linearRGB)
 {
-    bvec3 cutoff = lessThan(linearRGB, vec3(0.0031308));
-    vec3  higher = vec3(1.055) * pow(linearRGB, vec3(1.0 / 2.4)) - vec3(0.055);
-    vec3  lower  = linearRGB * vec3(12.92);
+    bvec3 cutoff = lessThan(linearRGB, vec3(0.018));
+    vec3  higher = vec3(1.099) * pow(linearRGB, vec3(0.45)) - vec3(0.099);
+    vec3  lower  = linearRGB * vec3(4.5);
 
     return mix(higher, lower, cutoff);
 }

@@ -60,8 +60,15 @@ class decklink_frame_s : public IDeckLinkVideoFrame
         return S_OK;
     }
 
-    HRESULT GetTimecode(BMDTimecodeFormat /*format*/, IDeckLinkTimecode** /*timecode*/) final { return E_NOTIMPL; }
-    HRESULT GetAncillaryData(IDeckLinkVideoFrameAncillary** ancillary) final { return E_NOTIMPL; }
+    HRESULT GetTimecode(BMDTimecodeFormat /*format*/, IDeckLinkTimecode** /*timecode*/) final
+    {
+        return E_NOTIMPL; //
+    }
+
+    HRESULT GetAncillaryData(IDeckLinkVideoFrameAncillary** ancillary) final
+    {
+        return E_NOTIMPL; //
+    }
 };
 
 } // namespace miximus::nodes::decklink::detail
