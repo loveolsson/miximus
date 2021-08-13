@@ -98,7 +98,8 @@ class callback_s
     /**
      * IDeckLinkVideoOutputCallback
      */
-    HRESULT ScheduledFrameCompleted(IDeckLinkVideoFrame* completedFrame, BMDOutputFrameCompletionResult result) final
+    HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame*           completedFrame,
+                                                      BMDOutputFrameCompletionResult result) final
     {
         using namespace gpu::transfer;
         std::unique_lock lock(frame_mtx_);
@@ -125,7 +126,7 @@ class callback_s
         return S_OK;
     }
 
-    HRESULT ScheduledPlaybackHasStopped() final
+    HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped() final
     {
         log()->warn("Playback has stopped");
         return S_OK;
@@ -134,7 +135,7 @@ class callback_s
     /**
      * IDeckLinkAudioOutputCallback
      */
-    HRESULT RenderAudioSamples(bool preroll) final { return S_OK; }
+    HRESULT STDMETHODCALLTYPE RenderAudioSamples(BOOL preroll) final { return S_OK; }
 
     void push_rendered_frame(decklink_ptr<IDeckLinkVideoFrame>&& frame)
     {

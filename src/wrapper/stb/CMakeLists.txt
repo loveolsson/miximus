@@ -1,4 +1,4 @@
-add_library(stb SHARED
+add_library(stb
     stb_impl.cpp
 )
 
