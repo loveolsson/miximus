@@ -367,6 +367,10 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
             shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl");
             break;
 
+        case name_e::strip_gamma:
+            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/strip_gamma.fs.glsl");
+            break;
+
         default:
             throw std::runtime_error("Trying to create unknown shader type");
             break;

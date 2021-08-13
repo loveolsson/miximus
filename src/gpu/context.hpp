@@ -22,16 +22,9 @@ class context_s
     shader_map_t shaders_;
     std::mutex   mtx_;
 
-    // vec2i_t framebuffer_size_{};
-    // recti_s window_rect_{};
-
   public:
     context_s(bool visible, context_s* parent);
     ~context_s();
-
-    // void framebuffer_size_changed(int w, int h);
-    // void window_size_changed(int w, int h);
-    // void window_position_changed(int x, int y);
 
     vec2i_t get_framebuffer_size();
     recti_s get_window_rect();

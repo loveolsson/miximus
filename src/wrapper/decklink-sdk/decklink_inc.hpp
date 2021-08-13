@@ -7,3 +7,7 @@
 #else
 #include <DeckLinkAPI.h>
 #endif
+
+#ifndef BOOL
+#define BOOL bool
+#endif
