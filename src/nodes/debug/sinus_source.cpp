@@ -11,10 +11,10 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    output_interface_s<double> iface_res_;
+    output_interface_s<double> iface_res_{"res"};
 
   public:
-    explicit node_impl() { interfaces_.emplace("res", &iface_res_); }
+    explicit node_impl() { iface_res_.register_interface(&interfaces_); }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 

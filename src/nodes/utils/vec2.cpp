@@ -9,16 +9,16 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<double>       iface_x_;
-    input_interface_s<double>       iface_y_;
-    output_interface_s<gpu::vec2_t> iface_res_;
+    input_interface_s<double>       iface_x_{"x"};
+    input_interface_s<double>       iface_y_{"y"};
+    output_interface_s<gpu::vec2_t> iface_res_{"res"};
 
   public:
     explicit node_impl()
     {
-        interfaces_.emplace("x", &iface_x_);
-        interfaces_.emplace("y", &iface_y_);
-        interfaces_.emplace("res", &iface_res_);
+        iface_x_.register_interface(&interfaces_);
+        iface_y_.register_interface(&interfaces_);
+        iface_res_.register_interface(&interfaces_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -28,8 +28,8 @@ class node_impl : public node_i
         auto x_opt = state.get_option<double>("x", 0);
         auto y_opt = state.get_option<double>("y", 0);
 
-        auto x = iface_x_.resolve_value(app, nodes, state.get_connection_set("x"), x_opt);
-        auto y = iface_y_.resolve_value(app, nodes, state.get_connection_set("y"), y_opt);
+        auto x = iface_x_.resolve_value(app, nodes, state, x_opt);
+        auto y = iface_y_.resolve_value(app, nodes, state, y_opt);
 
         iface_res_.set_value({x, y});
     }

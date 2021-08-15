@@ -155,7 +155,7 @@ class node_impl : public node_i
     mode_info_s*                        display_mode_{};
     // gpu::color_transfer_e               color_transfer_ = gpu::color_transfer_e::Rec601;
 
-    input_interface_s<gpu::texture_s*> iface_tex_;
+    input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
     void free_device()
     {
@@ -169,7 +169,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
+    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
 
     ~node_impl() override
     {
@@ -291,7 +291,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
+        auto* texture = iface_tex_.resolve_value(app, nodes, state);
         if (texture == nullptr) {
             return;
         }

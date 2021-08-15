@@ -14,9 +14,9 @@ using namespace miximus::nodes;
 template <typename T>
 class node_impl : public node_i
 {
-    input_interface_s<T>   iface_a_;
-    input_interface_s<T>   iface_b_;
-    output_interface_s<T>  iface_res_;
+    input_interface_s<T>   iface_a_{"a"};
+    input_interface_s<T>   iface_b_{"b"};
+    output_interface_s<T>  iface_res_{"res"};
     const std::string_view type_;
     const std::string_view name_;
 
@@ -25,9 +25,9 @@ class node_impl : public node_i
         : type_(type)
         , name_(name)
     {
-        interfaces_.emplace("a", &iface_a_);
-        interfaces_.emplace("b", &iface_b_);
-        interfaces_.emplace("res", &iface_res_);
+        iface_a_.register_interface(&interfaces_);
+        iface_b_.register_interface(&interfaces_);
+        iface_res_.register_interface(&interfaces_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -40,8 +40,8 @@ class node_impl : public node_i
         auto a_opt = state.get_option<T>("a");
         auto b_opt = state.get_option<T>("b");
 
-        auto a = iface_a_.resolve_value(app, nodes, state.get_connection_set("a"), a_opt);
-        auto b = iface_b_.resolve_value(app, nodes, state.get_connection_set("b"), b_opt);
+        auto a = iface_a_.resolve_value(app, nodes, state, a_opt);
+        auto b = iface_b_.resolve_value(app, nodes, state, b_opt);
 
         if (op == "add") {
             res = a + b;

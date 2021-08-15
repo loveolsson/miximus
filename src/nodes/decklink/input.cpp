@@ -202,7 +202,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
     std::optional<frame_info_s>         work_frame_;
 
-    output_interface_s<gpu::texture_s*> iface_tex_;
+    output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
     void free_device()
     {
@@ -221,7 +221,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
+    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
 
     ~node_impl() override
     {

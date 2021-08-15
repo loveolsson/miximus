@@ -8,6 +8,7 @@
 #include <climits>
 #include <optional>
 #include <stdexcept>
+#include <string_view>
 
 namespace miximus::nodes {
 
@@ -32,12 +33,15 @@ class interface_i
         output,
     };
 
-    interface_i()          = default;
+    interface_i(std::string_view name)
+        : name_(name)
+    {
+    }
     virtual ~interface_i() = default;
 
-    bool            add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
-    resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const con_set_t&) const;
-    void            set_max_connection_count(int count) { max_connection_count_ = count; }
+    bool add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
+    void set_max_connection_count(int count) { max_connection_count_ = count; }
+    void register_interface(interface_map_t* map) { map->emplace(name_, this); }
 
     virtual dir_e  direction() const = 0;
     virtual type_e type() const      = 0;
@@ -45,9 +49,11 @@ class interface_i
 
   protected:
     template <typename T>
-    static type_e get_interface_type();
+    static type_e   get_interface_type();
+    resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
 
-    int max_connection_count_{1};
+    int              max_connection_count_{1};
+    std::string_view name_;
 };
 
 template <typename T>
@@ -56,7 +62,10 @@ class input_interface_s : public interface_i
     using resolved_values_t = boost::container::small_vector<T, 4>;
 
   public:
-    input_interface_s()  = default;
+    input_interface_s(std::string_view name)
+        : interface_i(name)
+    {
+    }
     ~input_interface_s() = default;
 
     dir_e  direction() const final { return dir_e::input; }
@@ -65,29 +74,26 @@ class input_interface_s : public interface_i
 
     static T cast_iface_to_value(const interface_i* iface, T fallback);
 
-    T resolve_value(core::app_state_s* app,
-                    const node_map_t&  nodes,
-                    const con_set_t&   connections,
-                    T                  fallback = T{}) const
+    T resolve_value(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state, T fallback = T{}) const
     {
-        auto ifaces = resolve_connections(app, nodes, connections);
+        auto ifaces = resolve_connections(app, nodes, state);
 
         assert(ifaces.size() <= 1);
 
-        if (!ifaces.empty()) {
+        if (!ifaces.empty() && ifaces.front() != nullptr) {
             return cast_iface_to_value(ifaces.front(), fallback);
         }
 
         return fallback;
     }
 
-    resolved_values_t resolve_values(core::app_state_s* app,
-                                     const node_map_t&  nodes,
-                                     const con_set_t&   connections,
-                                     T                  fallback = T{}) const
+    resolved_values_t
+    resolve_values(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state, T fallback = T{}) const
     {
         resolved_values_t res;
-        auto              ifaces = resolve_connections(app, nodes, connections);
+
+        auto ifaces = resolve_connections(app, nodes, state);
+
         res.reserve(ifaces.size());
 
         for (const auto* iface : ifaces) {
@@ -108,7 +114,8 @@ class output_interface_s : public interface_i
     T value_{};
 
   public:
-    output_interface_s()
+    output_interface_s(std::string_view name)
+        : interface_i(name)
     {
         /**
          * Framebuffers are a special case only acceps a single output since the only way

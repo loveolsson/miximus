@@ -54,7 +54,7 @@ class node_impl : public node_i
         }
     };
 
-    input_interface_s<gpu::texture_s*> iface_tex_;
+    input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
     std::mutex                          ctx_mtx_;
     std::unique_ptr<gpu::context_s>     ctx_;
@@ -69,7 +69,7 @@ class node_impl : public node_i
     std::future<bool> thread_future_{};
 
   public:
-    explicit node_impl() { interfaces_.emplace("tex", &iface_tex_); }
+    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
 
     ~node_impl() override { stop_thread(); }
 
@@ -120,7 +120,7 @@ class node_impl : public node_i
             return;
         }
 
-        auto* texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
+        auto* texture = iface_tex_.resolve_value(app, nodes, state);
 
         gpu::vec2i_t dim{128, 128};
         if (texture != nullptr) {

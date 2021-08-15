@@ -16,22 +16,22 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::rect_s>          iface_rect_;
-    input_interface_s<gpu::texture_s*>      iface_tex_;
-    input_interface_s<double>               iface_opacity_;
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_;
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_;
+    input_interface_s<gpu::rect_s>          iface_rect_{"rect"};
+    input_interface_s<gpu::texture_s*>      iface_tex_{"tex"};
+    input_interface_s<double>               iface_opacity_{"opacity"};
+    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
 
     std::unique_ptr<gpu::draw_state_s> draw_state_;
 
   public:
     explicit node_impl()
     {
-        interfaces_.emplace("rect", &iface_rect_);
-        interfaces_.emplace("tex", &iface_tex_);
-        interfaces_.emplace("opacity", &iface_opacity_);
-        interfaces_.emplace("fb_in", &iface_fb_in_);
-        interfaces_.emplace("fb_out", &iface_fb_out_);
+        iface_rect_.register_interface(&interfaces_);
+        iface_tex_.register_interface(&interfaces_);
+        iface_opacity_.register_interface(&interfaces_);
+        iface_fb_in_.register_interface(&interfaces_);
+        iface_fb_out_.register_interface(&interfaces_);
     }
 
     void prepare(core::app_state_s* app, const node_state_s& /*nodes*/, traits_s* /*traits*/) final
@@ -46,23 +46,23 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* fb = iface_fb_in_.resolve_value(app, nodes, state.get_connection_set("fb_in"));
+        auto* fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
         if (fb == nullptr) {
             return;
         }
 
-        auto* texture = iface_tex_.resolve_value(app, nodes, state.get_connection_set("tex"));
+        auto* texture = iface_tex_.resolve_value(app, nodes, state);
 
         if (texture == nullptr) {
             return;
         }
 
-        auto draw_rect = iface_rect_.resolve_value(app, nodes, state.get_connection_set("rect"), {{0, 0}, {1.0, 1.0}});
+        auto draw_rect = iface_rect_.resolve_value(app, nodes, state, {{0, 0}, {1.0, 1.0}});
 
         auto opacity_opt = state.get_option<double>("opacity", 1.0);
-        auto opacity     = iface_opacity_.resolve_value(app, nodes, state.get_connection_set("opacity"), opacity_opt);
+        auto opacity     = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
         opacity          = glm::clamp(opacity, 0.0, 1.0);
 
         fb->bind();

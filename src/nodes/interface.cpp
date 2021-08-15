@@ -48,13 +48,16 @@ bool interface_i::add_connection(con_set_t* connections, const connection_s& con
 }
 
 interface_i::resolved_cons_t
-interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes, const con_set_t& connections) const
+interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) const
 {
     resolved_cons_t res;
 
     if (direction() == dir_e::output) {
         throw std::runtime_error("resolve_connection called on output interface");
     }
+
+    auto connections = state.get_connection_set(name_);
+    res.reserve(connections.size());
 
     for (const auto& con : connections) {
         const interface_i* iface = nullptr;

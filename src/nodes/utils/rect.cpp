@@ -9,16 +9,16 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::vec2_t>  iface_pos_;
-    input_interface_s<gpu::vec2_t>  iface_size_;
-    output_interface_s<gpu::rect_s> iface_res_;
+    input_interface_s<gpu::vec2_t>  iface_pos_{"pos"};
+    input_interface_s<gpu::vec2_t>  iface_size_{"size"};
+    output_interface_s<gpu::rect_s> iface_res_{"res"};
 
   public:
     explicit node_impl()
     {
-        interfaces_.emplace("pos", &iface_pos_);
-        interfaces_.emplace("size", &iface_size_);
-        interfaces_.emplace("res", &iface_res_);
+        iface_pos_.register_interface(&interfaces_);
+        iface_size_.register_interface(&interfaces_);
+        iface_res_.register_interface(&interfaces_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -28,8 +28,8 @@ class node_impl : public node_i
         auto pos_opt  = state.get_option<gpu::vec2_t>("pos", {0, 0});
         auto size_opt = state.get_option<gpu::vec2_t>("size", {1, 1});
 
-        auto pos  = iface_pos_.resolve_value(app, nodes, state.get_connection_set("pos"), pos_opt);
-        auto size = iface_size_.resolve_value(app, nodes, state.get_connection_set("size"), size_opt);
+        auto pos  = iface_pos_.resolve_value(app, nodes, state, pos_opt);
+        auto size = iface_size_.resolve_value(app, nodes, state, size_opt);
 
         iface_res_.set_value({pos, size});
     }

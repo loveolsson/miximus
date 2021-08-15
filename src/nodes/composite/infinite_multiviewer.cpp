@@ -16,9 +16,9 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::texture_s*>      iface_tex_;
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_;
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_;
+    input_interface_s<gpu::texture_s*>      iface_tex_{"tex"};
+    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
 
     std::unique_ptr<gpu::draw_state_s> draw_state_;
 
@@ -27,23 +27,23 @@ class node_impl : public node_i
     {
         iface_tex_.set_max_connection_count(INT_MAX);
 
-        interfaces_.emplace("tex", &iface_tex_);
-        interfaces_.emplace("fb_in", &iface_fb_in_);
-        interfaces_.emplace("fb_out", &iface_fb_out_);
+        iface_tex_.register_interface(&interfaces_);
+        iface_fb_in_.register_interface(&interfaces_);
+        iface_fb_out_.register_interface(&interfaces_);
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
+    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* fb = iface_fb_in_.resolve_value(app, nodes, state.get_connection_set("fb_in"));
+        auto* fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
         if (fb == nullptr) {
             return;
         }
 
-        auto textures = iface_tex_.resolve_values(app, nodes, state.get_connection_set("tex"));
+        auto textures = iface_tex_.resolve_values(app, nodes, state);
 
         if (textures.empty()) {
             return;

@@ -56,10 +56,10 @@ class node_impl : public node_i
         std::unique_ptr<render::font_instance_s> font;
     };
 
-    input_interface_s<gpu::rect_s>          iface_rect_in_;
-    input_interface_s<double>               iface_scroll_pos_in_;
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_;
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_;
+    input_interface_s<gpu::rect_s>          iface_rect_in_{"rect"};
+    input_interface_s<double>               iface_scroll_pos_in_{"scroll_pos"};
+    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
 
     std::unique_ptr<gpu::draw_state_s>        draw_state_;
     ::mutex                                   font_mtx_;
@@ -78,10 +78,10 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        interfaces_.emplace("scroll_pos", &iface_scroll_pos_in_);
-        interfaces_.emplace("rect", &iface_rect_in_);
-        interfaces_.emplace("fb_in", &iface_fb_in_);
-        interfaces_.emplace("fb_out", &iface_fb_out_);
+        iface_rect_in_.register_interface(&interfaces_);
+        iface_scroll_pos_in_.register_interface(&interfaces_);
+        iface_fb_in_.register_interface(&interfaces_);
+        iface_fb_out_.register_interface(&interfaces_);
     }
 
     node_impl(const node_impl&) = delete;
@@ -120,18 +120,17 @@ class node_impl : public node_i
     {
         auto file_path = state.get_option<std::string_view>("file_path");
 
-        auto* fb = iface_fb_in_.resolve_value(app, nodes, state.get_connection_set("fb_in"));
+        auto* fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
         if (fb == nullptr) {
             return;
         }
 
-        auto draw_rect =
-            iface_rect_in_.resolve_value(app, nodes, state.get_connection_set("rect"), {{0, 0}, {1.0, 1.0}});
+        auto draw_rect = iface_rect_in_.resolve_value(app, nodes, state, {{0, 0}, {1.0, 1.0}});
 
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
-        scroll_pos = iface_scroll_pos_in_.resolve_value(app, nodes, state.get_connection_set("scroll_pos"), scroll_pos);
+        scroll_pos      = iface_scroll_pos_in_.resolve_value(app, nodes, state, scroll_pos);
 
         gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
         gpu::vec2i_t tx_dim = {fb_dim.x, font_size_ * 2};

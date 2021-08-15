@@ -12,16 +12,16 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::vec2_t>          iface_size_;
-    output_interface_s<gpu::framebuffer_s*> iface_fb_;
+    input_interface_s<gpu::vec2_t>          iface_size_{"size"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_{"fb"};
 
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
 
   public:
     explicit node_impl()
     {
-        interfaces_.emplace("size", &iface_size_);
-        interfaces_.emplace("fb", &iface_fb_);
+        iface_size_.register_interface(&interfaces_);
+        iface_fb_.register_interface(&interfaces_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -29,7 +29,7 @@ class node_impl : public node_i
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         auto         size_opt   = state.get_option<gpu::vec2_t>("size");
-        auto         size_float = iface_size_.resolve_value(app, nodes, state.get_connection_set("size"), size_opt);
+        auto         size_float = iface_size_.resolve_value(app, nodes, state, size_opt);
         gpu::vec2i_t size       = glm::floor(size_float);
 
         size = glm::max(size, gpu::vec2i_t{128, 128});

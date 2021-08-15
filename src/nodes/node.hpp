@@ -12,12 +12,8 @@
 
 namespace miximus::nodes {
 
-class interface_i;
-
 class node_i
 {
-    using interface_map_t = std::map<std::string_view, const interface_i*>;
-
   protected:
     interface_map_t interfaces_;
 
