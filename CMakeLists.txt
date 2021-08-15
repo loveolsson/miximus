@@ -34,7 +34,7 @@ find_package(Sanitizers REQUIRED)
 find_package(Threads REQUIRED)
 
 set(Boost_USE_STATIC_LIBS ON)
-set(Boost_USE_DEBUG_LIBS OFF)
+set(Boost_USE_DEBUG_LIBS ON)
 set(Boost_USE_RELEASE_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS system fiber)
 

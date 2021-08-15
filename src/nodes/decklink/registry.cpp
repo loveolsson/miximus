@@ -33,22 +33,20 @@ static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
     auto res =
         CoCreateInstance(CLSID_CDeckLinkDiscovery, NULL, CLSCTX_ALL, IID_IDeckLinkDiscovery, (LPVOID*)&discovery);
 
-    if (SUCCEEDED(res)) {
-        return discovery;
+    if (FAILED(res)) {
+        discovery = nullptr;
     }
-
-    return nullptr;
 #else
     discovery        = CreateDeckLinkDiscoveryInstance();
 #endif
 
-    decklink_ptr res(discovery);
+    decklink_ptr ptr(discovery);
 
     if (discovery) {
         discovery->Release();
     }
 
-    return res;
+    return ptr;
 }
 
 static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
@@ -60,22 +58,20 @@ static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
     auto res = CoCreateInstance(
         CLSID_CDeckLinkVideoConversion, NULL, CLSCTX_ALL, IID_IDeckLinkVideoConversion, (LPVOID*)&conversion);
 
-    if (SUCCEEDED(res)) {
-        return discovery;
+    if (FAILED(res)) {
+        conversion = nullptr;
     }
-
-    return nullptr;
 #else
     conversion       = CreateVideoConversionInstance();
 #endif
 
-    decklink_ptr res(conversion);
+    decklink_ptr ptr(conversion);
 
     if (conversion) {
         conversion->Release();
     }
 
-    return res;
+    return ptr;
 }
 
 static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)

@@ -17,7 +17,7 @@ namespace miximus::core {
 class app_state_s
 {
     using io_service_t  = boost::asio::io_service;
-    using thread_pool_t = FiberPool::FiberPool<false>;
+    using thread_pool_t = FiberPool::FiberPool<true>;
 
     io_service_t                        cfg_executor_;
     std::unique_ptr<io_service_t::work> cfg_work_;
