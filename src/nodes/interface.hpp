@@ -3,16 +3,18 @@
 #include "gpu/types.hpp"
 #include "nodes/node_map.hpp"
 
+#include <boost/container/small_vector.hpp>
+
 #include <climits>
 #include <optional>
 #include <stdexcept>
-#include <unordered_set>
-#include <vector>
 
 namespace miximus::nodes {
 
 class interface_i
 {
+    using resolved_cons_t = boost::container::small_vector<const interface_i*, 4>;
+
   public:
     enum class type_e
     {
@@ -33,9 +35,9 @@ class interface_i
     interface_i()          = default;
     virtual ~interface_i() = default;
 
-    bool               add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
-    const interface_i* resolve_connection(core::app_state_s*, const node_map_t&, const con_set_t&) const;
-    void               set_max_connection_count(int count) { max_connection_count_ = count; }
+    bool            add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const;
+    resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const con_set_t&) const;
+    void            set_max_connection_count(int count) { max_connection_count_ = count; }
 
     virtual dir_e  direction() const = 0;
     virtual type_e type() const      = 0;
@@ -51,6 +53,8 @@ class interface_i
 template <typename T>
 class input_interface_s : public interface_i
 {
+    using resolved_values_t = boost::container::small_vector<T, 4>;
+
   public:
     input_interface_s()  = default;
     ~input_interface_s() = default;
@@ -59,7 +63,43 @@ class input_interface_s : public interface_i
     type_e type() const final { return get_interface_type<T>(); }
     bool   accepts(type_e type) const final;
 
-    T resolve_value(core::app_state_s*, const node_map_t& nodes, const con_set_t& connections, T fallback = T{}) const;
+    static T cast_iface_to_value(const interface_i* iface, T fallback);
+
+    T resolve_value(core::app_state_s* app,
+                    const node_map_t&  nodes,
+                    const con_set_t&   connections,
+                    T                  fallback = T{}) const
+    {
+        auto ifaces = resolve_connections(app, nodes, connections);
+
+        assert(ifaces.size() <= 1);
+
+        if (!ifaces.empty()) {
+            return cast_iface_to_value(ifaces.front(), fallback);
+        }
+
+        return fallback;
+    }
+
+    resolved_values_t resolve_values(core::app_state_s* app,
+                                     const node_map_t&  nodes,
+                                     const con_set_t&   connections,
+                                     T                  fallback = T{}) const
+    {
+        resolved_values_t res;
+        auto              ifaces = resolve_connections(app, nodes, connections);
+        res.reserve(ifaces.size());
+
+        for (const auto* iface : ifaces) {
+            if (iface == nullptr) {
+                res.emplace_back(fallback);
+            } else {
+                res.emplace_back(cast_iface_to_value(iface, fallback));
+            }
+        }
+
+        return res;
+    }
 };
 
 template <typename T>

@@ -24,3 +24,21 @@ export class DrawBoxNode extends Node {
     this.addOutputInterface("fb_out", { type: "framebuffer" });
   }
 }
+
+export class InfiniteMultiviewerNode extends Node {
+  type: type_e;
+  name: string;
+
+  constructor() {
+    super();
+    this.type = type_e.infinite_multiviewer;
+    this.name = "";
+    this.addInputInterface("fb_in", undefined, undefined, {
+      type: "framebuffer",
+    });
+    this.addInputInterface("tex", undefined, 0, {
+      type: "texture",
+    });
+    this.addOutputInterface("fb_out", { type: "framebuffer" });
+  }
+}

@@ -20,7 +20,7 @@ import {
 import { TeleprompterNode } from "./teleprompter";
 import { SinusSourceNode } from "./debug";
 import Vec2Option from "./options/Vec2Option.vue";
-import { DrawBoxNode } from "./composite";
+import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
 
 /**
  * Color-blind optimized palette
@@ -85,6 +85,11 @@ export function register_types(editor: Editor): void {
   );
 
   editor.registerNodeType(type_e.draw_box, DrawBoxNode, "Composite");
+  editor.registerNodeType(
+    type_e.infinite_multiviewer,
+    InfiniteMultiviewerNode,
+    "Composite"
+  );
 
   editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
 

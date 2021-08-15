@@ -33,6 +33,7 @@ export const enum type_e {
   teleprompter = "teleprompter",
   sinus_source = "sinus_source",
   draw_box = "draw_box",
+  infinite_multiviewer = "infinite_multiviewer",
 }
 
 export type position_t = [number, number];
