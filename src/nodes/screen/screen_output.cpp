@@ -2,18 +2,16 @@
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
-#include "gpu/glad.hpp"
 #include "gpu/shader.hpp"
 #include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
+#include "utils/frame_queue.hpp"
 
 #include <memory>
-#include <queue>
 
 namespace {
 using namespace miximus;
@@ -22,23 +20,50 @@ using namespace std::chrono_literals;
 
 class node_impl : public node_i
 {
-    struct fb_info_s
+    struct frame_info_s
     {
         GLuint                       id{};
         std::unique_ptr<gpu::sync_s> sync;
-        gpu::vec2i_t                 tx_size;
-        gpu::vec2i_t                 fb_size;
+        gpu::vec2i_t                 tx_size{};
+        gpu::vec2i_t                 fb_size{};
+
+        frame_info_s() {}
+
+        frame_info_s(const frame_info_s&) = delete;
+        frame_info_s(frame_info_s&& o) { *this = std::move(o); }
+        void operator=(const frame_info_s&) = delete;
+        void operator                       =(frame_info_s&& o)
+        {
+            if (id != 0) {
+                glDeleteBuffers(1, &id);
+            }
+
+            id      = o.id;
+            sync    = std::move(o.sync);
+            tx_size = o.tx_size;
+            fb_size = o.fb_size;
+
+            o.id = 0;
+        }
+
+        ~frame_info_s()
+        {
+            if (id != 0) {
+                glDeleteBuffers(1, &id);
+            }
+        }
     };
 
-    input_interface_s<gpu::texture_s*>  iface_tex_;
-    std::unique_ptr<gpu::context_s>     context_;
+    input_interface_s<gpu::texture_s*> iface_tex_;
+
+    std::mutex                          ctx_mtx_;
+    std::unique_ptr<gpu::context_s>     ctx_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
 
-    std::mutex              frame_mtx_;
-    std::condition_variable frame_cv_;
-    std::queue<fb_info_s>   frames_rendered_;
-    std::queue<fb_info_s>   frames_free_;
+    std::condition_variable            frame_cv_;
+    utils::frame_queue_s<frame_info_s> frames_rendered_;
+    utils::frame_queue_s<frame_info_s> frames_free_;
 
     bool              thread_run_{};
     std::future<bool> thread_future_{};
@@ -60,11 +85,13 @@ class node_impl : public node_i
         if (enabled) {
             traits->must_run = true;
 
-            if (!context_) {
-                std::unique_lock lock(frame_mtx_);
-
-                context_    = gpu::context_s::create_unique_context(true, app->ctx());
-                thread_run_ = true;
+            if (!ctx_) {
+                auto lock = frames_rendered_.get_lock();
+                {
+                    std::unique_lock lock(ctx_mtx_);
+                    ctx_        = gpu::context_s::create_unique_context(true, app->ctx());
+                    thread_run_ = true;
+                }
 
                 thread_future_ = std::async(&node_impl::run, this);
             }
@@ -78,19 +105,18 @@ class node_impl : public node_i
             rect.size.y               = state.get_option<int>("sizey", 100);
 
             if (fullscreen) {
-                context_->set_fullscreen_monitor(monitor_name, rect);
+                ctx_->set_fullscreen_monitor(monitor_name, rect);
             } else {
-                context_->set_window_rect(rect);
+                ctx_->set_window_rect(rect);
             }
-        } else if (context_) {
+        } else if (ctx_) {
             stop_thread();
-            context_.reset();
         }
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        if (!context_) {
+        if (!ctx_) {
             return;
         }
 
@@ -107,17 +133,13 @@ class node_impl : public node_i
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
         }
 
-        fb_info_s frame;
+        frame_info_s frame;
 
-        {
-            std::unique_lock lock(frame_mtx_);
-            // Avoid blocking the main thread with a wait by not using the 2 most recently
-            // displayed buffers, as it might still be used by the display context
-
-            if (frames_free_.size() > 2) {
-                frame = std::move(frames_free_.front());
-                frames_free_.pop();
-            }
+        // Avoid blocking the main thread with a wait by not using the 2 most recently
+        // displayed buffers, as it might still be used by the display context
+        decltype(frames_free_)::record_s record;
+        if (frames_free_.pop_frame_if_count(3, &record)) {
+            frame = std::move(record.frame);
         }
 
         if (frame.sync) {
@@ -127,15 +149,15 @@ class node_impl : public node_i
         }
 
         if (frame.tx_size != dim || frame.id == 0) {
-            frame.tx_size = dim;
+            frame_info_s new_frame;
+            new_frame.tx_size = dim;
 
-            glDeleteBuffers(1, &frame.id);
-
-            glCreateBuffers(1, &frame.id);
-            glNamedBufferData(frame.id, dim.x * dim.y * 4, nullptr, GL_DYNAMIC_COPY);
+            glCreateBuffers(1, &new_frame.id);
+            glNamedBufferData(new_frame.id, dim.x * dim.y * 4, nullptr, GL_DYNAMIC_COPY);
+            frame = std::move(new_frame);
         }
 
-        frame.fb_size = context_->get_framebuffer_size();
+        frame.fb_size = ctx_->get_framebuffer_size();
 
         framebuffer_->bind();
 
@@ -171,16 +193,13 @@ class node_impl : public node_i
         // glMemoryBarrierByRegion(GL_TEXTURE_FETCH_BARRIER_BIT);
 
         {
-            std::unique_lock lock(frame_mtx_);
-
             if (frames_rendered_.size() < 3) {
                 frame.sync = std::make_unique<gpu::sync_s>();
-                frames_rendered_.emplace(std::move(frame));
-                lock.unlock();
+                frames_rendered_.push_frame(std::move(frame), app->frame_info.timestamp);
                 frame_cv_.notify_one();
             } else {
                 // TODO: log or signal this
-                frames_free_.emplace(std::move(frame));
+                frames_free_.push_frame(std::move(frame));
             }
         }
     }
@@ -223,9 +242,11 @@ class node_impl : public node_i
     {
         auto log = getlog("nodes");
 
-        context_->make_current();
+        ctx_->make_current();
+        glEnable(GL_FRAMEBUFFER_SRGB);
+
         gpu::draw_state_s draw_state;
-        auto*             shader = context_->get_shader(gpu::shader_program_s::name_e::basic);
+        auto*             shader = ctx_->get_shader(gpu::shader_program_s::name_e::basic);
         draw_state.set_shader_program(shader);
         draw_state.set_vertex_data(gpu::full_screen_quad_verts);
         shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
@@ -235,22 +256,22 @@ class node_impl : public node_i
         std::unique_ptr<gpu::texture_s> texture;
 
         while (true) {
-            fb_info_s frame;
+            frame_info_s frame;
 
             {
-                std::unique_lock lock(frame_mtx_);
-                frame_cv_.wait(lock, [this]() { return !thread_run_ || frames_rendered_.size() > 1; });
+                auto lock = frames_rendered_.get_lock();
+                frame_cv_.wait(lock, [this]() { return !thread_run_ || frames_rendered_.size_while_lock_held() > 1; });
 
                 if (!thread_run_) {
                     break;
                 }
+            }
 
-                if (frames_rendered_.size() > 1) {
-                    // Avoid waiting by buffering one frame, so that the frame being displayed
-                    // is not currently being rendering
-                    frame = std::move(frames_rendered_.front());
-                    frames_rendered_.pop();
-                }
+            decltype(frames_rendered_)::record_s record;
+            if (frames_rendered_.pop_frame_if_count(2, &record)) {
+                // Avoid waiting by buffering one frame, so that the frame being displayed
+                // is not currently being rendering
+                frame = std::move(record.frame);
             }
 
             if (frame.sync && frame.id != 0) {
@@ -277,14 +298,11 @@ class node_impl : public node_i
                 draw_state.draw();
                 gpu::texture_s::unbind(0);
 
-                context_->swap_buffers();
+                ctx_->swap_buffers();
 
                 frame.sync = std::make_unique<gpu::sync_s>();
 
-                {
-                    std::unique_lock lock(frame_mtx_);
-                    frames_free_.emplace(std::move(frame));
-                }
+                frames_free_.push_frame(std::move(frame));
             }
         }
 
@@ -296,25 +314,21 @@ class node_impl : public node_i
     void stop_thread()
     {
         {
-            std::unique_lock lock(frame_mtx_);
+            auto lock   = frames_rendered_.get_lock();
             thread_run_ = false;
-
-            while (!frames_rendered_.empty()) {
-                glDeleteBuffers(1, &frames_rendered_.front().id);
-                frames_rendered_.pop();
-            }
-
-            while (!frames_free_.empty()) {
-                glDeleteBuffers(1, &frames_free_.front().id);
-                frames_free_.pop();
-            }
         }
+
+        frames_rendered_.clear();
+        frames_free_.clear();
 
         frame_cv_.notify_one();
 
         if (thread_future_.valid()) {
             thread_future_.get();
         }
+
+        std::unique_lock lock(ctx_mtx_);
+        ctx_.reset();
     }
 };
 

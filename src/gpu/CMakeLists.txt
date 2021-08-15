@@ -38,3 +38,5 @@ PUBLIC
     glm::glm
 )   
 
+add_sanitizers(gpu)
+

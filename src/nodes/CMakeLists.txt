@@ -32,3 +32,5 @@ PRIVATE
 PUBLIC
     nlohmann_json::nlohmann_json
 )
+
+add_sanitizers(nodes)

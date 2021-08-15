@@ -13,3 +13,5 @@ PRIVATE
     render
     nodes
 )
+
+#add_sanitizers(app)

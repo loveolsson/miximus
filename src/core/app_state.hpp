@@ -4,6 +4,7 @@
 #include "gpu/context_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
+#include "utils/flicks.hpp"
 
 #include <FiberPool.hpp>
 
@@ -16,7 +17,7 @@ namespace miximus::core {
 class app_state_s
 {
     using io_service_t  = boost::asio::io_service;
-    using thread_pool_t = FiberPool::FiberPool<true>;
+    using thread_pool_t = FiberPool::FiberPool<false>;
 
     io_service_t                        cfg_executor_;
     std::unique_ptr<io_service_t::work> cfg_work_;
@@ -39,7 +40,10 @@ class app_state_s
 
     struct
     {
-        std::chrono::steady_clock::time_point pts;
+        utils::flicks timestamp;
+        utils::flicks pts;
+        utils::flicks duration;
+        bool          field_even{};
     } frame_info;
 };
 

@@ -114,6 +114,8 @@ constexpr flicks flicks_cast(const std::chrono::duration<Rep, Period> in_duratio
     return std::chrono::duration_cast<flicks>(in_duration);
 }
 
+static flicks flicks_now() { return flicks_cast(std::chrono::steady_clock::now().time_since_epoch()); }
+
 //! This is a std::hash-esque hash functor
 //!
 struct flicks_hash

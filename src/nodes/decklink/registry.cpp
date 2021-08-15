@@ -26,8 +26,9 @@ static std::string bstr_to_mbs(BSTR bstr)
 
 static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
 {
-#if _WIN32
     IDeckLinkDiscovery* discovery = nullptr;
+
+#if _WIN32
 
     auto res =
         CoCreateInstance(CLSID_CDeckLinkDiscovery, NULL, CLSCTX_ALL, IID_IDeckLinkDiscovery, (LPVOID*)&discovery);
@@ -38,11 +39,46 @@ static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
 
     return nullptr;
 #else
-    return CreateDeckLinkDiscoveryInstance();
+    discovery        = CreateDeckLinkDiscoveryInstance();
 #endif
+
+    decklink_ptr res(discovery);
+
+    if (discovery) {
+        discovery->Release();
+    }
+
+    return res;
 }
 
-static std::string get_decklink_name(const decklink_ptr<IDeckLink>& device)
+static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
+{
+    IDeckLinkVideoConversion* conversion = nullptr;
+
+#if _WIN32
+
+    auto res = CoCreateInstance(
+        CLSID_CDeckLinkVideoConversion, NULL, CLSCTX_ALL, IID_IDeckLinkVideoConversion, (LPVOID*)&conversion);
+
+    if (SUCCEEDED(res)) {
+        return discovery;
+    }
+
+    return nullptr;
+#else
+    conversion       = CreateVideoConversionInstance();
+#endif
+
+    decklink_ptr res(conversion);
+
+    if (conversion) {
+        conversion->Release();
+    }
+
+    return res;
+}
+
+static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 {
     std::stringstream ss;
 
@@ -61,8 +97,8 @@ static std::string get_decklink_name(const decklink_ptr<IDeckLink>& device)
      * and the order of the devices may change with reboots.
      * To combat this, the persistent ID of the device is appended to the name to serve as a unique and repeatable name.
      */
-    auto profile    = QUERY_INTERFACE(device, IDeckLinkProfile);
-    auto attributes = QUERY_INTERFACE(profile, IDeckLinkProfileAttributes);
+    decklink_ptr<IDeckLinkProfile>           profile(IID_IDeckLinkProfile, device);
+    decklink_ptr<IDeckLinkProfileAttributes> attributes(IID_IDeckLinkProfileAttributes, profile);
     if (attributes) {
         int64_t id = 0;
         if (SUCCEEDED(attributes->GetInt(BMDDeckLinkPersistentID, &id))) {
@@ -102,11 +138,11 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
         auto log = getlog("decklink");
 
-        auto device = decklink_ptr<IDeckLink>::make_owner(deckLinkDevice);
+        decklink_ptr device(deckLinkDevice);
 
-        auto name   = get_decklink_name(device);
-        auto input  = QUERY_INTERFACE(device, IDeckLinkInput);
-        auto output = QUERY_INTERFACE(device, IDeckLinkOutput);
+        auto                          name = get_decklink_name(device);
+        decklink_ptr<IDeckLinkInput>  input(IID_IDeckLinkInput, device);
+        decklink_ptr<IDeckLinkOutput> output(IID_IDeckLinkOutput, device);
 
         if (input) {
             registry_->inputs_.emplace(name, std::move(input));
@@ -177,7 +213,7 @@ decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& n
     if (it != inputs_.end()) {
         return it->second;
     }
-    return nullptr;
+    return {};
 }
 
 decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(const std::string& name)
@@ -187,7 +223,8 @@ decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(const std::string&
     if (it != outputs_.end()) {
         return it->second;
     }
-    return nullptr;
+
+    return {};
 }
 
 std::vector<std::string> decklink_registry_s::get_input_names()
@@ -217,6 +254,8 @@ std::vector<std::string> decklink_registry_s::get_output_names()
 
     return res;
 }
+
+decklink_ptr<IDeckLinkVideoConversion> decklink_registry_s::get_converter() { return get_device_conversion(); }
 
 std::unique_ptr<decklink_registry_s> decklink_registry_s::create_decklink_registry()
 {

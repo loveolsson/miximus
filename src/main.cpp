@@ -91,10 +91,9 @@ int main(int argc, char* argv[])
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, web_server));
 
-            app.frame_info.pts = std::chrono::steady_clock::now();
-            int64_t frame_no   = 0;
-
-            auto frame_duration = std::chrono::microseconds(1000000) / 60;
+            app.frame_info.timestamp = utils::flicks_now();
+            app.frame_info.pts       = utils::flicks{0};
+            app.frame_info.duration  = utils::k_flicks_one_second / 60;
 
             while (g_signal_status == 0) {
                 // getlog("app")->info("Frame no {}", frame_no++);
@@ -103,18 +102,18 @@ int main(int argc, char* argv[])
 
                 gpu::context_s::poll();
 
-                app.frame_info.pts += frame_duration;
+                app.frame_info.timestamp += app.frame_info.duration;
+                app.frame_info.pts += app.frame_info.duration;
+                app.frame_info.field_even ^= true;
 
-                auto now = std::chrono::steady_clock::now();
-                if (app.frame_info.pts + frame_duration / 2 < now) {
+                auto now = utils::flicks_now();
+                if (app.frame_info.timestamp + app.frame_info.duration < now) {
                     getlog("app")->info("Late frame");
-                    // app.frame_info.pts = now;
-                } else {
-                    std::this_thread::sleep_until(app.frame_info.pts);
+                    app.frame_info.timestamp += app.frame_info.duration;
                 }
 
-                if (frame_no++ == 500) {
-                    // g_signal_status = 1;
+                if (app.frame_info.timestamp > now) {
+                    std::this_thread::sleep_for(app.frame_info.timestamp - now);
                 }
             }
 

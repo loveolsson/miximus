@@ -41,7 +41,8 @@ class decklink_registry_s
     std::vector<std::string> get_input_names();
     std::vector<std::string> get_output_names();
 
-    static std::string get_display_mode_name(IDeckLinkDisplayMode* mode);
+    static std::string                            get_display_mode_name(IDeckLinkDisplayMode* mode);
+    static decklink_ptr<IDeckLinkVideoConversion> get_converter();
 
     static std::unique_ptr<decklink_registry_s> create_decklink_registry();
 };

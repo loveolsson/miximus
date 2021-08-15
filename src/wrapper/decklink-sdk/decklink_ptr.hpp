@@ -1,118 +1,215 @@
 #pragma once
+#include "decklink_inc.hpp"
+
+#include <cstddef>
+#include <utility>
 
 namespace miximus::nodes::decklink {
-
-#define IID_FROM_TYPE(x) IID_##x
-#define QUERY_INTERFACE(D, T) D.query_interface<T>(IID_FROM_TYPE(T))
 
 template <typename T>
 class decklink_ptr
 {
-    T* ptr_;
-
-    void free_ptr()
-    {
-        if (ptr_) {
-            ptr_->Release();
-            ptr_ = nullptr;
-        }
-    }
+    template <typename U>
+    friend class decklink_ptr;
 
   public:
-    decklink_ptr()
-        : ptr_(nullptr)
-    {
-    }
+    constexpr decklink_ptr();
+    constexpr decklink_ptr(std::nullptr_t);
+    explicit decklink_ptr(T* ptr);
+    decklink_ptr(const decklink_ptr<T>& other);
+    decklink_ptr(decklink_ptr<T>&& other);
 
-    decklink_ptr(T* ptr)
-        : ptr_(ptr)
-    {
-    }
+    template <typename U>
+    decklink_ptr(REFIID iid, decklink_ptr<U> other);
 
-    decklink_ptr(decklink_ptr&& o)
-        : ptr_(o.ptr_)
-    {
-        o.ptr_ = nullptr;
-    }
+    ~decklink_ptr();
 
-    decklink_ptr(const decklink_ptr& o)
-        : ptr_(o.ptr_)
-    {
-        if (ptr_) {
-            ptr_->AddRef();
-        }
-    }
+    decklink_ptr<T>& operator=(std::nullptr_t);
+    decklink_ptr<T>& operator=(T* ptr);
+    decklink_ptr<T>& operator=(const decklink_ptr<T>& other);
+    decklink_ptr<T>& operator=(decklink_ptr<T>&& other);
 
-    static decklink_ptr make_owner(T* ptr)
-    {
-        if (ptr) {
-            ptr->AddRef();
-        }
+    T*  get() const;
+    T** releaseAndGetAddressOf();
 
-        return ptr;
-    }
+    const T* operator->() const;
+    T*       operator->();
+    const T& operator*() const;
+    T&       operator*();
 
-    ~decklink_ptr() { free_ptr(); }
+    explicit operator bool() const;
 
-    decklink_ptr& operator=(decklink_ptr&& o)
-    {
-        free_ptr();
+    bool operator==(const decklink_ptr<T>& other) const;
+    bool operator!=(const decklink_ptr<T>& other) const;
+    bool operator<(const decklink_ptr<T>& other) const;
 
-        ptr_   = o.ptr_;
-        o.ptr_ = nullptr;
+  private:
+    void release();
 
-        return *this;
-    }
-
-    decklink_ptr& operator=(const decklink_ptr& o)
-    {
-        free_ptr();
-
-        ptr_ = o.ptr_;
-        if (ptr_) {
-            ptr_->AddRef();
-        }
-
-        return *this;
-    }
-
-    decklink_ptr& operator=(T* ptr)
-    {
-        free_ptr();
-
-        ptr_ = ptr;
-
-        return *this;
-    }
-
-    operator bool() const { return ptr_ != nullptr; }
-
-    bool operator==(const decklink_ptr& o) const { return ptr_ == o.ptr_; }
-    bool operator!=(const decklink_ptr& o) const { return ptr_ != o.ptr_; }
-    bool operator==(const T* o) const { return ptr_ == o; }
-    bool operator!=(const T* o) const { return ptr_ != o; }
-
-    T& operator*() { return *ptr_; }
-    T* operator->() { return ptr_; }
-    T& operator*() const { return *ptr_; }
-    T* operator->() const { return ptr_; }
-
-    T* ptr() const { return ptr_; }
-
-    template <typename R, typename REFIID>
-    decklink_ptr<R> query_interface(REFIID iid) const
-    {
-        if (!ptr_) {
-            return nullptr;
-        }
-
-        R* t = nullptr;
-
-        if (ptr_->QueryInterface(iid, (void**)&t) >= 0) {
-            return t;
-        }
-
-        return nullptr;
-    }
+    T* m_ptr;
 };
+
+template <typename T>
+constexpr decklink_ptr<T>::decklink_ptr()
+    : m_ptr(nullptr)
+{
+}
+
+template <typename T>
+constexpr decklink_ptr<T>::decklink_ptr(std::nullptr_t)
+    : m_ptr(nullptr)
+{
+}
+
+template <typename T>
+decklink_ptr<T>::decklink_ptr(T* ptr)
+    : m_ptr(ptr)
+{
+    if (m_ptr)
+        m_ptr->AddRef();
+}
+
+template <typename T>
+decklink_ptr<T>::decklink_ptr(const decklink_ptr<T>& other)
+    : m_ptr(other.m_ptr)
+{
+    if (m_ptr)
+        m_ptr->AddRef();
+}
+
+template <typename T>
+decklink_ptr<T>::decklink_ptr(decklink_ptr<T>&& other)
+    : m_ptr(other.m_ptr)
+{
+    other.m_ptr = nullptr;
+}
+
+template <typename T>
+template <typename U>
+decklink_ptr<T>::decklink_ptr(REFIID iid, decklink_ptr<U> other)
+{
+    if (other.m_ptr) {
+        if (other.m_ptr->QueryInterface(iid, (void**)&m_ptr) != S_OK)
+            m_ptr = nullptr;
+    } else {
+        m_ptr = nullptr;
+    }
+}
+
+template <typename T>
+decklink_ptr<T>::~decklink_ptr()
+{
+    release();
+}
+
+template <typename T>
+decklink_ptr<T>& decklink_ptr<T>::operator=(std::nullptr_t)
+{
+    release();
+    m_ptr = nullptr;
+    return *this;
+}
+
+template <typename T>
+decklink_ptr<T>& decklink_ptr<T>::operator=(T* ptr)
+{
+    if (ptr)
+        ptr->AddRef();
+    release();
+    m_ptr = ptr;
+    return *this;
+}
+
+template <typename T>
+decklink_ptr<T>& decklink_ptr<T>::operator=(const decklink_ptr<T>& other)
+{
+    return (*this = other.m_ptr);
+}
+
+template <typename T>
+decklink_ptr<T>& decklink_ptr<T>::operator=(decklink_ptr<T>&& other)
+{
+    release();
+    m_ptr       = other.m_ptr;
+    other.m_ptr = nullptr;
+    return *this;
+}
+
+template <typename T>
+T* decklink_ptr<T>::get() const
+{
+    return m_ptr;
+}
+
+template <typename T>
+T** decklink_ptr<T>::releaseAndGetAddressOf()
+{
+    release();
+    return &m_ptr;
+}
+
+template <typename T>
+const T* decklink_ptr<T>::operator->() const
+{
+    return m_ptr;
+}
+
+template <typename T>
+T* decklink_ptr<T>::operator->()
+{
+    return m_ptr;
+}
+
+template <typename T>
+const T& decklink_ptr<T>::operator*() const
+{
+    return *m_ptr;
+}
+
+template <typename T>
+T& decklink_ptr<T>::operator*()
+{
+    return *m_ptr;
+}
+
+template <typename T>
+decklink_ptr<T>::operator bool() const
+{
+    return m_ptr != nullptr;
+}
+
+template <typename T>
+void decklink_ptr<T>::release()
+{
+    if (m_ptr)
+        m_ptr->Release();
+}
+
+template <typename T>
+bool decklink_ptr<T>::operator==(const decklink_ptr<T>& other) const
+{
+    return m_ptr == other.m_ptr;
+}
+
+template <typename T>
+bool decklink_ptr<T>::operator!=(const decklink_ptr<T>& other) const
+{
+    return m_ptr != other.m_ptr;
+}
+
+template <typename T>
+bool decklink_ptr<T>::operator<(const decklink_ptr<T>& other) const
+{
+    return m_ptr < other.m_ptr;
+}
+
+template <class T, class... Args>
+decklink_ptr<T> make_decklink_ptr(Args&&... args)
+{
+    decklink_ptr<T> temp(new T(args...));
+    // decklink_ptr takes ownership of reference count, so release reference count added by raw pointer constructor
+    temp->Release();
+    return std::move(temp);
+}
+
 } // namespace miximus::nodes::decklink

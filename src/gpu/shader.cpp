@@ -39,7 +39,7 @@ class shader_s
         auto shader_text = it->second.raw();
 
         std::vector<const char*> texts = {
-            "#version 330 core",
+            "#version 330 core\n",
             common_text.c_str(),
             shader_text.c_str(),
         };

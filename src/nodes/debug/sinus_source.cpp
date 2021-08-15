@@ -24,7 +24,7 @@ class node_impl : public node_i
         auto center = state.get_option<double>("center");
         auto speed  = state.get_option<double>("speed");
 
-        double s   = std::chrono::duration<double>(app->frame_info.pts.time_since_epoch()).count();
+        double s   = utils::to_seconds(app->frame_info.pts);
         double res = std::sin(s * speed) * size + center;
 
         iface_res_.set_value(res);
