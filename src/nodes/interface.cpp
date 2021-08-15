@@ -40,11 +40,11 @@ interface_i::type_e interface_i::get_interface_type<gpu::framebuffer_s*>()
 bool interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t& removed) const
 {
     if (connections->size() == max_connection_count_) {
-        removed.emplace(*connections->begin());
+        removed.emplace(removed.end(), connections->front());
     }
 
-    auto [_, success] = connections->emplace(con);
-    return success;
+    connections->emplace_back(con);
+    return true;
 }
 
 const interface_i*

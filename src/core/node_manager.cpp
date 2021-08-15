@@ -99,7 +99,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     const auto& ifaces = node->get_interfaces();
     for (const auto& [id, iface] : ifaces) {
         const auto& cons = node_it->second.state.con_map.at(id);
-        removed_connections.insert(cons.begin(), cons.end());
+        removed_connections.insert(removed_connections.end(), cons.begin(), cons.end());
     }
 
     for (const auto& rcon : removed_connections) {
@@ -194,7 +194,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     using dir_e = nodes::interface_i::dir_e;
     std::unique_lock lock(nodes_mutex_);
 
-    if (connections_.count(con) > 0) {
+    if (std::find(connections_.begin(), connections_.end(), con) != connections_.end()) {
         return error_e::duplicate_id;
     }
 
@@ -228,7 +228,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
         std::swap(from_node_it, to_node_it);
 
         // Re-check duplication after swap
-        if (connections_.count(con) > 0) {
+        if (std::find(connections_.begin(), connections_.end(), con) != connections_.end()) {
             return error_e::duplicate_id;
         }
     } else if (from_dir == dir_e::input || to_dir == dir_e::output) {
@@ -248,7 +248,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     }
 
     nodes::con_set_t removed_connections;
-    connections_.emplace(con);
+    connections_.emplace_back(con);
 
     auto& from_connections = from_node_it->second.state.con_map.at(con.from_interface);
     from_iface->add_connection(&from_connections, con, removed_connections);
@@ -271,7 +271,7 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
 {
     std::unique_lock lock(nodes_mutex_);
 
-    auto con_it = connections_.find(con);
+    auto con_it = std::find(connections_.begin(), connections_.end(), con);
     if (con_it == connections_.end()) {
         return error_e::not_found;
     }
@@ -282,7 +282,10 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
             auto& state = node_it->second.state;
 
             if (auto cons_it = state.con_map.find(iface_name); cons_it != state.con_map.end()) {
-                cons_it->second.erase(con);
+                auto con_it = std::find(cons_it->second.begin(), cons_it->second.end(), con);
+                if (con_it != cons_it->second.end()) {
+                    cons_it->second.erase(con_it);
+                }
             }
         }
 
