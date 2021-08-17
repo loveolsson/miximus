@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "detail/frame.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -36,43 +37,98 @@ struct mode_info_s
     gpu::vec2i_t   dim;
 };
 
+struct frame_info_s
+{
+    GLuint                       buffer_id{};
+    std::unique_ptr<gpu::sync_s> sync;
+    gpu::vec2i_t                 dim{};
+    void*                        ptr{};
+
+    frame_info_s() = default;
+    ~frame_info_s()
+    {
+        if (ptr != nullptr) {
+            glUnmapNamedBuffer(buffer_id);
+        }
+
+        if (buffer_id != 0) {
+            glDeleteBuffers(1, &buffer_id); // Deleting 0 is safe
+        }
+    }
+
+    frame_info_s(const frame_info_s&) = delete;
+    frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
+    frame_info_s& operator=(const frame_info_s&) = delete;
+    frame_info_s& operator                       =(frame_info_s&& o) noexcept
+    {
+        buffer_id   = o.buffer_id;
+        o.buffer_id = 0;
+        sync        = std::move(o.sync);
+        dim         = o.dim;
+        ptr         = o.ptr;
+        o.ptr       = nullptr;
+
+        return *this;
+    }
+};
+
 class callback_s
     : public IDeckLinkVideoOutputCallback
     , public IDeckLinkAudioOutputCallback
 {
     std::atomic_ulong ref_count_{1};
 
-    utils::frame_queue_s<decklink_ptr<IDeckLinkVideoFrame>> frames_rendered_;
-    std::mutex                                              last_frame_mtx_;
-    decklink_ptr<IDeckLinkVideoFrame>                       last_frame_;
-    IDeckLinkOutput* const                                  device_;
-    const mode_info_s                                       mode_info_;
-    BMDTimeValue                                            pts_{0};
+    std::shared_ptr<gpu::context_s>        ctx_;
+    utils::frame_queue_s<frame_info_s>     frames_rendered_;
+    utils::frame_queue_s<frame_info_s>     frames_free_;
+    decklink_ptr<IDeckLinkVideoFrame>      last_frame_;
+    decklink_ptr<IDeckLinkVideoConversion> converter_;
+
+    IDeckLinkOutput* const device_;
+    const mode_info_s      mode_info_;
+    BMDTimeValue           pts_{0};
 
   public:
-    callback_s(IDeckLinkOutput* device, mode_info_s mode_info)
-        : device_(device)
+    callback_s(const std::shared_ptr<gpu::context_s>& ctx, IDeckLinkOutput* device, mode_info_s mode_info)
+        : ctx_(ctx)
+        , device_(device)
         , mode_info_(mode_info)
+        , converter_(decklink_registry_s::get_converter())
     {
-        std::unique_lock lock(last_frame_mtx_);
+        auto lock = ctx_->get_lock();
+        auto dim  = mode_info_.dim;
 
-        auto dim = mode_info_.dim;
+        IDeckLinkMutableVideoFrame* frame = nullptr;
 
-        for (int i = 0; i < 4; i++) {
-            IDeckLinkMutableVideoFrame* frame = nullptr;
-            if (SUCCEEDED(device_->CreateVideoFrame(
-                    mode_info_.dim.x, mode_info_.dim.y, mode_info_.dim.x * 2, bmdFormat8BitYUV, 0, &frame))) {
-                uint16_t* data = nullptr;
-                frame->GetBytes(reinterpret_cast<void**>(&data));
+        if (SUCCEEDED(device_->CreateVideoFrame(
+                mode_info_.dim.x, mode_info_.dim.y, mode_info.dim.x * 2, bmdFormat8BitYUV, 0, &frame))) {
+            uint16_t* data = nullptr;
+            frame->GetBytes(reinterpret_cast<void**>(&data));
 
-                std::fill(data, data + mode_info_.dim.x * mode_info_.dim.y, 0x0000);
+            std::fill(data, data + mode_info_.dim.x * mode_info_.dim.y, 0x0000);
 
+            for (int i = 0; i < 4; i++) {
                 device_->ScheduleVideoFrame(frame, pts_, mode_info_.frame_duration, mode_info_.time_scale);
-                last_frame_ = frame;
-
-                frame->Release();
             }
+
+            last_frame_ = frame;
+            frame->Release();
         }
+
+        for (int i = 0; i < 7; i++) {
+            frames_free_.push_frame({});
+        }
+    }
+
+    ~callback_s()
+    {
+        auto lock = ctx_->get_lock();
+        ctx_->make_current();
+
+        frames_free_.clear();
+        frames_rendered_.clear();
+
+        gpu::context_s::rewind_current();
     }
 
     /**
@@ -94,18 +150,43 @@ class callback_s
     /**
      * IDeckLinkVideoOutputCallback
      */
-    HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame*           completedFrame,
+    HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame* /*completedFrame*/,
                                                       BMDOutputFrameCompletionResult result) final
     {
-        std::unique_lock lock(last_frame_mtx_);
-
         if (result == bmdOutputFrameFlushed) {
             return S_OK;
         }
 
-        if (auto [record, size] = frames_rendered_.pop_frame(); record != std::nullopt) {
-            IDeckLinkMutableVideoFrame* dl_frame = nullptr;
-            last_frame_                          = std::move(record->frame);
+        auto lock = ctx_->get_lock();
+        ctx_->make_current();
+
+        if (auto [record, size] = frames_rendered_.pop_frame_if_count(3); record != std::nullopt) {
+            auto& frame = record->frame;
+
+            if (frame.sync) {
+                frame.sync->gpu_wait();
+                frame.sync.reset();
+            }
+
+            glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+            glFinish();
+
+            IDeckLinkMutableVideoFrame* dst_frame = nullptr;
+            // int row_bytes = ((frame.dim.x + 47) / 48) * 128;
+            int row_bytes = frame.dim.x * 2;
+
+            if (SUCCEEDED(
+                    device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat8BitYUV, 0, &dst_frame))) {
+                auto src_frame = make_decklink_ptr<detail::decklink_frame_s>(
+                    frame.ptr, frame.dim.x, frame.dim.y, frame.dim.x * 4, bmdFormat8BitBGRA);
+                converter_->ConvertFrame(src_frame.get(), dst_frame);
+
+                last_frame_ = dst_frame;
+                dst_frame->Release();
+            }
+
+            frame.sync = std::make_unique<gpu::sync_s>();
+            frames_free_.push_frame(std::move(frame));
         }
 
         if (last_frame_) {
@@ -120,6 +201,8 @@ class callback_s
             pts_ += duration;
         }
 
+        gpu::context_s::rewind_current();
+
         return S_OK;
     }
 
@@ -132,13 +215,18 @@ class callback_s
     /**
      * IDeckLinkAudioOutputCallback
      */
-    HRESULT STDMETHODCALLTYPE RenderAudioSamples(BOOL preroll) final { return S_OK; }
+    HRESULT STDMETHODCALLTYPE RenderAudioSamples(BOOL /*preroll*/) final { return S_OK; }
 
-    void push_rendered_frame(decklink_ptr<IDeckLinkVideoFrame>&& frame)
+    void push_rendered_frame(frame_info_s&& frame) { frames_rendered_.push_frame(std::move(frame)); }
+
+    std::optional<frame_info_s> get_free_frame()
     {
-        if (frames_rendered_.size() < 2) {
-            frames_rendered_.push_frame(std::move(frame));
+        auto [record, _] = frames_free_.pop_frame();
+        if (record) {
+            return std::move(record->frame);
         }
+
+        return std::nullopt;
     }
 };
 
@@ -204,7 +292,7 @@ class node_impl : public node_i
         // assert(res == S_OK);
     }
 
-    void restart_playback(std::shared_ptr<gpu::context_s> ctx)
+    void restart_playback(core::app_state_s* app)
     {
         assert(device_);
         stop_playback();
@@ -221,7 +309,8 @@ class node_impl : public node_i
         auto res = device_->EnableVideoOutput(display_mode_->mode, bmdVideoOutputFlagDefault);
         assert(res == S_OK);
 
-        callback_ = make_decklink_ptr<callback_s>(device_.get(), *display_mode_);
+        auto ctx  = gpu::context_s::create_shared_context(false, app->ctx());
+        callback_ = make_decklink_ptr<callback_s>(ctx, device_.get(), *display_mode_);
         res       = device_->SetScheduledFrameCompletionCallback(callback_.get());
         assert(res == S_OK);
 
@@ -244,9 +333,8 @@ class node_impl : public node_i
         if (device == device_) {
             // Check if the display_mode setting has changed since last frame
             if (display_mode_str_ != display_mode) {
-                auto ctx          = gpu::context_s::create_shared_context(false, app->ctx());
                 display_mode_str_ = display_mode;
-                restart_playback(ctx);
+                restart_playback(app);
             }
         } else {
             if (device_) {
@@ -268,7 +356,7 @@ class node_impl : public node_i
                 device_->GetDisplayModeIterator(&itr);
 
                 while (itr->Next(&imode) == S_OK) {
-                    mode_info_s mode;
+                    mode_info_s mode{};
 
                     mode.mode = imode->GetDisplayMode();
                     mode.dim  = {imode->GetWidth(), imode->GetHeight()};
@@ -284,8 +372,7 @@ class node_impl : public node_i
             }
 
             display_mode_str_ = display_mode;
-            auto ctx          = gpu::context_s::create_shared_context(false, app->ctx());
-            restart_playback(ctx);
+            restart_playback(app);
         }
     }
 
@@ -300,6 +387,11 @@ class node_impl : public node_i
             return;
         }
 
+        auto frame = callback_->get_free_frame();
+        if (!frame) {
+            return;
+        }
+
         if (!draw_state_) {
             draw_state_  = std::make_unique<gpu::draw_state_s>();
             auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
@@ -310,7 +402,27 @@ class node_impl : public node_i
         auto dim = display_mode_->dim;
 
         if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::rgb_f16);
+            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
+        }
+
+        if (frame->buffer_id == 0 || frame->dim != dim) {
+            auto buffer_size = dim.x * dim.y * 4;
+
+            frame->sync.reset();
+            if (frame->ptr) {
+                glUnmapNamedBuffer(frame->buffer_id);
+            }
+
+            glDeleteBuffers(1, &frame->buffer_id);
+            glCreateBuffers(1, &frame->buffer_id);
+
+            glNamedBufferStorage(frame->buffer_id,
+                                 buffer_size,
+                                 nullptr,
+                                 GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT | GL_MAP_PERSISTENT_BIT);
+            frame->ptr =
+                glMapNamedBufferRange(frame->buffer_id, 0, buffer_size, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
+            frame->dim = dim;
         }
 
         framebuffer_->bind();
@@ -326,17 +438,14 @@ class node_impl : public node_i
         draw_state_->draw();
         gpu::texture_s::unbind(0);
 
-        IDeckLinkMutableVideoFrame* frame = nullptr;
-        if (SUCCEEDED(device_->CreateVideoFrame(dim.x, dim.y, dim.x * 4, bmdFormat10BitRGBXLE, 0, &frame))) {
-            void* data = nullptr;
-            frame->GetBytes(&data);
-
-            glReadPixels(0, 0, dim.x, dim.y, GL_RGBA, GL_UNSIGNED_INT_10_10_10_2, data);
-            callback_->push_rendered_frame(decklink_ptr<IDeckLinkVideoFrame>(frame));
-            frame->Release();
-        }
-
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, frame->buffer_id);
+        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, nullptr);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         gpu::framebuffer_s::unbind();
+
+        frame->sync = std::make_unique<gpu::sync_s>();
+
+        callback_->push_rendered_frame(std::move(*frame));
     }
 
     void complete(core::app_state_s* /*app*/) final {}

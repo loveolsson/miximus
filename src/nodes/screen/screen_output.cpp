@@ -10,6 +10,7 @@
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 #include "utils/frame_queue.hpp"
+#include "utils/thread_priority.hpp"
 
 #include <memory>
 

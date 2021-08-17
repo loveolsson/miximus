@@ -49,7 +49,8 @@ class interface_i
 
   protected:
     template <typename T>
-    static type_e   get_interface_type();
+    static type_e get_interface_type();
+
     resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
 
     int              max_connection_count_{1};
@@ -72,9 +73,12 @@ class input_interface_s : public interface_i
     type_e type() const final { return get_interface_type<T>(); }
     bool   accepts(type_e type) const final;
 
-    static T cast_iface_to_value(const interface_i* iface, T fallback);
+    static T cast_iface_to_value(const interface_i* iface, T const& fallback);
 
-    T resolve_value(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state, T fallback = T{}) const
+    T resolve_value(core::app_state_s*  app,
+                    const node_map_t&   nodes,
+                    const node_state_s& state,
+                    T const&            fallback = T{}) const
     {
         auto ifaces = resolve_connections(app, nodes, state);
 
@@ -87,8 +91,10 @@ class input_interface_s : public interface_i
         return fallback;
     }
 
-    resolved_values_t
-    resolve_values(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state, T fallback = T{}) const
+    resolved_values_t resolve_values(core::app_state_s*  app,
+                                     const node_map_t&   nodes,
+                                     const node_state_s& state,
+                                     T const&            fallback = T{}) const
     {
         resolved_values_t res;
 

@@ -25,6 +25,8 @@ set(MIXIMUS_CLANG_TIDY_PARAMS
     -cppcoreguidelines-macro-usage
     -cppcoreguidelines-pro-type-vararg
     -hicpp-vararg
+    -misc-non-private-member-variables-in-classes
+    -clang-analyzer-cplusplus.NewDelete
 )
 
 list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)

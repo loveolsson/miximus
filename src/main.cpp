@@ -3,6 +3,7 @@
 #include "core/node_manager.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
+#include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json.hpp>
@@ -77,6 +78,7 @@ int main(int argc, char* argv[])
     }
 
     logger::init_loggers(log_level);
+    utils::set_max_thread_priority();
 
     try {
         web_server::server_s web_server;

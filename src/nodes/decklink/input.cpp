@@ -32,17 +32,25 @@ struct frame_info_s
     std::unique_ptr<gpu::sync_s> sync;
     gpu::vec2i_t                 dim{};
 
-    frame_info_s() {}
+    frame_info_s() = default;
+    ~frame_info_s()
+    {
+        if (buffer_id != 0) {
+            glDeleteBuffers(1, &buffer_id); // Deleting 0 is safe
+        }
+    }
 
     frame_info_s(const frame_info_s&) = delete;
-    frame_info_s(frame_info_s&& o) { *this = std::move(o); }
-    void operator=(const frame_info_s&) = delete;
-    void operator                       =(frame_info_s&& o)
+    frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
+    frame_info_s& operator=(const frame_info_s&) = delete;
+    frame_info_s& operator                       =(frame_info_s&& o) noexcept
     {
         buffer_id   = o.buffer_id;
         o.buffer_id = 0;
         sync        = std::move(o.sync);
         dim         = o.dim;
+
+        return *this;
     }
 };
 
@@ -60,10 +68,10 @@ class callback_s : public IDeckLinkInputCallback
     utils::frame_queue_s<frame_info_s> frames_free_;
 
     std::atomic<BMDDisplayMode>    new_display_mode_{bmdModeUnknown};
-    std::atomic<BMDFieldDominance> frame_field_dominance_;
+    std::atomic<BMDFieldDominance> frame_field_dominance_{bmdUnknownFieldDominance};
 
   public:
-    callback_s(std::shared_ptr<gpu::context_s> ctx)
+    explicit callback_s(std::shared_ptr<gpu::context_s> ctx)
         : ctx_(std::move(ctx))
         , converter_(decklink_registry_s::get_converter())
     {
@@ -72,7 +80,7 @@ class callback_s : public IDeckLinkInputCallback
         }
     }
 
-    ~callback_s()
+    ~callback_s() override
     {
         auto lock = ctx_->get_lock();
         ctx_->make_current();
@@ -82,6 +90,11 @@ class callback_s : public IDeckLinkInputCallback
 
         gpu::context_s::rewind_current();
     }
+
+    callback_s(const callback_s&) = delete;
+    callback_s(callback_s&&)      = delete;
+    callback_s& operator=(const callback_s&) = delete;
+    callback_s& operator=(callback_s&&) = delete;
 
     /**
      * IUnknown
@@ -126,8 +139,10 @@ class callback_s : public IDeckLinkInputCallback
         if (frame.buffer_id == 0 || frame.dim != dim) {
             glDeleteBuffers(1, &frame.buffer_id); // Deleting 0 is safe
             glCreateBuffers(1, &frame.buffer_id);
-            glNamedBufferStorage(
-                frame.buffer_id, dim.x * dim.y * 4, nullptr, GL_DYNAMIC_STORAGE_BIT | GL_MAP_WRITE_BIT);
+            glNamedBufferStorage(frame.buffer_id,
+                                 dim.x * dim.y * 4,
+                                 nullptr,
+                                 GLbitfield(GL_DYNAMIC_STORAGE_BIT) | GLbitfield(GL_MAP_WRITE_BIT));
             frame.dim = dim;
         }
 
@@ -140,8 +155,9 @@ class callback_s : public IDeckLinkInputCallback
                 make_decklink_ptr<detail::decklink_frame_s>(data, dim.x, dim.y, dim.x * 4, bmdFormat10BitRGBXLE);
 
             // Convert the frame directly into the buffer
-            auto res = converter_->ConvertFrame(videoFrame, dst_frame.get());
-            assert(SUCCEEDED(res));
+            if (FAILED(converter_->ConvertFrame(videoFrame, dst_frame.get()))) {
+                assert(false);
+            }
 
             glUnmapNamedBuffer(frame.buffer_id);
         }
@@ -159,7 +175,7 @@ class callback_s : public IDeckLinkInputCallback
                             IDeckLinkDisplayMode*            newDisplayMode,
                             BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
     {
-        if (notificationEvents & bmdVideoInputDisplayModeChanged) {
+        if ((notificationEvents & bmdVideoInputDisplayModeChanged) != 0) {
             new_display_mode_      = newDisplayMode->GetDisplayMode();
             frame_field_dominance_ = newDisplayMode->GetFieldDominance();
         }
@@ -235,7 +251,7 @@ class node_impl : public node_i
     void operator=(const node_impl&) = delete;
     void operator=(node_impl&&) = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
+    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
         if (device_ && callback_) {
             auto pts    = app->frame_info.timestamp;
@@ -244,7 +260,7 @@ class node_impl : public node_i
 
             auto new_mode = callback_->get_new_display_mode();
             if (new_mode != bmdModeUnknown) {
-                // TODO: Error checking of DeckLink calls
+                // TODO(Love): Error checking of DeckLink calls
                 device_->PauseStreams();
                 device_->EnableVideoInput(new_mode, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection);
                 device_->StartStreams();
@@ -273,7 +289,7 @@ class node_impl : public node_i
             callback_ = make_decklink_ptr<callback_s>(ctx);
             device_->SetCallback(callback_.get());
 
-            // TODO: Error checking of DeckLink calls
+            // TODO(Love): Error checking of DeckLink calls
             device_->EnableVideoInput(bmdModeNTSC, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection);
             device_->StartStreams();
         }
@@ -323,7 +339,7 @@ class node_impl : public node_i
         gpu::texture_s::unbind(0);
         gpu::framebuffer_s::unbind();
 
-        auto fb_tex = framebuffer_->texture();
+        auto* fb_tex = framebuffer_->texture();
         fb_tex->generate_mip_maps();
         iface_tex_.set_value(fb_tex);
     }

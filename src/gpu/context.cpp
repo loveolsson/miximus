@@ -89,8 +89,9 @@ void GLAPIENTRY opengl_error_callback(GLenum source,
             severity_str = "low";
             break;
         case GL_DEBUG_SEVERITY_NOTIFICATION:
-            severity_str = "notification";
-            break;
+            return;
+            // severity_str = "notification";
+            // break;
         default:
             severity_str = "unknown";
             break;

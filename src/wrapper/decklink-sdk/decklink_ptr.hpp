@@ -206,9 +206,12 @@ bool decklink_ptr<T>::operator<(const decklink_ptr<T>& other) const
 template <class T, class... Args>
 decklink_ptr<T> make_decklink_ptr(Args&&... args)
 {
-    decklink_ptr<T> temp(new T(args...));
+    auto*           t = new T(args...);
+    decklink_ptr<T> temp(t);
+
     // decklink_ptr takes ownership of reference count, so release reference count added by raw pointer constructor
-    temp->Release();
+    t->Release();
+
     return std::move(temp);
 }
 

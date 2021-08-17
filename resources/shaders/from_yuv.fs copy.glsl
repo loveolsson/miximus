@@ -4,7 +4,6 @@ in vec2 TexCoord; // the input variable from the vertex shader (same name and sa
 
 uniform sampler2D tex;
 uniform mat3      transfer;
-uniform int       width;
 // UYVY macropixel texture passed as RGBA format
 
 vec4 rec709YCbCr2rgba(float Y, float Cb, float Cr, float a)

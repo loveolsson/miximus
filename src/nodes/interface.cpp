@@ -141,7 +141,7 @@ bool input_interface_s<gpu::framebuffer_s*>::accepts(type_e type) const
 }
 
 template <>
-double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, double fallback)
+double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, const double& fallback)
 {
     switch (iface->type()) {
         case type_e::f64: {
@@ -160,7 +160,7 @@ double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, 
 }
 
 template <>
-gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_i* iface, gpu::vec2_t fallback)
+gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_i* iface, const gpu::vec2_t& fallback)
 {
     switch (iface->type()) {
         case type_e::f64: {
@@ -188,7 +188,7 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_
 }
 
 template <>
-gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, gpu::rect_s fallback)
+gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback)
 {
     switch (iface->type()) {
         case type_e::rect: {
@@ -207,8 +207,8 @@ gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_
 }
 
 template <>
-gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i* iface,
-                                                                        gpu::texture_s*    fallback)
+gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
+                                                                        gpu::texture_s* const& fallback)
 {
     switch (iface->type()) {
         case type_e::texture: {
@@ -246,8 +246,8 @@ gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const in
 }
 
 template <>
-gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*  iface,
-                                                                                gpu::framebuffer_s* fallback)
+gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*         iface,
+                                                                                gpu::framebuffer_s* const& fallback)
 {
     switch (iface->type()) {
         case type_e::framebuffer: {

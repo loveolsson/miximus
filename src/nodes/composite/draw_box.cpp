@@ -34,15 +34,7 @@ class node_impl : public node_i
         iface_fb_out_.register_interface(&interfaces_);
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& /*nodes*/, traits_s* /*traits*/) final
-    {
-        if (!draw_state_) {
-            draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
-        }
-    }
+    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
@@ -69,6 +61,13 @@ class node_impl : public node_i
 
         auto fb_dim = fb->texture()->texture_dimensions();
         glViewport(0, 0, fb_dim.x, fb_dim.y);
+
+        if (!draw_state_) {
+            draw_state_  = std::make_unique<gpu::draw_state_s>();
+            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            draw_state_->set_shader_program(shader);
+            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        }
 
         auto* shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", draw_rect.pos);
