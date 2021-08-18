@@ -30,7 +30,8 @@ struct frame_info_s
 {
     GLuint                       buffer_id{};
     std::unique_ptr<gpu::sync_s> sync;
-    gpu::vec2i_t                 dim{};
+    gpu::vec2i_t                 tx_dim{};
+    gpu::vec2i_t                 src_dim{};
 
     frame_info_s() = default;
     ~frame_info_s()
@@ -48,7 +49,8 @@ struct frame_info_s
         buffer_id   = o.buffer_id;
         o.buffer_id = 0;
         sync        = std::move(o.sync);
-        dim         = o.dim;
+        tx_dim      = o.tx_dim;
+        src_dim     = o.src_dim;
 
         return *this;
     }
@@ -133,32 +135,30 @@ class callback_s : public IDeckLinkInputCallback
         auto lock = ctx_->get_lock();
         ctx_->make_current();
 
-        auto&        frame = record->frame;
-        gpu::vec2i_t dim{videoFrame->GetWidth(), videoFrame->GetHeight()};
+        auto& frame = record->frame;
 
-        if (frame.buffer_id == 0 || frame.dim != dim) {
+        size_t row_bytes = videoFrame->GetRowBytes();
+        assert(row_bytes % 4 == 0);
+
+        gpu::vec2i_t tx_dim{row_bytes / 4, videoFrame->GetHeight()};
+        gpu::vec2i_t src_dim{videoFrame->GetWidth(), tx_dim.y};
+
+        if (frame.buffer_id == 0 || frame.tx_dim != tx_dim || frame.src_dim != src_dim) {
             glDeleteBuffers(1, &frame.buffer_id); // Deleting 0 is safe
             glCreateBuffers(1, &frame.buffer_id);
             glNamedBufferStorage(frame.buffer_id,
-                                 dim.x * dim.y * 4,
+                                 row_bytes * tx_dim.y,
                                  nullptr,
                                  GLbitfield(GL_DYNAMIC_STORAGE_BIT) | GLbitfield(GL_MAP_WRITE_BIT));
-            frame.dim = dim;
+            frame.tx_dim  = tx_dim;
+            frame.src_dim = src_dim;
         }
 
-        {
+        void* src_data = nullptr;
+        if (videoFrame->GetBytes(&src_data) == S_OK) {
             // Map the buffer to client memory address space
-            void* data = glMapNamedBuffer(frame.buffer_id, GL_WRITE_ONLY);
-
-            // Wrap the buffer ptr as a IDeckLinkVideoFrame
-            auto dst_frame =
-                make_decklink_ptr<detail::decklink_frame_s>(data, dim.x, dim.y, dim.x * 4, bmdFormat10BitRGBXLE);
-
-            // Convert the frame directly into the buffer
-            if (FAILED(converter_->ConvertFrame(videoFrame, dst_frame.get()))) {
-                assert(false);
-            }
-
+            void* dst_data = glMapNamedBuffer(frame.buffer_id, GL_WRITE_ONLY);
+            memcpy(dst_data, src_data, row_bytes * tx_dim.y);
             glUnmapNamedBuffer(frame.buffer_id);
         }
 
@@ -304,16 +304,17 @@ class node_impl : public node_i
 
         if (!draw_state_) {
             draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::strip_gamma);
+            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
             draw_state_->set_shader_program(shader);
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        auto dim = work_frame_->dim;
+        auto tx_dim  = work_frame_->tx_dim;
+        auto src_dim = work_frame_->src_dim;
 
-        if (!texture_ || !framebuffer_ || texture_->texture_dimensions() != dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::rgb_f16);
-            texture_     = std::make_unique<gpu::texture_s>(dim, gpu::texture_s::format_e::rgb_f16);
+        if (!texture_ || !framebuffer_ || texture_->texture_dimensions() != tx_dim) {
+            framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::format_e::rgb_f16);
+            texture_     = std::make_unique<gpu::texture_s>(tx_dim, gpu::texture_s::format_e::uyuv_u10);
         }
 
         assert(work_frame_->sync);
@@ -322,14 +323,16 @@ class node_impl : public node_i
         }
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, work_frame_->buffer_id);
-        glTextureSubImage2D(texture_->id(), 0, 0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_INT_10_10_10_2, nullptr);
+        glTextureSubImage2D(
+            texture_->id(), 0, 0, 0, tx_dim.x, tx_dim.y, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV, nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
         auto* shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2i_t{0, 0});
         shader->set_uniform("scale", gpu::vec2i_t{1.0, 1.0});
+        shader->set_uniform("target_width", src_dim.x);
 
-        glViewport(0, 0, dim.x, dim.y);
+        glViewport(0, 0, src_dim.x, src_dim.y);
         glClearColor(0, 0, 0, 0);
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
 

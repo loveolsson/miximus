@@ -407,7 +407,6 @@ class node_impl : public node_i
 
         if (frame->buffer_id == 0 || frame->dim != dim) {
             auto buffer_size = dim.x * dim.y * 4;
-
             frame->sync.reset();
             if (frame->ptr) {
                 glUnmapNamedBuffer(frame->buffer_id);

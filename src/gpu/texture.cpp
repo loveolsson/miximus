@@ -52,9 +52,8 @@ texture_s::texture_s(vec2i_t dimensions, format_e color)
         case format_e::uyuv_u10:
             internal_format = GL_RGB10_A2;
             format_         = GL_BGRA;
-            type_           = GL_UNSIGNED_INT_10_10_10_2;
+            type_           = GL_UNSIGNED_INT_2_10_10_10_REV;
             // TODO: figure out the right calculation
-            texture_dimensions_.x /= 2;
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             mip_map_levels = 1;

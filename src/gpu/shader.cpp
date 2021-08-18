@@ -185,4 +185,11 @@ void shader_program_s::set_uniform(const std::string& name, double val)
     }
 }
 
+void shader_program_s::set_uniform(const std::string& name, int val)
+{
+    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
+        glProgramUniform1i(program_, it->second.loc, val);
+    }
+}
+
 } // namespace miximus::gpu

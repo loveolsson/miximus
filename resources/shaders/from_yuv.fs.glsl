@@ -3,93 +3,87 @@ out vec4 FragColor;
 in vec2 TexCoord; // the input variable from the vertex shader (same name and same type)
 
 uniform sampler2D tex;
-uniform mat3      transfer;
-uniform int       width;
-// UYVY macropixel texture passed as RGBA format
+uniform int       target_width;
+// uniform mat3      transfer;
 
-vec4 rec709YCbCr2rgba(float Y, float Cb, float Cr, float a)
+vec3 rec709YCbCr2rgb(float Y, float Cb, float Cr)
 {
     float r, g, b;
 
     // Y: Undo 1/256 texture value scaling and scale [16..235] to [0..1] range
     // C: Undo 1/256 texture value scaling and scale [16..240] to [-0.5 .. + 0.5] range
-    Y  = (Y * 256.0 - 16.0) / 219.0;
-    Cb = (Cb * 256.0 - 16.0) / 224.0 - 0.5;
-    Cr = (Cr * 256.0 - 16.0) / 224.0 - 0.5;
+    // Y  = (Y * 256.0 - 16.0) / 219.0;
+    // Cb = (Cb * 256.0 - 16.0) / 224.0 - 0.5;
+    // Cr = (Cr * 256.0 - 16.0) / 224.0 - 0.5;
+    Y  = (Y * 1024.0 - 64.0) / 876.0;
+    Cb = (Cb * 1024.0 - 64.0) / 896.0 - 0.5;
+    Cr = (Cr * 1024.0 - 64.0) / 896.0 - 0.5;
 
     // Convert to RGB using Rec.709 conversion matrix (see eq 26.7 in Poynton 2003)
-    // r = Y + 1.5748 * Cr;
-    // g = Y - 0.1873 * Cb - 0.4681 * Cr;
-    // b = Y + 1.8556 * Cb;
-    // return vec4(r, g, b, a);
+    r = Y + 1.5748 * Cr;
+    g = Y - 0.1873 * Cb - 0.4681 * Cr;
+    b = Y + 1.8556 * Cb;
+    return vec3(r, g, b);
 
-    return vec4(transfer * vec3(Y, Cb, Cr), a);
-}
-
-// Perform bilinear interpolation between the provided components.
-// The samples are expected as shown:
-// ---------
-// | X | Y |
-// |---+---|
-// | W | Z |
-// ---------
-vec4 bilinear(vec4 W, vec4 X, vec4 Y, vec4 Z, vec2 weight)
-{
-    vec4 m0 = mix(W, Z, weight.x);
-    vec4 m1 = mix(X, Y, weight.x);
-    return mix(m0, m1, weight.y);
-}
-
-// Gather neighboring YUV macropixels from the given texture coordinate
-void textureGatherYUV(sampler2D UYVYsampler, vec2 tc, out vec4 W, out vec4 X, out vec4 Y, out vec4 Z)
-{
-    ivec2 tx   = ivec2(tc * textureSize(UYVYsampler, 0));
-    ivec2 tmin = ivec2(0, 0);
-    ivec2 tmax = textureSize(UYVYsampler, 0) - ivec2(1, 1);
-    W          = texelFetch(UYVYsampler, tx, 0);
-    X          = texelFetch(UYVYsampler, clamp(tx + ivec2(0, 1), tmin, tmax), 0);
-    Y          = texelFetch(UYVYsampler, clamp(tx + ivec2(1, 1), tmin, tmax), 0);
-    Z          = texelFetch(UYVYsampler, clamp(tx + ivec2(1, 0), tmin, tmax), 0);
+    //    return vec4(transfer * vec3(Y, Cb, Cr), a);
 }
 
 void main(void)
 {
-    /* The shader uses texelFetch to obtain the YUV macropixels to avoid unwanted interpolation
-     * introduced by the GPU interpreting the YUV data as RGBA pixels.
-     * The YUV macropixels are converted into individual RGB pixels and bilinear interpolation is applied. */
-    vec2  tc    = TexCoord;
-    float alpha = 1.0;
+    vec2 tc = TexCoord;
 
-    vec4 macro, macro_u, macro_r, macro_ur;
-    vec4 pixel, pixel_r, pixel_u, pixel_ur;
-    textureGatherYUV(tex, tc, macro, macro_u, macro_ur, macro_r);
+    int x = int(tc.x * float(target_width));
+    int y = int(textureSize(tex, 0).y * tc.y);
 
-    //   Select the components for the bilinear interpolation based on the texture coordinate
-    //   location within the YUV macropixel:
-    //   -----------------          ----------------------
-    //   | UY/VY | UY/VY |          | macro_u | macro_ur |
-    //   |-------|-------|    =>    |---------|----------|
-    //   | UY/VY | UY/VY |          | macro   | macro_r  |
-    //   |-------|-------|          ----------------------
-    //   | RG/BA | RG/BA |
-    //   -----------------
-    vec2 off = fract(tc * textureSize(tex, 0));
-    if (off.x > 0.5) {
-        // right half of macropixel
-        pixel    = rec709YCbCr2rgba(macro.a, macro.b, macro.r, alpha);
-        pixel_r  = rec709YCbCr2rgba(macro_r.g, macro_r.b, macro_r.r, alpha);
-        pixel_u  = rec709YCbCr2rgba(macro_u.a, macro_u.b, macro_u.r, alpha);
-        pixel_ur = rec709YCbCr2rgba(macro_ur.g, macro_ur.b, macro_ur.r, alpha);
+    float Y, Cb, Cr;
 
-    } else {
-        // left half & center of macropixel
-        pixel    = rec709YCbCr2rgba(macro.g, macro.b, macro.r, alpha);
-        pixel_r  = rec709YCbCr2rgba(macro.a, macro.b, macro.r, alpha);
-        pixel_u  = rec709YCbCr2rgba(macro_u.g, macro_u.b, macro_u.r, alpha);
-        pixel_ur = rec709YCbCr2rgba(macro_u.a, macro_u.b, macro_u.r, alpha);
+    int  start_x = x / 6 * 4;
+    vec4 tex_1, tex_2;
+
+    switch (x % 6) {
+        case 0:
+            tex_1 = texelFetch(tex, ivec2(start_x, y), 0);
+            Y     = tex_1.y;
+            Cb    = tex_1.x;
+            Cr    = tex_1.z;
+            break;
+        case 1:
+            tex_1 = texelFetch(tex, ivec2(start_x, y), 0);
+            tex_2 = texelFetch(tex, ivec2(start_x + 1, y), 0);
+            Y     = tex_2.x;
+            Cb    = tex_1.x;
+            Cr    = tex_1.z;
+            break;
+        case 2:
+            tex_1 = texelFetch(tex, ivec2(start_x + 1, y), 0);
+            tex_2 = texelFetch(tex, ivec2(start_x + 2, y), 0);
+            Y     = tex_1.z;
+            Cb    = tex_1.y;
+            Cr    = tex_2.x;
+            break;
+        case 3:
+            tex_1 = texelFetch(tex, ivec2(start_x + 1, y), 0);
+            tex_2 = texelFetch(tex, ivec2(start_x + 2, y), 0);
+            Y     = tex_2.y;
+            Cb    = tex_1.y;
+            Cr    = tex_2.x;
+            break;
+        case 4:
+            tex_1 = texelFetch(tex, ivec2(start_x + 2, y), 0);
+            tex_2 = texelFetch(tex, ivec2(start_x + 3, y), 0);
+            Y     = tex_2.x;
+            Cb    = tex_1.z;
+            Cr    = tex_2.y;
+            break;
+        default:
+            tex_1 = texelFetch(tex, ivec2(start_x + 2, y), 0);
+            tex_2 = texelFetch(tex, ivec2(start_x + 3, y), 0);
+            Y     = tex_2.z;
+            Cb    = tex_1.z;
+            Cr    = tex_2.y;
+            break;
     }
 
-    vec4 sRGB = bilinear(pixel, pixel_u, pixel_ur, pixel_r, off);
-    FragColor = vec4(toLinear(sRGB.xyz), sRGB.w);
-    // FragColor = vec4(sRGB.xyz, sRGB.w);
+    vec3 sRGB = rec709YCbCr2rgb(Y, Cb, Cr);
+    FragColor = vec4(toLinear(sRGB), 1.0);
 }
