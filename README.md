@@ -1,4 +1,5 @@
 # miximus
+Experimental node based video mixer/compositor, in the very early stages of development.
 
 ## Download 3rd party libraries
 ### CEF
