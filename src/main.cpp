@@ -20,13 +20,19 @@ using namespace std::filesystem;
 using namespace std::chrono_literals;
 using nlohmann::json;
 
+namespace {
+
 constexpr int HTTP_PORT = 7351;
 
-static volatile std::sig_atomic_t g_signal_status = 0;
+auto& get_signal_status()
+{
+    static volatile std::sig_atomic_t signal_status = 0;
+    return signal_status;
+}
 
-static void signal_handler(int /*signal*/) { g_signal_status = 1; }
+void signal_handler(int /*signal*/) { get_signal_status() = 1; }
 
-static void load_settings(core::node_manager_s* manager, const path& settings_path)
+void load_settings(core::node_manager_s* manager, const path& settings_path)
 {
     auto log = getlog("app");
 
@@ -46,7 +52,7 @@ static void load_settings(core::node_manager_s* manager, const path& settings_pa
     }
 }
 
-static void save_settings(core::node_manager_s* manager, const path& settings_path)
+void save_settings(core::node_manager_s* manager, const path& settings_path)
 {
     auto log = getlog("app");
 
@@ -59,9 +65,11 @@ static void save_settings(core::node_manager_s* manager, const path& settings_pa
     }
 }
 
+} // namespace
+
 int main(int argc, char* argv[])
 {
-    std::signal(SIGINT, signal_handler);
+    (void)std::signal(SIGINT, signal_handler);
 
     auto log_level     = spdlog::level::info;
     auto settings_path = path(argv[0]).parent_path() / "settings.json";
@@ -70,6 +78,10 @@ int main(int argc, char* argv[])
         std::string_view param(argv[i]);
         if (param == "--log-debug") {
             log_level = spdlog::level::debug;
+        }
+
+        if (param == "--log-trace") {
+            log_level = spdlog::level::trace;
         }
 
         if (param == "--settings" && i + 1 < argc) {
@@ -97,7 +109,7 @@ int main(int argc, char* argv[])
             app.frame_info.pts       = utils::flicks{0};
             app.frame_info.duration  = utils::k_flicks_one_second / 60;
 
-            while (g_signal_status == 0) {
+            while (get_signal_status() == 0) {
                 // getlog("app")->info("Frame no {}", frame_no++);
 
                 node_manager.tick_one_frame(&app);
@@ -106,7 +118,7 @@ int main(int argc, char* argv[])
 
                 app.frame_info.timestamp += app.frame_info.duration;
                 app.frame_info.pts += app.frame_info.duration;
-                app.frame_info.field_even ^= true;
+                app.frame_info.field_even = !app.frame_info.field_even;
 
                 auto now = utils::flicks_now();
                 if (app.frame_info.timestamp + app.frame_info.duration < now) {

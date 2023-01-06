@@ -34,8 +34,8 @@ export class view_intercept {
       const new_pos = view_intercept.transform_position(view);
 
       if (
-        !info.options.position ||
-        !isEqual(info.options.position, new_pos, { strict: true })
+        !info.options.node_visual_position ||
+        !isEqual(info.options.node_visual_position, new_pos, { strict: true })
       ) {
         this.handle_move(info, new_pos);
       }
@@ -68,7 +68,7 @@ export class view_intercept {
     const newInfo: NodeInfo = {
       view,
       options: {
-        position: view_intercept.transform_position(view),
+        node_visual_position: view_intercept.transform_position(view),
       },
       new_position: false,
       waiting: wait_state_t.no_change,
@@ -120,7 +120,7 @@ export class view_intercept {
   }
 
   handle_move(info: NodeInfo, position: position_t): void {
-    info.options.position = position;
+    info.options.node_visual_position = position;
     info.new_position = true;
 
     if (info.waiting === wait_state_t.no_change) {
@@ -139,7 +139,7 @@ export class view_intercept {
       topic: topic_e.update_node,
       id,
       options: {
-        position: info.options.position,
+        node_visual_position: info.options.node_visual_position,
       },
     };
 
@@ -164,7 +164,7 @@ export class view_intercept {
       return true;
     }
 
-    node.options.position = position;
+    node.options.node_visual_position = position;
     node.view.data.position = {
       x: position[0],
       y: position[1],

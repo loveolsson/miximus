@@ -6,7 +6,7 @@ namespace miximus::utils {
 
 class thread_guard_s
 {
-    static inline bool            initiated{false};
+    static inline bool            initiated{};
     static inline std::thread::id id_;
 
   public:

@@ -8,6 +8,7 @@
 #include <GLFW/glfw3.h>
 
 #include "stb_image.h"
+#include <frozen/map.h>
 
 namespace {
 using namespace miximus;
@@ -17,10 +18,10 @@ constexpr int GL_VERSION_MINOR   = 6;
 constexpr int DEFAULT_CTX_WIDTH  = 640;
 constexpr int DEFAULT_CTX_HEIGHT = 480;
 
-static std::once_flag                      glfw_init, glad_init;
-static std::map<std::string, GLFWmonitor*> monitors_g;
+std::once_flag                      glfw_init, glad_init;
+std::map<std::string, GLFWmonitor*> monitors_g;
 
-static void error_callback(int error, const char* description)
+void error_callback(int error, const char* description)
 {
     getlog("gpu")->error("Error: [{}]:{}", error, description); //
 }
@@ -113,7 +114,7 @@ void GLAPIENTRY opengl_error_callback(GLenum source,
     }
 }
 
-static void monitor_config_callback(GLFWmonitor* monitor, int event)
+void monitor_config_callback(GLFWmonitor* monitor, int event)
 {
     const auto* name = glfwGetMonitorName(monitor);
     if (event == GLFW_CONNECTED) {
@@ -125,16 +126,14 @@ static void monitor_config_callback(GLFWmonitor* monitor, int event)
 
 void load_image(GLFWimage* img, std::string_view file)
 {
-    auto& files = static_files::get_resource_files();
-    auto  it    = files.find(file);
-    if (it == files.end()) {
-        throw std::runtime_error("Missing icon file");
-    }
+    const auto& files     = static_files::get_resource_files();
+    const auto* file_data = files.get_file_or_throw(file);
 
-    int  ch   = 0;
-    auto data = it->second.raw();
-    img->pixels =
-        stbi_load_from_memory(reinterpret_cast<stbi_uc*>(data.data()), data.size(), &img->width, &img->height, &ch, 4);
+    int   ch        = 0;
+    auto  data      = file_data->unzip();
+    auto* stbi_data = reinterpret_cast<stbi_uc*>(data.data());
+    auto  size      = static_cast<int>(data.size());
+    img->pixels     = stbi_load_from_memory(stbi_data, size, &img->width, &img->height, &ch, 4);
 
     if (img->pixels == nullptr) {
         throw std::runtime_error("Failed to load logo file");
@@ -144,23 +143,26 @@ void load_image(GLFWimage* img, std::string_view file)
     }
 }
 
-struct logos_s
+auto load_logos()
 {
-    std::array<GLFWimage, 3> images;
-    logos_s()
+    struct glfw_logo_s
     {
-        load_image(&images[0], "images/miximus_32x32.png");
-        load_image(&images[1], "images/miximus_64x64.png");
-        load_image(&images[2], "images/miximus_128x128.png");
-    }
+        GLFWimage image{};
 
-    ~logos_s()
-    {
-        for (auto& gi : images) {
-            stbi_image_free(gi.pixels);
-        }
-    }
-};
+        explicit glfw_logo_s(std::string_view filename) { load_image(&image, filename); }
+        ~glfw_logo_s() { stbi_image_free(image.pixels); }
+    };
+
+    auto logos = std::array{
+        glfw_logo_s("images/miximus_32x32.png"),
+        glfw_logo_s("images/miximus_64x64.png"),
+        glfw_logo_s("images/miximus_128x128.png"),
+    };
+
+    static_assert(sizeof(logos) == sizeof(GLFWimage) * 3, "glfw_logo_s is not packed correctly");
+
+    return logos;
+}
 
 } // namespace
 
@@ -234,8 +236,8 @@ context_s::context_s(bool visible, context_s* parent)
     if (visible) {
         glfwSwapInterval(1);
 
-        logos_s logos;
-        glfwSetWindowIcon(window_, logos.images.size(), logos.images.data());
+        auto logos = load_logos();
+        glfwSetWindowIcon(window_, logos.size(), &logos.front().image);
     } else {
         // glfwSwapInterval(0);
     }
@@ -342,43 +344,29 @@ void context_s::poll() { glfwPollEvents(); }
 
 void context_s::terminate() { glfwTerminate(); }
 
-bool context_s::has_extension(const char* name) { return glfwExtensionSupported(name) != 0; }
+bool context_s::has_extension(const char* ext) { return glfwExtensionSupported(ext) != 0; }
 
 shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 {
     using name_e = shader_program_s::name_e;
 
-    auto it = shaders_.find(name);
-    if (it != shaders_.end()) {
+    constexpr frozen::map<name_e, std::pair<std::string_view, std::string_view>, 5> shaderInfo{
+        {name_e::basic, {"shaders/basic.vs.glsl", "shaders/basic.fs.glsl"}},
+        {name_e::yuv_to_rgb, {"shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl"}},
+        {name_e::rgb_to_yuv, {"shaders/basic.vs.glsl", "shaders/to_yuv.fs.glsl"}},
+        {name_e::apply_gamma, {"shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl"}},
+        {name_e::strip_gamma, {"shaders/basic.vs.glsl", "shaders/strip_gamma.fs.glsl"}},
+    };
+
+    if (auto it = shaders_.find(name); it != shaders_.end()) {
         return it->second.get();
     }
 
-    std::unique_ptr<shader_program_s> shader;
+    const auto& info = shaderInfo.at(name);
 
-    switch (name) {
-        case name_e::basic:
-            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/basic.fs.glsl");
-            break;
+    auto [it, _] = shaders_.emplace(name, std::make_unique<shader_program_s>(info.first, info.second));
 
-        case name_e::yuv_to_rgb:
-            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl");
-            break;
-
-        case name_e::apply_gamma:
-            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl");
-            break;
-
-        case name_e::strip_gamma:
-            shader = std::make_unique<shader_program_s>("shaders/basic.vs.glsl", "shaders/strip_gamma.fs.glsl");
-            break;
-
-        default:
-            throw std::runtime_error("Trying to create unknown shader type");
-            break;
-    }
-
-    auto [new_it, _] = shaders_.emplace(name, std::move(shader));
-    return new_it->second.get();
+    return it->second.get();
 }
 
 std::unique_ptr<context_s> context_s::create_unique_context(bool visible, context_s* parent)

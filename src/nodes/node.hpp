@@ -34,10 +34,20 @@ class node_i
 
     virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }
     virtual bool           test_option(std::string_view name, nlohmann::json* value) const = 0;
+    static bool            is_valid_common_option(std::string_view name, nlohmann::json* value);
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     const interface_i*     find_interface(std::string_view name) const;
 };
+
+inline const interface_i* node_i::find_interface(std::string_view name) const
+{
+    auto it = interfaces_.find(name);
+    if (it != interfaces_.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
 
 using constructor_t     = std::function<std::shared_ptr<node_i>()>;
 using constructor_map_t = std::map<std::string_view, constructor_t>;

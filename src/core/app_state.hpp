@@ -6,6 +6,8 @@
 #include "render/font/font_registry_fwd.hpp"
 #include "utils/flicks.hpp"
 
+#include <optional>
+
 #include <FiberPool.hpp>
 
 #include <chrono>

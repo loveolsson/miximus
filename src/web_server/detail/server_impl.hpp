@@ -39,6 +39,8 @@ class web_server_impl
     con_by_topic_t connections_by_topic_;
     sub_by_topic_t subscription_by_topic_;
 
+    int64_t next_connection_id_ = 0;
+
   public:
     web_server_impl();
     ~web_server_impl() = default;

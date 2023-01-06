@@ -28,12 +28,12 @@ class node_impl : public node_i
         gpu::vec2i_t                 tx_size{};
         gpu::vec2i_t                 fb_size{};
 
-        frame_info_s() {}
+        frame_info_s() = default;
 
         frame_info_s(const frame_info_s&) = delete;
-        frame_info_s(frame_info_s&& o) { *this = std::move(o); }
-        void operator=(const frame_info_s&) = delete;
-        void operator                       =(frame_info_s&& o)
+        frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
+        frame_info_s& operator=(const frame_info_s&) = delete;
+        frame_info_s& operator=(frame_info_s&& o) noexcept
         {
             if (id != 0) {
                 glDeleteBuffers(1, &id);
@@ -45,6 +45,8 @@ class node_impl : public node_i
             fb_size = o.fb_size;
 
             o.id = 0;
+
+            return *this;
         }
 
         ~frame_info_s()
@@ -74,10 +76,10 @@ class node_impl : public node_i
 
     ~node_impl() override { stop_thread(); }
 
-    node_impl(const node_impl&) = delete;
-    node_impl(node_impl&&)      = delete;
+    node_impl(const node_impl&)      = delete;
+    node_impl(node_impl&&)           = delete;
     void operator=(const node_impl&) = delete;
-    void operator=(node_impl&&) = delete;
+    void operator=(node_impl&&)      = delete;
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
@@ -154,7 +156,7 @@ class node_impl : public node_i
             new_frame.tx_size = dim;
 
             glCreateBuffers(1, &new_frame.id);
-            glNamedBufferData(new_frame.id, dim.x * dim.y * 4, nullptr, GL_DYNAMIC_COPY);
+            glNamedBufferData(new_frame.id, static_cast<GLsizeiptr>(dim.x) * dim.y * 4, nullptr, GL_DYNAMIC_COPY);
             frame = std::move(new_frame);
         }
 
@@ -165,7 +167,7 @@ class node_impl : public node_i
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
 
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
+        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
 
         if (texture != nullptr) {
             if (!draw_state_) {
@@ -186,7 +188,7 @@ class node_impl : public node_i
         }
 
         glBindBuffer(GL_PIXEL_PACK_BUFFER, frame.id);
-        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         gpu::framebuffer_s::unbind();
 
@@ -199,7 +201,7 @@ class node_impl : public node_i
                 frames_rendered_.push_frame(std::move(frame), app->frame_info.timestamp);
                 frame_cv_.notify_one();
             } else {
-                // TODO: log or signal this
+                // TODO(Love): log or signal this
                 frames_free_.push_frame(std::move(frame));
             }
         }
@@ -285,12 +287,12 @@ class node_impl : public node_i
 
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, frame.id);
                 glTextureSubImage2D(
-                    texture->id(), 0, 0, 0, frame.tx_size.x, frame.tx_size.y, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+                    texture->id(), 0, 0, 0, frame.tx_size.x, frame.tx_size.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
                 glViewport(0, 0, frame.fb_size.x, frame.fb_size.y);
                 glClearColor(0, 0, 0, 0);
-                glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
+                glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
 
                 // EXPERIMENT: behaves better on Linux
                 // glTextureBarrier();

@@ -1,11 +1,12 @@
-#include <frozen/map.h>
 #include <gzip/compress.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -13,25 +14,25 @@
 
 constexpr size_t BYTES_PER_LINE = 18;
 
-static std::string tab(size_t i) { return std::string(i * 4, ' '); }
+static auto tab(size_t i) { return std::string(i * 4, ' '); }
 
-static std::vector<std::string> get_file_paths(const std::string& root)
+static auto get_file_paths(const std::filesystem::path& root)
 {
     using itr = std::filesystem::recursive_directory_iterator;
-    std::vector<std::string> res;
+    std::vector<std::filesystem::path> res;
 
     for (itr end, dir(root); dir != end; ++dir) {
         if (is_regular_file(*dir)) {
-            res.push_back(relative(dir->path(), root).string());
+            res.emplace_back(relative(dir->path(), root));
         }
     }
 
     return res;
 }
 
-static std::string_view get_mime(const std::string& name)
+static std::string_view get_mime(const std::filesystem::path& name)
 {
-    constexpr frozen::map<std::string_view, std::string_view, 10> lookup = {
+    static auto lookup = std::map<std::string_view, std::string_view>{
         {".css", "text/css;charset=UTF-8"},
         {".html", "text/html;charset=UTF-8"},
         {".js", "text/javascript;charset=UTF-8"},
@@ -44,9 +45,7 @@ static std::string_view get_mime(const std::string& name)
         {".ico", "image/x-icon"},
     };
 
-    auto ext = name.substr(name.find_last_of('.'));
-
-    const auto* it = lookup.find(ext);
+    const auto it = lookup.find(name.extension().c_str());
     if (it != lookup.end()) {
         return it->second;
     }
@@ -54,9 +53,14 @@ static std::string_view get_mime(const std::string& name)
     return "application/octet-stream";
 }
 
-static int bundle(const std::string& src, const std::string& dst, const std::string& nspace, const std::string& mapname)
+static int bundle(const std::filesystem::path& src,
+                  const std::filesystem::path& dst,
+                  std::string_view             nspace,
+                  std::string_view             mapname)
 {
     using std::endl;
+
+    constexpr std::array hex_char = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
     std::ofstream     target(dst);
     std::stringstream map;
@@ -76,20 +80,22 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
     target << "#include \"static_files/files.hpp\"" << endl;
     target << "#include <array>" << endl << endl;
 
-    target << "namespace " << nspace << " {" << endl;
+    if (!nspace.empty()) {
+        target << "namespace " << nspace << " {" << endl << endl;
+    }
 
     // Create the declaration of the map containing the uncompressed files
-    map << "const file_map_t& " << mapname << "()" << endl;
+    map << "const file_map_s& " << mapname << "()" << endl;
     map << "{" << endl;
-    map << tab(1) << "static file_map_t files {" << endl;
+    map << tab(1) << "static file_map_s files({" << endl;
 
     // Iterate the files in the folder
     for (int fi = 0; fi < files.size(); ++fi) {
         auto& filename  = files[fi];
-        auto  unix_name = filename;
+        auto  unix_name = filename.string();
         std::replace(unix_name.begin(), unix_name.end(), '\\', '/');
 
-        std::ifstream file(src + filename, std::ifstream::binary);
+        std::ifstream file(src.string() + filename.string(), std::ifstream::binary);
         if (!file.is_open()) {
             std::cout << "Failed to read file: " << filename << endl;
             return EXIT_FAILURE;
@@ -108,12 +114,12 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
         target << std::dec << comment.str() << endl;
 
         target << "static const std::array<uint8_t, " << compressed.size() << "> fileData" << fi << " = {" << endl;
-        for (int i = 0; i < compressed.size();) {
+        for (size_t i = 0; i < compressed.size();) {
             target << tab(1);
             // Add the bytes in rows of 18
             for (size_t j = 0; j < BYTES_PER_LINE && i < compressed.size(); ++j, ++i) {
-                target << "0x" << std::hex << std::setw(2) << std::setfill('0')
-                       << static_cast<int>(static_cast<uint8_t>(compressed[i])) << ", ";
+                uint8_t c = compressed[i];
+                target << "0x" << hex_char.at(c >> 4U) << hex_char.at(c & 0x0FU) << ", ";
             }
             target << endl;
         }
@@ -123,20 +129,22 @@ static int bundle(const std::string& src, const std::string& dst, const std::str
         map << tab(2) << "{ " << comment.str() << endl;
         map << tab(3) << "\"" << unix_name << "\"," << endl;
         map << tab(3) << "{" << endl;
-        map << tab(4) << "{reinterpret_cast<const char *>(fileData" << fi << ".data()), fileData" << fi << ".size()},"
-            << endl;
-        map << tab(4) << "\"" << get_mime(src + filename) << "\"," << endl;
+        map << tab(4) << "{fileData" << fi << ".data(), fileData" << fi << ".size()}," << endl;
+        map << tab(4) << "\"" << get_mime(filename) << "\"," << endl;
         map << tab(3) << "}," << endl;
         map << tab(2) << "}," << endl;
     }
 
     // Terminate the map declaration and add it to the file
-    map << tab(1) << "};" << endl << endl;
+    map << tab(1) << "});" << endl << endl;
     map << tab(1) << "return files;" << endl;
     map << "};" << endl;
     target << map.str();
 
-    target << "} // namespace " << nspace << endl;
+    if (!nspace.empty()) {
+        target << endl << "} // namespace " << nspace << endl;
+    }
+
     target.close();
 
     return EXIT_SUCCESS;
@@ -149,13 +157,13 @@ int main(int argc, char* argv[])
     std::cout << "Running bundler" << endl;
 
     try {
-        std::string src;
-        std::string dst;
-        std::string nspace;
-        std::string mapname;
+        std::string_view src;
+        std::string_view dst;
+        std::string_view nspace;
+        std::string_view mapname;
 
         for (int i = 1; i < argc; ++i) {
-            std::string opt(argv[i]);
+            std::string_view opt(argv[i]);
 
             if (i + 1 >= argc) {
                 std::cout << "Parameter " << opt << " is missing value" << endl;
@@ -173,12 +181,15 @@ int main(int argc, char* argv[])
             }
         }
 
-        if (src.empty() || dst.empty() || nspace.empty() || mapname.empty()) {
+        if (src.empty() || dst.empty() || mapname.empty()) {
             std::cout << "Missing parameter" << endl;
             return EXIT_FAILURE;
         }
 
-        std::cout << "Bundling " << src << endl;
+        std::cout << "Bundling folder" << src << "to " << dst << endl;
+        if (!nspace.empty()) {
+            std::cout << "Using namespace " << nspace << endl;
+        }
 
         return bundle(src, dst, nspace, mapname);
     } catch (std::exception& e) {

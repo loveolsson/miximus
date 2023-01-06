@@ -3,10 +3,11 @@ add_library(nodes
     node.cpp
     interface.hpp
     interface.cpp
+    interface_type.hpp
     connection.hpp
     connection.cpp
-    register.hpp
-    register.cpp
+    register_all.hpp
+    register_all.cpp
     node_map.hpp    
     validate_option.hpp    
 )

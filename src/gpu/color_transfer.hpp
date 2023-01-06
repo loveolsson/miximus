@@ -1,6 +1,8 @@
 #pragma once
 #include "types.hpp"
 
+#include <array>
+
 namespace miximus::gpu {
 
 enum class color_transfer_e
@@ -9,44 +11,78 @@ enum class color_transfer_e
     Rec709,
 };
 
-static mat3 get_color_transfer(color_transfer_e c)
+constexpr std::array<float, 2> get_white_point(color_transfer_e c)
 {
-    float wr, wb;
-
-    // Convert to RGB using Rec.709 conversion matrix (see eq 26.7 in Poynton 2003)
-    // r = Y + 1.5748 * Cr;
-    // g = Y - 0.1873 * Cb - 0.4681 * Cr;
-    // b = Y + 1.8556 * Cb;
-
-    // return {
-    //     {1.f, 1.f, 1.f},
-    //     {1.8556f, -0.1873f, 0},
-    //     {0, -0.4681f, 1.5748f},
-    // };
-
     switch (c) {
         case color_transfer_e::Rec601:
-            wr = 0.2990f;
-            wb = 0.1140f;
-            break;
+            return {0.2990f, 0.1140f};
 
         case color_transfer_e::Rec709:
-            wr = 0.2126f;
-            wb = 0.0722f;
-            break;
-
         default:
-            assert(false);
-            break;
+            return {0.2126f, 0.0722f};
     }
+}
 
-    mat3 mat = {
-        {1.0f, 0.0f, (1.0f - wr) / 0.5f},
-        {1.0f, -wb * (1.0f - wb) / 0.5f / (1 - wb - wr), -wr * (1 - wr) / 0.5f / (1 - wb - wr)},
-        {1.0f, (1.0f - wb) / 0.5f, 0.0f},
+constexpr mat3 get_color_transfer_from_yuv(color_transfer_e c)
+{
+    auto [wr, wb] = get_white_point(c);
+
+    auto scale = [](float v) {
+        int black = 16;
+        int white = 235;
+        int max   = 255;
+
+        return (float)(1.0 * max / (white - black) * v);
     };
 
-    return mat;
+    return {
+        {
+            scale(1.0f),
+            scale(1.0f),
+            scale(1.0f),
+        },
+        {
+            scale(0.0f),
+            scale(-wb * (1.0f - wb) / 0.5f / (1 - wb - wr)),
+            scale((1.0f - wb) / 0.5f),
+        },
+        {
+            scale((1.0f - wr) / 0.5f),
+            scale(-wr * (1 - wr) / 0.5f / (1 - wb - wr)),
+            scale(0.0f),
+        },
+    };
+}
+
+constexpr mat3 get_color_transfer_to_yuv(color_transfer_e c)
+{
+    auto [wr, wb] = get_white_point(c);
+
+    auto scale = [](float v) {
+        int black = 16;
+        int white = 235;
+        int max   = 255;
+
+        return (float)(1.0 * max / (white - black) * v);
+    };
+
+    return {
+        {
+            scale(wr),
+            scale(1.0f - wb - wr),
+            scale(wb),
+        },
+        {
+            scale(-0.5f * wr / (1.0f - wb)),
+            scale(-0.5f * (1 - wb - wr) / (1.0f - wb)),
+            scale(0.5f),
+        },
+        {
+            scale(0.5f),
+            scale(-0.5f * (1.0f - wb - wr) / (1.0f - wr)),
+            scale(-0.5f * wb / (1.0f - wr)),
+        },
+    };
 }
 
 } // namespace miximus::gpu

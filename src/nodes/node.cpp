@@ -1,16 +1,18 @@
-#include "nodes/node.hpp"
-#include "logger/logger.hpp"
-#include "nodes/interface.hpp"
+#include "node.hpp"
+#include "validate_option.hpp"
 
 namespace miximus::nodes {
-
-const interface_i* node_i::find_interface(std::string_view name) const
+bool node_i::is_valid_common_option(std::string_view name, nlohmann::json* value)
 {
-    auto it = interfaces_.find(name);
-    if (it != interfaces_.end()) {
-        return it->second;
+    if (name == "node_visual_position") {
+        return nodes::validate_option<gpu::vec2_t>(value);
     }
-    return nullptr;
+
+    if (name == "name") {
+        return nodes::validate_option<std::string_view>(value);
+    }
+
+    return false;
 }
 
 } // namespace miximus::nodes

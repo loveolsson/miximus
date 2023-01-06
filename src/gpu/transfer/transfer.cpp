@@ -19,6 +19,7 @@ namespace miximus::gpu::transfer {
 transfer_i::transfer_i(size_t size, direction_e direction)
     : size_(size)
     , direction_(direction)
+    , ptr_(nullptr)
 {
 }
 
@@ -67,7 +68,7 @@ transfer_i::type_e transfer_i::get_prefered_type()
         bool has_dvp        = renderer_view.find("Quadro") != std::string_view::npos;
         bool has_amd_pinned = gpu::context_s::has_extension("GL_AMD_pinned_memory");
 
-        // TODO: Implement
+        // TODO(Love): Implement
 
         return type_e::persistent;
     }();

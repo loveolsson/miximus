@@ -18,8 +18,8 @@ std::unique_ptr<font_instance_s> font_loader_s::load_font(const font_variant_s* 
         return nullptr;
     }
 
-    auto font = std::make_unique<font_instance_s>(library_, face->path, face->index);
-    if (font->valid_) {
+    auto font = std::make_unique<font_instance_s>(shared_from_this(), face->path, face->index);
+    if (font->valid()) {
         return font;
     }
 

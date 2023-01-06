@@ -35,10 +35,16 @@ framebuffer_s::~framebuffer_s()
 
 void framebuffer_s::bind() const { glBindFramebuffer(GL_FRAMEBUFFER, id_); }
 
-void framebuffer_s::blit() const
+void framebuffer_s::blit(framebuffer_s* target) const
 {
-    auto dim = texture_->texture_dimensions();
-    glBlitNamedFramebuffer(id_, 0, 0, 0, dim.x, dim.y, 0, 0, dim.x, dim.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    if (target == nullptr) {
+        return;
+    }
+
+    auto src_dim = texture_->texture_dimensions();
+    auto dst_dim = target->texture()->texture_dimensions();
+    glBlitNamedFramebuffer(
+        id_, target->id(), 0, 0, src_dim.x, src_dim.y, 0, 0, dst_dim.x, dst_dim.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
 
 void framebuffer_s::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }

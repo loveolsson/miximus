@@ -19,7 +19,7 @@ struct vertex_uv
 };
 
 template <>
-inline constexpr auto get_vertex_type_info<vertex_uv>()
+constexpr auto get_vertex_type_info<vertex_uv>()
 {
     return frozen::map<std::string_view, vertex_attr, 2>{
         {"pos",

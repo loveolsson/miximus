@@ -20,7 +20,7 @@ struct connection_s
 
 struct connection_hash
 {
-    std::size_t operator()(const connection_s& c) const;
+    std::size_t operator()(const connection_s& c) const { return boost::hash_value(c.tie()); }
 };
 
 void to_json(nlohmann::json& j, const connection_s& con);

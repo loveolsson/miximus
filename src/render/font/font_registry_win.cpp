@@ -19,24 +19,19 @@ struct init_data_s
 static std::string wchar_to_string(std::wstring_view wstr)
 {
     int size = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), wstr.size(), NULL, 0, NULL, NULL);
-    if (size < 0) {
+    if (size <= 0) {
         return "";
     }
 
-    auto* str = new char[(size_t)size + 1];
+    std::string str(size, '\0');
 
-    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), wstr.size(), str, size, NULL, NULL);
-    str[size] = 0;
+    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), wstr.size(), str.data(), size, NULL, NULL);
 
-    auto* start = str;
-    if (start[0] == '@') {
-        start++;
+    if (!str.empty() && str.front() == '@') {
+        return str.substr(1);
     }
 
-    std::string res(start);
-    delete[] str;
-
-    return res;
+    return str;
 }
 
 static std::string fonts_path()

@@ -16,9 +16,10 @@ class framebuffer_s
     ~framebuffer_s();
 
     void        bind() const;
-    void        blit() const;
+    void        blit(framebuffer_s* target) const;
     static void unbind();
     texture_s*  texture() { return texture_.get(); }
+    GLuint      id() { return id_; }
 };
 
 } // namespace miximus::gpu

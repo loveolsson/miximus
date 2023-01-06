@@ -1,5 +1,6 @@
 #include "core/app_state.hpp"
 #include "detail/frame.hpp"
+#include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -59,7 +60,7 @@ struct frame_info_s
     frame_info_s(const frame_info_s&) = delete;
     frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
     frame_info_s& operator=(const frame_info_s&) = delete;
-    frame_info_s& operator                       =(frame_info_s&& o) noexcept
+    frame_info_s& operator=(frame_info_s&& o) noexcept
     {
         buffer_id   = o.buffer_id;
         o.buffer_id = 0;
@@ -89,8 +90,8 @@ class callback_s
     BMDTimeValue           pts_{0};
 
   public:
-    callback_s(const std::shared_ptr<gpu::context_s>& ctx, IDeckLinkOutput* device, mode_info_s mode_info)
-        : ctx_(ctx)
+    callback_s(std::shared_ptr<gpu::context_s> ctx, IDeckLinkOutput* device, mode_info_s mode_info)
+        : ctx_(std::move(ctx))
         , device_(device)
         , mode_info_(mode_info)
         , converter_(decklink_registry_s::get_converter())
@@ -105,7 +106,7 @@ class callback_s
             uint16_t* data = nullptr;
             frame->GetBytes(reinterpret_cast<void**>(&data));
 
-            std::fill(data, data + mode_info_.dim.x * mode_info_.dim.y, 0x0000);
+            std::fill(data, data + static_cast<size_t>(mode_info_.dim.x * mode_info_.dim.y), 0x0000);
 
             for (int i = 0; i < 4; i++) {
                 device_->ScheduleVideoFrame(frame, pts_, mode_info_.frame_duration, mode_info_.time_scale);
@@ -172,14 +173,14 @@ class callback_s
             glFinish();
 
             IDeckLinkMutableVideoFrame* dst_frame = nullptr;
-            // int row_bytes = ((frame.dim.x + 47) / 48) * 128;
-            int row_bytes = frame.dim.x * 2;
+            auto                        row_bytes = static_cast<size_t>(((frame.dim.x + 47) / 48) * 128);
 
             if (SUCCEEDED(
-                    device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat8BitYUV, 0, &dst_frame))) {
-                auto src_frame = make_decklink_ptr<detail::decklink_frame_s>(
-                    frame.ptr, frame.dim.x, frame.dim.y, frame.dim.x * 4, bmdFormat8BitBGRA);
-                converter_->ConvertFrame(src_frame.get(), dst_frame);
+                    device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
+                void* dst_ptr = nullptr;
+                dst_frame->GetBytes(&dst_ptr);
+
+                memcpy(dst_ptr, frame.ptr, row_bytes * frame.dim.y);
 
                 last_frame_ = dst_frame;
                 dst_frame->Release();
@@ -237,11 +238,12 @@ class node_impl : public node_i
     decklink_ptr<callback_s>                           callback_;
     std::map<std::string, mode_info_s>                 display_modes_;
 
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
-    std::unique_ptr<gpu::draw_state_s>  draw_state_;
+    std::unique_ptr<gpu::framebuffer_s> framebuffer_yuv_;
+    std::unique_ptr<gpu::framebuffer_s> framebuffer_scale_;
+    std::unique_ptr<gpu::draw_state_s>  draw_state_yuv_;
+    std::unique_ptr<gpu::draw_state_s>  draw_state_scale_;
     std::string                         display_mode_str_;
     mode_info_s*                        display_mode_{};
-    // gpu::color_transfer_e               color_transfer_ = gpu::color_transfer_e::Rec601;
 
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
@@ -252,7 +254,8 @@ class node_impl : public node_i
 
         device_   = nullptr;
         callback_ = nullptr;
-        framebuffer_.reset();
+        framebuffer_scale_.reset();
+        framebuffer_yuv_.reset();
         display_modes_.clear();
     }
 
@@ -266,10 +269,10 @@ class node_impl : public node_i
         }
     }
 
-    node_impl(const node_impl&) = delete;
-    node_impl(node_impl&&)      = delete;
+    node_impl(const node_impl&)      = delete;
+    node_impl(node_impl&&)           = delete;
     void operator=(const node_impl&) = delete;
-    void operator=(node_impl&&) = delete;
+    void operator=(node_impl&&)      = delete;
 
     void stop_playback()
     {
@@ -280,21 +283,25 @@ class node_impl : public node_i
         }
 
         auto res = device_->StopScheduledPlayback(0, nullptr, 0);
+        (void)res;
         // assert(res == S_OK);
 
         res = device_->DisableVideoOutput();
+        (void)res;
         // assert(res == S_OK);
 
         res = device_->DisableAudioOutput();
+        (void)res;
         // assert(res == S_OK);
 
         res = device_->FlushBufferedAudioSamples();
+        (void)res;
         // assert(res == S_OK);
     }
 
     void restart_playback(core::app_state_s* app)
     {
-        assert(device_);
+        // assert(device_);
         stop_playback();
 
         auto mode_it = display_modes_.find(display_mode_str_);
@@ -308,17 +315,21 @@ class node_impl : public node_i
 
         auto res = device_->EnableVideoOutput(display_mode_->mode, bmdVideoOutputFlagDefault);
         assert(res == S_OK);
+        (void)res;
 
         auto ctx  = gpu::context_s::create_shared_context(false, app->ctx());
         callback_ = make_decklink_ptr<callback_s>(ctx, device_.get(), *display_mode_);
         res       = device_->SetScheduledFrameCompletionCallback(callback_.get());
         assert(res == S_OK);
+        (void)res;
 
         res = device_->SetAudioCallback(callback_.get());
         assert(res == S_OK);
+        (void)res;
 
         res = device_->StartScheduledPlayback(0, display_mode_->time_scale, 1.0);
         assert(res == S_OK);
+        (void)res;
     }
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
@@ -392,23 +403,51 @@ class node_impl : public node_i
             return;
         }
 
-        if (!draw_state_) {
-            draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!draw_state_scale_) {
+            draw_state_scale_ = std::make_unique<gpu::draw_state_s>();
+            auto* shader      = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            draw_state_scale_->set_shader_program(shader);
+            draw_state_scale_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        }
+
+        if (!draw_state_yuv_) {
+            draw_state_yuv_ = std::make_unique<gpu::draw_state_s>();
+            auto* shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv);
+            draw_state_yuv_->set_shader_program(shader);
+            draw_state_yuv_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
         auto dim = display_mode_->dim;
 
-        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
+        int          row_pixels = ((dim.x + 47) / 48) * 32;
+        gpu::vec2i_t target_dim{row_pixels, dim.y};
+        gpu::vec2i_t draw_dim{dim.x / 6 * 4, dim.y};
+
+        if (!framebuffer_scale_ || framebuffer_scale_->texture()->texture_dimensions() != dim) {
+            framebuffer_scale_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::rgb_f16);
+        }
+
+        {
+            auto* shader = draw_state_scale_->get_shader_program();
+            shader->set_uniform("offset", gpu::vec2_t(0, 0));
+            shader->set_uniform("scale", gpu::vec2_t(1, 1));
+            shader->set_uniform("opacity", 1.0);
+
+            framebuffer_scale_->bind();
+            glViewport(0, 0, dim.x, dim.y);
+            glClearColor(0, 0, 0, 0);
+            glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+
+            texture->bind(0);
+            draw_state_scale_->draw();
+            gpu::texture_s::unbind(0);
+            gpu::framebuffer_s::unbind();
         }
 
         if (frame->buffer_id == 0 || frame->dim != dim) {
-            auto buffer_size = dim.x * dim.y * 4;
+            auto buffer_size = dim.x * row_pixels * 4;
             frame->sync.reset();
-            if (frame->ptr) {
+            if (frame->ptr != nullptr) {
                 glUnmapNamedBuffer(frame->buffer_id);
             }
 
@@ -418,27 +457,40 @@ class node_impl : public node_i
             glNamedBufferStorage(frame->buffer_id,
                                  buffer_size,
                                  nullptr,
-                                 GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT | GL_MAP_PERSISTENT_BIT);
-            frame->ptr =
-                glMapNamedBufferRange(frame->buffer_id, 0, buffer_size, GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT);
+                                 static_cast<GLbitfield>(GL_MAP_READ_BIT) |
+                                     static_cast<GLbitfield>(GL_DYNAMIC_STORAGE_BIT) |
+                                     static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT));
+            frame->ptr = glMapNamedBufferRange(frame->buffer_id,
+                                               0,
+                                               buffer_size,
+                                               static_cast<GLbitfield>(GL_MAP_READ_BIT) |
+                                                   static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT));
             frame->dim = dim;
         }
 
-        framebuffer_->bind();
-        glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0, 0, 0, 0);
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
+        if (!framebuffer_yuv_ || framebuffer_yuv_->texture()->texture_dimensions() != target_dim) {
+            framebuffer_yuv_ = std::make_unique<gpu::framebuffer_s>(target_dim, gpu::texture_s::format_e::uyuv_u10);
+        }
 
-        auto* shader = draw_state_->get_shader_program();
+        framebuffer_yuv_->bind();
+        glViewport(0, 0, draw_dim.x, draw_dim.y);
+        glClearColor(0, 0, 0, 0);
+        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+
+        auto* shader = draw_state_yuv_->get_shader_program();
         shader->set_uniform("offset", {0, 0});
         shader->set_uniform("scale", {1.0, 1.0});
+        shader->set_uniform("target_width", draw_dim.x);
 
-        texture->bind(0);
-        draw_state_->draw();
+        constexpr auto transfer_matrix = gpu::get_color_transfer_to_yuv(gpu::color_transfer_e::Rec709);
+        shader->set_uniform("transfer", transfer_matrix);
+
+        framebuffer_scale_->texture()->bind(0);
+        draw_state_yuv_->draw();
         gpu::texture_s::unbind(0);
 
         glBindBuffer(GL_PIXEL_PACK_BUFFER, frame->buffer_id);
-        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, nullptr);
+        glReadPixels(0, 0, target_dim.x, target_dim.y, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV, nullptr);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         gpu::framebuffer_s::unbind();
 

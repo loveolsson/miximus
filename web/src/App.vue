@@ -352,7 +352,7 @@ export default class Miximus extends Vue {
     for (let key in options) {
       const value = options[key];
       switch (key) {
-        case "position":
+        case "node_visual_position":
           {
             if (is_origin) {
               continue;
@@ -463,7 +463,7 @@ export default class Miximus extends Vue {
           type: node.type as type_e,
           id: node.id,
           options: {
-            position: [position.x, position.y],
+            node_visual_position: [position.x, position.y],
           },
         },
       };

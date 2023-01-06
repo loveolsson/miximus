@@ -5,9 +5,11 @@
 
 namespace miximus::render {
 
-class font_loader_s
+class font_loader_s : public std::enable_shared_from_this<font_loader_s>
 {
     FT_Library library_{};
+
+    friend class font_instance_s;
 
   public:
     font_loader_s();

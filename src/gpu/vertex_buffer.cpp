@@ -14,9 +14,9 @@ void vertex_buffer_s::set_data(const void* data, size_t element_size, size_t cou
     size_t size   = element_size * count;
     vertex_count_ = count;
 
-    glNamedBufferData(id_, size, data, GL_STATIC_DRAW);
+    glNamedBufferData(id_, static_cast<GLsizeiptr>(size), data, GL_STATIC_DRAW);
 }
 
-void vertex_buffer_s::draw() const { glDrawArrays(GL_TRIANGLES, 0, vertex_count_); }
+void vertex_buffer_s::draw() const { glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertex_count_)); }
 
 } // namespace miximus::gpu

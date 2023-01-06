@@ -28,12 +28,6 @@ std::u32string decode_utf8(const std::string& utf8_string)
 {
     struct destructible_codecvt : public std::codecvt<char32_t, char, std::mbstate_t>
     {
-        using std::codecvt<char32_t, char, std::mbstate_t>::codecvt;
-        ~destructible_codecvt() override                  = default;
-        destructible_codecvt(const destructible_codecvt&) = delete;
-        destructible_codecvt(destructible_codecvt&&)      = delete;
-        void operator=(const destructible_codecvt&) = delete;
-        void operator=(destructible_codecvt&&) = delete;
     };
 
     std::wstring_convert<destructible_codecvt, char32_t> utf32_converter;
@@ -63,7 +57,7 @@ class node_impl : public node_i
 
     std::unique_ptr<gpu::draw_state_s>        draw_state_;
     ::mutex                                   font_mtx_;
-    render::font_loader_s                     font_loader_;
+    std::shared_ptr<render::font_loader_s>    font_loader_ = std::make_shared<render::font_loader_s>();
     ::future<text_s>                          text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
@@ -84,17 +78,13 @@ class node_impl : public node_i
         iface_fb_out_.register_interface(&interfaces_);
     }
 
-    node_impl(const node_impl&) = delete;
-    node_impl(node_impl&&)      = delete;
+    node_impl(const node_impl&)      = delete;
+    node_impl(node_impl&&)           = delete;
     void operator=(const node_impl&) = delete;
-    void operator=(node_impl&&) = delete;
+    void operator=(node_impl&&)      = delete;
 
     ~node_impl() override
     {
-        if (text_future_.valid()) {
-            text_future_.wait();
-        }
-
         for (auto& rl : render_lines_) {
             if (rl->ready.valid()) {
                 rl->ready.get();
@@ -116,6 +106,7 @@ class node_impl : public node_i
         }
     }
 
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         auto file_path = state.get_option<std::string_view>("file_path");
@@ -158,7 +149,7 @@ class node_impl : public node_i
             }
 
             auto future =
-                app->thread_pool()->submit(load_file, &font_loader_, font_info, last_file_path_, font_size_, fb_dim.x);
+                app->thread_pool()->submit(load_file, font_loader_, font_info, last_file_path_, font_size_, fb_dim.x);
 
             if (future) {
                 text_future_ = std::move(*future);
@@ -205,12 +196,12 @@ class node_impl : public node_i
 
         fb->bind();
 
-        int px = std::round(draw_rect.pos.x * fb_dim.x);
-        int py = std::round(draw_rect.pos.y * fb_dim.y);
-        int sx = std::round(draw_rect.size.x * fb_dim.x);
-        int sy = std::round(draw_rect.size.y * fb_dim.y);
-        sx     = std::max(0, sx);
-        sy     = std::max(0, sy);
+        auto px = static_cast<int>(std::round(draw_rect.pos.x * fb_dim.x));
+        auto py = static_cast<int>(std::round(draw_rect.pos.y * fb_dim.y));
+        auto sx = static_cast<int>(std::round(draw_rect.size.x * fb_dim.x));
+        auto sy = static_cast<int>(std::round(draw_rect.size.y * fb_dim.y));
+        sx      = std::max(0, sx);
+        sy      = std::max(0, sy);
         glViewport(px, py, sx, sy);
 
         /**
@@ -229,9 +220,10 @@ class node_impl : public node_i
                 // The render line contains the wrong text line AND is available for processing
                 rl->line_no = txt_line_index;
 
-                auto& t = text_.lines[txt_line_index];
+                auto t = text_.lines[txt_line_index];
 
-                auto future = app->thread_pool()->submit(&node_impl::process_line, this, rl.get(), t, tx_dim);
+                auto future =
+                    app->thread_pool()->submit(&node_impl::process_line, this, rl.get(), std::move(t), tx_dim);
                 assert(future);
 
                 if (future) {
@@ -270,7 +262,7 @@ class node_impl : public node_i
             int    line_height_px = font_size_ + line_height_extra_;
             double px_height      = 1.0 / fb_dim.y;
 
-            int px_pos = line_height_px * (txt_line_index) - (scroll_pos * line_height_px);
+            double px_pos = std::floor((txt_line_index - scroll_pos) * line_height_px);
 
             gpu::vec2_t pos = {0, px_height * px_pos};
 
@@ -308,11 +300,11 @@ class node_impl : public node_i
 
     std::string_view type() const final { return "teleprompter"; }
 
-    static text_s load_file(render::font_loader_s*        loader,
-                            const render::font_variant_s* font_info,
-                            std::filesystem::path&&       path,
-                            int                           font_size,
-                            int                           width)
+    static text_s load_file(std::shared_ptr<render::font_loader_s>&& loader,
+                            const render::font_variant_s*            font_info,
+                            std::filesystem::path&&                  path,
+                            int                                      font_size,
+                            int                                      width)
     {
         text_s         res = {};
         std::u32string str;
@@ -341,14 +333,14 @@ class node_impl : public node_i
 
         while (pos < str.size()) {
             auto info = res.font->flow_line(str.substr(pos), width);
-            res.lines.emplace_back(str.begin() + pos, str.begin() + pos + info.consumed_chars);
+            res.lines.emplace_back(str.data() + pos, info.consumed_chars);
             pos += info.consumed_chars;
         }
 
         return res;
     }
 
-    gpu::sync_s process_line(line_info_s* line, std::u32string str, gpu::vec2i_t dim)
+    gpu::sync_s process_line(line_info_s* line, const std::u32string& str, const gpu::vec2i_t& dim)
     {
         std::unique_lock line_lock(line->mtx);
         std::unique_lock font_lock(font_mtx_);
@@ -362,7 +354,7 @@ class node_impl : public node_i
 
         line->surface->clear({0, 0, 0, 0});
 
-        text_.font->draw_line(str, line->surface.get(), {0, font_size_});
+        text_.font->render_string(str, line->surface.get(), {0, font_size_});
 
         std::optional<gpu::sync_s> sync;
 

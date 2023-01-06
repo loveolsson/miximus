@@ -36,10 +36,12 @@ class shader_program_s
   public:
     enum name_e
     {
-        basic,
+        basic = 0,
         yuv_to_rgb,
+        rgb_to_yuv,
         apply_gamma,
         strip_gamma,
+        _count,
     };
 
     shader_program_s(std::string_view vert_name, std::string_view frag_name);
@@ -47,8 +49,8 @@ class shader_program_s
 
     shader_program_s(const shader_program_s&) = delete;
     shader_program_s(shader_program_s&&)      = delete;
-    void operator=(const shader_program_s&) = delete;
-    void operator=(shader_program_s&&) = delete;
+    void operator=(const shader_program_s&)   = delete;
+    void operator=(shader_program_s&&)        = delete;
 
     void        use() const;
     static void unuse();

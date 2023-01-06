@@ -16,22 +16,13 @@ namespace miximus::core {
 using nlohmann::json;
 using namespace std::chrono_literals;
 
-static auto log() { return getlog("app"); };
-
-static bool is_valid_common_option(std::string_view name, json* value)
+static auto log()
 {
-    if (name == "position") {
-        return nodes::validate_option<gpu::vec2_t>(value);
-    }
+    static auto l = getlog("app");
+    return l;
+};
 
-    if (name == "name") {
-        return nodes::validate_option<std::string_view>(value);
-    }
-
-    return false;
-}
-
-node_manager_s::node_manager_s() { nodes::register_nodes(&constructors_); }
+node_manager_s::node_manager_s() { nodes::register_all_nodes(&constructors_); }
 
 error_e
 node_manager_s::handle_add_node(std::string_view type, std::string_view id, const json& options, int64_t client_id)
@@ -46,9 +37,7 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
         return error_e::duplicate_id;
     }
 
-    error_e error = error_e::no_error;
-    auto    node  = create_node(type, error);
-
+    auto [node, error] = create_node(type);
     if (error != error_e::no_error) {
         return error;
     }
@@ -60,7 +49,7 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
         const auto& key   = option.key();
         auto        value = option.value();
 
-        if (is_valid_common_option(key, &value) || node->test_option(key, &value)) {
+        if (nodes::node_i::is_valid_common_option(key, &value) || node->test_option(key, &value)) {
             record.state.options[key] = value;
         }
     }
@@ -76,6 +65,7 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
 
     record.node = std::move(node);
     nodes_.emplace(id, std::move(record));
+    nodes_dirty_ = true;
 
     return error;
 }
@@ -85,9 +75,8 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     std::unique_lock lock(nodes_mutex_);
 
     log()->info("Removing node with id {}", id);
-    std::string id_str(id);
 
-    auto node_it = nodes_.find(id_str);
+    auto node_it = nodes_.find(std::string(id));
     if (node_it == nodes_.end()) {
         log()->warn("Node with id {} not found", id);
         return error_e::not_found;
@@ -111,6 +100,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     }
 
     nodes_.erase(node_it);
+    nodes_dirty_ = true;
 
     return error_e::no_error;
 }
@@ -136,7 +126,7 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
         const auto& key   = option.key();
         auto        value = option.value();
 
-        if (is_valid_common_option(key, &value) || node->test_option(key, &value)) {
+        if (nodes::node_i::is_valid_common_option(key, &value) || node->test_option(key, &value)) {
             state.options[key] = value;
         }
     }
@@ -145,9 +135,12 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
         adapter->emit_update_node(id, state.options, client_id);
     }
 
+    nodes_dirty_ = true;
+
     return error_e::no_error;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 static bool is_connection_circular(const nodes::node_map_t&    nodes,
                                    std::set<std::string_view>* cleared_nodes,
                                    std::string_view            target_node_id,
@@ -194,6 +187,9 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     using dir_e = nodes::interface_i::dir_e;
     std::unique_lock lock(nodes_mutex_);
 
+    log()->info(
+        "Adding connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
+
     if (std::find(connections_.begin(), connections_.end(), con) != connections_.end()) {
         return error_e::duplicate_id;
     }
@@ -213,7 +209,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     const auto* to_iface   = to_node->find_interface(con.to_interface);
 
     if (from_iface == nullptr || to_iface == nullptr) {
-        log()->warn("Interface pair not found: {}, {}", con.from_interface, con.to_interface);
+        log()->warn("Interface pair not found: {}->{}", con.from_interface, con.to_interface);
         return error_e::not_found;
     }
 
@@ -232,12 +228,13 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
             return error_e::duplicate_id;
         }
     } else if (from_dir == dir_e::input || to_dir == dir_e::output) {
-        log()->warn("Interface directions does not match: {}, {}", from_dir, to_dir);
+        log()->warn("Interface directions does not match: {}->{}", to_string(from_dir), to_string(to_dir));
         return error_e::invalid_type;
     }
 
     if (!to_iface->accepts(from_iface->type())) {
-        log()->warn("Interface types does not match: {}, {}", from_iface->type(), to_iface->type());
+        log()->warn(
+            "Interface types does not match: {}, {}", to_string(from_iface->type()), to_string(to_iface->type()));
         return error_e::invalid_type;
     }
 
@@ -251,10 +248,10 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     connections_.emplace_back(con);
 
     auto& from_connections = from_node_it->second.state.con_map.at(con.from_interface);
-    from_iface->add_connection(&from_connections, con, removed_connections);
+    from_iface->add_connection(&from_connections, con, &removed_connections);
 
     auto& to_connections = to_node_it->second.state.con_map.at(con.to_interface);
-    to_iface->add_connection(&to_connections, con, removed_connections);
+    to_iface->add_connection(&to_connections, con, &removed_connections);
 
     for (const auto& rcon : removed_connections) {
         handle_remove_connection(rcon, client_id);
@@ -264,12 +261,17 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
         adapter->emit_add_connection(con, client_id);
     }
 
+    nodes_dirty_ = true;
+
     return error_e::no_error;
 }
 
 error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id)
 {
     std::unique_lock lock(nodes_mutex_);
+
+    log()->info(
+        "Removing connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
 
     auto con_it = std::find(connections_.begin(), connections_.end(), con);
     if (con_it == connections_.end()) {
@@ -278,7 +280,6 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
 
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
         if (auto node_it = nodes_.find(node_name); node_it != nodes_.end()) {
-            auto& node  = node_it->second.node;
             auto& state = node_it->second.state;
 
             if (auto cons_it = state.con_map.find(iface_name); cons_it != state.con_map.end()) {
@@ -288,8 +289,6 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
                 }
             }
         }
-
-        return false;
     };
 
     remove_from_interface(con.from_node, con.from_interface);
@@ -300,6 +299,8 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
     }
 
     connections_.erase(con_it);
+
+    nodes_dirty_ = true;
 
     return error_e::no_error;
 }
@@ -374,7 +375,11 @@ void node_manager_s::tick_one_frame(app_state_s* app)
          *      making resource management a lot simpler
          */
         std::unique_lock lock(nodes_mutex_);
-        nodes_copy_ = nodes_;
+        if (nodes_dirty_) {
+            nodes_copy_  = nodes_;
+            nodes_dirty_ = false;
+            log()->info("Copied node config graph");
+        }
     }
 
     app->ctx()->make_current();
@@ -397,7 +402,7 @@ void node_manager_s::tick_one_frame(app_state_s* app)
         }
     }
 
-    app->ctx()->finish();
+    gpu::context_s::finish();
 
     for (auto& [_, record] : nodes_copy_) {
         record.node->complete(app);
@@ -417,15 +422,19 @@ void node_manager_s::clear_nodes(app_state_s* app)
     gpu::context_s::rewind_current();
 }
 
-std::shared_ptr<nodes::node_i> node_manager_s::create_node(std::string_view type, error_e& error)
+std::pair<std::shared_ptr<nodes::node_i>, error_e> node_manager_s::create_node(std::string_view type)
 {
     auto it = constructors_.find(type);
     if (it == constructors_.end()) {
-        error = error_e::invalid_type;
-        return nullptr;
+        return {nullptr, error_e::invalid_type};
     }
 
-    return it->second();
+    auto n = it->second();
+    if (n->type() != type) {
+        return {nullptr, error_e::internal_error};
+    }
+
+    return {n, error_e::no_error};
 }
 
 } // namespace miximus::core

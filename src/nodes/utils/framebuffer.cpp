@@ -42,7 +42,7 @@ class node_impl : public node_i
         auto dim = framebuffer_->texture()->texture_dimensions();
         glViewport(0, 0, dim.x, dim.y);
         glClearColor(0, 0, 0, 0);
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
+        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
         gpu::framebuffer_s::unbind();
 
         iface_fb_.set_value(framebuffer_.get());

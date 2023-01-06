@@ -1,7 +1,10 @@
 #include "gpu/sync.hpp"
 
 namespace miximus::gpu {
-sync_s::sync_s() { sync_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0); }
+sync_s::sync_s()
+    : sync_(glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0))
+{
+}
 
 sync_s::~sync_s()
 {
@@ -10,7 +13,7 @@ sync_s::~sync_s()
     }
 }
 
-sync_s::sync_s(sync_s&& o)
+sync_s::sync_s(sync_s&& o) noexcept
     : sync_(o.sync_)
 {
     o.sync_ = nullptr;

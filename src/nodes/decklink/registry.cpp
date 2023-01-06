@@ -2,7 +2,7 @@
 #include "logger/logger.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
-#include <sstream>
+#include <fmt/format.h>
 
 namespace miximus::nodes::decklink {
 
@@ -12,7 +12,7 @@ static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
     int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
 
     std::string dblstr(len, '\0');
-    len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, &dblstr[0], len, NULL, NULL);
+    len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, dblstr.data(), len, NULL, NULL);
 
     return dblstr;
 }
@@ -37,12 +37,12 @@ static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
         discovery = nullptr;
     }
 #else
-    discovery        = CreateDeckLinkDiscoveryInstance();
+    discovery     = CreateDeckLinkDiscoveryInstance();
 #endif
 
     decklink_ptr ptr(discovery);
 
-    if (discovery) {
+    if (discovery != nullptr) {
         discovery->Release();
     }
 
@@ -62,12 +62,12 @@ static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
         conversion = nullptr;
     }
 #else
-    conversion       = CreateVideoConversionInstance();
+    conversion    = CreateVideoConversionInstance();
 #endif
 
     decklink_ptr ptr(conversion);
 
-    if (conversion) {
+    if (conversion != nullptr) {
         conversion->Release();
     }
 
@@ -76,16 +76,18 @@ static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
 
 static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 {
-    std::stringstream ss;
+    std::string name;
+    int64_t     id = 0;
 
 #if _WIN32
-    BSTR name;
-    device->GetDisplayName(&name);
-    ss << bstr_to_mbs(name);
+    BSTR n;
+    device->GetDisplayName(&n);
+    ss << bstr_to_mbs(n);
+    name = n;
 #else
-    const char* name = nullptr;
-    device->GetDisplayName(&name);
-    ss << name;
+    const char* n = nullptr;
+    device->GetDisplayName(&n);
+    name             = n;
 #endif
 
     /**
@@ -96,13 +98,12 @@ static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
     decklink_ptr<IDeckLinkProfile>           profile(IID_IDeckLinkProfile, device);
     decklink_ptr<IDeckLinkProfileAttributes> attributes(IID_IDeckLinkProfileAttributes, profile);
     if (attributes) {
-        int64_t id = 0;
-        if (SUCCEEDED(attributes->GetInt(BMDDeckLinkPersistentID, &id))) {
-            ss << " [" << id << "]";
+        if (FAILED(attributes->GetInt(BMDDeckLinkPersistentID, &id))) {
+            id = -1;
         }
     }
 
-    return ss.str();
+    return fmt::format("{} [{}]", name, id);
 }
 
 std::string decklink_registry_s::get_display_mode_name(IDeckLinkDisplayMode* mode)

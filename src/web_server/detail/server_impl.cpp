@@ -8,8 +8,6 @@
 
 namespace miximus::web_server::detail {
 
-static int64_t next_connection_id = 0;
-
 static std::string create_404_doc(std::string_view resource)
 {
     std::stringstream ss;
@@ -74,24 +72,22 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     }
 
     const auto& files   = static_files::get_web_files();
-    auto        file_it = files.find(resource.substr(1));
+    const auto* file_it = files.get_file(resource.substr(1));
 
-    if (file_it == files.end()) {
+    if (file_it == nullptr) {
         con->set_body(create_404_doc(resource));
         con->set_status(status_code::not_found);
         return;
     }
 
-    const auto& encoding = con->get_request_header("Accept-Encoding");
-
-    if (encoding.find("gzip") != std::string::npos) {
+    if (con->get_request_header("Accept-Encoding").find("gzip") != std::string::npos) {
         con->replace_header("Content-Encoding", "gzip");
-        con->set_body(std::string(file_it->second.gzipped));
+        con->set_body(std::string(file_it->gzipped.begin(), file_it->gzipped.end()));
     } else {
-        con->set_body(file_it->second.raw());
+        con->set_body(file_it->unzip());
     }
 
-    con->replace_header("Content-Type", std::string(file_it->second.mime));
+    con->replace_header("Content-Type", std::string(file_it->mime));
     con->set_status(status_code::ok);
 }
 
@@ -189,7 +185,7 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
 
     endpoint_.get_alog().write(alevel::http, "Connection opened");
 
-    auto id = next_connection_id++;
+    auto id = next_connection_id_++;
 
     connections_.emplace(hdl, websocket_connection{id, {}});
     connections_by_id_.emplace(id, hdl);

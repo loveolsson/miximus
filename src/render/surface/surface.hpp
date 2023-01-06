@@ -25,10 +25,10 @@ class surface_s
     auto  dimensions() const { return dimensions_; }
 
     rgba_pixel_t* ptr() { return reinterpret_cast<rgba_pixel_t*>(transfer_->ptr()); }
-    void          copy(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, int src_pitch, gpu::vec2i_t pos);
-    void          copy(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, int src_pitch, gpu::vec2i_t pos);
-    void          alpha_blend(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, int src_pitch, gpu::vec2i_t pos);
-    void          alpha_blend(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, int src_pitch, gpu::vec2i_t pos);
+    void          copy(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos);
+    void          copy(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos);
+    void          alpha_blend(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos);
+    void          alpha_blend(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos);
     void          clear(const rgba_pixel_t& color);
 };
 

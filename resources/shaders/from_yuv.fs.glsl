@@ -4,28 +4,28 @@ in vec2 TexCoord; // the input variable from the vertex shader (same name and sa
 
 uniform sampler2D tex;
 uniform int       target_width;
-// uniform mat3      transfer;
+uniform mat3      transfer;
 
-vec3 rec709YCbCr2rgb(float Y, float Cb, float Cr)
+vec3 yuv2rgb(float Y, float Cb, float Cr)
 {
-    float r, g, b;
+    // float r, g, b;
 
     // Y: Undo 1/256 texture value scaling and scale [16..235] to [0..1] range
     // C: Undo 1/256 texture value scaling and scale [16..240] to [-0.5 .. + 0.5] range
     // Y  = (Y * 256.0 - 16.0) / 219.0;
     // Cb = (Cb * 256.0 - 16.0) / 224.0 - 0.5;
     // Cr = (Cr * 256.0 - 16.0) / 224.0 - 0.5;
-    Y  = (Y * 1024.0 - 64.0) / 876.0;
-    Cb = (Cb * 1024.0 - 64.0) / 896.0 - 0.5;
-    Cr = (Cr * 1024.0 - 64.0) / 896.0 - 0.5;
+    // Y  = (Y * 1024.0 - 64.0) / 876.0;
+    // Cb = (Cb * 1024.0 - 64.0) / 896.0 - 0.5;
+    // Cr = (Cr * 1024.0 - 64.0) / 896.0 - 0.5;
 
     // Convert to RGB using Rec.709 conversion matrix (see eq 26.7 in Poynton 2003)
-    r = Y + 1.5748 * Cr;
-    g = Y - 0.1873 * Cb - 0.4681 * Cr;
-    b = Y + 1.8556 * Cb;
-    return vec3(r, g, b);
+    // r = Y + 1.5748 * Cr;
+    // g = Y - 0.1873 * Cb - 0.4681 * Cr;
+    // b = Y + 1.8556 * Cb;
+    // return vec3(r, g, b);
 
-    //    return vec4(transfer * vec3(Y, Cb, Cr), a);
+    return vec3(Y, Cr - 0.5, Cb - 0.5) * transfer;
 }
 
 void main(void)
@@ -84,6 +84,6 @@ void main(void)
             break;
     }
 
-    vec3 sRGB = rec709YCbCr2rgb(Y, Cb, Cr);
+    vec3 sRGB = yuv2rgb(Y, Cb, Cr);
     FragColor = vec4(toLinear(sRGB), 1.0);
 }

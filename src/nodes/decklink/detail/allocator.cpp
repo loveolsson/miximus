@@ -5,8 +5,8 @@
 
 namespace miximus::nodes::decklink::detail {
 
-constexpr size_t       MAX_ALLOCATIONS = 4;
-static std::atomic_int allocations_g{0};
+constexpr size_t          MAX_ALLOCATIONS = 4;
+static std::atomic_size_t allocations_g{0};
 
 allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir)
     : transfer_type_(transfer_i::get_prefered_type())
@@ -61,12 +61,8 @@ HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
 
 HRESULT allocator_s::ReleaseBuffer(void* buffer)
 {
-    auto lock        = ctx_->get_lock();
-    auto has_current = gpu::context_s::has_current();
-
-    if (!has_current) {
-        ctx_->make_current();
-    }
+    auto lock = ctx_->get_lock();
+    ctx_->make_current();
 
     auto it = allocated_transfers_.find(buffer);
     if (it != allocated_transfers_.end()) {
@@ -81,10 +77,7 @@ HRESULT allocator_s::ReleaseBuffer(void* buffer)
         throw std::runtime_error("DeckLink allocator trying to release unknown frame");
     }
 
-    if (!has_current) {
-        gpu::context_s::rewind_current();
-    }
-
+    gpu::context_s::rewind_current();
     return S_OK;
 }
 

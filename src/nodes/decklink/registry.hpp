@@ -2,6 +2,7 @@
 #include "wrapper/decklink-sdk/decklink_ptr.hpp"
 
 #include <map>
+#include <memory>
 #include <shared_mutex>
 #include <string>
 #include <vector>

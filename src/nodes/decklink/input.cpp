@@ -1,5 +1,6 @@
 #include "core/app_state.hpp"
 #include "detail/frame.hpp"
+#include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -44,7 +45,7 @@ struct frame_info_s
     frame_info_s(const frame_info_s&) = delete;
     frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
     frame_info_s& operator=(const frame_info_s&) = delete;
-    frame_info_s& operator                       =(frame_info_s&& o) noexcept
+    frame_info_s& operator=(frame_info_s&& o) noexcept
     {
         buffer_id   = o.buffer_id;
         o.buffer_id = 0;
@@ -93,10 +94,10 @@ class callback_s : public IDeckLinkInputCallback
         gpu::context_s::rewind_current();
     }
 
-    callback_s(const callback_s&) = delete;
-    callback_s(callback_s&&)      = delete;
+    callback_s(const callback_s&)            = delete;
+    callback_s(callback_s&&)                 = delete;
     callback_s& operator=(const callback_s&) = delete;
-    callback_s& operator=(callback_s&&) = delete;
+    callback_s& operator=(callback_s&&)      = delete;
 
     /**
      * IUnknown
@@ -137,7 +138,7 @@ class callback_s : public IDeckLinkInputCallback
 
         auto& frame = record->frame;
 
-        size_t row_bytes = videoFrame->GetRowBytes();
+        GLsizeiptr row_bytes = videoFrame->GetRowBytes();
         assert(row_bytes % 4 == 0);
 
         gpu::vec2i_t tx_dim{row_bytes / 4, videoFrame->GetHeight()};
@@ -149,7 +150,8 @@ class callback_s : public IDeckLinkInputCallback
             glNamedBufferStorage(frame.buffer_id,
                                  row_bytes * tx_dim.y,
                                  nullptr,
-                                 GLbitfield(GL_DYNAMIC_STORAGE_BIT) | GLbitfield(GL_MAP_WRITE_BIT));
+                                 static_cast<GLbitfield>(GL_DYNAMIC_STORAGE_BIT) |
+                                     static_cast<GLbitfield>(GL_MAP_WRITE_BIT));
             frame.tx_dim  = tx_dim;
             frame.src_dim = src_dim;
         }
@@ -246,10 +248,10 @@ class node_impl : public node_i
         }
     }
 
-    node_impl(const node_impl&) = delete;
-    node_impl(node_impl&&)      = delete;
+    node_impl(const node_impl&)      = delete;
+    node_impl(node_impl&&)           = delete;
     void operator=(const node_impl&) = delete;
-    void operator=(node_impl&&) = delete;
+    void operator=(node_impl&&)      = delete;
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
@@ -332,9 +334,12 @@ class node_impl : public node_i
         shader->set_uniform("scale", gpu::vec2i_t{1.0, 1.0});
         shader->set_uniform("target_width", src_dim.x);
 
+        constexpr auto transfer_matrix = gpu::get_color_transfer_from_yuv(gpu::color_transfer_e::Rec709);
+        shader->set_uniform("transfer", transfer_matrix);
+
         glViewport(0, 0, src_dim.x, src_dim.y);
         glClearColor(0, 0, 0, 0);
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT) | GLbitfield(GL_DEPTH_BUFFER_BIT));
+        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
 
         framebuffer_->bind();
         texture_->bind(0);

@@ -1,13 +1,15 @@
 #include "font_instance.hpp"
+#include "render/font/font_loader.hpp"
 #include "render/surface/surface.hpp"
 
 #include <cwctype>
 
 namespace miximus::render {
 
-font_instance_s::font_instance_s(FT_Library library, const std::filesystem::path& path, int index)
+font_instance_s::font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path& path, int index)
+    : loader_(std::move(loader))
 {
-    auto error = FT_New_Face(library, path.u8string().c_str(), index, &face_);
+    auto error = FT_New_Face(loader_->library_, path.u8string().c_str(), index, &face_);
     if (error == 0) {
         valid_ = true;
     }
@@ -76,7 +78,7 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
     return info;
 }
 
-gpu::vec2i_t font_instance_s::draw_line(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos)
+gpu::vec2i_t font_instance_s::render_string(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos)
 {
     const auto* slot        = face_->glyph;
     FT_UInt     prior_index = 0;
@@ -101,7 +103,7 @@ gpu::vec2i_t font_instance_s::draw_line(std::u32string_view str, surface_s* surf
         FT_Get_Kerning(face_, prior_index, index, FT_KERNING_DEFAULT, &kerning);
         prior_index = index;
 
-        constexpr auto div = 0x40;
+        constexpr int div = 0x40;
 
         const FT_Bitmap& bitmap = slot->bitmap;
         gpu::vec2i_t     offset{slot->bitmap_left + (kerning.x / div), -slot->bitmap_top + (kerning.y / div)};
@@ -118,8 +120,8 @@ gpu::vec2i_t font_instance_s::draw_line(std::u32string_view str, surface_s* surf
                                  pos + offset);
         }
 
-        pos.x += static_cast<size_t>(slot->advance.x + kerning.x) / div;
-        pos.y += static_cast<size_t>(slot->advance.y + kerning.y) / div;
+        pos.x += static_cast<int>((slot->advance.x + kerning.x) / div);
+        pos.y += static_cast<int>((slot->advance.y + kerning.y) / div);
     }
 
     return pos;

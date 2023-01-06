@@ -6,9 +6,9 @@ namespace miximus::gpu {
 
 texture_s::texture_s(vec2i_t dimensions, format_e color)
     : display_dimensions_(dimensions)
+    , texture_dimensions_(dimensions)
     , colorspace_(color)
 {
-    texture_dimensions_ = dimensions;
     GLenum  internal_format{};
     GLsizei mip_map_levels = MIP_MAP_LEVELS;
 
@@ -51,9 +51,9 @@ texture_s::texture_s(vec2i_t dimensions, format_e color)
             break;
         case format_e::uyuv_u10:
             internal_format = GL_RGB10_A2;
-            format_         = GL_BGRA;
+            format_         = GL_RGBA;
             type_           = GL_UNSIGNED_INT_2_10_10_10_REV;
-            // TODO: figure out the right calculation
+            // TODO(Love): figure out the right calculation
             glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             mip_map_levels = 1;

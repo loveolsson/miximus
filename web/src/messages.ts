@@ -39,7 +39,7 @@ export const enum type_e {
 export type position_t = [number, number];
 
 export interface options_s {
-  position?: position_t;
+  node_visual_position?: position_t;
   name?: string;
   [index: string]: unknown;
 }

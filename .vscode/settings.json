@@ -117,6 +117,8 @@
         "cstdbool": "cpp",
         "charconv": "cpp",
         "stop_token": "cpp",
-        "scoped_allocator": "cpp"
+        "scoped_allocator": "cpp",
+        "numbers": "cpp",
+        "semaphore": "cpp"
     }
 }

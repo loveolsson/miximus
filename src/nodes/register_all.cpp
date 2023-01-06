@@ -1,4 +1,4 @@
-#include "register.hpp"
+#include "register_all.hpp"
 #include "nodes/composite/register.hpp"
 #include "nodes/debug/register.hpp"
 #include "nodes/decklink/register.hpp"
@@ -10,7 +10,7 @@
 
 namespace miximus::nodes {
 
-void register_nodes(constructor_map_t* map)
+void register_all_nodes(constructor_map_t* map)
 {
     math::register_nodes(map);
     utils::register_nodes(map);

@@ -13,30 +13,21 @@ constexpr size_t MAX_NAME_LEN = 16;
 
 class shader_s
 {
-    GLuint id_;
+    GLuint id_{0};
 
   public:
     shader_s(std::string_view name, GLenum type)
-        : id_(0)
     {
         const auto& files = static_files::get_resource_files();
 
-        auto common_it = files.find("shaders/common.glsl");
+        const auto* common = files.get_file_or_throw("shaders/common.glsl");
 
-        if (common_it == files.end()) {
-            throw std::runtime_error("shader file not found: shaders/common.glsl");
-        }
-
-        auto it = files.find(name);
-
-        if (it == files.end()) {
-            throw std::runtime_error("shader file not found: " + std::string(name));
-        }
+        const auto* file = files.get_file_or_throw(name);
 
         id_ = glCreateShader(type);
 
-        auto common_text = common_it->second.raw();
-        auto shader_text = it->second.raw();
+        auto common_text = common->unzip();
+        auto shader_text = file->unzip();
 
         std::vector<const char*> texts = {
             "#version 330 core\n",
@@ -44,7 +35,7 @@ class shader_s
             shader_text.c_str(),
         };
 
-        glShaderSource(id_, texts.size(), texts.data(), nullptr);
+        glShaderSource(id_, static_cast<GLsizei>(texts.size()), texts.data(), nullptr);
         glCompileShader(id_);
 
         GLint is_compiled = 0;
@@ -70,16 +61,16 @@ class shader_s
         }
     }
 
-    shader_s(const shader_s&) = delete;
-    shader_s(shader_s&&)      = delete;
+    shader_s(const shader_s&)       = delete;
+    shader_s(shader_s&&)            = delete;
     void operator=(const shader_s&) = delete;
-    void operator=(shader_s&&) = delete;
+    void operator=(shader_s&&)      = delete;
 
     GLuint id() const { return id_; }
 };
 
 shader_program_s::shader_program_s(std::string_view vert_name, std::string_view frag_name)
-    : program_(0)
+    : program_(glCreateProgram())
 {
     auto log = getlog("gpu");
     log->debug(R"(Compiling shader "{}"/"{}")", vert_name, frag_name);
@@ -87,7 +78,6 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     shader_s vert(vert_name, GL_VERTEX_SHADER);
     shader_s frag(frag_name, GL_FRAGMENT_SHADER);
 
-    program_ = glCreateProgram();
     glAttachShader(program_, vert.id());
     glAttachShader(program_, frag.id());
 
@@ -167,7 +157,7 @@ void shader_program_s::unuse() { glUseProgram(0); }
 void shader_program_s::set_uniform(const std::string& name, const vec2_t& val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniform2f(program_, it->second.loc, val.x, val.y);
+        glProgramUniform2f(program_, it->second.loc, static_cast<float>(val.x), static_cast<float>(val.y));
     }
 }
 
@@ -181,7 +171,7 @@ void shader_program_s::set_uniform(const std::string& name, const mat3& val)
 void shader_program_s::set_uniform(const std::string& name, double val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniform1f(program_, it->second.loc, val);
+        glProgramUniform1f(program_, it->second.loc, static_cast<float>(val));
     }
 }
 

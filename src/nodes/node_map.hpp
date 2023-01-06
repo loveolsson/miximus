@@ -1,6 +1,7 @@
 #pragma once
 #include "nodes/connection.hpp"
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <map>
@@ -36,7 +37,7 @@ struct node_state_s
     {
         auto it = con_map.find(name);
         if (it == con_map.end()) {
-            throw std::runtime_error(std::string("missing connection set ") + std::string(name));
+            throw std::runtime_error(fmt::format("missing connection set {}", name));
         }
         return it->second;
     }

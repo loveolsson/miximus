@@ -34,20 +34,21 @@ bool pinned_transfer_s::perform_copy()
 {
     if (direction_ == direction_e::cpu_to_gpu) {
         if (mapped_ptr_ == nullptr) {
-            GLbitfield flags = GLbitfield(GL_MAP_PERSISTENT_BIT) | GLbitfield(GL_MAP_WRITE_BIT);
+            GLbitfield flags =
+                static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT) | static_cast<GLbitfield>(GL_MAP_WRITE_BIT);
 
             glCreateBuffers(1, &id_);
-            glNamedBufferStorage(id_, size_, nullptr, flags);
+            glNamedBufferStorage(id_, static_cast<GLsizeiptr>(size_), nullptr, flags);
 
-            flags |= GLbitfield(GL_MAP_FLUSH_EXPLICIT_BIT);
-            mapped_ptr_ = glMapNamedBufferRange(id_, 0, size_, flags);
+            flags |= static_cast<GLbitfield>(GL_MAP_FLUSH_EXPLICIT_BIT);
+            mapped_ptr_ = glMapNamedBufferRange(id_, 0, static_cast<GLsizeiptr>(size_), flags);
 
             assert(mapped_ptr_ != nullptr);
         }
 
         auto* c = reinterpret_cast<char*>(ptr_);
         std::copy(c, c + size_, reinterpret_cast<char*>(mapped_ptr_));
-        glFlushMappedNamedBufferRange(id_, 0, size_);
+        glFlushMappedNamedBufferRange(id_, 0, static_cast<GLsizeiptr>(size_));
 
         sync_ = std::make_unique<sync_s>();
     } else {
@@ -72,12 +73,13 @@ bool pinned_transfer_s::perform_transfer(texture_s* texture)
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     } else {
         if (mapped_ptr_ == nullptr) {
-            GLbitfield flags = GLbitfield(GL_MAP_PERSISTENT_BIT) | GLbitfield(GL_MAP_READ_BIT);
+            GLbitfield flags =
+                static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT) | static_cast<GLbitfield>(GL_MAP_READ_BIT);
 
             glCreateBuffers(1, &id_);
-            glNamedBufferStorage(id_, size_, nullptr, flags);
+            glNamedBufferStorage(id_, static_cast<GLsizeiptr>(size_), nullptr, flags);
 
-            mapped_ptr_ = glMapNamedBufferRange(id_, 0, size_, flags);
+            mapped_ptr_ = glMapNamedBufferRange(id_, 0, static_cast<GLsizeiptr>(size_), flags);
 
             assert(mapped_ptr_ != nullptr);
         }

@@ -43,18 +43,18 @@ class node_impl : public node_i
             return;
         }
 
-        auto textures = iface_tex_.resolve_values(app, nodes, state);
+        auto textures = iface_tex_.resolve_values<9>(app, nodes, state);
 
         if (textures.empty()) {
             return;
         }
 
-        int tex_count = textures.size();
-        int cols      = 1;
-        for (; cols * cols < tex_count; cols++) {
+        size_t tex_count = textures.size();
+        size_t cols      = 1;
+        for (; (cols * cols) < tex_count; cols++) {
         }
 
-        double box_dim = 1.0 / cols;
+        double box_dim = 1.0 / static_cast<double>(cols);
 
         fb->bind();
 
@@ -69,14 +69,14 @@ class node_impl : public node_i
         shader->set_uniform("scale", gpu::vec2_t{box_dim});
         shader->set_uniform("opacity", 1.0);
 
-        for (int i = 0, y = 0; y < cols && i < tex_count; y++) {
-            for (int x = 0; x < cols && i < tex_count; x++, i++) {
+        for (size_t i = 0, y = 0; y < cols && i < tex_count; y++) {
+            for (size_t x = 0; x < cols && i < tex_count; x++, i++) {
                 const auto* texture = textures[i];
                 if (texture == nullptr) {
                     continue;
                 }
 
-                gpu::vec2_t pos{box_dim * x, box_dim * y};
+                gpu::vec2_t pos{box_dim * static_cast<double>(x), box_dim * static_cast<double>(y)};
                 shader->set_uniform("offset", pos);
                 texture->bind(0);
                 draw_state_->draw();
@@ -94,7 +94,12 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final { return false; }
+    bool test_option(std::string_view name, nlohmann::json* value) const final
+    {
+        (void)name;
+        (void)value;
+        return false;
+    }
 
     std::string_view type() const final { return "infinite_multiviewer"; }
 };
