@@ -17,6 +17,7 @@ enum class action_e
     command,
     result,
     error,
+    _count,
 };
 
 constexpr frozen::map<std::string_view, action_e, (size_t)action_e::_count> action_lookup_table = {
