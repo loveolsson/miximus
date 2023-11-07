@@ -73,7 +73,7 @@ bool pinned_transfer_s::perform_transfer(texture_s* texture)
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     } else {
         if (mapped_ptr_ == nullptr) {
-            GLbitfield flags =
+            const GLbitfield flags =
                 static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT) | static_cast<GLbitfield>(GL_MAP_READ_BIT);
 
             glCreateBuffers(1, &id_);

@@ -121,7 +121,7 @@ class callback_s
         }
     }
 
-    ~callback_s()
+    ~callback_s() override
     {
         auto lock = ctx_->get_lock();
         ctx_->make_current();
@@ -132,6 +132,11 @@ class callback_s
         gpu::context_s::rewind_current();
     }
 
+    callback_s(callback_s&&)                 = delete;
+    callback_s(const callback_s&)            = delete;
+    callback_s& operator=(callback_s&&)      = delete;
+    callback_s& operator=(const callback_s&) = delete;
+
     /**
      * IUnknown
      */
@@ -141,7 +146,7 @@ class callback_s
 
     ULONG STDMETHODCALLTYPE Release() final
     {
-        ULONG count = --ref_count_;
+        const ULONG count = --ref_count_;
         if (count == 0) {
             delete this;
         }
@@ -161,8 +166,9 @@ class callback_s
         auto lock = ctx_->get_lock();
         ctx_->make_current();
 
-        if (auto [record, size] = frames_rendered_.pop_frame_if_count(3); record != std::nullopt) {
-            auto& frame = record->frame;
+        auto pop = frames_rendered_.pop_frame_if_count(3);
+        if (pop.first) {
+            auto& frame = pop.first->frame;
 
             if (frame.sync) {
                 frame.sync->gpu_wait();
@@ -173,14 +179,17 @@ class callback_s
             glFinish();
 
             IDeckLinkMutableVideoFrame* dst_frame = nullptr;
-            auto                        row_bytes = static_cast<size_t>(((frame.dim.x + 47) / 48) * 128);
+            const int32_t               row_bytes = ((frame.dim.x + 47) / 48) * 128;
 
             if (SUCCEEDED(
                     device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
                 void* dst_ptr = nullptr;
                 dst_frame->GetBytes(&dst_ptr);
 
-                memcpy(dst_ptr, frame.ptr, row_bytes * frame.dim.y);
+                auto size = row_bytes * frame.dim.y;
+                assert(size > 0);
+
+                memcpy(dst_ptr, frame.ptr, static_cast<size_t>(size));
 
                 last_frame_ = dst_frame;
                 dst_frame->Release();
@@ -222,21 +231,20 @@ class callback_s
 
     std::optional<frame_info_s> get_free_frame()
     {
-        auto [record, _] = frames_free_.pop_frame();
-        if (record) {
-            return std::move(record->frame);
+        auto pop = frames_free_.pop_frame();
+        if (pop.first.has_value()) {
+            return std::move(pop.first->frame);
         }
 
-        return std::nullopt;
+        return {};
     }
 };
 
 class node_impl : public node_i
 {
-    static inline std::unordered_set<IDeckLinkOutput*> devices_in_use;
-    decklink_ptr<IDeckLinkOutput>                      device_;
-    decklink_ptr<callback_s>                           callback_;
-    std::map<std::string, mode_info_s>                 display_modes_;
+    decklink_ptr<IDeckLinkOutput>      device_;
+    decklink_ptr<callback_s>           callback_;
+    std::map<std::string, mode_info_s> display_modes_;
 
     std::unique_ptr<gpu::framebuffer_s> framebuffer_yuv_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_scale_;
@@ -247,9 +255,15 @@ class node_impl : public node_i
 
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
+    static auto& devices_in_use()
+    {
+        static std::unordered_set<IDeckLinkOutput*> devices;
+        return devices;
+    }
+
     void free_device()
     {
-        devices_in_use.erase(device_.get());
+        devices_in_use().erase(device_.get());
         device_->StopScheduledPlayback(0, nullptr, 1.0);
 
         device_   = nullptr;
@@ -260,7 +274,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
+    explicit node_impl() { register_interface(&iface_tex_); }
 
     ~node_impl() override
     {
@@ -352,13 +366,15 @@ class node_impl : public node_i
                 free_device();
             }
 
-            if (!device || devices_in_use.count(device.get()) > 0) {
+            auto& in_use = devices_in_use();
+
+            if (!device || in_use.contains(device.get())) {
                 return;
             }
 
             log()->info("Setting up DeckLink output {}", device_name);
             device_ = device;
-            devices_in_use.emplace(device_.get());
+            in_use.emplace(device_.get());
 
             IDeckLinkDisplayModeIterator* itr   = nullptr;
             IDeckLinkDisplayMode*         imode = nullptr;
@@ -417,11 +433,11 @@ class node_impl : public node_i
             draw_state_yuv_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        auto dim = display_mode_->dim;
+        const auto dim = display_mode_->dim;
 
-        int          row_pixels = ((dim.x + 47) / 48) * 32;
-        gpu::vec2i_t target_dim{row_pixels, dim.y};
-        gpu::vec2i_t draw_dim{dim.x / 6 * 4, dim.y};
+        const int          row_pixels = ((dim.x + 47) / 48) * 32;
+        const gpu::vec2i_t target_dim{row_pixels, dim.y};
+        const gpu::vec2i_t draw_dim{dim.x / 6 * 4, dim.y};
 
         if (!framebuffer_scale_ || framebuffer_scale_->texture()->texture_dimensions() != dim) {
             framebuffer_scale_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::rgb_f16);

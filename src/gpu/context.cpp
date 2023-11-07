@@ -18,150 +18,109 @@ constexpr int GL_VERSION_MINOR   = 6;
 constexpr int DEFAULT_CTX_WIDTH  = 640;
 constexpr int DEFAULT_CTX_HEIGHT = 480;
 
-std::once_flag                      glfw_init, glad_init;
-std::map<std::string, GLFWmonitor*> monitors_g;
+const auto _log = [] { return getlog("gpu"); };
 
-void error_callback(int error, const char* description)
+void glfw_error_callback(int error, const char* description)
 {
-    getlog("gpu")->error("Error: [{}]:{}", error, description); //
+    _log()->error("GLFW error: [{}]:{}", error, description);
 }
 
-void GLAPIENTRY opengl_error_callback(GLenum source,
-                                      GLenum type,
-                                      GLuint /*id*/,
+constexpr auto get_enum_str(GLenum v)
+{
+    constexpr auto names = frozen::make_map<GLenum, std::string_view>({
+        {GL_DEBUG_SOURCE_API,               "API"                 }, // Source
+        {GL_DEBUG_SOURCE_OTHER,             "Other"               }, // Source
+        {GL_DEBUG_TYPE_ERROR,               "Error"               }, // Type
+        {GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR, "Deprecated Behaviour"}, // Type
+        {GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR,  "Undefined Behaviour" }, // Type
+        {GL_DEBUG_TYPE_PORTABILITY,         "Portability"         }, // Type
+        {GL_DEBUG_TYPE_PERFORMANCE,         "Performance"         }, // Type
+        {GL_DEBUG_TYPE_MARKER,              "Marker"              }, // Type
+        {GL_DEBUG_TYPE_PUSH_GROUP,          "Push Group"          }, // Type
+        {GL_DEBUG_TYPE_POP_GROUP,           "Pop Group"           }, // Type
+        {GL_DEBUG_TYPE_OTHER,               "Other"               }, // Type
+        {GL_DEBUG_SEVERITY_HIGH,            "High"                }, // Serverity
+        {GL_DEBUG_SEVERITY_MEDIUM,          "Medium"              }, // Serverity
+        {GL_DEBUG_SEVERITY_LOW,             "Low"                 }, // Serverity
+        {GL_DEBUG_SEVERITY_NOTIFICATION,    "Notification"        }, // Serverity
+    });
+
+    const auto* const it = names.find(v);
+    return it != names.end() ? it->second : "UNKNOWN";
+}
+
+void GLAPIENTRY opengl_error_callback(GLenum        source,
+                                      GLenum        type,
+                                      GLuint        id,
                                       GLenum        severity,
                                       GLsizei       length,
                                       const GLchar* message,
-                                      const void* /*userParam*/)
+                                      const void*   userParam)
 {
-    std::string_view source_str;
-    std::string_view type_str;
-    std::string_view severity_str;
+    (void)id;
+    (void)userParam;
 
-    switch (source) {
-        case GL_DEBUG_SOURCE_API:
-            source_str = "API";
-            break;
-        case GL_DEBUG_SOURCE_OTHER:
-        default:
-            source_str = "Other";
-            break;
+    if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) {
+        return;
     }
 
-    switch (type) {
-        case GL_DEBUG_TYPE_ERROR:
-            type_str = "Error";
-            break;
-        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
-            type_str = "Deprecated Behaviour";
-            break;
-        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
-            type_str = "Undefined Behaviour";
-            break;
-        case GL_DEBUG_TYPE_PORTABILITY:
-            type_str = "Portability";
-            break;
-        case GL_DEBUG_TYPE_PERFORMANCE:
-            type_str = "Performance";
-            break;
-        case GL_DEBUG_TYPE_MARKER:
-            type_str = "Marker";
-            break;
-        case GL_DEBUG_TYPE_PUSH_GROUP:
-            type_str = "Push Group";
-            break;
-        case GL_DEBUG_TYPE_POP_GROUP:
-            type_str = "Pop Group";
-            break;
-        case GL_DEBUG_TYPE_OTHER:
-        default:
-            type_str = "Other";
-            break;
-    }
-
-    switch (severity) {
-        case GL_DEBUG_SEVERITY_HIGH:
-            severity_str = "high";
-            break;
-        case GL_DEBUG_SEVERITY_MEDIUM:
-            severity_str = "medium";
-            break;
-        case GL_DEBUG_SEVERITY_LOW:
-            severity_str = "low";
-            break;
-        case GL_DEBUG_SEVERITY_NOTIFICATION:
-            return;
-            // severity_str = "notification";
-            // break;
-        default:
-            severity_str = "unknown";
-            break;
-    }
+    const auto source_str   = get_enum_str(source);
+    const auto type_str     = get_enum_str(type);
+    const auto severity_str = get_enum_str(severity);
+    const auto message_str  = std::string_view(message, length);
 
     if (type == GL_DEBUG_TYPE_ERROR) {
-        getlog("gpu")->error("OpenGL error: source = {}, type = {}, severity = {}, message = {}",
-                             source_str,
-                             type_str,
-                             severity_str,
-                             std::string_view(message, length));
-
+        _log()->error("OpenGL error: source = {}, type = '{}', severity = '{}', message = '{}'",
+                      source_str,
+                      type_str,
+                      severity_str,
+                      message_str);
     } else {
-        getlog("gpu")->warn("OpenGL warning: source = {}, type = {}, severity = {}, message = {}",
-                            source_str,
-                            type_str,
-                            severity_str,
-                            std::string_view(message, length));
+        _log()->warn("OpenGL warning: source = {}, type = '{}', severity = '{}', message = '{}'",
+                     source_str,
+                     type_str,
+                     severity_str,
+                     message_str);
     }
 }
 
 void monitor_config_callback(GLFWmonitor* monitor, int event)
 {
+    using namespace miximus::gpu;
     const auto* name = glfwGetMonitorName(monitor);
+
     if (event == GLFW_CONNECTED) {
-        monitors_g.emplace(name, monitor);
+        context_s::monitors_g.emplace(name, monitor);
+        _log()->info("Monitor connected: {}", name);
     } else {
-        monitors_g.erase(name);
+        context_s::monitors_g.erase(name);
+        _log()->info("Monitor disconnected: {}", name);
     }
 }
 
-void load_image(GLFWimage* img, std::string_view file)
+GLFWimage load_image(std::string_view filename)
 {
-    const auto& files     = static_files::get_resource_files();
-    const auto* file_data = files.get_file_or_throw(file);
+    const auto file_data = static_files::get_resource_files().get_file_or_throw(filename).unzip();
 
-    int   ch        = 0;
-    auto  data      = file_data->unzip();
-    auto* stbi_data = reinterpret_cast<stbi_uc*>(data.data());
-    auto  size      = static_cast<int>(data.size());
-    img->pixels     = stbi_load_from_memory(stbi_data, size, &img->width, &img->height, &ch, 4);
+    GLFWimage img    = {};
+    int       res_ch = 0;
+    img.pixels       = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(file_data.data()),
+                                       static_cast<int>(file_data.size()),
+                                       &img.width,
+                                       &img.height,
+                                       &res_ch,
+                                       4);
 
-    if (img->pixels == nullptr) {
-        throw std::runtime_error("Failed to load logo file");
+    if (img.pixels == nullptr) {
+        throw std::runtime_error(fmt::format("Failed to load logo {}", filename));
     }
-    if (ch != 4) {
-        throw std::runtime_error("Incorrect number of channels in the logo");
+
+    if (res_ch != 4) {
+        stbi_image_free(img.pixels);
+        throw std::runtime_error(fmt::format("Logo {} is not RGBA", filename));
     }
-}
 
-auto load_logos()
-{
-    struct glfw_logo_s
-    {
-        GLFWimage image{};
-
-        explicit glfw_logo_s(std::string_view filename) { load_image(&image, filename); }
-        ~glfw_logo_s() { stbi_image_free(image.pixels); }
-    };
-
-    auto logos = std::array{
-        glfw_logo_s("images/miximus_32x32.png"),
-        glfw_logo_s("images/miximus_64x64.png"),
-        glfw_logo_s("images/miximus_128x128.png"),
-    };
-
-    static_assert(sizeof(logos) == sizeof(GLFWimage) * 3, "glfw_logo_s is not packed correctly");
-
-    return logos;
+    return img;
 }
 
 } // namespace
@@ -170,13 +129,15 @@ namespace miximus::gpu {
 
 context_s::context_s(bool visible, context_s* parent)
 {
+    static std::once_flag glfw_init;
+
     std::call_once(glfw_init, []() {
-        getlog("gpu")->debug("Initializing GLFW");
+        _log()->debug("Initializing GLFW");
         if (glfwInit() == GLFW_FALSE) {
             throw std::runtime_error("Failed to initialize GLFW");
         }
 
-        glfwSetErrorCallback(error_callback);
+        glfwSetErrorCallback(glfw_error_callback);
         glfwSetMonitorCallback(monitor_config_callback);
 
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, GL_VERSION_MAJOR);
@@ -188,34 +149,26 @@ context_s::context_s(bool visible, context_s* parent)
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        int   count{};
+        int   count    = 0;
         auto* monitors = glfwGetMonitors(&count);
         for (int i = 0; i < count; ++i) {
             auto*       monitor = monitors[i];
             const auto* name    = glfwGetMonitorName(monitor);
 
-            getlog("gpu")->info("Found monitor: {}", name);
+            _log()->info("Found monitor: {}", name);
 
             monitors_g.emplace(name, monitor);
         }
     });
 
-    if (visible) {
-        glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
-        glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
-        glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
-    } else {
-        glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_FALSE);
-        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-        glfwWindowHint(GLFW_DOUBLEBUFFER, GL_FALSE);
-    }
+    const int visible_flag = visible ? GLFW_TRUE : GLFW_FALSE;
+    glfwWindowHint(GLFW_SRGB_CAPABLE, visible_flag);
+    glfwWindowHint(GLFW_VISIBLE, visible_flag);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, visible_flag);
 
-    GLFWwindow* parent_window = nullptr;
-    if (parent != nullptr) {
-        parent_window = parent->window_;
-    }
+    auto* parent_window = (parent != nullptr) ? parent->window_ : nullptr;
+    window_             = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
 
-    window_ = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
     if (window_ == nullptr) {
         throw std::runtime_error("Failed to create GLFW window");
     }
@@ -224,6 +177,7 @@ context_s::context_s(bool visible, context_s* parent)
 
     make_current();
 
+    static std::once_flag glad_init;
     std::call_once(glad_init, []() {
         if (gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) == 0) {
             throw std::runtime_error("GLAD failed to load OpenGL procs");
@@ -236,8 +190,17 @@ context_s::context_s(bool visible, context_s* parent)
     if (visible) {
         glfwSwapInterval(1);
 
-        auto logos = load_logos();
-        glfwSetWindowIcon(window_, logos.size(), &logos.front().image);
+        const auto logos = std::array{
+            load_image("images/miximus_32x32.png"),
+            load_image("images/miximus_64x64.png"),
+            load_image("images/miximus_128x128.png"),
+        };
+
+        glfwSetWindowIcon(window_, logos.size(), logos.data());
+
+        for (const auto& logo : logos) {
+            stbi_image_free(logo.pixels);
+        }
     } else {
         // glfwSwapInterval(0);
     }
@@ -350,17 +313,17 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 {
     using name_e = shader_program_s::name_e;
 
-    constexpr frozen::map<name_e, std::pair<std::string_view, std::string_view>, 5> shaderInfo{
-        {name_e::basic, {"shaders/basic.vs.glsl", "shaders/basic.fs.glsl"}},
-        {name_e::yuv_to_rgb, {"shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl"}},
-        {name_e::rgb_to_yuv, {"shaders/basic.vs.glsl", "shaders/to_yuv.fs.glsl"}},
-        {name_e::apply_gamma, {"shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl"}},
-        {name_e::strip_gamma, {"shaders/basic.vs.glsl", "shaders/strip_gamma.fs.glsl"}},
-    };
-
     if (auto it = shaders_.find(name); it != shaders_.end()) {
         return it->second.get();
     }
+
+    constexpr auto shaderInfo = frozen::make_map<name_e, std::pair<std::string_view, std::string_view>>({
+        {name_e::basic,       {"shaders/basic.vs.glsl", "shaders/basic.fs.glsl"}      },
+        {name_e::yuv_to_rgb,  {"shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl"}   },
+        {name_e::rgb_to_yuv,  {"shaders/basic.vs.glsl", "shaders/to_yuv.fs.glsl"}     },
+        {name_e::apply_gamma, {"shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl"}},
+        {name_e::strip_gamma, {"shaders/basic.vs.glsl", "shaders/strip_gamma.fs.glsl"}},
+    });
 
     const auto& info = shaderInfo.at(name);
 

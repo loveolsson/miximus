@@ -11,8 +11,7 @@ class framebuffer_s;
 namespace nodes {
 enum class interface_type_e
 {
-    invalid = -1,
-    f64     = 0,
+    f64,
     vec2,
     rect,
     texture,
@@ -54,25 +53,3 @@ inline interface_type_e get_interface_type<gpu::framebuffer_s*>()
 
 } // namespace nodes
 } // namespace miximus
-
-inline std::string_view to_string(miximus::nodes::interface_type_e e)
-{
-    using type_e = miximus::nodes::interface_type_e;
-
-    switch (e) {
-        case type_e::invalid:
-            return "invalid";
-        case type_e::f64:
-            return "f64";
-        case type_e::vec2:
-            return "vec2";
-        case type_e::rect:
-            return "rect";
-        case type_e::texture:
-            return "texture";
-        case type_e::framebuffer:
-            return "framebuffer";
-        default:
-            return "bad_value";
-    }
-}

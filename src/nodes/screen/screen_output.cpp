@@ -72,7 +72,7 @@ class node_impl : public node_i
     std::future<bool> thread_future_{};
 
   public:
-    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
+    explicit node_impl() { register_interface(&iface_tex_); }
 
     ~node_impl() override { stop_thread(); }
 
@@ -91,7 +91,7 @@ class node_impl : public node_i
             if (!ctx_) {
                 auto lock = frames_rendered_.get_lock();
                 {
-                    std::unique_lock lock(ctx_mtx_);
+                    const std::unique_lock lock(ctx_mtx_);
                     ctx_        = gpu::context_s::create_unique_context(true, app->ctx());
                     thread_run_ = true;
                 }
@@ -128,8 +128,6 @@ class node_impl : public node_i
         gpu::vec2i_t dim{128, 128};
         if (texture != nullptr) {
             dim = texture->texture_dimensions();
-        } else {
-            int i = 0;
         }
 
         if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dim) {
@@ -225,7 +223,7 @@ class node_impl : public node_i
         }
 
         if (name == "monitor_name") {
-            return validate_option<std::string>(value);
+            return validate_option<std::string_view>(value);
         }
 
         if (name == "posx" || name == "posy") {
@@ -243,8 +241,6 @@ class node_impl : public node_i
 
     bool run()
     {
-        auto log = getlog("nodes");
-
         ctx_->make_current();
         glEnable(GL_FRAMEBUFFER_SRGB);
 
@@ -330,7 +326,7 @@ class node_impl : public node_i
             thread_future_.get();
         }
 
-        std::unique_lock lock(ctx_mtx_);
+        const std::unique_lock lock(ctx_mtx_);
         ctx_.reset();
     }
 };
@@ -338,6 +334,7 @@ class node_impl : public node_i
 } // namespace
 
 namespace miximus::nodes::screen {
+
 std::shared_ptr<node_i> create_screen_output_node() { return std::make_shared<node_impl>(); }
 
 } // namespace miximus::nodes::screen

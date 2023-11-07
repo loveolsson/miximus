@@ -10,6 +10,7 @@ namespace miximus::nodes {
 bool interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const
 {
     if (connections->size() == max_connection_count_) {
+        // This causes a remove_connection action at a later stage
         removed->emplace(removed->end(), connections->front());
     }
 
@@ -32,12 +33,12 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
     for (const auto& con : connections) {
         const interface_i* iface = nullptr;
 
-        auto record = nodes.find(con.from_node);
-        if (record != nodes.end()) {
+        if (auto record = nodes.find(con.from_node); record != nodes.end()) {
             const auto& node  = record->second.node;
             const auto& state = record->second.state;
 
             iface = node->find_interface(con.from_interface);
+
             if (iface != nullptr && !state.executed) {
                 state.executed = true;
                 node->execute(app, nodes, state);
@@ -113,17 +114,8 @@ bool input_interface_s<gpu::framebuffer_s*>::accepts(interface_type_e type) cons
 template <>
 double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, const double& fallback)
 {
-    switch (iface->type()) {
-        case interface_type_e::f64: {
-            const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface);
-            if (cast != nullptr) {
-                return cast->get_value();
-            }
-            break;
-        }
-
-        default:
-            break;
+    if (const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
+        return cast->get_value();
     }
 
     return fallback;
@@ -132,26 +124,13 @@ double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, 
 template <>
 gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_i* iface, const gpu::vec2_t& fallback)
 {
-    switch (iface->type()) {
-        case interface_type_e::f64: {
-            const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface);
-            if (cast != nullptr) {
-                auto val = cast->get_value();
-                return {val, val};
-            }
-            break;
-        }
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface)) {
+        return cast->get_value();
+    }
 
-        case interface_type_e::vec2: {
-            const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface);
-            if (cast != nullptr) {
-                return cast->get_value();
-            }
-            break;
-        }
-
-        default:
-            break;
+    if (const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
+        auto val = cast->get_value();
+        return {val, val};
     }
 
     return fallback;
@@ -160,17 +139,8 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_
 template <>
 gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback)
 {
-    switch (iface->type()) {
-        case interface_type_e::rect: {
-            const auto* cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface);
-            if (cast != nullptr) {
-                return cast->get_value();
-            }
-            break;
-        }
-
-        default:
-            break;
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface)) {
+        return cast->get_value();
     }
 
     return fallback;
@@ -180,36 +150,17 @@ template <>
 gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
                                                                         gpu::texture_s* const& fallback)
 {
-    switch (iface->type()) {
-        case interface_type_e::texture: {
-            const auto* cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface);
-            if (cast != nullptr) {
-                return cast->get_value();
-            }
-            break;
-        }
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface)) {
+        return cast->get_value();
+    }
 
-        case interface_type_e::framebuffer: {
-            const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface);
-            if (cast == nullptr) {
-                break;
-            }
-
-            auto* fb = cast->get_value();
-            if (fb == nullptr) {
-                break;
-            }
-
-            auto* texture = fb->texture();
-            if (texture != nullptr) {
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
+        if (auto* fb = cast->get_value()) {
+            if (auto* texture = fb->texture()) {
                 texture->generate_mip_maps();
                 return texture;
             }
-            break;
         }
-
-        default:
-            break;
     }
 
     return fallback;
@@ -219,34 +170,11 @@ template <>
 gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*         iface,
                                                                                 gpu::framebuffer_s* const& fallback)
 {
-    switch (iface->type()) {
-        case interface_type_e::framebuffer: {
-            const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface);
-            if (cast != nullptr) {
-                return cast->get_value();
-            }
-            break;
-        }
-
-        default:
-            break;
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
+        return cast->get_value();
     }
 
     return fallback;
 }
 
 } // namespace miximus::nodes
-
-std::string_view to_string(miximus::nodes::interface_i::dir_e e)
-{
-    using dir_e = miximus::nodes::interface_i::dir_e;
-
-    switch (e) {
-        case dir_e::input:
-            return "input";
-        case dir_e::output:
-            return "output";
-        default:
-            return "bad_value";
-    }
-}

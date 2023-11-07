@@ -36,12 +36,11 @@ class shader_program_s
   public:
     enum name_e
     {
-        basic = 0,
+        basic,
         yuv_to_rgb,
         rgb_to_yuv,
         apply_gamma,
         strip_gamma,
-        _count,
     };
 
     shader_program_s(std::string_view vert_name, std::string_view frag_name);

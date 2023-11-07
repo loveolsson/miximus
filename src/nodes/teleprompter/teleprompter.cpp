@@ -72,10 +72,10 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        iface_rect_in_.register_interface(&interfaces_);
-        iface_scroll_pos_in_.register_interface(&interfaces_);
-        iface_fb_in_.register_interface(&interfaces_);
-        iface_fb_out_.register_interface(&interfaces_);
+        register_interface(&iface_rect_in_);
+        register_interface(&iface_scroll_pos_in_);
+        register_interface(&iface_fb_in_);
+        register_interface(&iface_fb_out_);
     }
 
     node_impl(const node_impl&)      = delete;
@@ -123,8 +123,8 @@ class node_impl : public node_i
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
         scroll_pos      = iface_scroll_pos_in_.resolve_value(app, nodes, state, scroll_pos);
 
-        gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
-        gpu::vec2i_t tx_dim = {fb_dim.x, font_size_ * 2};
+        const gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
+        const gpu::vec2i_t tx_dim = {fb_dim.x, font_size_ * 2};
 
         if (file_path != last_file_path_ || fb_dim != last_framebuffer_size) {
             last_file_path_       = file_path;
@@ -173,8 +173,8 @@ class node_impl : public node_i
         {
             // Resize render line vector, this can not be a simple resize, since
             // we need to wait for the future to finish
-            int total_line_height       = font_size_ + line_height_extra_;
-            int visible_lines_plus_four = (fb_dim.y + total_line_height - 1) / total_line_height + 4;
+            const int total_line_height       = font_size_ + line_height_extra_;
+            const int visible_lines_plus_four = (fb_dim.y + total_line_height - 1) / total_line_height + 4;
 
             while (render_lines_.size() < visible_lines_plus_four) {
                 render_lines_.emplace_back(std::make_unique<line_info_s>());
@@ -209,7 +209,7 @@ class node_impl : public node_i
          * The size of render_lines_ is (visible lines + 4)
          */
         for (int i = -2; i < static_cast<int>(render_lines_.size()) - 2; ++i) {
-            int txt_line_index = static_cast<int>(std::floor(scroll_pos)) + i;
+            const int txt_line_index = static_cast<int>(std::floor(scroll_pos)) + i;
             if (txt_line_index < 0 || txt_line_index >= text_.lines.size()) {
                 continue;
             }
@@ -232,7 +232,7 @@ class node_impl : public node_i
                 continue;
             }
 
-            std::unique_lock lock(rl->mtx);
+            const std::unique_lock lock(rl->mtx);
 
             auto* texture = rl->surface->texture();
 
@@ -259,12 +259,12 @@ class node_impl : public node_i
 
             texture->bind(0);
 
-            int    line_height_px = font_size_ + line_height_extra_;
-            double px_height      = 1.0 / fb_dim.y;
+            const int    line_height_px = font_size_ + line_height_extra_;
+            const double px_height      = 1.0 / fb_dim.y;
 
-            double px_pos = std::floor((txt_line_index - scroll_pos) * line_height_px);
+            const double px_pos = std::floor((txt_line_index - scroll_pos) * line_height_px);
 
-            gpu::vec2_t pos = {0, px_height * px_pos};
+            const gpu::vec2_t pos = {0, px_height * px_pos};
 
             shader->set_uniform("offset", pos);
             draw_state_->draw();
@@ -315,7 +315,7 @@ class node_impl : public node_i
                 return res;
             }
 
-            std::string utf_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            const std::string utf_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             str = decode_utf8(utf_str);
         } catch (const std::ifstream::failure& e) {
             return res;
@@ -342,11 +342,11 @@ class node_impl : public node_i
 
     gpu::sync_s process_line(line_info_s* line, const std::u32string& str, const gpu::vec2i_t& dim)
     {
-        std::unique_lock line_lock(line->mtx);
-        std::unique_lock font_lock(font_mtx_);
+        const std::unique_lock line_lock(line->mtx);
+        const std::unique_lock font_lock(font_mtx_);
 
         if (!line->surface || line->surface->dimensions() != dim) {
-            std::unique_lock lock(ctx_mtx_);
+            const std::unique_lock lock(ctx_mtx_);
             ctx_->make_current();
             line->surface = std::make_unique<render::surface_s>(dim);
             gpu::context_s::rewind_current();
@@ -359,7 +359,7 @@ class node_impl : public node_i
         std::optional<gpu::sync_s> sync;
 
         {
-            std::unique_lock lock(ctx_mtx_);
+            const std::unique_lock lock(ctx_mtx_);
             ctx_->make_current();
 
             auto* texture  = line->surface->texture();

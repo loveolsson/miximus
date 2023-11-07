@@ -12,15 +12,15 @@
 #include <string_view>
 
 namespace miximus::web_server::detail {
-class web_server_impl
+class web_server_impl : public server_s
 {
     using server_t       = websocketpp::server<custom_config>;
     using con_hdl_t      = websocketpp::connection_hdl;
     using con_map_t      = std::map<con_hdl_t, websocket_connection, std::owner_less<con_hdl_t>>;
     using con_by_id_t    = std::map<int64_t, con_hdl_t>;
     using con_set_t      = std::set<con_hdl_t, std::owner_less<con_hdl_t>>;
-    using con_by_topic_t = std::array<con_set_t, static_cast<size_t>(topic_e::_count)>;
-    using sub_by_topic_t = std::array<callback_t, static_cast<size_t>(topic_e::_count)>;
+    using con_by_topic_t = std::array<con_set_t, enum_count<topic_e>()>; // Includes invalid
+    using sub_by_topic_t = std::array<callback_t, enum_count<topic_e>()>;
     using msg_ptr_t      = server_t::message_ptr;
 
     void terminate_and_log(const con_hdl_t& hdl, const std::string& msg);
@@ -45,16 +45,16 @@ class web_server_impl
     web_server_impl();
     ~web_server_impl() = default;
 
-    void subscribe(topic_e topic, const callback_t& callback);
-    void start(uint16_t port, boost::asio::io_service* service);
-    void stop();
+    void subscribe(topic_e topic, const callback_t& callback) final;
+    void start(uint16_t port, boost::asio::io_service* service) final;
+    void stop() final;
 
-    void send_message(const nlohmann::json& msg, int64_t connection_id);
-    void send_message_sync(const nlohmann::json& msg, int64_t connection_id);
+    void send_message(const nlohmann::json& msg, int64_t connection_id) final;
+    void send_message_sync(const nlohmann::json& msg, int64_t connection_id) final;
     void send_message_sync(const std::string& msg, int64_t connection_id);
 
-    void broadcast_message(const nlohmann::json& msg);
-    void broadcast_message_sync(const nlohmann::json& msg);
+    void broadcast_message(const nlohmann::json& msg) final;
+    void broadcast_message_sync(const nlohmann::json& msg) final;
     void broadcast_message_sync(topic_e topic, const std::string& msg);
 };
 } // namespace miximus::web_server::detail

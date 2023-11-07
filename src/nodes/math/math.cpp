@@ -5,11 +5,18 @@
 
 #include <glm/common.hpp>
 
-#include <functional>
-
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
+
+enum operation_e
+{
+    add,
+    sub,
+    mul,
+    min,
+    max,
+};
 
 template <typename T>
 class node_impl : public node_i
@@ -25,9 +32,9 @@ class node_impl : public node_i
         : type_(type)
         , name_(name)
     {
-        iface_a_.register_interface(&interfaces_);
-        iface_b_.register_interface(&interfaces_);
-        iface_res_.register_interface(&interfaces_);
+        register_interface(&iface_a_);
+        register_interface(&iface_b_);
+        register_interface(&iface_res_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -36,23 +43,33 @@ class node_impl : public node_i
     {
         T res{};
 
-        auto op    = state.get_option<std::string_view>("operation", "add");
+        auto op = state.get_enum_option("operation", operation_e::add);
+
         auto a_opt = state.get_option<T>("a");
         auto b_opt = state.get_option<T>("b");
 
         auto a = iface_a_.resolve_value(app, nodes, state, a_opt);
         auto b = iface_b_.resolve_value(app, nodes, state, b_opt);
 
-        if (op == "add") {
-            res = a + b;
-        } else if (op == "sub") {
-            res = a - b;
-        } else if (op == "mul") {
-            res = a * b;
-        } else if (op == "min") {
-            res = glm::min(a, b);
-        } else if (op == "max") {
-            res = glm::max(a, b);
+        switch (op) {
+            case operation_e::add:
+                res = a + b;
+                break;
+            case operation_e::sub:
+                res = a - b;
+                break;
+            case operation_e::mul:
+                res = a * b;
+                break;
+            case operation_e::min:
+                res = glm::min(a, b);
+                break;
+            case operation_e::max:
+                res = glm::max(a, b);
+                break;
+
+            default:
+                break;
         }
 
         iface_res_.set_value(res);
@@ -62,7 +79,7 @@ class node_impl : public node_i
     {
         return {
             {"name", name_},
-            {"operation", "add"},
+            {"operation", enum_to_string(operation_e::add)},
         };
     }
 
@@ -73,11 +90,11 @@ class node_impl : public node_i
                 return false;
             }
 
-            auto val = value->get<std::string_view>();
-            if (val == "add" || val == "sub" || val == "mul" || val == "min" || val == "max") {
-                return true;
-            }
-        } else if (name == "a" || name == "b") {
+            const auto val = value->get<std::string_view>();
+            return enum_from_string<operation_e>(val).has_value();
+        }
+
+        if (name == "a" || name == "b") {
             return validate_option<T>(value);
         }
 

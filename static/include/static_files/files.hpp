@@ -16,24 +16,27 @@
 namespace miximus::static_files {
 struct file_record_s
 {
-    std::basic_string_view<uint8_t> gzipped;
-    std::string_view                mime;
+    std::string_view gzipped;
+    size_t           size;
+    std::string_view filename;
+    std::string_view filename_lowercase;
+    std::string_view mime;
     LIBRARY_API std::string unzip() const;
 };
 
-// typedef std::unordered_map<std::string_view, file_record_s> file_map_s;
-
 struct file_map_s
 {
-    const std::unordered_map<std::string_view, file_record_s> files;
+    using map_t = std::unordered_map<std::string_view, file_record_s>;
 
-    file_map_s(decltype(files) o)
+    const map_t files;
+
+    explicit file_map_s(map_t&& o)
         : files(std::move(o))
     {
     }
 
     const file_record_s* get_file(std::string_view filename) const noexcept;
-    const file_record_s* get_file_or_throw(std::string_view filename) const;
+    const file_record_s& get_file_or_throw(std::string_view filename) const;
 };
 
 LIBRARY_API extern const file_map_s& get_web_files();

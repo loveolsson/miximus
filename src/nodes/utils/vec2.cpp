@@ -16,20 +16,20 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        iface_x_.register_interface(&interfaces_);
-        iface_y_.register_interface(&interfaces_);
-        iface_res_.register_interface(&interfaces_);
+        register_interface(&iface_x_);
+        register_interface(&iface_y_);
+        register_interface(&iface_res_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto x_opt = state.get_option<double>("x", 0);
-        auto y_opt = state.get_option<double>("y", 0);
+        auto x = state.get_option<double>("x", 0);
+        auto y = state.get_option<double>("y", 0);
 
-        auto x = iface_x_.resolve_value(app, nodes, state, x_opt);
-        auto y = iface_y_.resolve_value(app, nodes, state, y_opt);
+        x = iface_x_.resolve_value(app, nodes, state, x);
+        y = iface_y_.resolve_value(app, nodes, state, y);
 
         iface_res_.set_value({x, y});
     }

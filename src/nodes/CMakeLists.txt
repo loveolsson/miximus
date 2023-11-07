@@ -30,6 +30,7 @@ PRIVATE
     ndi
     render
     Boost::fiber
+    magic_enum::magic_enum
 PUBLIC
     nlohmann_json::nlohmann_json
 )

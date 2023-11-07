@@ -12,6 +12,7 @@ PRIVATE
     gpu
     render
     nodes
+    magic_enum::magic_enum
 )
 
 #add_sanitizers(app)

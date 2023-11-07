@@ -10,66 +10,40 @@
 namespace miximus::nodes {
 
 template <typename T>
-bool validate_option(nlohmann::json* val, std::optional<T> min = std::nullopt, std::optional<T> max = std::nullopt);
+bool validate_option(nlohmann::json* val, std::optional<T> min = {}, std::optional<T> max = {});
 
-template <>
-inline bool validate_option<double>(nlohmann::json* val, std::optional<double> min, std::optional<double> max)
+template <typename T>
+inline bool validate_number_option(nlohmann::json* val, std::optional<T> min, std::optional<T> max)
 {
-    if (val == nullptr) {
+    if (val == nullptr || !val->is_number()) {
         return false;
     }
 
-    if (!val->is_number()) {
-        return false;
-    }
+    double mmin = min ? *min : std::numeric_limits<T>::min();
+    double mmax = max ? *max : std::numeric_limits<T>::max();
 
-    if (min && *val < *min) {
-        *val = *min;
-    }
-
-    if (max && *val > *max) {
-        *val = *max;
-    }
+    *val = static_cast<T>(glm::clamp(val->get<double>(), mmin, mmax));
 
     return true;
 }
 
 template <>
-inline bool validate_option<bool>(nlohmann::json* val, std::optional<bool> /*min*/, std::optional<bool> /*max*/)
+inline bool validate_option<double>(nlohmann::json* val, std::optional<double> min, std::optional<double> max)
 {
-    if (val == nullptr) {
-        return false;
-    }
-
-    if (!val->is_boolean()) {
-        return false;
-    }
-
-    return true;
+    return validate_number_option<double>(val, min, max);
 }
 
 template <>
 inline bool validate_option<int>(nlohmann::json* val, std::optional<int> min, std::optional<int> max)
 {
-    if (val == nullptr) {
+    return validate_number_option<int>(val, min, max);
+}
+
+template <>
+inline bool validate_option<bool>(nlohmann::json* val, std::optional<bool> /*min*/, std::optional<bool> /*max*/)
+{
+    if (val == nullptr || !val->is_boolean()) {
         return false;
-    }
-
-    if (!val->is_number()) {
-        return false;
-    }
-
-    if (!val->is_number_integer()) {
-        *val = glm::floor(val->get<double>());
-        assert(val->is_number_integer());
-    }
-
-    if (min && *val < *min) {
-        *val = *min;
-    }
-
-    if (max && *val > *max) {
-        *val = *max;
     }
 
     return true;
@@ -81,20 +55,12 @@ validate_option<gpu::vec2_t>(nlohmann::json* val, std::optional<gpu::vec2_t> min
 {
     std::optional<double> minx, maxx, miny, maxy;
 
-    if (val == nullptr) {
-        return false;
-    }
-
-    if (!val->is_array() || val->size() != 2) {
+    if (val == nullptr || !val->is_array() || val->size() != 2) {
         return false;
     }
 
     auto& x = val->at(0);
     auto& y = val->at(1);
-
-    if (!x.is_number() || !y.is_number()) {
-        return false;
-    }
 
     if (min) {
         minx = min->x;
@@ -106,7 +72,8 @@ validate_option<gpu::vec2_t>(nlohmann::json* val, std::optional<gpu::vec2_t> min
         maxy = max->y;
     }
 
-    return validate_option<double>(&x, minx, maxx) && validate_option<double>(&y, miny, maxy);
+    return validate_option<gpu::vec2_t::value_type>(&x, minx, maxx) &&
+           validate_option<gpu::vec2_t::value_type>(&y, miny, maxy);
 }
 
 template <>
@@ -115,11 +82,7 @@ validate_option<gpu::rect_s>(nlohmann::json* val, std::optional<gpu::rect_s> min
 {
     std::optional<gpu::vec2_t> minp, maxp, mins, maxs;
 
-    if (val == nullptr) {
-        return false;
-    }
-
-    if (!val->is_object() || val->size() != 2) {
+    if (val == nullptr || !val->is_object() || val->size() != 2) {
         return false;
     }
 
@@ -146,22 +109,14 @@ validate_option<gpu::rect_s>(nlohmann::json* val, std::optional<gpu::rect_s> min
 template <>
 inline bool validate_option<std::string>(nlohmann::json* val, std::optional<std::string>, std::optional<std::string>)
 {
-    if (val == nullptr) {
-        return false;
-    }
-
-    return val->is_string();
+    return val != nullptr && val->is_string();
 }
 
 template <>
 inline bool
 validate_option<std::string_view>(nlohmann::json* val, std::optional<std::string_view>, std::optional<std::string_view>)
 {
-    if (val == nullptr) {
-        return false;
-    }
-
-    return val->is_string();
+    return val != nullptr && val->is_string();
 }
 
 } // namespace miximus::nodes

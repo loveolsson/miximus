@@ -14,16 +14,19 @@ struct connection_s
     std::string to_node;
     std::string to_interface;
 
-    auto tie() const { return std::tie(from_node, from_interface, to_node, to_interface); }
-    bool operator==(const connection_s& o) const { return tie() == o.tie(); }
-};
-
-struct connection_hash
-{
-    std::size_t operator()(const connection_s& c) const { return boost::hash_value(c.tie()); }
+    auto operator<=>(const connection_s&) const = default;
 };
 
 void to_json(nlohmann::json& j, const connection_s& con);
 void from_json(const nlohmann::json& j, connection_s& con);
 
 } // namespace miximus::nodes
+
+template <>
+struct std::hash<miximus::nodes::connection_s>
+{
+    std::size_t operator()(const miximus::nodes::connection_s& c) const
+    {
+        return boost::hash_value(std::tie(c.from_node, c.from_interface, c.to_node, c.to_interface));
+    }
+};

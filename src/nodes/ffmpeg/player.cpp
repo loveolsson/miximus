@@ -21,7 +21,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
 
   public:
-    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
+    explicit node_impl() { register_interface(&iface_tex_); }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 

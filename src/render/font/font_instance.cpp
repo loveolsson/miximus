@@ -9,7 +9,7 @@ namespace miximus::render {
 font_instance_s::font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path& path, int index)
     : loader_(std::move(loader))
 {
-    auto error = FT_New_Face(loader_->library_, path.u8string().c_str(), index, &face_);
+    auto error = FT_New_Face(loader_->library_, path.string().c_str(), index, &face_);
     if (error == 0) {
         valid_ = true;
     }
@@ -33,7 +33,7 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
     const auto* slot        = face_->glyph;
 
     for (int i = 0; i < str.size(); ++i) {
-        char32_t c = str[i];
+        const char32_t c = str[i];
 
         if (std::iswspace(c) != 0 || i == str.size() - 1) {
             if (info.pixels_advanced + word_len < width) {
@@ -83,7 +83,7 @@ gpu::vec2i_t font_instance_s::render_string(std::u32string_view str, surface_s* 
     const auto* slot        = face_->glyph;
     FT_UInt     prior_index = 0;
 
-    for (char32_t c : str) {
+    for (const char32_t c : str) {
         if (c == U'\r' || c == U'\n') {
             continue;
         }
@@ -105,8 +105,8 @@ gpu::vec2i_t font_instance_s::render_string(std::u32string_view str, surface_s* 
 
         constexpr int div = 0x40;
 
-        const FT_Bitmap& bitmap = slot->bitmap;
-        gpu::vec2i_t     offset{slot->bitmap_left + (kerning.x / div), -slot->bitmap_top + (kerning.y / div)};
+        const FT_Bitmap&   bitmap = slot->bitmap;
+        const gpu::vec2i_t offset{slot->bitmap_left + (kerning.x / div), -slot->bitmap_top + (kerning.y / div)};
 
         if (bitmap.pixel_mode == FT_PIXEL_MODE_BGRA) {
             surface->alpha_blend(reinterpret_cast<surface_s::rgba_pixel_t*>(bitmap.buffer),

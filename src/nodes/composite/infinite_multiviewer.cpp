@@ -27,9 +27,9 @@ class node_impl : public node_i
     {
         iface_tex_.set_max_connection_count(INT_MAX);
 
-        iface_tex_.register_interface(&interfaces_);
-        iface_fb_in_.register_interface(&interfaces_);
-        iface_fb_out_.register_interface(&interfaces_);
+        register_interface(&iface_tex_);
+        register_interface(&iface_fb_in_);
+        register_interface(&iface_fb_out_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -49,14 +49,17 @@ class node_impl : public node_i
             return;
         }
 
-        size_t tex_count = textures.size();
-        size_t cols      = 1;
+        const size_t tex_count = textures.size();
+        size_t       cols      = 1;
         for (; (cols * cols) < tex_count; cols++) {
         }
 
-        double box_dim = 1.0 / static_cast<double>(cols);
+        const double box_dim = 1.0 / static_cast<double>(cols);
 
         fb->bind();
+
+        auto fb_dim = fb->texture()->texture_dimensions();
+        glViewport(0, 0, fb_dim.x, fb_dim.y);
 
         if (!draw_state_) {
             draw_state_  = std::make_unique<gpu::draw_state_s>();
@@ -76,7 +79,7 @@ class node_impl : public node_i
                     continue;
                 }
 
-                gpu::vec2_t pos{box_dim * static_cast<double>(x), box_dim * static_cast<double>(y)};
+                const gpu::vec2_t pos{box_dim * static_cast<double>(x), box_dim * static_cast<double>(y)};
                 shader->set_uniform("offset", pos);
                 texture->bind(0);
                 draw_state_->draw();

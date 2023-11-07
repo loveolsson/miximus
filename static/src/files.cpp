@@ -14,7 +14,14 @@ namespace miximus::static_files {
 
 std::string file_record_s::unzip() const
 {
-    return gzip::decompress(reinterpret_cast<const char*>(gzipped.data()), gzipped.size());
+    auto data = gzip::decompress(gzipped.data(), gzipped.size());
+
+    if (data.size() != size) {
+        throw std::runtime_error(
+            fmt::format("Unzipped file \"{}\" has size {} instead of expected size {}", filename, data.size(), size));
+    }
+
+    return data;
 }
 
 const file_record_s* file_map_s::get_file(std::string_view filename) const noexcept
@@ -26,13 +33,14 @@ const file_record_s* file_map_s::get_file(std::string_view filename) const noexc
     return nullptr;
 }
 
-const file_record_s* file_map_s::get_file_or_throw(std::string_view filename) const
+const file_record_s& file_map_s::get_file_or_throw(std::string_view filename) const
 {
-    if (const auto* file = get_file(filename); file != nullptr) {
-        return file;
+    const auto* it = get_file(filename);
+    if (it != nullptr) {
+        return *it;
     }
 
-    throw std::out_of_range(fmt::format("File not found: {}", filename));
+    throw std::out_of_range(fmt::format("File \"{}\" not found", filename));
 }
 
 } // namespace miximus::static_files

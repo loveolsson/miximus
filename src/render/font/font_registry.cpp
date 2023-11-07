@@ -11,7 +11,7 @@ void font_registry_s::log_fonts()
         log->debug("  \"{}\"", name);
 
         for (const auto& [v_name, variant] : font.variants) {
-            log->debug("   -- {}: \"{}\", {}", v_name, variant.path.u8string(), variant.index);
+            log->debug("   -- {}: \"{}\", {}", v_name, variant.path.string(), variant.index);
         }
     }
 }
@@ -60,8 +60,8 @@ std::vector<std::string_view> font_registry_s::get_font_variant_names(const std:
     if (const auto* font = find_font(name)) {
         res.reserve(font->variants.size());
 
-        for (const auto& [name, _] : font->variants) {
-            res.emplace_back(name);
+        for (const auto& [variant, _] : font->variants) {
+            res.emplace_back(variant);
         }
     }
 

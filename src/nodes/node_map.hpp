@@ -1,5 +1,6 @@
 #pragma once
 #include "nodes/connection.hpp"
+#include "utils/lookup.hpp"
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -35,17 +36,17 @@ struct node_state_s
 
     const con_set_t& get_connection_set(std::string_view name) const
     {
-        auto it = con_map.find(name);
-        if (it == con_map.end()) {
-            throw std::runtime_error(fmt::format("missing connection set {}", name));
+        if (auto it = con_map.find(name); it != con_map.end()) {
+            return it->second;
         }
-        return it->second;
+
+        throw std::runtime_error(fmt::format("missing connection set {}", name));
     }
 
     template <typename T>
     T get_option(std::string_view name, const T& fallback = T()) const
     {
-        auto it = options.find(name);
+        const auto it = options.find(name);
         if (it == options.end()) {
             return fallback;
         }
@@ -53,6 +54,19 @@ struct node_state_s
         try {
             return it->get<T>();
         } catch (nlohmann::json::exception& e) {
+            return fallback;
+        }
+    }
+
+    template <typename T>
+    T get_enum_option(std::string_view name, T fallback) const
+    {
+        const auto opt = get_option<std::string_view>(name);
+        const auto e   = enum_from_string<T>(opt);
+
+        if (e.has_value()) {
+            return *e;
+        } else {
             return fallback;
         }
     }

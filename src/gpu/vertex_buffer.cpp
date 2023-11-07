@@ -11,8 +11,8 @@ void vertex_buffer_s::bind() const { glBindBuffer(GL_ARRAY_BUFFER, id_); }
 
 void vertex_buffer_s::set_data(const void* data, size_t element_size, size_t count)
 {
-    size_t size   = element_size * count;
-    vertex_count_ = count;
+    const size_t size = element_size * count;
+    vertex_count_     = count;
 
     glNamedBufferData(id_, static_cast<GLsizeiptr>(size), data, GL_STATIC_DRAW);
 }

@@ -37,20 +37,20 @@ constexpr mat3 get_color_transfer_from_yuv(color_transfer_e c)
 
     return {
         {
-            scale(1.0f),
-            scale(1.0f),
-            scale(1.0f),
-        },
+         scale(1.0f),
+         scale(1.0f),
+         scale(1.0f),
+         },
         {
-            scale(0.0f),
-            scale(-wb * (1.0f - wb) / 0.5f / (1 - wb - wr)),
-            scale((1.0f - wb) / 0.5f),
-        },
+         scale(0.0f),
+         scale(-wb * (1.0f - wb) / 0.5f / (1 - wb - wr)),
+         scale((1.0f - wb) / 0.5f),
+         },
         {
-            scale((1.0f - wr) / 0.5f),
-            scale(-wr * (1 - wr) / 0.5f / (1 - wb - wr)),
-            scale(0.0f),
-        },
+         scale((1.0f - wr) / 0.5f),
+         scale(-wr * (1 - wr) / 0.5f / (1 - wb - wr)),
+         scale(0.0f),
+         },
     };
 }
 
@@ -68,20 +68,20 @@ constexpr mat3 get_color_transfer_to_yuv(color_transfer_e c)
 
     return {
         {
-            scale(wr),
-            scale(1.0f - wb - wr),
-            scale(wb),
-        },
+         scale(wr),
+         scale(1.0f - wb - wr),
+         scale(wb),
+         },
         {
-            scale(-0.5f * wr / (1.0f - wb)),
-            scale(-0.5f * (1 - wb - wr) / (1.0f - wb)),
-            scale(0.5f),
-        },
+         scale(-0.5f * wr / (1.0f - wb)),
+         scale(-0.5f * (1 - wb - wr) / (1.0f - wb)),
+         scale(0.5f),
+         },
         {
-            scale(0.5f),
-            scale(-0.5f * (1.0f - wb - wr) / (1.0f - wr)),
-            scale(-0.5f * wb / (1.0f - wr)),
-        },
+         scale(0.5f),
+         scale(-0.5f * (1.0f - wb - wr) / (1.0f - wr)),
+         scale(-0.5f * wb / (1.0f - wr)),
+         },
     };
 }
 

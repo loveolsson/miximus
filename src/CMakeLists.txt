@@ -34,6 +34,7 @@ PRIVATE
 #    msquic
     Boost::system
     Boost::fiber
+    magic_enum::magic_enum
 )
 
 add_sanitizers(miximus)

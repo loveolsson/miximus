@@ -21,14 +21,14 @@ font_registry_s::font_registry_s()
         if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch &&
             FcPatternGetString(font, FC_FAMILY, 0, &family) == FcResultMatch &&
             FcPatternGetString(font, FC_STYLE, 0, &style) == FcResultMatch) {
-            std::string family_str(reinterpret_cast<const char*>(family));
-            std::string style_str(reinterpret_cast<const char*>(style));
-            std::string path_str(reinterpret_cast<const char*>(file));
+            const std::string family_str(reinterpret_cast<const char*>(family));
+            const std::string style_str(reinterpret_cast<const char*>(style));
+            std::string       path_str(reinterpret_cast<const char*>(file));
 
             font_variant_s v;
             v.index = 0;
             v.name  = style_str;
-            v.path  = path_str;
+            v.path  = std::move(path_str);
 
             fonts_[family_str].variants.emplace(style_str, std::move(v));
         }

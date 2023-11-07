@@ -16,20 +16,20 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        iface_pos_.register_interface(&interfaces_);
-        iface_size_.register_interface(&interfaces_);
-        iface_res_.register_interface(&interfaces_);
+        register_interface(&iface_pos_);
+        register_interface(&iface_size_);
+        register_interface(&iface_res_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto pos_opt  = state.get_option<gpu::vec2_t>("pos", {0, 0});
-        auto size_opt = state.get_option<gpu::vec2_t>("size", {1, 1});
+        auto pos  = state.get_option<gpu::vec2_t>("pos", {0, 0});
+        auto size = state.get_option<gpu::vec2_t>("size", {1, 1});
 
-        auto pos  = iface_pos_.resolve_value(app, nodes, state, pos_opt);
-        auto size = iface_size_.resolve_value(app, nodes, state, size_opt);
+        pos  = iface_pos_.resolve_value(app, nodes, state, pos);
+        size = iface_size_.resolve_value(app, nodes, state, size);
 
         iface_res_.set_value({pos, size});
     }

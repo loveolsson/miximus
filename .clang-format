@@ -19,6 +19,7 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: true
+AlignArrayOfStructures: Left
 BinPackArguments: false
 BinPackParameters: false
 BreakBeforeBraces: Custom

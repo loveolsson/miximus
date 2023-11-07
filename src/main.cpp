@@ -38,7 +38,7 @@ void load_settings(core::node_manager_s* manager, const path& settings_path)
 
     std::ifstream file(settings_path);
     if (file.is_open()) {
-        log->info("Reading settings from {}", settings_path.u8string());
+        log->info("Reading settings from {}", settings_path.string());
 
         try {
             manager->set_config(json::parse(file));
@@ -48,7 +48,7 @@ void load_settings(core::node_manager_s* manager, const path& settings_path)
             throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
         }
     } else {
-        log->error("Failed to open settings file {}", settings_path.u8string());
+        log->error("Failed to open settings file {}", settings_path.string());
     }
 }
 
@@ -58,10 +58,10 @@ void save_settings(core::node_manager_s* manager, const path& settings_path)
 
     std::ofstream file(settings_path);
     if (file.is_open()) {
-        log->info("Writing settings to {}", settings_path.u8string());
+        log->info("Writing settings to {}", settings_path.string());
         file << std::setfill(' ') << std::setw(2) << manager->get_config();
     } else {
-        log->error("Failed to write settings to {}", settings_path.u8string());
+        log->error("Failed to write settings to {}", settings_path.string());
     }
 }
 
@@ -75,7 +75,7 @@ int main(int argc, char* argv[])
     auto settings_path = path(argv[0]).parent_path() / "settings.json";
 
     for (int i = 1; i < argc; ++i) {
-        std::string_view param(argv[i]);
+        const std::string_view param(argv[i]);
         if (param == "--log-debug") {
             log_level = spdlog::level::debug;
         }
@@ -93,17 +93,17 @@ int main(int argc, char* argv[])
     utils::set_max_thread_priority();
 
     try {
-        web_server::server_s web_server;
+        auto web_server = web_server::create_web_server();
 
         {
             core::app_state_s app;
-            web_server.start(HTTP_PORT, app.cfg_executor());
+            web_server->start(HTTP_PORT, app.cfg_executor());
 
             core::node_manager_s node_manager;
             load_settings(&node_manager, settings_path);
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, web_server));
+            node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, *web_server));
 
             app.frame_info.timestamp = utils::flicks_now();
             app.frame_info.pts       = utils::flicks{0};
@@ -133,7 +133,7 @@ int main(int argc, char* argv[])
 
             getlog("app")->info("Exiting...");
 
-            web_server.stop();
+            web_server->stop();
             node_manager.clear_adapters();
             save_settings(&node_manager, settings_path);
             node_manager.clear_nodes(&app);

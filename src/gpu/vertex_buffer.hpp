@@ -17,12 +17,6 @@ class vertex_buffer_s
 
     void set_data(const void* data, size_t element_size, size_t count);
 
-    template <typename T, size_t N>
-    void set_data(T (&arr)[N])
-    {
-        set_data(arr, sizeof(T), N);
-    }
-
     void bind() const;
     void draw() const;
 };

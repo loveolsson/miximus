@@ -22,6 +22,7 @@ PRIVATE
     logger
 PUBLIC
     nlohmann_json::nlohmann_json
+    magic_enum::magic_enum
 ) 
 
 add_sanitizers(web_server)

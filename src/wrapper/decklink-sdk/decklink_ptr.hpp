@@ -15,7 +15,7 @@ class decklink_ptr
   public:
     constexpr decklink_ptr();
     constexpr decklink_ptr(std::nullptr_t);
-    explicit decklink_ptr(T* ptr);
+    explicit decklink_ptr(T* ptr, bool take_ownership = true);
     decklink_ptr(const decklink_ptr<T>& other);
     decklink_ptr(decklink_ptr<T>&& other);
 
@@ -62,10 +62,10 @@ constexpr decklink_ptr<T>::decklink_ptr(std::nullptr_t)
 }
 
 template <typename T>
-decklink_ptr<T>::decklink_ptr(T* ptr)
+decklink_ptr<T>::decklink_ptr(T* ptr, bool take_ownership)
     : m_ptr(ptr)
 {
-    if (m_ptr)
+    if (take_ownership && m_ptr)
         m_ptr->AddRef();
 }
 
@@ -87,13 +87,13 @@ decklink_ptr<T>::decklink_ptr(decklink_ptr<T>&& other)
 template <typename T>
 template <typename U>
 decklink_ptr<T>::decklink_ptr(REFIID iid, decklink_ptr<U> other)
+    : m_ptr(nullptr)
 {
-    if (other.m_ptr) {
-        if (other.m_ptr->QueryInterface(iid, (void**)&m_ptr) != S_OK)
-            m_ptr = nullptr;
-    } else {
+    if (!other.m_ptr)
+        return;
+
+    if (FAILED(other.m_ptr->QueryInterface(iid, (void**)&m_ptr)))
         m_ptr = nullptr;
-    }
 }
 
 template <typename T>
@@ -206,13 +206,7 @@ bool decklink_ptr<T>::operator<(const decklink_ptr<T>& other) const
 template <class T, class... Args>
 decklink_ptr<T> make_decklink_ptr(Args&&... args)
 {
-    auto*           t = new T(args...);
-    decklink_ptr<T> temp(t);
-
-    // decklink_ptr takes ownership of reference count, so release reference count added by raw pointer constructor
-    t->Release();
-
-    return std::move(temp);
+    return decklink_ptr(new T(args...), false);
 }
 
 } // namespace miximus::nodes::decklink

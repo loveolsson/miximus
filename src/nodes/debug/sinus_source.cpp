@@ -14,7 +14,7 @@ class node_impl : public node_i
     output_interface_s<double> iface_res_{"res"};
 
   public:
-    explicit node_impl() { iface_res_.register_interface(&interfaces_); }
+    explicit node_impl() { register_interface(&iface_res_); }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
@@ -24,8 +24,8 @@ class node_impl : public node_i
         auto center = state.get_option<double>("center");
         auto speed  = state.get_option<double>("speed");
 
-        double s   = utils::to_seconds(app->frame_info.pts);
-        double res = std::sin(s * speed) * size + center;
+        const double s   = utils::to_seconds(app->frame_info.pts);
+        const double res = std::sin(s * speed) * size + center;
 
         iface_res_.set_value(res);
     }

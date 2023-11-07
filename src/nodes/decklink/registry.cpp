@@ -40,13 +40,7 @@ static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
     discovery     = CreateDeckLinkDiscoveryInstance();
 #endif
 
-    decklink_ptr ptr(discovery);
-
-    if (discovery != nullptr) {
-        discovery->Release();
-    }
-
-    return ptr;
+    return decklink_ptr(discovery, false);
 }
 
 static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
@@ -65,13 +59,7 @@ static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
     conversion    = CreateVideoConversionInstance();
 #endif
 
-    decklink_ptr ptr(conversion);
-
-    if (conversion != nullptr) {
-        conversion->Release();
-    }
-
-    return ptr;
+    return decklink_ptr(conversion, false);
 }
 
 static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
@@ -95,7 +83,7 @@ static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
      * and the order of the devices may change with reboots.
      * To combat this, the persistent ID of the device is appended to the name to serve as a unique and repeatable name.
      */
-    decklink_ptr<IDeckLinkProfile>           profile(IID_IDeckLinkProfile, device);
+    const decklink_ptr<IDeckLinkProfile>     profile(IID_IDeckLinkProfile, device);
     decklink_ptr<IDeckLinkProfileAttributes> attributes(IID_IDeckLinkProfileAttributes, profile);
     if (attributes) {
         if (FAILED(attributes->GetInt(BMDDeckLinkPersistentID, &id))) {
@@ -131,7 +119,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
     HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final
     {
-        std::unique_lock lock(registry_->device_mutex_);
+        const std::unique_lock lock(registry_->device_mutex_);
 
         auto log = getlog("decklink");
 
@@ -156,7 +144,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
     HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final
     {
-        std::unique_lock lock(registry_->device_mutex_);
+        const std::unique_lock lock(registry_->device_mutex_);
 
         auto it = registry_->names_.find(deckLinkDevice);
         if (it == registry_->names_.end()) {
@@ -179,7 +167,7 @@ decklink_registry_s::decklink_registry_s()
     : discovery_(get_device_discovery())
     , callback_(std::make_unique<discovery_callback>(this))
 {
-    std::unique_lock lock(device_mutex_);
+    const std::unique_lock lock(device_mutex_);
 
     if (discovery_) {
         getlog("decklink")->debug("Installing DeckLink discovery");
@@ -195,7 +183,7 @@ decklink_registry_s::~decklink_registry_s()
 
 void decklink_registry_s::uninstall()
 {
-    std::shared_lock lock(device_mutex_);
+    const std::shared_lock lock(device_mutex_);
 
     if (discovery_) {
         getlog("decklink")->debug("Uninstalling DeckLink discovery");
@@ -205,8 +193,8 @@ void decklink_registry_s::uninstall()
 
 decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& name)
 {
-    std::shared_lock lock(device_mutex_);
-    auto             it = inputs_.find(name);
+    const std::shared_lock lock(device_mutex_);
+    auto                   it = inputs_.find(name);
     if (it != inputs_.end()) {
         return it->second;
     }
@@ -215,8 +203,8 @@ decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& n
 
 decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(const std::string& name)
 {
-    std::shared_lock lock(device_mutex_);
-    auto             it = outputs_.find(name);
+    const std::shared_lock lock(device_mutex_);
+    auto                   it = outputs_.find(name);
     if (it != outputs_.end()) {
         return it->second;
     }
@@ -226,7 +214,7 @@ decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(const std::string&
 
 std::vector<std::string> decklink_registry_s::get_input_names()
 {
-    std::shared_lock lock(device_mutex_);
+    const std::shared_lock lock(device_mutex_);
 
     std::vector<std::string> res;
     res.reserve(inputs_.size());
@@ -240,7 +228,7 @@ std::vector<std::string> decklink_registry_s::get_input_names()
 
 std::vector<std::string> decklink_registry_s::get_output_names()
 {
-    std::shared_lock lock(device_mutex_);
+    const std::shared_lock lock(device_mutex_);
 
     std::vector<std::string> res;
     res.reserve(outputs_.size());

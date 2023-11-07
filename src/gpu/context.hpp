@@ -50,6 +50,8 @@ class context_s
 
     static std::unique_ptr<context_s> create_unique_context(bool visible = false, context_s* parent = nullptr);
     static std::shared_ptr<context_s> create_shared_context(bool visible = false, context_s* parent = nullptr);
+
+    static inline std::map<std::string, GLFWmonitor*> monitors_g;
 };
 
 } // namespace miximus::gpu

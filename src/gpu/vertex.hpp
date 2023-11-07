@@ -9,19 +9,19 @@
 
 namespace miximus::gpu {
 
-template <typename T>
-constexpr auto get_vertex_type_info();
-
 struct vertex_uv
 {
     glm::vec2 pos;
     glm::vec2 uv;
 };
 
+template <typename T>
+constexpr auto get_vertex_type_info();
+
 template <>
 constexpr auto get_vertex_type_info<vertex_uv>()
 {
-    return frozen::map<std::string_view, vertex_attr, 2>{
+    return frozen::make_map<std::string_view, vertex_attr>({
         {"pos",
          {
              2,
@@ -38,64 +38,25 @@ constexpr auto get_vertex_type_info<vertex_uv>()
              offsetof(vertex_uv, uv),
              GL_FLOAT_VEC2,
          }},
-    };
+    });
 }
 
-constexpr vertex_uv full_screen_quad_verts[] = {
-    {
-        {0, 1.f},
-        {0, 0},
-    },
-    {
-        {1.f, 1.f},
-        {1.f, 0},
-    },
-    {
-        {0, 0},
-        {0, 1.f},
-    },
-
-    {
-        {0, 0},
-        {0, 1.f},
-    },
-    {
-        {1.f, 1.f},
-        {1.f, 0},
-    },
-    {
-        {1.f, 0},
-        {1.f, 1.f},
-    },
-
+constexpr auto full_screen_quad_verts = std::array{
+    vertex_uv{{0, 1.f},   {0, 0}    },
+    vertex_uv{{1.f, 1.f}, {1.f, 0}  },
+    vertex_uv{{0, 0},     {0, 1.f}  },
+    vertex_uv{{0, 0},     {0, 1.f}  },
+    vertex_uv{{1.f, 1.f}, {1.f, 0}  },
+    vertex_uv{{1.f, 0},   {1.f, 1.f}},
 };
 
-constexpr vertex_uv full_screen_quad_verts_flip_uv[] = {
-    {
-        {0, 1.f},
-        {0, 1.f},
-    },
-    {
-        {1.f, 1.f},
-        {1.f, 1.f},
-    },
-    {
-        {0, 0},
-        {0, 0},
-    },
-
-    {
-        {0, 0},
-        {0, 0},
-    },
-    {
-        {1.f, 1.f},
-        {1.f, 1.f},
-    },
-    {
-        {1.f, 0},
-        {1.f, 0},
-    },
+constexpr auto full_screen_quad_verts_flip_uv = std::array{
+    vertex_uv{{0, 1.f},   {0, 1.f}  },
+    vertex_uv{{1.f, 1.f}, {1.f, 1.f}},
+    vertex_uv{{0, 0},     {0, 0}    },
+    vertex_uv{{0, 0},     {0, 0}    },
+    vertex_uv{{1.f, 1.f}, {1.f, 1.f}},
+    vertex_uv{{1.f, 0},   {1.f, 0}  },
 };
 
 } // namespace miximus::gpu

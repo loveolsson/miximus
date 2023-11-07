@@ -61,12 +61,12 @@ bool transfer_i::end_texture_use(type_e type, gpu::texture_s* /*texture*/)
 
 transfer_i::type_e transfer_i::get_prefered_type()
 {
-    static type_e type = []() {
-        const GLubyte*   renderer = glGetString(GL_RENDERER);
-        std::string_view renderer_view(reinterpret_cast<const char*>(renderer));
+    static const type_e type = []() {
+        const GLubyte*         renderer = glGetString(GL_RENDERER);
+        const std::string_view renderer_view(reinterpret_cast<const char*>(renderer));
 
-        bool has_dvp        = renderer_view.find("Quadro") != std::string_view::npos;
-        bool has_amd_pinned = gpu::context_s::has_extension("GL_AMD_pinned_memory");
+        const bool has_dvp        = renderer_view.find("Quadro") != std::string_view::npos;
+        const bool has_amd_pinned = gpu::context_s::has_extension("GL_AMD_pinned_memory");
 
         // TODO(Love): Implement
 

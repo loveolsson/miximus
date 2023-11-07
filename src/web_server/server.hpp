@@ -6,34 +6,30 @@
 
 #include <functional>
 #include <memory>
-#include <vector>
 
 namespace miximus::web_server {
-namespace detail {
-class web_server_impl;
-}
 
 typedef std::function<void(nlohmann::json&&, int64_t)> callback_t;
 
 class server_s
 {
-    std::unique_ptr<detail::web_server_impl> impl;
-
   public:
-    server_s();
-    ~server_s();
+    server_s()          = default;
+    virtual ~server_s() = default;
 
-    void subscribe(topic_e topic, const callback_t& callback);
-
-    void start(uint16_t port, boost::asio::io_service* service);
-    void stop();
+    virtual void subscribe(topic_e topic, const callback_t& callback)   = 0;
+    virtual void start(uint16_t port, boost::asio::io_service* service) = 0;
+    virtual void stop()                                                 = 0;
 
     /**
      * Sync versions of calls should only be called from the callback thread
      */
-    void send_message(const nlohmann::json& msg, int64_t connection_id);
-    void send_message_sync(const nlohmann::json& msg, int64_t connection_id);
-    void broadcast_message(const nlohmann::json& msg);
-    void broadcast_message_sync(const nlohmann::json& msg);
+    virtual void send_message(const nlohmann::json& msg, int64_t connection_id)      = 0;
+    virtual void send_message_sync(const nlohmann::json& msg, int64_t connection_id) = 0;
+    virtual void broadcast_message(const nlohmann::json& msg)                        = 0;
+    virtual void broadcast_message_sync(const nlohmann::json& msg)                   = 0;
 };
+
+std::unique_ptr<server_s> create_web_server();
+
 } // namespace miximus::web_server

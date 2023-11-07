@@ -5,20 +5,18 @@
 
 #include <glm/glm.hpp>
 
-#include <functional>
-
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 
 template <typename T>
-T lerp(const T& a, const T& b, double t)
+inline T lerp(const T& a, const T& b, double t)
 {
     return glm::mix(a, b, t);
 }
 
 template <>
-gpu::rect_s lerp<gpu::rect_s>(const gpu::rect_s& a, const gpu::rect_s& b, double t)
+inline gpu::rect_s lerp<gpu::rect_s>(const gpu::rect_s& a, const gpu::rect_s& b, double t)
 {
     gpu::rect_s res;
     res.pos  = lerp(a.pos, b.pos, t);
@@ -41,10 +39,10 @@ class node_impl : public node_i
         : type_(type)
         , name_(name)
     {
-        iface_a_.register_interface(&interfaces_);
-        iface_b_.register_interface(&interfaces_);
-        iface_t_.register_interface(&interfaces_);
-        iface_res_.register_interface(&interfaces_);
+        register_interface(&iface_a_);
+        register_interface(&iface_b_);
+        register_interface(&iface_t_);
+        register_interface(&iface_res_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
@@ -70,7 +68,6 @@ class node_impl : public node_i
     {
         return {
             {"name", name_},
-            {"operation", "add"},
         };
     }
 

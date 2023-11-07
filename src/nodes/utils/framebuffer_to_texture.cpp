@@ -17,8 +17,8 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        iface_fb_.register_interface(&interfaces_);
-        iface_tex_.register_interface(&interfaces_);
+        register_interface(&iface_fb_);
+        register_interface(&iface_tex_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}

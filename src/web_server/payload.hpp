@@ -5,21 +5,21 @@
 #include <nlohmann/json.hpp>
 
 namespace miximus::web_server {
-static inline action_e get_action_from_payload(const nlohmann::json& payload)
+static inline std::optional<action_e> get_action_from_payload(const nlohmann::json& payload)
 {
     auto act = payload.find("action");
     if (act == payload.cend() || !act->is_string()) {
-        return action_e::invalid;
+        return {};
     }
 
     return action_from_string(act->get<std::string_view>());
 }
 
-static inline topic_e get_topic_from_payload(const nlohmann::json& payload)
+static inline std::optional<topic_e> get_topic_from_payload(const nlohmann::json& payload)
 {
     auto top = payload.find("topic");
     if (top == payload.cend() || !top->is_string()) {
-        return topic_e::invalid;
+        return {};
     }
 
     return topic_from_string(top->get<std::string_view>());

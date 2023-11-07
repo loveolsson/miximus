@@ -27,11 +27,11 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        iface_rect_.register_interface(&interfaces_);
-        iface_tex_.register_interface(&interfaces_);
-        iface_opacity_.register_interface(&interfaces_);
-        iface_fb_in_.register_interface(&interfaces_);
-        iface_fb_out_.register_interface(&interfaces_);
+        register_interface(&iface_rect_);
+        register_interface(&iface_tex_);
+        register_interface(&iface_opacity_);
+        register_interface(&iface_fb_in_);
+        register_interface(&iface_fb_out_);
     }
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}

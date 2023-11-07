@@ -32,11 +32,11 @@ class interface_i
 
     bool add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
     void set_max_connection_count(int count) { max_connection_count_ = count; }
-    void register_interface(interface_map_t* map) { map->emplace(name_, this); }
 
     virtual dir_e            direction() const = 0;
     virtual interface_type_e type() const      = 0;
     virtual bool             accepts(interface_type_e /*type*/) const { return false; }
+    std::string_view         name() const { return name_; }
 
   protected:
     resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
@@ -72,6 +72,7 @@ class input_interface_s : public interface_i
         auto ifaces = resolve_connections(app, nodes, state);
 
         assert(ifaces.size() <= 1);
+        assert(max_connection_count_ == 1); // Should only be called on interfaces expecting a single value
 
         if (!ifaces.empty() && ifaces.front() != nullptr) {
             return cast_iface_to_value(ifaces.front(), fallback);
@@ -91,6 +92,7 @@ class input_interface_s : public interface_i
         auto ifaces = resolve_connections(app, nodes, state);
 
         res.reserve(ifaces.size());
+        assert(max_connection_count_ > 1); // Should only be called on interfaces expecting multiple values
 
         for (const auto* iface : ifaces) {
             if (iface == nullptr) {
@@ -134,5 +136,3 @@ class output_interface_s : public interface_i
 };
 
 } // namespace miximus::nodes
-
-std::string_view to_string(miximus::nodes::interface_i::dir_e e);

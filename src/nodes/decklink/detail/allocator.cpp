@@ -5,8 +5,7 @@
 
 namespace miximus::nodes::decklink::detail {
 
-constexpr size_t          MAX_ALLOCATIONS = 4;
-static std::atomic_size_t allocations_g{0};
+constexpr size_t MAX_ALLOCATIONS = 4;
 
 allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir)
     : transfer_type_(transfer_i::get_prefered_type())

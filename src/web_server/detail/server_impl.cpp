@@ -1,27 +1,29 @@
 #include "web_server/detail/server_impl.hpp"
 #include "utils/bind.hpp"
+#include "utils/lookup.hpp"
 #include "web_server/templates.hpp"
 
+#include <boost/property_tree/detail/xml_parser_utils.hpp>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include <sstream>
+namespace {
+
+std::string create_404_body(std::string_view resource)
+{
+    using boost::property_tree::xml_parser::encode_char_entities;
+
+    return fmt::format("<!doctype html><html><head>"
+                       "<title>Error 404 (Resource not found)</title><body>"
+                       "<h1>Error 404</h1>"
+                       "<p>The requested URL {} was not found on this server.</p>"
+                       "</body></head></html>",
+                       encode_char_entities(std::string(resource)));
+}
+
+} // namespace
 
 namespace miximus::web_server::detail {
-
-static std::string create_404_doc(std::string_view resource)
-{
-    std::stringstream ss;
-
-    ss << "<!doctype html><html><head>"
-          "<title>Error 404 (Resource not found)</title><body>"
-          "<h1>Error 404</h1>"
-          "<p>The requested URL "
-       << resource
-       << " was not found on this server.</p>"
-          "</body></head></html>";
-
-    return ss.str();
-}
 
 web_server_impl::web_server_impl()
 {
@@ -57,32 +59,33 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     using namespace websocketpp::http;
     using namespace websocketpp::log;
 
-    // Upgrade our connection handle to a full connection_ptr
+    // Extract connection_ptr from connection handle
     auto con = endpoint_.get_con_from_hdl(hdl);
     if (!con) {
         return;
     }
 
-    std::string_view resource = con->get_resource();
+    const auto& resource = con->get_resource();
+    endpoint_.get_alog().write(alevel::http, resource);
 
-    endpoint_.get_alog().write(alevel::http, std::string(resource));
-
-    if (resource == "/") {
-        resource = "/index.html";
+    std::string_view resource_view = resource;
+    if (resource_view == "/") {
+        resource_view = "/index.html";
     }
 
     const auto& files   = static_files::get_web_files();
-    const auto* file_it = files.get_file(resource.substr(1));
+    const auto* file_it = files.get_file(resource_view.substr(1));
 
     if (file_it == nullptr) {
-        con->set_body(create_404_doc(resource));
+        con->set_body(create_404_body(resource_view));
+        con->replace_header("Content-Type", "text/html;charset=UTF-8");
         con->set_status(status_code::not_found);
         return;
     }
 
     if (con->get_request_header("Accept-Encoding").find("gzip") != std::string::npos) {
         con->replace_header("Content-Encoding", "gzip");
-        con->set_body(std::string(file_it->gzipped.begin(), file_it->gzipped.end()));
+        con->set_body(std::string(file_it->gzipped));
     } else {
         con->set_body(file_it->unzip());
     }
@@ -104,23 +107,20 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
         return terminate_and_log(hdl, "only text paylods are accepted");
     }
 
-    const auto& payload = msg->get_payload();
-
-    auto doc = nlohmann::json::parse(payload, nullptr, false);
+    auto doc = nlohmann::json::parse(msg->get_payload(), nullptr, false);
     if (doc.is_discarded()) {
         return terminate_and_log(hdl, "invalid JSON payload");
     }
 
     auto action = get_action_from_payload(doc);
+    if (!action.has_value()) {
+        terminate_and_log(hdl, "invalid action");
+        return;
+    }
 
-    switch (action) {
-        case action_e::invalid: {
-            terminate_and_log(hdl, "invalid action");
-        } break;
-
+    switch (*action) {
         case action_e::ping: {
-            auto pong_payload = create_ping_response_payload().dump();
-            send(hdl, pong_payload);
+            send(hdl, create_ping_response_payload());
         } break;
 
         case action_e::subscribe: {
@@ -129,9 +129,12 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             auto topic = get_topic_from_payload(doc);
             auto token = get_token_from_payload(doc);
 
-            if (topic != topic_e::invalid) {
-                con->second.topics.emplace(topic);
-                connections_by_topic_[static_cast<int>(topic)].emplace(hdl);
+            if (topic.has_value()) {
+                auto index = enum_index(*topic);
+
+                con->second.topics.at(index) = true;
+                connections_by_topic_[index].emplace(hdl);
+
                 response = create_result_base_payload(token);
             } else {
                 response = create_error_base_payload(token, error_e::invalid_topic);
@@ -144,33 +147,41 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             auto topic = get_topic_from_payload(doc);
             auto token = get_token_from_payload(doc);
 
-            if (topic == topic_e::invalid) {
+            if (!topic.has_value()) {
                 send(hdl, create_error_base_payload(token, error_e::invalid_topic));
                 break;
             }
 
-            con->second.topics.erase(topic);
-            connections_by_topic_[static_cast<int>(topic)].erase(hdl);
+            auto index = enum_index(*topic);
+
+            if (!con->second.topics.at(index)) {
+                send(hdl, create_error_base_payload(token, error_e::not_found));
+                break;
+            }
+
+            con->second.topics.at(index) = false;
+            connections_by_topic_[index].erase(hdl);
             send(hdl, create_result_base_payload(token));
         } break;
 
         case action_e::command: {
-            auto err   = error_e::no_error;
             auto topic = get_topic_from_payload(doc);
 
-            if (topic == topic_e::invalid) {
-                err = error_e::invalid_topic;
-            } else if (!subscription_by_topic_[static_cast<int>(topic)]) {
-                err = error_e::internal_error;
-            }
-
-            if (err != error_e::no_error) {
+            if (!topic.has_value()) {
                 auto token = get_token_from_payload(doc);
-                send(hdl, create_error_base_payload(token, err));
+                send(hdl, create_error_base_payload(token, error_e::invalid_topic));
                 break;
             }
 
-            subscription_by_topic_[static_cast<int>(topic)](std::move(doc), con->second.id);
+            auto index = enum_index(*topic);
+
+            if (!subscription_by_topic_[index]) {
+                auto token = get_token_from_payload(doc);
+                send(hdl, create_error_base_payload(token, error_e::internal_error));
+                break;
+            }
+
+            subscription_by_topic_[index](std::move(doc), con->second.id);
         } break;
 
         default: {
@@ -204,8 +215,10 @@ void web_server_impl::on_close(const con_hdl_t& hdl)
     }
 
     auto& topics = con->second.topics;
-    for (auto topic : topics) {
-        connections_by_topic_[static_cast<int>(topic)].erase(hdl);
+    for (size_t index = 0; index < topics.size(); index++) {
+        if (topics.at(index)) {
+            connections_by_topic_[index].erase(hdl);
+        }
     }
 
     connections_by_id_.erase(con->second.id);
@@ -222,8 +235,10 @@ void web_server_impl::send(const con_hdl_t& hdl, const nlohmann::json& msg) { se
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 {
-    endpoint_.get_io_service().post(
-        [this, topic, callback]() { subscription_by_topic_[static_cast<int>(topic)] = callback; });
+    endpoint_.get_io_service().post([this, topic, callback]() {
+        auto index                    = enum_index(topic);
+        subscription_by_topic_[index] = callback;
+    });
 }
 
 void web_server_impl::start(uint16_t port, boost::asio::io_service* service)
@@ -264,15 +279,13 @@ void web_server_impl::stop()
 
 void web_server_impl::send_message(const nlohmann::json& msg, int64_t connection_id)
 {
-    auto serialized = msg.dump();
     endpoint_.get_io_service().post(
-        [this, serialized = std::move(serialized), connection_id]() { send_message_sync(serialized, connection_id); });
+        [this, serialized = msg.dump(), connection_id]() { send_message_sync(serialized, connection_id); });
 }
 
 void web_server_impl::send_message_sync(const nlohmann::json& msg, int64_t connection_id)
 {
-    auto serialized = msg.dump();
-    send_message_sync(serialized, connection_id);
+    send_message_sync(msg.dump(), connection_id);
 }
 
 void web_server_impl::send_message_sync(const std::string& msg, int64_t connection_id)
@@ -292,26 +305,26 @@ void web_server_impl::send_message_sync(const std::string& msg, int64_t connecti
 
 void web_server_impl::broadcast_message(const nlohmann::json& msg)
 {
-    auto topic      = get_topic_from_payload(msg);
-    auto serialized = msg.dump();
-    endpoint_.get_io_service().post(
-        [this, topic, serialized = std::move(serialized)]() { broadcast_message_sync(topic, serialized); });
+    auto topic = get_topic_from_payload(msg);
+    if (topic.has_value()) {
+        endpoint_.get_io_service().post(
+            [this, topic, serialized = msg.dump()]() { broadcast_message_sync(*topic, serialized); });
+    }
 }
 
 void web_server_impl::broadcast_message_sync(const nlohmann::json& msg)
 {
-    auto topic      = get_topic_from_payload(msg);
-    auto serialized = msg.dump();
-    broadcast_message_sync(topic, serialized);
+    auto topic = get_topic_from_payload(msg);
+    if (topic.has_value()) {
+        broadcast_message_sync(*topic, msg.dump());
+    }
 }
 
 void web_server_impl::broadcast_message_sync(topic_e topic, const std::string& msg)
 {
-    if (topic <= topic_e::invalid && topic >= topic_e::_count) {
-        return;
-    }
+    auto index = enum_index(topic);
 
-    auto& con_set = connections_by_topic_[static_cast<int>(topic)];
+    auto& con_set = connections_by_topic_[index];
     for (const auto& hdl : con_set) {
         send(hdl, msg);
     }

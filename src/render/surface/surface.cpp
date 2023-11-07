@@ -10,8 +10,8 @@ namespace miximus::render {
 surface_s::surface_s(gpu::vec2i_t dim)
     : dimensions_(dim)
 {
-    using transfer_i = gpu::transfer::transfer_i;
-    size_t size      = sizeof(rgba_pixel_t) * dim.x * dim.y;
+    using transfer_i  = gpu::transfer::transfer_i;
+    const size_t size = sizeof(rgba_pixel_t) * dim.x * dim.y;
 
     texture_  = std::make_unique<gpu::texture_s>(dim, gpu::texture_s::format_e::rgba_f16);
     transfer_ = transfer_i::create_transfer(transfer_i::get_prefered_type(), size, transfer_i::direction_e::cpu_to_gpu);
@@ -38,7 +38,7 @@ static inline void copy_operation(const SrcT*              src_ptr,
     const char* src_p = reinterpret_cast<const char*>(src_ptr);
 
     for (int sy = 0; sy < src_dim.y; ++sy) {
-        int dy = pos.y + sy;
+        const int dy = pos.y + sy;
 
         if (dy < 0) {
             continue;
@@ -49,7 +49,7 @@ static inline void copy_operation(const SrcT*              src_ptr,
         }
 
         for (int sx = 0; sx < src_dim.x; ++sx) {
-            int dx = pos.x + sx;
+            const int dx = pos.x + sx;
             if (dx < 0) {
                 continue;
             }

@@ -31,6 +31,8 @@ class allocator_s : public IDeckLinkMemoryAllocator
 
     std::atomic_ulong ref_count_{1};
 
+    static inline std::atomic_size_t allocations_g{0};
+
   public:
     allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir);
     ~allocator_s();

@@ -119,6 +119,7 @@
         "stop_token": "cpp",
         "scoped_allocator": "cpp",
         "numbers": "cpp",
-        "semaphore": "cpp"
+        "semaphore": "cpp",
+        "ranges": "cpp"
     }
 }

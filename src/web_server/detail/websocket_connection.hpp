@@ -1,14 +1,13 @@
 #pragma once
 #include "types/topic.hpp"
 
-#include <set>
-#include <string>
+#include <array>
 
 namespace miximus::web_server::detail {
 struct websocket_connection
 {
-    int64_t           id;
-    std::set<topic_e> topics;
+    int64_t                                 id;
+    std::array<bool, enum_count<topic_e>()> topics;
 };
 
 } // namespace miximus::web_server::detail

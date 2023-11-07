@@ -108,7 +108,7 @@ class callback_s : public IDeckLinkInputCallback
 
     ULONG STDMETHODCALLTYPE Release() final
     {
-        ULONG count = --ref_count_;
+        const ULONG count = --ref_count_;
         if (count == 0) {
             delete this;
         }
@@ -127,8 +127,8 @@ class callback_s : public IDeckLinkInputCallback
             return S_OK;
         }
 
-        auto [record, _] = frames_free_.pop_frame();
-        if (!record) {
+        auto pop = frames_free_.pop_frame();
+        if (!pop.first.has_value()) {
             log()->warn("VideoInputFrameArrived dropped frame");
             return S_OK;
         }
@@ -136,13 +136,13 @@ class callback_s : public IDeckLinkInputCallback
         auto lock = ctx_->get_lock();
         ctx_->make_current();
 
-        auto& frame = record->frame;
+        auto& frame = pop.first->frame;
 
-        GLsizeiptr row_bytes = videoFrame->GetRowBytes();
+        const GLsizeiptr row_bytes = videoFrame->GetRowBytes();
         assert(row_bytes % 4 == 0);
 
-        gpu::vec2i_t tx_dim{row_bytes / 4, videoFrame->GetHeight()};
-        gpu::vec2i_t src_dim{videoFrame->GetWidth(), tx_dim.y};
+        const gpu::vec2i_t tx_dim{row_bytes / 4, videoFrame->GetHeight()};
+        const gpu::vec2i_t src_dim{videoFrame->GetWidth(), tx_dim.y};
 
         if (frame.buffer_id == 0 || frame.tx_dim != tx_dim || frame.src_dim != src_dim) {
             glDeleteBuffers(1, &frame.buffer_id); // Deleting 0 is safe
@@ -211,9 +211,9 @@ class callback_s : public IDeckLinkInputCallback
 
 class node_impl : public node_i
 {
-    static inline std::unordered_set<IDeckLinkInput*> devices_in_use;
-    decklink_ptr<IDeckLinkInput>                      device_;
-    decklink_ptr<callback_s>                          callback_;
+    //    static inline std::unordered_set<IDeckLinkInput*> devices_in_use;
+    decklink_ptr<IDeckLinkInput> device_;
+    decklink_ptr<callback_s>     callback_;
 
     std::unique_ptr<gpu::texture_s>     texture_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
@@ -222,9 +222,15 @@ class node_impl : public node_i
 
     output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
+    static auto& devices_in_use()
+    {
+        static std::unordered_set<IDeckLinkInput*> devices;
+        return devices;
+    }
+
     void free_device()
     {
-        devices_in_use.erase(device_.get());
+        devices_in_use().erase(device_.get());
 
         device_->StopStreams();
         device_->DisableAudioInput();
@@ -235,11 +241,11 @@ class node_impl : public node_i
         callback_ = nullptr;
         texture_.reset();
         framebuffer_.reset();
-        work_frame_ = std::nullopt;
+        work_frame_.reset();
     }
 
   public:
-    explicit node_impl() { iface_tex_.register_interface(&interfaces_); }
+    explicit node_impl() { register_interface(&iface_tex_); }
 
     ~node_impl() override
     {
@@ -278,13 +284,13 @@ class node_impl : public node_i
                 free_device();
             }
 
-            if (!device || devices_in_use.count(device.get()) > 0) {
+            if (!device || devices_in_use().contains(device.get())) {
                 return;
             }
 
             log()->info("Setting up DeckLink input {}", device_name);
             device_ = device;
-            devices_in_use.emplace(device_.get());
+            devices_in_use().emplace(device_.get());
 
             auto ctx = gpu::context_s::create_shared_context(false, app->ctx());
 
@@ -359,7 +365,7 @@ class node_impl : public node_i
             callback_->push_free_frame(std::move(*work_frame_));
         }
 
-        work_frame_ = std::nullopt;
+        work_frame_.reset();
     }
 
     nlohmann::json get_default_options() const final

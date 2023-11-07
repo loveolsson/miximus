@@ -20,11 +20,13 @@ class node_i
     node_i()          = default;
     virtual ~node_i() = default;
 
+    void register_interface(const interface_i* iface);
+
   public:
     struct traits_s
     {
-        bool must_run : 1;
-        bool wait_for_sync : 1;
+        bool must_run;
+        bool wait_for_sync;
     };
 
     virtual std::string_view type() const                                                        = 0;
@@ -35,6 +37,7 @@ class node_i
     virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }
     virtual bool           test_option(std::string_view name, nlohmann::json* value) const = 0;
     static bool            is_valid_common_option(std::string_view name, nlohmann::json* value);
+    error_e                set_options(nlohmann::json& state, const nlohmann::json& options) const;
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     const interface_i*     find_interface(std::string_view name) const;
