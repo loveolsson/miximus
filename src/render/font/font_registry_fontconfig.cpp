@@ -8,10 +8,10 @@ namespace miximus::render {
 font_registry_s::font_registry_s()
 {
     FcInit();
-    auto* config = FcInitLoadConfigAndFonts();
-    auto* pat    = FcPatternCreate();
-    auto* os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, nullptr);
-    auto* fs     = FcFontList(config, pat, os);
+    auto config = FcInitLoadConfigAndFonts();
+    auto pat    = FcPatternCreate();
+    auto os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, nullptr);
+    auto fs     = FcFontList(config, pat, os);
     for (int i = 0; fs != nullptr && i < fs->nfont; ++i) {
         FcPattern* font   = fs->fonts[i];
         FcChar8*   file   = nullptr;

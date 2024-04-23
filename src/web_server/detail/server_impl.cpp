@@ -1,4 +1,5 @@
 #include "web_server/detail/server_impl.hpp"
+#include "headers.hpp"
 #include "utils/bind.hpp"
 #include "utils/lookup.hpp"
 #include "web_server/templates.hpp"
@@ -9,7 +10,7 @@
 
 namespace {
 
-std::string create_404_body(std::string_view resource)
+std::string create_404_body(const std::string& resource)
 {
     using boost::property_tree::xml_parser::encode_char_entities;
 
@@ -18,7 +19,7 @@ std::string create_404_body(std::string_view resource)
                        "<h1>Error 404</h1>"
                        "<p>The requested URL {} was not found on this server.</p>"
                        "</body></head></html>",
-                       encode_char_entities(std::string(resource)));
+                       encode_char_entities(resource));
 }
 
 } // namespace
@@ -74,16 +75,16 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     }
 
     const auto& files   = static_files::get_web_files();
-    const auto* file_it = files.get_file(resource_view.substr(1));
+    const auto  file_it = files.get_file(resource_view.substr(1));
 
     if (file_it == nullptr) {
-        con->set_body(create_404_body(resource_view));
+        con->set_body(create_404_body(resource));
         con->replace_header("Content-Type", "text/html;charset=UTF-8");
         con->set_status(status_code::not_found);
         return;
     }
 
-    if (con->get_request_header("Accept-Encoding").find("gzip") != std::string::npos) {
+    if (accept_encoding_has_gzip(con->get_request_header("Accept-Encoding"))) {
         con->replace_header("Content-Encoding", "gzip");
         con->set_body(std::string(file_it->gzipped));
     } else {
@@ -308,7 +309,7 @@ void web_server_impl::broadcast_message(const nlohmann::json& msg)
     auto topic = get_topic_from_payload(msg);
     if (topic.has_value()) {
         endpoint_.get_io_service().post(
-            [this, topic, serialized = msg.dump()]() { broadcast_message_sync(*topic, serialized); });
+            [this, topic = *topic, serialized = msg.dump()]() { broadcast_message_sync(topic, serialized); });
     }
 }
 

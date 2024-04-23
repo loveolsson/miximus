@@ -34,24 +34,28 @@ class node_impl : public node_i
         register_interface(&iface_fb_out_);
     }
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
-
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* fb = iface_fb_in_.resolve_value(app, nodes, state);
+        auto fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
         if (fb == nullptr) {
             return;
         }
 
-        auto* texture = iface_tex_.resolve_value(app, nodes, state);
+        auto texture = iface_tex_.resolve_value(app, nodes, state);
 
         if (texture == nullptr) {
             return;
         }
 
-        auto draw_rect = iface_rect_.resolve_value(app, nodes, state, {{0, 0}, {1.0, 1.0}});
+        auto draw_rect = iface_rect_.resolve_value(app,
+                                                   nodes,
+                                                   state,
+                                                   {
+                                                       {0,   0  },
+                                                       {1.0, 1.0}
+        });
 
         auto opacity_opt = state.get_option<double>("opacity", 1.0);
         auto opacity     = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
@@ -63,13 +67,13 @@ class node_impl : public node_i
         glViewport(0, 0, fb_dim.x, fb_dim.y);
 
         if (!draw_state_) {
-            draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            draw_state_ = std::make_unique<gpu::draw_state_s>();
+            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
             draw_state_->set_shader_program(shader);
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        auto* shader = draw_state_->get_shader_program();
+        auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", draw_rect.pos);
         shader->set_uniform("scale", draw_rect.size);
         shader->set_uniform("opacity", opacity);
@@ -84,8 +88,8 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Draw box"},
-            {"opacity", 1},
+            {"name",    "Draw box"},
+            {"opacity", 1         },
         };
     }
 

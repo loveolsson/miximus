@@ -49,8 +49,8 @@ class draw_state_s
         }
     }
 
-    void  set_shader_program(shader_program_s* shader) { shader_ = shader; }
-    auto* get_shader_program() { return shader_; }
+    void set_shader_program(shader_program_s* shader) { shader_ = shader; }
+    auto get_shader_program() { return shader_; }
 
     void draw();
 };

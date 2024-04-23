@@ -5,6 +5,8 @@ add_library(web_server
     templates.hpp
     detail/server_impl.cpp
     detail/server_impl.hpp
+    detail/headers.cpp
+    detail/headers.hpp
     detail/websocket_connection.hpp
     detail/custom-config.hpp
     detail/custom-logger.hpp

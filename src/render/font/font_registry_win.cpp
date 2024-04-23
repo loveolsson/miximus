@@ -128,8 +128,8 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
                                              DWORD              FontType,
                                              LPARAM             lParam)
 {
-    auto* data = reinterpret_cast<init_data_s*>(lParam);
-    auto* info = reinterpret_cast<const ENUMLOGFONTEXW*>(lpelfe);
+    auto data = reinterpret_cast<init_data_s*>(lParam);
+    auto info = reinterpret_cast<const ENUMLOGFONTEXW*>(lpelfe);
 
     auto style     = wchar_to_string(info->elfStyle);
     auto full_name = wchar_to_string(info->elfFullName);
@@ -146,8 +146,8 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
 
 static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW* lpntme, DWORD FontType, LPARAM lParam)
 {
-    auto* data = reinterpret_cast<init_data_s*>(lParam);
-    auto  name = wchar_to_string(lpelfe->lfFaceName);
+    auto data = reinterpret_cast<init_data_s*>(lParam);
+    auto name = wchar_to_string(lpelfe->lfFaceName);
 
     font_info_s font;
     font.name  = name;

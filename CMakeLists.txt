@@ -32,7 +32,9 @@ set(MIXIMUS_CLANG_TIDY_PARAMS
     -readability-identifier-length
     -abseil*
     -bugprone-easily-swappable-parameters
-    -readability-container-data-pointer
+    -readability-container-data-pointer,
+    -readability-qualified-auto,
+    -llvm-qualified-auto
 )
 
 list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)

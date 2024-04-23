@@ -99,8 +99,8 @@ class node_impl : public node_i
         }
 
         if (!draw_state_) {
-            draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            draw_state_ = std::make_unique<gpu::draw_state_s>();
+            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
             draw_state_->set_shader_program(shader);
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
@@ -111,14 +111,20 @@ class node_impl : public node_i
     {
         auto file_path = state.get_option<std::string_view>("file_path");
 
-        auto* fb = iface_fb_in_.resolve_value(app, nodes, state);
+        auto fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
         if (fb == nullptr) {
             return;
         }
 
-        auto draw_rect = iface_rect_in_.resolve_value(app, nodes, state, {{0, 0}, {1.0, 1.0}});
+        auto draw_rect = iface_rect_in_.resolve_value(app,
+                                                      nodes,
+                                                      state,
+                                                      {
+                                                          {0,   0  },
+                                                          {1.0, 1.0}
+        });
 
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
         scroll_pos      = iface_scroll_pos_in_.resolve_value(app, nodes, state, scroll_pos);
@@ -140,7 +146,7 @@ class node_impl : public node_i
 
             text_ = {};
 
-            const auto* font_info = app->font_registry()->find_font_variant("Liberation Sans", "Regular");
+            auto font_info = app->font_registry()->find_font_variant("Liberation Sans", "Regular");
             if (font_info == nullptr) {
                 font_info = app->font_registry()->find_font_variant("Arial", "Regular");
             }
@@ -190,7 +196,7 @@ class node_impl : public node_i
             }
         }
 
-        auto* shader = draw_state_->get_shader_program();
+        auto shader = draw_state_->get_shader_program();
         shader->set_uniform("scale", gpu::vec2_t{1, static_cast<double>(tx_dim.y) / fb_dim.y});
         shader->set_uniform("opacity", 1.0);
 
@@ -234,7 +240,7 @@ class node_impl : public node_i
 
             const std::unique_lock lock(rl->mtx);
 
-            auto* texture = rl->surface->texture();
+            auto texture = rl->surface->texture();
 
             if (rl->ready.valid()) {
                 // Render line has active processing
@@ -362,8 +368,8 @@ class node_impl : public node_i
             const std::unique_lock lock(ctx_mtx_);
             ctx_->make_current();
 
-            auto* texture  = line->surface->texture();
-            auto* transfer = line->surface->transfer();
+            auto texture  = line->surface->texture();
+            auto transfer = line->surface->transfer();
             transfer->perform_copy();
             transfer->wait_for_copy();
             transfer->perform_transfer(texture);

@@ -32,11 +32,9 @@ class node_impl : public node_i
         register_interface(&iface_fb_out_);
     }
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
-
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* fb = iface_fb_in_.resolve_value(app, nodes, state);
+        auto fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
         if (fb == nullptr) {
@@ -62,19 +60,19 @@ class node_impl : public node_i
         glViewport(0, 0, fb_dim.x, fb_dim.y);
 
         if (!draw_state_) {
-            draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            draw_state_ = std::make_unique<gpu::draw_state_s>();
+            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
             draw_state_->set_shader_program(shader);
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        auto* shader = draw_state_->get_shader_program();
+        auto shader = draw_state_->get_shader_program();
         shader->set_uniform("scale", gpu::vec2_t{box_dim});
         shader->set_uniform("opacity", 1.0);
 
         for (size_t i = 0, y = 0; y < cols && i < tex_count; y++) {
             for (size_t x = 0; x < cols && i < tex_count; x++, i++) {
-                const auto* texture = textures[i];
+                const auto texture = textures[i];
                 if (texture == nullptr) {
                     continue;
                 }

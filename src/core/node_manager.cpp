@@ -127,7 +127,7 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
     return error_e::no_error;
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
+// NOLINTNEXTLINE(misc-no-recursion, misc-use-anonymous-namespace)
 static bool is_connection_circular(const nodes::node_map_t&    nodes,
                                    std::set<std::string_view>* cleared_nodes,
                                    std::string_view            target_node_id,
@@ -192,8 +192,8 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     const auto& from_node = from_node_it->second.node;
     const auto& to_node   = to_node_it->second.node;
 
-    const auto* from_iface = from_node->find_interface(con.from_interface);
-    const auto* to_iface   = to_node->find_interface(con.to_interface);
+    auto from_iface = from_node->find_interface(con.from_interface);
+    auto to_iface   = to_node->find_interface(con.to_interface);
 
     if (from_iface == nullptr || to_iface == nullptr) {
         _log()->warn("Interface pair not found: {}->{}", con.from_interface, con.to_interface);
@@ -389,7 +389,7 @@ void node_manager_s::tick_one_frame(app_state_s* app)
         }
     }
 
-    for (auto* record : must_execute) {
+    for (auto record : must_execute) {
         if (!record->state.executed) {
             record->node->execute(app, nodes_copy_, record->state);
         }

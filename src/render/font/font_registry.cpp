@@ -28,7 +28,7 @@ const font_info_s* font_registry_s::find_font(const std::string& name) const
 
 const font_variant_s* font_registry_s::find_font_variant(const std::string& name, const std::string& variant) const
 {
-    const auto* font = find_font(name);
+    const auto font = find_font(name);
     if (font == nullptr) {
         return nullptr;
     }
@@ -57,7 +57,7 @@ std::vector<std::string_view> font_registry_s::get_font_variant_names(const std:
 {
     std::vector<std::string_view> res;
 
-    if (const auto* font = find_font(name)) {
+    if (const auto font = find_font(name)) {
         res.reserve(font->variants.size());
 
         for (const auto& [variant, _] : font->variants) {

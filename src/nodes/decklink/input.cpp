@@ -311,8 +311,8 @@ class node_impl : public node_i
         }
 
         if (!draw_state_) {
-            draw_state_  = std::make_unique<gpu::draw_state_s>();
-            auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
+            draw_state_ = std::make_unique<gpu::draw_state_s>();
+            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
             draw_state_->set_shader_program(shader);
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
@@ -335,7 +335,7 @@ class node_impl : public node_i
             texture_->id(), 0, 0, 0, tx_dim.x, tx_dim.y, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV, nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
-        auto* shader = draw_state_->get_shader_program();
+        auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2i_t{0, 0});
         shader->set_uniform("scale", gpu::vec2i_t{1.0, 1.0});
         shader->set_uniform("target_width", src_dim.x);
@@ -353,7 +353,7 @@ class node_impl : public node_i
         gpu::texture_s::unbind(0);
         gpu::framebuffer_s::unbind();
 
-        auto* fb_tex = framebuffer_->texture();
+        auto fb_tex = framebuffer_->texture();
         fb_tex->generate_mip_maps();
         iface_tex_.set_value(fb_tex);
     }
@@ -371,8 +371,8 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "DeckLink input"},
-            {"enabled", true},
+            {"name",    "DeckLink input"},
+            {"enabled", true            },
         };
     }
 

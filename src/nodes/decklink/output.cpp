@@ -85,9 +85,9 @@ class callback_s
     decklink_ptr<IDeckLinkVideoFrame>      last_frame_;
     decklink_ptr<IDeckLinkVideoConversion> converter_;
 
-    IDeckLinkOutput* const device_;
-    const mode_info_s      mode_info_;
-    BMDTimeValue           pts_{0};
+    IDeckLinkOutput* device_;
+    mode_info_s      mode_info_;
+    BMDTimeValue     pts_{0};
 
   public:
     callback_s(std::shared_ptr<gpu::context_s> ctx, IDeckLinkOutput* device, mode_info_s mode_info)
@@ -405,7 +405,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* texture = iface_tex_.resolve_value(app, nodes, state);
+        auto texture = iface_tex_.resolve_value(app, nodes, state);
         if (texture == nullptr) {
             return;
         }
@@ -421,14 +421,14 @@ class node_impl : public node_i
 
         if (!draw_state_scale_) {
             draw_state_scale_ = std::make_unique<gpu::draw_state_s>();
-            auto* shader      = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            auto shader       = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
             draw_state_scale_->set_shader_program(shader);
             draw_state_scale_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
         if (!draw_state_yuv_) {
             draw_state_yuv_ = std::make_unique<gpu::draw_state_s>();
-            auto* shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv);
+            auto shader     = app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv);
             draw_state_yuv_->set_shader_program(shader);
             draw_state_yuv_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
@@ -444,7 +444,7 @@ class node_impl : public node_i
         }
 
         {
-            auto* shader = draw_state_scale_->get_shader_program();
+            auto shader = draw_state_scale_->get_shader_program();
             shader->set_uniform("offset", gpu::vec2_t(0, 0));
             shader->set_uniform("scale", gpu::vec2_t(1, 1));
             shader->set_uniform("opacity", 1.0);
@@ -493,7 +493,7 @@ class node_impl : public node_i
         glClearColor(0, 0, 0, 0);
         glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
 
-        auto* shader = draw_state_yuv_->get_shader_program();
+        auto shader = draw_state_yuv_->get_shader_program();
         shader->set_uniform("offset", {0, 0});
         shader->set_uniform("scale", {1.0, 1.0});
         shader->set_uniform("target_width", draw_dim.x);
@@ -520,9 +520,9 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "DeckLink input"},
-            {"enabled", true},
-            {"display_mode", "720p60"},
+            {"name",         "DeckLink input"},
+            {"enabled",      true            },
+            {"display_mode", "720p60"        },
         };
     }
 

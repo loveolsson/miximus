@@ -21,11 +21,11 @@ enum operation_e
 template <typename T>
 class node_impl : public node_i
 {
-    input_interface_s<T>   iface_a_{"a"};
-    input_interface_s<T>   iface_b_{"b"};
-    output_interface_s<T>  iface_res_{"res"};
-    const std::string_view type_;
-    const std::string_view name_;
+    input_interface_s<T>  iface_a_{"a"};
+    input_interface_s<T>  iface_b_{"b"};
+    output_interface_s<T> iface_res_{"res"};
+    std::string_view      type_;
+    std::string_view      name_;
 
   public:
     explicit node_impl(std::string_view type, std::string_view name)
@@ -36,8 +36,6 @@ class node_impl : public node_i
         register_interface(&iface_b_);
         register_interface(&iface_res_);
     }
-
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
@@ -78,7 +76,7 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", name_},
+            {"name",      name_                           },
             {"operation", enum_to_string(operation_e::add)},
         };
     }

@@ -24,8 +24,6 @@ class node_impl : public node_i
         register_interface(&iface_fb_);
     }
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
-
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         auto         size_opt   = state.get_option<gpu::vec2_t>("size");
@@ -51,8 +49,8 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Framebuffer"},
-            {"size", nlohmann::json::array({1920, 1080})},
+            {"name", "Framebuffer"          },
+            {"size", gpu::vec2_t{1920, 1080}},
         };
     }
 

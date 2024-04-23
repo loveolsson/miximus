@@ -59,7 +59,7 @@ static inline void copy_operation(const SrcT*              src_ptr,
             }
 
             const auto& sp = reinterpret_cast<const SrcT*>(src_p)[sx];
-            auto*       dp = &dst_ptr[dst_dim.x * dy + dx];
+            auto        dp = &dst_ptr[dst_dim.x * dy + dx];
 
             op(sp, dp);
         }
@@ -70,19 +70,19 @@ static inline void copy_operation(const SrcT*              src_ptr,
 
 void surface_s::copy(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
-    auto op = [](const auto& src, auto* dst) { *dst = src; };
+    auto op = [](const auto& src, auto dst) { *dst = src; };
     copy_operation(src_ptr, src_dim, src_pitch, ptr(), dimensions_, pos, op);
 }
 
 void surface_s::copy(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
-    auto op = [](const auto& src, auto* dst) { *dst = {src, src, src, src}; };
+    auto op = [](const auto& src, auto dst) { *dst = {src, src, src, src}; };
     copy_operation(src_ptr, src_dim, src_pitch, ptr(), dimensions_, pos, op);
 }
 
 void surface_s::alpha_blend(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
-    auto op = [](const auto& src, auto* dst) {
+    auto op = [](const auto& src, auto dst) {
         glm::ivec4 tmp(*dst);
         tmp -= src.a;
         tmp  = glm::max(tmp, glm::ivec4{});
@@ -94,7 +94,7 @@ void surface_s::alpha_blend(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, s
 
 void surface_s::alpha_blend(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
-    auto op = [](const auto& src, auto* dst) {
+    auto op = [](const auto& src, auto dst) {
         glm::ivec4 tmp(*dst);
         tmp -= src;
         tmp  = glm::max(tmp, glm::ivec4{});

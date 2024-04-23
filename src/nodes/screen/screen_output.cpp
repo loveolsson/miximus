@@ -123,7 +123,7 @@ class node_impl : public node_i
             return;
         }
 
-        auto* texture = iface_tex_.resolve_value(app, nodes, state);
+        auto texture = iface_tex_.resolve_value(app, nodes, state);
 
         gpu::vec2i_t dim{128, 128};
         if (texture != nullptr) {
@@ -169,13 +169,13 @@ class node_impl : public node_i
 
         if (texture != nullptr) {
             if (!draw_state_) {
-                draw_state_  = std::make_unique<gpu::draw_state_s>();
-                auto* shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+                draw_state_ = std::make_unique<gpu::draw_state_s>();
+                auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
                 draw_state_->set_shader_program(shader);
                 draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
             }
 
-            auto* shader = draw_state_->get_shader_program();
+            auto shader = draw_state_->get_shader_program();
             shader->set_uniform("offset", gpu::vec2_t{0, 0});
             shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
             shader->set_uniform("opacity", 1.0);
@@ -210,9 +210,9 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Screen output"},
-            {"enabled", true},
-            {"fullscreen", false},
+            {"name",       "Screen output"},
+            {"enabled",    true           },
+            {"fullscreen", false          },
         };
     }
 
@@ -245,7 +245,7 @@ class node_impl : public node_i
         glEnable(GL_FRAMEBUFFER_SRGB);
 
         gpu::draw_state_s draw_state;
-        auto*             shader = ctx_->get_shader(gpu::shader_program_s::name_e::basic);
+        auto              shader = ctx_->get_shader(gpu::shader_program_s::name_e::basic);
         draw_state.set_shader_program(shader);
         draw_state.set_vertex_data(gpu::full_screen_quad_verts);
         shader->set_uniform("offset", gpu::vec2_t{0, 1.0});

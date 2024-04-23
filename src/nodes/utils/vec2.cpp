@@ -21,8 +21,6 @@ class node_impl : public node_i
         register_interface(&iface_res_);
     }
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
-
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         auto x = state.get_option<double>("x", 0);
@@ -38,8 +36,8 @@ class node_impl : public node_i
     {
         return {
             {"name", "Vec2"},
-            {"x", 0},
-            {"y", 0},
+            {"x",    0     },
+            {"y",    0     },
         };
     }
 

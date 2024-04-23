@@ -28,9 +28,9 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
 {
     flow_info_s info = {};
 
-    size_t      word_len    = 0;
-    FT_UInt     prior_index = 0;
-    const auto* slot        = face_->glyph;
+    size_t     word_len    = 0;
+    FT_UInt    prior_index = 0;
+    const auto slot        = face_->glyph;
 
     for (int i = 0; i < str.size(); ++i) {
         const char32_t c = str[i];
@@ -80,8 +80,8 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
 
 gpu::vec2i_t font_instance_s::render_string(std::u32string_view str, surface_s* surface, gpu::vec2i_t pos)
 {
-    const auto* slot        = face_->glyph;
-    FT_UInt     prior_index = 0;
+    const auto slot        = face_->glyph;
+    FT_UInt    prior_index = 0;
 
     for (const char32_t c : str) {
         if (c == U'\r' || c == U'\n') {

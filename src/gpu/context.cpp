@@ -45,7 +45,7 @@ constexpr auto get_enum_str(GLenum v)
         {GL_DEBUG_SEVERITY_NOTIFICATION,    "Notification"        }, // Serverity
     });
 
-    const auto* const it = names.find(v);
+    const auto it = names.find(v);
     return it != names.end() ? it->second : "UNKNOWN";
 }
 
@@ -87,7 +87,7 @@ void GLAPIENTRY opengl_error_callback(GLenum        source,
 void monitor_config_callback(GLFWmonitor* monitor, int event)
 {
     using namespace miximus::gpu;
-    const auto* name = glfwGetMonitorName(monitor);
+    const auto name = glfwGetMonitorName(monitor);
 
     if (event == GLFW_CONNECTED) {
         context_s::monitors_g.emplace(name, monitor);
@@ -149,11 +149,11 @@ context_s::context_s(bool visible, context_s* parent)
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        int   count    = 0;
-        auto* monitors = glfwGetMonitors(&count);
+        int  count    = 0;
+        auto monitors = glfwGetMonitors(&count);
         for (int i = 0; i < count; ++i) {
-            auto*       monitor = monitors[i];
-            const auto* name    = glfwGetMonitorName(monitor);
+            auto       monitor = monitors[i];
+            const auto name    = glfwGetMonitorName(monitor);
 
             _log()->info("Found monitor: {}", name);
 
@@ -166,8 +166,8 @@ context_s::context_s(bool visible, context_s* parent)
     glfwWindowHint(GLFW_VISIBLE, visible_flag);
     glfwWindowHint(GLFW_DOUBLEBUFFER, visible_flag);
 
-    auto* parent_window = (parent != nullptr) ? parent->window_ : nullptr;
-    window_             = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
+    auto parent_window = (parent != nullptr) ? parent->window_ : nullptr;
+    window_            = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
 
     if (window_ == nullptr) {
         throw std::runtime_error("Failed to create GLFW window");
@@ -252,7 +252,7 @@ void context_s::set_fullscreen_monitor(const std::string& name, recti_s rect)
             return;
         }
 
-        const auto* mode = glfwGetVideoMode(it->second);
+        const auto mode = glfwGetVideoMode(it->second);
         glfwSetWindowMonitor(window_, it->second, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
 
     } else {

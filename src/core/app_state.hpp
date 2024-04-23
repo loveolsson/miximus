@@ -34,11 +34,11 @@ class app_state_s
     app_state_s();
     ~app_state_s();
 
-    auto* cfg_executor() { return &cfg_executor_; }
-    auto* ctx() { return ctx_.get(); }
-    auto* decklink_registry() { return decklink_registry_.get(); }
-    auto* font_registry() { return font_registry_.get(); }
-    auto* thread_pool() { return thread_pool_.get(); }
+    auto cfg_executor() { return &cfg_executor_; }
+    auto ctx() { return ctx_.get(); }
+    auto decklink_registry() { return decklink_registry_.get(); }
+    auto font_registry() { return font_registry_.get(); }
+    auto thread_pool() { return thread_pool_.get(); }
 
     struct
     {

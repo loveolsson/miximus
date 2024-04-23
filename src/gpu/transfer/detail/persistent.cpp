@@ -46,14 +46,14 @@ bool pinned_transfer_s::perform_copy()
             assert(mapped_ptr_ != nullptr);
         }
 
-        auto* c = reinterpret_cast<char*>(ptr_);
+        auto c = reinterpret_cast<char*>(ptr_);
         std::copy(c, c + size_, reinterpret_cast<char*>(mapped_ptr_));
         glFlushMappedNamedBufferRange(id_, 0, static_cast<GLsizeiptr>(size_));
 
         sync_ = std::make_unique<sync_s>();
     } else {
         if (mapped_ptr_ != nullptr) {
-            auto* c = reinterpret_cast<char*>(mapped_ptr_);
+            auto c = reinterpret_cast<char*>(mapped_ptr_);
             std::copy(c, c + size_, reinterpret_cast<char*>(ptr_));
         }
     }

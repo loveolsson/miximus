@@ -27,7 +27,7 @@ class node_impl : public node_i
     {
         gpu::texture_s* texture = nullptr;
 
-        auto* fb = iface_fb_.resolve_value(app, nodes, state);
+        auto fb = iface_fb_.resolve_value(app, nodes, state);
         if (fb != nullptr) {
             texture = fb->texture();
         }

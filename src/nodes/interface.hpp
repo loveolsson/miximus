@@ -94,7 +94,7 @@ class input_interface_s : public interface_i
         res.reserve(ifaces.size());
         assert(max_connection_count_ > 1); // Should only be called on interfaces expecting multiple values
 
-        for (const auto* iface : ifaces) {
+        for (const auto iface : ifaces) {
             if (iface == nullptr) {
                 res.emplace_back(fallback);
             } else {

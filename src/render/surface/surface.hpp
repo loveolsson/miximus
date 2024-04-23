@@ -20,9 +20,9 @@ class surface_s
     surface_s(gpu::vec2i_t dim);
     ~surface_s() = default;
 
-    auto* transfer() { return transfer_.get(); }
-    auto* texture() { return texture_.get(); }
-    auto  dimensions() const { return dimensions_; }
+    auto transfer() { return transfer_.get(); }
+    auto texture() { return texture_.get(); }
+    auto dimensions() const { return dimensions_; }
 
     rgba_pixel_t* ptr() { return reinterpret_cast<rgba_pixel_t*>(transfer_->ptr()); }
     void          copy(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos);

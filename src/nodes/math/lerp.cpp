@@ -31,8 +31,8 @@ class node_impl : public node_i
     input_interface_s<T>      iface_b_{"b"};
     input_interface_s<double> iface_t_{"t"};
     output_interface_s<T>     iface_res_{"res"};
-    const std::string_view    type_;
-    const std::string_view    name_;
+    std::string_view          type_;
+    std::string_view          name_;
 
   public:
     explicit node_impl(std::string_view type, std::string_view name)
@@ -44,8 +44,6 @@ class node_impl : public node_i
         register_interface(&iface_t_);
         register_interface(&iface_res_);
     }
-
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {

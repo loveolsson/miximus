@@ -114,7 +114,7 @@ bool input_interface_s<gpu::framebuffer_s*>::accepts(interface_type_e type) cons
 template <>
 double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, const double& fallback)
 {
-    if (const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
+    if (const auto cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
         return cast->get_value();
     }
 
@@ -124,11 +124,11 @@ double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, 
 template <>
 gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_i* iface, const gpu::vec2_t& fallback)
 {
-    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface)) {
+    if (const auto cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface)) {
         return cast->get_value();
     }
 
-    if (const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
+    if (const auto cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
         auto val = cast->get_value();
         return {val, val};
     }
@@ -139,7 +139,7 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_
 template <>
 gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback)
 {
-    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface)) {
+    if (const auto cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface)) {
         return cast->get_value();
     }
 
@@ -150,13 +150,13 @@ template <>
 gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
                                                                         gpu::texture_s* const& fallback)
 {
-    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface)) {
+    if (const auto cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface)) {
         return cast->get_value();
     }
 
-    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
-        if (auto* fb = cast->get_value()) {
-            if (auto* texture = fb->texture()) {
+    if (const auto cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
+        if (auto fb = cast->get_value()) {
+            if (auto texture = fb->texture()) {
                 texture->generate_mip_maps();
                 return texture;
             }
@@ -170,7 +170,7 @@ template <>
 gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*         iface,
                                                                                 gpu::framebuffer_s* const& fallback)
 {
-    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
+    if (const auto cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
         return cast->get_value();
     }
 

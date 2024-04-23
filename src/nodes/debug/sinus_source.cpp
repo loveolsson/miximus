@@ -16,8 +16,6 @@ class node_impl : public node_i
   public:
     explicit node_impl() { register_interface(&iface_res_); }
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
-
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         auto size   = state.get_option<double>("size");
@@ -33,10 +31,10 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Sinus source"},
-            {"size", 1},
-            {"center", 0},
-            {"speed", 0.1},
+            {"name",   "Sinus source"},
+            {"size",   1             },
+            {"center", 0             },
+            {"speed",  0.1           },
         };
     }
 
