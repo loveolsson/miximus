@@ -5,8 +5,13 @@
 
 namespace miximus::render {
 
-font_registry_s::font_registry_s()
+font_registry_s::font_registry_s() { scan_fonts(); }
+
+void font_registry_s::scan_fonts()
 {
+    // Clear existing fonts
+    fonts_.clear();
+
     FcInit();
     auto config = FcInitLoadConfigAndFonts();
     auto pat    = FcPatternCreate();
@@ -54,5 +59,7 @@ font_registry_s::font_registry_s()
 
     FcFini();
 }
+
+void font_registry_s::refresh() { scan_fonts(); }
 
 } // namespace miximus::render
