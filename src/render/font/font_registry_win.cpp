@@ -1,5 +1,7 @@
 #include "font_registry.hpp"
 
+#ifdef _WIN32
+
 #define WIN32_LEAN_AND_MEAN
 #include <Shlobj.h>
 #include <Windows.h>
@@ -191,3 +193,5 @@ void font_registry_s::scan_fonts()
 void font_registry_s::refresh() { scan_fonts(); }
 
 } // namespace miximus::render
+
+#endif // _WIN32
