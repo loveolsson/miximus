@@ -36,13 +36,13 @@ class node_impl : public node_i
     input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
 
-    std::unique_ptr<gpu::draw_state_s>        draw_state_;
-    std::shared_ptr<render::font_loader_s>    font_loader_;
-    std::unique_ptr<text_render_info_s>       text_info_;
-    ::mutex                                   ctx_mtx_;
-    ::mutex                                   font_mtx_;
-    std::unique_ptr<gpu::context_s>           ctx_;
-    std::unique_ptr<render::font_instance_s>  font_instance_;
+    std::unique_ptr<gpu::draw_state_s>       draw_state_;
+    std::shared_ptr<render::font_loader_s>   font_loader_;
+    std::unique_ptr<text_render_info_s>      text_info_;
+    ::mutex                                  ctx_mtx_;
+    ::mutex                                  font_mtx_;
+    std::unique_ptr<gpu::context_s>          ctx_;
+    std::unique_ptr<render::font_instance_s> font_instance_;
 
   public:
     explicit node_impl()
@@ -50,8 +50,8 @@ class node_impl : public node_i
         register_interface(&iface_position_in_);
         register_interface(&iface_fb_in_);
         register_interface(&iface_fb_out_);
-        
-        text_info_ = std::make_unique<text_render_info_s>();
+
+        text_info_   = std::make_unique<text_render_info_s>();
         font_loader_ = std::make_shared<render::font_loader_s>();
     }
 
@@ -69,21 +69,18 @@ class node_impl : public node_i
         }
 
         // Check if text or font settings have changed
-        auto text = state.get_option<std::string_view>("text");
-        auto font_name = state.get_option<std::string_view>("font_name");
+        auto text         = state.get_option<std::string_view>("text");
+        auto font_name    = state.get_option<std::string_view>("font_name");
         auto font_variant = state.get_option<std::string_view>("font_variant");
-        auto font_size = state.get_option<int>("font_size");
+        auto font_size    = state.get_option<int>("font_size");
 
-        if (text != text_info_->last_text || 
-            font_name != text_info_->last_font_name || 
-            font_variant != text_info_->last_font_variant || 
-            font_size != text_info_->last_font_size) {
-            
-            text_info_->last_text = std::string(text);
-            text_info_->last_font_name = std::string(font_name);
+        if (text != text_info_->last_text || font_name != text_info_->last_font_name ||
+            font_variant != text_info_->last_font_variant || font_size != text_info_->last_font_size) {
+            text_info_->last_text         = std::string(text);
+            text_info_->last_font_name    = std::string(font_name);
             text_info_->last_font_variant = std::string(font_variant);
-            text_info_->last_font_size = font_size;
-            text_info_->needs_update = true;
+            text_info_->last_font_size    = font_size;
+            text_info_->needs_update      = true;
         }
 
         if (text_info_->needs_update && !text_info_->last_text.empty()) {
@@ -99,34 +96,32 @@ class node_impl : public node_i
         // Load font if needed
         {
             std::unique_lock<::mutex> font_lock(font_mtx_);
-            
+
             const render::font_variant_s* font_info = nullptr;
-            
-            spdlog::get("app")->info("Text rendering: '{}' with font '{}' size {}", 
-                        text_info_->last_text, text_info_->last_font_name, text_info_->last_font_size);
-            
+
+            spdlog::get("app")->info("Text rendering: '{}' with font '{}' size {}",
+                                     text_info_->last_text,
+                                     text_info_->last_font_name,
+                                     text_info_->last_font_size);
+
             if (!text_info_->last_font_name.empty()) {
-                font_info = app->font_registry()->find_font_variant(
-                    text_info_->last_font_name, 
-                    text_info_->last_font_variant
-                );
+                font_info =
+                    app->font_registry()->find_font_variant(text_info_->last_font_name, text_info_->last_font_variant);
             }
-            
+
             if (font_info == nullptr) {
                 // Fallback to Arial Regular
                 font_info = app->font_registry()->find_font_variant("Arial", "Regular");
             }
-            
+
             if (font_info == nullptr) {
                 // Try any available font
                 auto font_names = app->font_registry()->get_font_names();
                 if (!font_names.empty()) {
-                    font_info = app->font_registry()->find_font_variant(
-                        std::string(font_names[0]), "Regular"
-                    );
+                    font_info = app->font_registry()->find_font_variant(std::string(font_names[0]), "Regular");
                 }
             }
-            
+
             if (font_info == nullptr) {
                 gpu::context_s::rewind_current();
                 return;
@@ -138,25 +133,23 @@ class node_impl : public node_i
                 gpu::context_s::rewind_current();
                 return;
             }
-            
+
             // Set the font size
             font_instance_->set_size(text_info_->last_font_size);
         }
 
         // Convert text to UTF-32
         auto utf32_text = utils::utf8_to_utf32(text_info_->last_text);
-        
+
         // Calculate text dimensions
         auto text_dim = font_instance_->flow_line(utf32_text, INT_MAX);
-        
+
         // Create surface with generous padding to ensure no character cutoff
         // Use font size as height reference and add extra width padding
         int padding = std::max(40, text_info_->last_font_size / 2);
-        
-        gpu::vec2i_t surface_size{
-            static_cast<int>(text_dim.pixels_advanced) + padding * 2,  // More generous padding
-            text_info_->last_font_size + padding * 2
-        };
+
+        gpu::vec2i_t surface_size{static_cast<int>(text_dim.pixels_advanced) + padding * 2, // More generous padding
+                                  text_info_->last_font_size + padding * 2};
 
         if (!text_info_->surface || text_info_->surface->dimensions() != surface_size) {
             text_info_->surface = std::make_unique<render::surface_s>(surface_size);
@@ -167,12 +160,12 @@ class node_impl : public node_i
 
         // Position text with adequate padding from the top-left
         gpu::vec2i_t text_position{padding, text_info_->last_font_size + padding / 2};
-        
+
         // Render text in white
         font_instance_->render_string(utf32_text, text_info_->surface.get(), text_position);
 
         // Transfer to GPU
-        auto texture = text_info_->surface->texture();
+        auto texture  = text_info_->surface->texture();
         auto transfer = text_info_->surface->transfer();
         transfer->perform_copy();
         transfer->wait_for_copy();
@@ -221,15 +214,13 @@ class node_impl : public node_i
         fb->bind();
 
         // Calculate the scale to render text at its natural pixel size
-        // Convert surface dimensions to framebuffer coordinates  
-        const gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
-        auto surface_size = text_info_->surface->dimensions();
-        
-        gpu::vec2_t scale{
-            static_cast<float>(surface_size.x) / static_cast<float>(fb_dim.x),
-            static_cast<float>(surface_size.y) / static_cast<float>(fb_dim.y)
-        };
-        
+        // Convert surface dimensions to framebuffer coordinates
+        const gpu::vec2i_t fb_dim       = fb->texture()->texture_dimensions();
+        auto               surface_size = text_info_->surface->dimensions();
+
+        gpu::vec2_t scale{static_cast<float>(surface_size.x) / static_cast<float>(fb_dim.x),
+                          static_cast<float>(surface_size.y) / static_cast<float>(fb_dim.y)};
+
         shader->set_uniform("scale", scale);
 
         auto texture = text_info_->surface->texture();
@@ -247,11 +238,11 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Text"},
-            {"text", "Hello World"},
-            {"font_name", "Arial"},
-            {"font_variant", "Regular"},
-            {"font_size", 48}
+            {"name",         "Text"       },
+            {"text",         "Hello World"},
+            {"font_name",    "Arial"      },
+            {"font_variant", "Regular"    },
+            {"font_size",    48           }
         };
     }
 
@@ -277,9 +268,6 @@ class node_impl : public node_i
 
 namespace miximus::nodes::text {
 
-std::shared_ptr<node_i> create_text_node()
-{
-    return std::make_shared<node_impl>();
-}
+std::shared_ptr<node_i> create_text_node() { return std::make_shared<node_impl>(); }
 
 } // namespace miximus::nodes::text

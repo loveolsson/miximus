@@ -1,17 +1,17 @@
 #pragma once
 
-#include <string>
-#include <locale>
 #include <codecvt>
+#include <locale>
+#include <string>
 
 namespace miximus::utils {
 
 /**
  * @brief Convert UTF-8 encoded string to UTF-32 encoded string
- * 
+ *
  * This utility function converts a UTF-8 string to UTF-32 for proper
  * Unicode handling in text rendering and processing systems.
- * 
+ *
  * @param utf8_string The input UTF-8 encoded string
  * @return std::u32string The UTF-32 encoded string
  */

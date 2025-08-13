@@ -5,6 +5,20 @@ add_subdirectory(bundler)
 
 set(BUNDLER_NAMESPACE "miximus::static_files")
 
+# Generate hash file to track web directory changes  
+set(WEB_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/web_files.hash")
+
+# Create a custom target that always runs and checks for file changes
+add_custom_target(check_web_files_hash ALL
+  COMMAND ${CMAKE_COMMAND} 
+    -DWEB_SOURCE_DIR=${CMAKE_SOURCE_DIR}/web/dist
+    -DWEB_HASH_FILE=${WEB_HASH_FILE}
+    -DWEB_FILES_CPP=${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_web_hash.cmake"
+  COMMENT "Checking for web file changes..."
+  VERBATIM
+)
+
 add_custom_command(
   OUTPUT 
     ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
@@ -13,7 +27,8 @@ add_custom_command(
   ARGS 
     --src ${CMAKE_SOURCE_DIR}/web/dist/ --dst ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp --namespace ${BUNDLER_NAMESPACE} --mapname get_web_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS bundler
+  DEPENDS bundler check_web_files_hash
+  COMMENT "Generating web_files.cpp from web/dist/"
 )
 
 add_custom_command(
