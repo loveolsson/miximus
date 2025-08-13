@@ -18,6 +18,7 @@ import {
   Vec2Node,
 } from "./utils";
 import { TeleprompterNode } from "./teleprompter";
+import TextNode from "./text";
 import { SinusSourceNode } from "./debug";
 import Vec2Option from "./options/Vec2Option.vue";
 import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
@@ -92,6 +93,7 @@ export function register_types(editor: Editor): void {
   );
 
   editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
+  editor.registerNodeType(type_e.text, TextNode, "Render");
 
   editor.registerNodeType(type_e.sinus_source, SinusSourceNode, "Debug");
 }

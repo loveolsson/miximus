@@ -18,6 +18,7 @@ add_subdirectory(screen)
 add_subdirectory(ffmpeg)
 add_subdirectory(utils)
 add_subdirectory(teleprompter)
+add_subdirectory(text)
 add_subdirectory(debug)
 add_subdirectory(composite)
 

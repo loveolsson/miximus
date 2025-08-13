@@ -6,6 +6,7 @@
 #include "nodes/math/register.hpp"
 #include "nodes/screen/register.hpp"
 #include "nodes/teleprompter/register.hpp"
+#include "nodes/text/register.hpp"
 #include "nodes/utils/register.hpp"
 
 namespace miximus::nodes {
@@ -18,6 +19,7 @@ void register_all_nodes(constructor_map_t* map)
     ffmpeg::register_nodes(map);
     screen::register_nodes(map);
     teleprompter::register_nodes(map);
+    text::register_nodes(map);
     composite::register_nodes(map);
     debug::register_nodes(map);
 }

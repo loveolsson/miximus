@@ -31,6 +31,7 @@ export const enum type_e {
   framebuffer = "framebuffer",
   framebuffer_to_texture = "framebuffer_to_texture",
   teleprompter = "teleprompter",
+  text = "text",
   sinus_source = "sinus_source",
   draw_box = "draw_box",
   infinite_multiviewer = "infinite_multiviewer",
