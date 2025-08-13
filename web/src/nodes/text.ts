@@ -18,9 +18,9 @@ export default class TextNode extends Node {
     });
     this.addOutputInterface("fb_out", { type: "framebuffer" });
 
-    this.addOption("text", "StringOption", "Hello World");
-    this.addOption("font_name", "StringOption", "Arial");
-    this.addOption("font_variant", "StringOption", "Regular");
-    this.addOption("font_size", "NumberOption", 48);
+    this.addOption("text", "FocusTrackingStringOption", "Hello World");
+    this.addOption("font_name", "FocusTrackingStringOption", "Arial");
+    this.addOption("font_variant", "FocusTrackingStringOption", "Regular");
+    this.addOption("font_size", "FocusTrackingNumberOption", 48);
   }
 }

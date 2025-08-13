@@ -226,6 +226,10 @@ export default class Miximus extends Vue {
     );
   }
 
+  mounted(): void {
+    // Custom option components now handle their own focus tracking
+  }
+
   destroyed(): void {
     this.wsWrapper.destroy();
   }
