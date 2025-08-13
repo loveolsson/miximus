@@ -12,27 +12,17 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
+#include "utils/string_utils.hpp"
 
 #include <cmath>
 #include <fstream>
 #include <iostream>
-#include <locale>
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace std::chrono_literals;
 using namespace boost::fibers;
-
-std::u32string decode_utf8(const std::string& utf8_string)
-{
-    struct destructible_codecvt : public std::codecvt<char32_t, char, std::mbstate_t>
-    {
-    };
-
-    std::wstring_convert<destructible_codecvt, char32_t> utf32_converter;
-    return utf32_converter.from_bytes(utf8_string);
-}
 
 class node_impl : public node_i
 {
@@ -322,7 +312,7 @@ class node_impl : public node_i
             }
 
             const std::string utf_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            str = decode_utf8(utf_str);
+            str = utils::utf8_to_utf32(utf_str);
         } catch (const std::ifstream::failure& e) {
             return res;
         }

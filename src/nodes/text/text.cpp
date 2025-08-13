@@ -11,25 +11,13 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
-
-#include <locale>
-#include <codecvt>
+#include "utils/string_utils.hpp"
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace std::chrono_literals;
 using namespace boost::fibers;
-
-std::u32string decode_utf8(const std::string& utf8_string)
-{
-    struct destructible_codecvt : public std::codecvt<char32_t, char, std::mbstate_t>
-    {
-    };
-
-    std::wstring_convert<destructible_codecvt, char32_t> utf32_converter;
-    return utf32_converter.from_bytes(utf8_string);
-}
 
 class node_impl : public node_i
 {
@@ -156,7 +144,7 @@ class node_impl : public node_i
         }
 
         // Convert text to UTF-32
-        auto utf32_text = decode_utf8(text_info_->last_text);
+        auto utf32_text = utils::utf8_to_utf32(text_info_->last_text);
         
         // Calculate text dimensions
         auto text_dim = font_instance_->flow_line(utf32_text, INT_MAX);
