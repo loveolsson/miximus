@@ -11,6 +11,13 @@
 
 namespace {
 
+constexpr std::string_view API_V1_PREFIX = "/api/v1/";
+
+// HTTP method constants
+constexpr std::string_view HTTP_GET     = "GET";
+constexpr std::string_view HTTP_POST    = "POST";
+constexpr std::string_view HTTP_OPTIONS = "OPTIONS";
+
 std::string create_404_body(const std::string& resource)
 {
     using boost::property_tree::xml_parser::encode_char_entities;
@@ -68,6 +75,7 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     }
 
     const auto& resource = con->get_resource();
+    const auto& method   = con->get_request().get_method();
 
     // Parse the URL to separate path from query parameters and fragment
     auto        parser = url_parser::parse(resource);
@@ -75,6 +83,13 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
 
     endpoint_.get_alog().write(alevel::http, std::string(path));
 
+    // Handle API routes
+    if (path.starts_with(API_V1_PREFIX)) {
+        handle_api_request(con, method, parser);
+        return;
+    }
+
+    // Handle static file serving (original logic)
     std::string_view resource_view = path;
     if (resource_view == "/") {
         resource_view = "/index.html";
@@ -101,6 +116,165 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     con->set_status(status_code::ok);
 }
 
+void web_server_impl::handle_api_request(server_t::connection_ptr con,
+                                         const std::string&       method,
+                                         const url_parser&        parser)
+{
+    using namespace websocketpp::http;
+
+    // Set CORS headers for API requests
+    con->replace_header("Access-Control-Allow-Origin", "*");
+    con->replace_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    con->replace_header("Access-Control-Allow-Headers", "Content-Type");
+    con->replace_header("Content-Type", "application/json");
+
+    // Handle OPTIONS request for CORS preflight
+    if (method == HTTP_OPTIONS) {
+        con->set_status(status_code::ok);
+        con->set_body("{}");
+        return;
+    }
+
+    // Parse API endpoint
+    const auto&      path     = parser.get_path();
+    std::string_view api_path = path.substr(API_V1_PREFIX.length());
+
+    try {
+        if (method == HTTP_GET && api_path == "config") {
+            handle_api_v1_get_config(con);
+        } else if (method == HTTP_POST && api_path == "control") {
+            handle_api_v1_post_control(con);
+        } else {
+            // Method or endpoint not found
+            auto error       = create_error_base_payload("", error_e::internal_error);
+            error["message"] = "Invalid API endpoint or method";
+            con->set_body(error.dump());
+            con->set_status(status_code::not_found);
+        }
+    } catch (const std::exception& e) {
+        auto error       = create_error_base_payload("", error_e::internal_error);
+        error["message"] = e.what();
+        con->set_body(error.dump());
+        con->set_status(status_code::internal_server_error);
+    }
+}
+
+void web_server_impl::handle_api_v1_get_config(server_t::connection_ptr con)
+{
+    using namespace websocketpp::http;
+
+    // Get current config
+    if (!config_getter_) {
+        auto error       = create_error_base_payload("", error_e::internal_error);
+        error["message"] = "Config service not available";
+        con->set_body(error.dump());
+        con->set_status(status_code::service_unavailable);
+        return;
+    }
+
+    try {
+        nlohmann::json config = config_getter_();
+        con->set_body(config.dump());
+        con->set_status(status_code::ok);
+    } catch (const std::exception& e) {
+        auto error       = create_error_base_payload("", error_e::internal_error);
+        error["message"] = e.what();
+        con->set_body(error.dump());
+        con->set_status(status_code::internal_server_error);
+    }
+}
+
+void web_server_impl::handle_api_v1_post_control(server_t::connection_ptr con)
+{
+    using namespace websocketpp::http;
+
+    // Parse POST body as WebSocket-style message
+    const std::string& body = con->get_request_body();
+
+    if (body.empty()) {
+        auto error       = create_error_base_payload("", error_e::malformed_payload);
+        error["message"] = "Request body is required";
+        con->set_body(error.dump());
+        con->set_status(status_code::bad_request);
+        return;
+    }
+
+    auto doc = nlohmann::json::parse(body, nullptr, false);
+    if (doc.is_discarded() || !doc.is_object()) {
+        auto error       = create_error_base_payload("", error_e::malformed_payload);
+        error["message"] = "Invalid JSON in request body";
+        con->set_body(error.dump());
+        con->set_status(status_code::bad_request);
+        return;
+    }
+
+    auto action = get_action_from_payload(doc);
+    if (!action.has_value()) {
+        auto error       = create_error_base_payload("", error_e::malformed_payload);
+        error["message"] = "Invalid action";
+        con->set_body(error.dump());
+        con->set_status(status_code::bad_request);
+        return;
+    }
+
+    if (*action != action_e::command) {
+        auto error       = create_error_base_payload("", error_e::malformed_payload);
+        error["message"] = "Only command actions are supported via HTTP API";
+        con->set_body(error.dump());
+        con->set_status(status_code::bad_request);
+        return;
+    }
+
+    auto topic = get_topic_from_payload(doc);
+
+    if (!topic.has_value()) {
+        auto error       = create_error_base_payload("", error_e::invalid_topic);
+        error["message"] = "Invalid topic";
+        con->set_body(error.dump());
+        con->set_status(status_code::bad_request);
+        return;
+    }
+
+    // Handle the command using the shared method
+    auto error_code = handle_user_command(std::move(doc), -1); // Use connection ID -1 for HTTP
+
+    if (error_code != error_e::no_error) {
+        auto error = create_error_base_payload("", error_code);
+        if (error_code == error_e::invalid_topic) {
+            error["message"] = "Invalid topic";
+            con->set_status(status_code::bad_request);
+        } else {
+            error["message"] = "Topic service not available";
+            con->set_status(status_code::service_unavailable);
+        }
+        con->set_body(error.dump());
+        return;
+    }
+
+    // Return 204 No Content - command processed, no response needed
+    con->set_status(status_code::no_content);
+}
+
+error_e web_server_impl::handle_user_command(nlohmann::json&& doc, int64_t connection_id)
+{
+    auto topic = get_topic_from_payload(doc);
+
+    if (!topic.has_value()) {
+        return error_e::invalid_topic;
+    }
+
+    auto index = enum_index(*topic);
+
+    if (!subscription_by_topic_[index]) {
+        return error_e::internal_error;
+    }
+
+    // Process the command through the existing subscription system
+    subscription_by_topic_[index](std::move(doc), connection_id);
+
+    return error_e::no_error; // Success
+}
+
 void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
 {
     using namespace websocketpp::frame;
@@ -115,7 +289,7 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
     }
 
     auto doc = nlohmann::json::parse(msg->get_payload(), nullptr, false);
-    if (doc.is_discarded()) {
+    if (doc.is_discarded() || !doc.is_object()) {
         return terminate_and_log(hdl, "invalid JSON payload");
     }
 
@@ -172,23 +346,12 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
         } break;
 
         case action_e::command: {
-            auto topic = get_topic_from_payload(doc);
+            auto token      = get_token_from_payload(doc);
+            auto error_code = handle_user_command(std::move(doc), con->second.id);
 
-            if (!topic.has_value()) {
-                auto token = get_token_from_payload(doc);
-                send(hdl, create_error_base_payload(token, error_e::invalid_topic));
-                break;
+            if (error_code != error_e::no_error) {
+                send(hdl, create_error_base_payload(token, error_code));
             }
-
-            auto index = enum_index(*topic);
-
-            if (!subscription_by_topic_[index]) {
-                auto token = get_token_from_payload(doc);
-                send(hdl, create_error_base_payload(token, error_e::internal_error));
-                break;
-            }
-
-            subscription_by_topic_[index](std::move(doc), con->second.id);
         } break;
 
         default: {
@@ -247,6 +410,8 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
         subscription_by_topic_[index] = callback;
     });
 }
+
+void web_server_impl::set_config_getter(const config_getter_t& getter) { config_getter_ = getter; }
 
 void web_server_impl::start(uint16_t port, boost::asio::io_service* service)
 {

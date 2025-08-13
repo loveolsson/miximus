@@ -4,7 +4,7 @@
 
 namespace miximus::web_server::detail {
 
-url_parser url_parser::parse(std::string_view resource) { return url_parser(resource); }
+const url_parser url_parser::parse(std::string_view resource) { return url_parser(resource); }
 
 url_parser::url_parser(std::string_view resource)
 {

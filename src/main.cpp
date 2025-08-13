@@ -3,6 +3,7 @@
 #include "core/node_manager.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
+#include "utils/bind.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
@@ -101,6 +102,9 @@ int main(int argc, char* argv[])
 
             core::node_manager_s node_manager;
             load_settings(&node_manager, settings_path);
+
+            // Set up web server config getter
+            web_server->set_config_getter(utils::bind(&core::node_manager_s::get_config, &node_manager));
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, *web_server));

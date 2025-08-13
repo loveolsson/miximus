@@ -21,7 +21,7 @@ class url_parser
      * @param resource The URL resource string (e.g., "/path?param=value#fragment")
      * @return A url_parser instance with parsed components
      */
-    static url_parser parse(std::string_view resource);
+    static const url_parser parse(std::string_view resource);
 
     /**
      * URL decode a string (static utility function)
