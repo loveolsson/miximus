@@ -1,5 +1,6 @@
 #include "web_server/detail/server_impl.hpp"
 #include "headers.hpp"
+#include "url_parser.hpp"
 #include "utils/bind.hpp"
 #include "utils/lookup.hpp"
 #include "web_server/templates.hpp"
@@ -67,9 +68,14 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     }
 
     const auto& resource = con->get_resource();
-    endpoint_.get_alog().write(alevel::http, resource);
 
-    std::string_view resource_view = resource;
+    // Parse the URL to separate path from query parameters and fragment
+    auto        parser = url_parser::parse(resource);
+    const auto& path   = parser.get_path();
+
+    endpoint_.get_alog().write(alevel::http, std::string(path));
+
+    std::string_view resource_view = path;
     if (resource_view == "/") {
         resource_view = "/index.html";
     }
@@ -78,7 +84,7 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     const auto  file_it = files.get_file(resource_view.substr(1));
 
     if (file_it == nullptr) {
-        con->set_body(create_404_body(resource));
+        con->set_body(create_404_body(std::string(path)));
         con->replace_header("Content-Type", "text/html;charset=UTF-8");
         con->set_status(status_code::not_found);
         return;
