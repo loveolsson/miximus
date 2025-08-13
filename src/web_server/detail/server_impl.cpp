@@ -164,7 +164,7 @@ void web_server_impl::handle_api_v1_get_config(server_t::connection_ptr con)
     using namespace websocketpp::http;
 
     // Get current config
-    if (!config_getter_) {
+    if (!config_getters_.node_config) {
         auto error       = create_error_base_payload("", error_e::internal_error);
         error["message"] = "Config service not available";
         con->set_body(error.dump());
@@ -173,7 +173,7 @@ void web_server_impl::handle_api_v1_get_config(server_t::connection_ptr con)
     }
 
     try {
-        nlohmann::json config = config_getter_();
+        nlohmann::json config = config_getters_.node_config();
         con->set_body(config.dump());
         con->set_status(status_code::ok);
     } catch (const std::exception& e) {
@@ -411,7 +411,7 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
     });
 }
 
-void web_server_impl::set_config_getter(const config_getter_t& getter) { config_getter_ = getter; }
+void web_server_impl::set_config_getters(const config_getters_t& getters) { config_getters_ = getters; }
 
 void web_server_impl::start(uint16_t port, boost::asio::io_service* service)
 {

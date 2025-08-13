@@ -44,8 +44,8 @@ void load_settings(core::node_manager_s* manager, const path& settings_path)
         try {
             manager->set_config(json::parse(file));
         } catch (json::exception& e) {
-            // This error should panic as we don't want to run the app with a partial config, or overwrite
-            // the broken file with an empty config on exit
+            // This error should panic as we don't want to run the app with a partial config, or
+            // overwrite the broken file with an empty config on exit
             throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
         }
     } else {
@@ -103,8 +103,10 @@ int main(int argc, char* argv[])
             core::node_manager_s node_manager;
             load_settings(&node_manager, settings_path);
 
-            // Set up web server config getter
-            web_server->set_config_getter(utils::bind(&core::node_manager_s::get_config, &node_manager));
+            // Set up web server config getters
+            web_server->set_config_getters({
+                .node_config = utils::bind(&core::node_manager_s::get_config, &node_manager),
+            });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, *web_server));

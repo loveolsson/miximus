@@ -10,7 +10,12 @@
 namespace miximus::web_server {
 
 typedef std::function<void(nlohmann::json&&, int64_t)> callback_t;
-typedef std::function<nlohmann::json()> config_getter_t;
+typedef std::function<nlohmann::json()>                json_getter_t;
+
+struct config_getters_t
+{
+    json_getter_t node_config;
+};
 
 class server_s
 {
@@ -19,7 +24,7 @@ class server_s
     virtual ~server_s() = default;
 
     virtual void subscribe(topic_e topic, const callback_t& callback)   = 0;
-    virtual void set_config_getter(const config_getter_t& getter)       = 0;
+    virtual void set_config_getters(const config_getters_t& getters)    = 0;
     virtual void start(uint16_t port, boost::asio::io_service* service) = 0;
     virtual void stop()                                                 = 0;
 
