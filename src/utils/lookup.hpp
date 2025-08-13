@@ -32,7 +32,7 @@ constexpr auto enum_index = [](auto e) -> size_t {
 /**
  * Get a name of enum value.
  */
-constexpr auto enum_to_string = [](auto action) -> std::string_view { return magic_enum::enum_name(action); };
+constexpr auto enum_to_string = [](auto v) -> std::string_view { return magic_enum::enum_name(v); };
 
 /**
  * Match a string to an enum value.

@@ -94,7 +94,7 @@ HRESULT allocator_s::Decommit()
     allocations_g -= free_transfers_.size();
     free_transfers_.clear();
 
-    getlog("decklink")->debug("Decommitting transfers, current count {}", allocations_g);
+    getlog("decklink")->debug("Decommitting transfers, current count {}", allocations_g.load());
 
     active_ = false;
     return S_OK;

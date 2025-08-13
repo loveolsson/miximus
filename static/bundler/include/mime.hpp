@@ -1,7 +1,9 @@
-#include <array>
+#pragma once
 #include <boost/algorithm/string.hpp>
-#include <filesystem>
 #include <frozen/map.h>
+
+#include <array>
+#include <filesystem>
 #include <string_view>
 
 static std::string_view get_mime(const std::filesystem::path& name)
@@ -95,7 +97,8 @@ static std::string_view get_mime(const std::filesystem::path& name)
         {".avi",     "video/x-msvideo"                         },
     });
 
-    const auto ext = boost::to_lower_copy(name.extension().string());
+    auto ext = name.extension().string();
+    boost::to_lower(ext);
 
     const auto it = mime_types.find(ext);
     if (it != mime_types.end()) {
