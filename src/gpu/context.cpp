@@ -1,4 +1,5 @@
 #include "context.hpp"
+#include "context_logging.hpp"
 #include "glad.hpp"
 #include "logger/logger.hpp"
 #include "shader.hpp"
@@ -19,70 +20,6 @@ constexpr int DEFAULT_CTX_WIDTH  = 640;
 constexpr int DEFAULT_CTX_HEIGHT = 480;
 
 const auto _log = [] { return getlog("gpu"); };
-
-void glfw_error_callback(int error, const char* description)
-{
-    _log()->error("GLFW error: [{}]:{}", error, description);
-}
-
-constexpr auto get_enum_str(GLenum v)
-{
-    constexpr auto names = frozen::make_map<GLenum, std::string_view>({
-        {GL_DEBUG_SOURCE_API,               "API"                 }, // Source
-        {GL_DEBUG_SOURCE_OTHER,             "Other"               }, // Source
-        {GL_DEBUG_TYPE_ERROR,               "Error"               }, // Type
-        {GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR, "Deprecated Behaviour"}, // Type
-        {GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR,  "Undefined Behaviour" }, // Type
-        {GL_DEBUG_TYPE_PORTABILITY,         "Portability"         }, // Type
-        {GL_DEBUG_TYPE_PERFORMANCE,         "Performance"         }, // Type
-        {GL_DEBUG_TYPE_MARKER,              "Marker"              }, // Type
-        {GL_DEBUG_TYPE_PUSH_GROUP,          "Push Group"          }, // Type
-        {GL_DEBUG_TYPE_POP_GROUP,           "Pop Group"           }, // Type
-        {GL_DEBUG_TYPE_OTHER,               "Other"               }, // Type
-        {GL_DEBUG_SEVERITY_HIGH,            "High"                }, // Serverity
-        {GL_DEBUG_SEVERITY_MEDIUM,          "Medium"              }, // Serverity
-        {GL_DEBUG_SEVERITY_LOW,             "Low"                 }, // Serverity
-        {GL_DEBUG_SEVERITY_NOTIFICATION,    "Notification"        }, // Serverity
-    });
-
-    const auto it = names.find(v);
-    return it != names.end() ? it->second : "UNKNOWN";
-}
-
-void GLAPIENTRY opengl_error_callback(GLenum        source,
-                                      GLenum        type,
-                                      GLuint        id,
-                                      GLenum        severity,
-                                      GLsizei       length,
-                                      const GLchar* message,
-                                      const void*   userParam)
-{
-    (void)id;
-    (void)userParam;
-
-    if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) {
-        return;
-    }
-
-    const auto source_str   = get_enum_str(source);
-    const auto type_str     = get_enum_str(type);
-    const auto severity_str = get_enum_str(severity);
-    const auto message_str  = std::string_view(message, length);
-
-    if (type == GL_DEBUG_TYPE_ERROR) {
-        _log()->error("OpenGL error: source = {}, type = '{}', severity = '{}', message = '{}'",
-                      source_str,
-                      type_str,
-                      severity_str,
-                      message_str);
-    } else {
-        _log()->warn("OpenGL warning: source = {}, type = '{}', severity = '{}', message = '{}'",
-                     source_str,
-                     type_str,
-                     severity_str,
-                     message_str);
-    }
-}
 
 void monitor_config_callback(GLFWmonitor* monitor, int event)
 {

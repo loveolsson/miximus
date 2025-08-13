@@ -5,6 +5,8 @@ add_library(gpu
     vertex_array.cpp
     context.hpp
     context.cpp
+    context_logging.hpp
+    context_logging.cpp
     shader.hpp
     shader.cpp
     framebuffer.hpp
