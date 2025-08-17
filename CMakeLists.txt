@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.28)
 project(miximus)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -46,7 +46,7 @@ find_package(Threads REQUIRED)
 set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_DEBUG_LIBS ON)
 set(Boost_USE_RELEASE_LIBS ON)
-find_package(Boost REQUIRED COMPONENTS system fiber)
+find_package(Boost REQUIRED COMPONENTS system fiber CONFIG)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/frozen/include
