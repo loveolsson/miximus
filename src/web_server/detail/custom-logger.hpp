@@ -15,7 +15,7 @@ class custom_logger : public basic<concurrency, names>
     /**
      * @param hint A channel type specific hint for how to construct the logger
      */
-    custom_logger<concurrency, names>(channel_type_hint::value hint = channel_type_hint::access)
+    custom_logger(channel_type_hint::value hint = channel_type_hint::access)
         : basic<concurrency, names>(hint)
         , m_channel_type_hint(hint)
     {
@@ -25,7 +25,7 @@ class custom_logger : public basic<concurrency, names>
      * @param channels A set of channels to statically enable
      * @param hint A channel type specific hint for how to construct the logger
      */
-    custom_logger<concurrency, names>(level channels, channel_type_hint::value hint = channel_type_hint::access)
+    custom_logger(level channels, channel_type_hint::value hint = channel_type_hint::access)
         : basic<concurrency, names>(channels, hint)
         , m_channel_type_hint(hint)
     {
