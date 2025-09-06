@@ -263,14 +263,17 @@ error_e web_server_impl::handle_user_command(nlohmann::json&& doc, int64_t conne
         return error_e::invalid_topic;
     }
 
-    auto index = enum_index(*topic);
+    // subscription_by_topic_ has the length of enum_count<topic_e>,
+    // so we can safely access it using the index of a valid topic.
+    auto        index        = enum_index(*topic);
+    const auto& subscription = subscription_by_topic_[index];
 
-    if (!subscription_by_topic_[index]) {
+    if (!subscription) {
         return error_e::internal_error;
     }
 
     // Process the command through the existing subscription system
-    subscription_by_topic_[index](std::move(doc), connection_id);
+    subscription(std::move(doc), connection_id);
 
     return error_e::no_error; // Success
 }
