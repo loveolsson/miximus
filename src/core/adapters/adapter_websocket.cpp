@@ -151,8 +151,8 @@ void websocket_config_s::emit_add_node(std::string_view type,
     payload["origin_id"] = client_id;
 
     payload["node"] = {
-        {"type", type},
-        {"id", id},
+        {"type",    type   },
+        {"id",      id     },
         {"options", options},
     };
 
