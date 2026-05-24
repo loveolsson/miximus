@@ -127,16 +127,20 @@ context_s::context_s(bool visible, context_s* parent)
     if (visible) {
         glfwSwapInterval(1);
 
-        const auto logos = std::array{
-            load_image("images/miximus_32x32.png"),
-            load_image("images/miximus_64x64.png"),
-            load_image("images/miximus_128x128.png"),
-        };
+        // glfwSetWindowIcon is not supported on Wayland (GLFW_FEATURE_UNAVAILABLE).
+        // On Wayland the taskbar icon is provided by the .desktop file instead.
+        if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) {
+            const auto logos = std::array{
+                load_image("images/miximus_32x32.png"),
+                load_image("images/miximus_64x64.png"),
+                load_image("images/miximus_128x128.png"),
+            };
 
-        glfwSetWindowIcon(window_, logos.size(), logos.data());
+            glfwSetWindowIcon(window_, logos.size(), logos.data());
 
-        for (const auto& logo : logos) {
-            stbi_image_free(logo.pixels);
+            for (const auto& logo : logos) {
+                stbi_image_free(logo.pixels);
+            }
         }
     } else {
         // glfwSwapInterval(0);
