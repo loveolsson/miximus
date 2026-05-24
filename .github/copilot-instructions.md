@@ -32,7 +32,22 @@
 
 ## Integration & Communication
 - **Web Server**: `web_server/server.hpp` exposes HTTP/WebSocket endpoints for UI and remote control.
-- **External SDKs**: CEF, DeckLink, NVIDIA Codec SDK are required for full functionality. Symlink their roots to `3rd-party/` as described in `README.md`.
+- **External SDKs**: CEF, DeckLink SDK 16.0, NVIDIA Codec SDK are required for full functionality. Symlink their roots to `3rd-party/` as described in `README.md`.
+
+## Library Versions & Compatibility Notes
+- **Boost 1.88**: `io_service` is removed; use `io_context` + `executor_work_guard`. websocketpp uses `get_io_context()`; post via `boost::asio::post(ctx, handler)`.
+- **GLFW 3.4 (EGL backend)**: `GLFW_DOUBLEBUFFER` must always be `GLFW_TRUE`; setting it to `GLFW_FALSE` crashes EGL.
+- **glad v2** (`glad2` branch): header is `glad/gl.h`, loader is `gladLoadGL(glfwGetProcAddress)`, CMake: `glad_add_library(glad_gl REPRODUCIBLE LANGUAGE C API gl:core=4.6)`. Requires `set(CMAKE_POLICY_VERSION_MINIMUM 3.5)` in root `CMakeLists.txt`.
+- **DeckLink SDK 16.0** (at `3rd-party/decklink-sdk`):
+  - `GetBytes` is no longer on `IDeckLinkVideoFrame`/`IDeckLinkMutableVideoFrame`. Use `QueryInterface(IID_IDeckLinkVideoBuffer, &buf)` then `buf->StartAccess(flags)` / `buf->GetBytes(&ptr)` / `buf->EndAccess(flags)`.
+  - `IDeckLinkMemoryAllocator` is removed. Custom allocators now implement `IDeckLinkVideoBufferAllocator` (method: `AllocateVideoBuffer(IDeckLinkVideoBuffer**)`) and return `IDeckLinkVideoBuffer` objects wrapping the actual memory. Providers implement `IDeckLinkVideoBufferAllocatorProvider` and are registered via `EnableVideoInputWithAllocatorProvider`.
+  - Linux COM (`LinuxCOM.h`): `REFIID` has no `operator==`; compare with `memcmp(&iid, &IID_Xxx, sizeof(REFIID))`. Use C-style casts `(IInterface*)this` when returning `this` from `QueryInterface` — this is the SDK-canonical pattern. For IUnknown, compare against `CFUUIDGetUUIDBytes(IUnknownUUID)`.
+
+## Shutdown & Lifecycle
+- **Destruction order matters**: `web_server` holds a raw pointer to `app_state_s`'s `io_context` (via websocketpp `init_asio`). Declare `web_server` in a tighter scope than `app_state_s` so it is destroyed first.
+- **`web_server::stop()`** is synchronous (uses `std::promise`/`future` to wait for the asio thread to finish).
+- **DeckLink `uninstall()`** runs with a 2-second timeout via a detached thread to guard against missing kernel drivers.
+- **Shutdown watchdog**: `main.cpp` starts a 5-second forced-exit timer after receiving SIGINT/SIGTERM.
 
 ## Error Handling & Logging
 - **Errors**: Internal APIs return `error_e` enums, not exceptions.
