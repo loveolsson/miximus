@@ -7,6 +7,16 @@ namespace miximus::nodes::decklink::detail {
 
 constexpr size_t MAX_ALLOCATIONS = 4;
 
+// Defined here because it references allocator_s::return_buffer.
+ULONG video_buffer_s::Release()
+{
+    ULONG count = --ref_count_;
+    if (count == 0) {
+        allocator_->return_buffer(this);
+    }
+    return count;
+}
+
 allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir)
     : transfer_type_(transfer_i::get_prefered_type())
     , ctx_(std::move(ctx))
@@ -16,104 +26,71 @@ allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::tra
 
 allocator_s::~allocator_s()
 {
-    assert(free_transfers_.empty());
-    assert(allocated_transfers_.empty());
+    assert(free_buffers_.empty());
+    assert(allocated_buffers_.empty());
 }
 
-HRESULT allocator_s::AllocateBuffer(uint32_t bufferSize, void** allocatedBuffer)
+HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
 {
     auto lock = ctx_->get_lock();
-
-    last_allocation_size_ = bufferSize;
     ctx_->make_current();
 
-    if (!free_transfers_.empty()) {
-        auto tr = std::move(free_transfers_.front());
-        free_transfers_.pop_front();
-
-        if (tr->size() == bufferSize) {
-            *allocatedBuffer = tr->ptr();
-            assert(*allocatedBuffer != nullptr);
-
-            allocated_transfers_.emplace(*allocatedBuffer, std::move(tr));
+    if (!free_buffers_.empty()) {
+        auto& front = free_buffers_.front();
+        if (front->buffer_size() == buffer_size_) {
+            auto* raw = front.get();
+            raw->reset_ref_count();
+            allocated_buffers_.emplace(raw, std::move(front));
+            free_buffers_.pop_front();
+            *allocatedBuffer = (IDeckLinkVideoBuffer*)raw;
             gpu::context_s::rewind_current();
             return S_OK;
         }
-
+        // Wrong size — discard and fall through to allocate a new one.
         allocations_g--;
+        free_buffers_.pop_front();
     }
 
-    if (allocated_transfers_.size() > MAX_ALLOCATIONS) {
+    if (allocated_buffers_.size() > MAX_ALLOCATIONS) {
         gpu::context_s::rewind_current();
         return E_OUTOFMEMORY;
     }
 
     getlog("decklink")->debug("Allocating transfer, current count {}", ++allocations_g);
-    auto tr          = transfer_i::create_transfer(transfer_type_, bufferSize, direction_);
-    *allocatedBuffer = tr->ptr();
-    assert(*allocatedBuffer != nullptr);
-    allocated_transfers_.emplace(*allocatedBuffer, std::move(tr));
+    auto  transfer = transfer_i::create_transfer(transfer_type_, buffer_size_, direction_);
+    auto  buffer   = std::make_unique<video_buffer_s>(this, std::move(transfer));
+    auto* raw      = buffer.get();
+    allocated_buffers_.emplace(raw, std::move(buffer));
 
+    *allocatedBuffer = (IDeckLinkVideoBuffer*)raw;
     gpu::context_s::rewind_current();
     return S_OK;
 }
 
-HRESULT allocator_s::ReleaseBuffer(void* buffer)
+void allocator_s::return_buffer(video_buffer_s* buffer)
 {
     auto lock = ctx_->get_lock();
     ctx_->make_current();
 
-    auto it = allocated_transfers_.find(buffer);
-    if (it != allocated_transfers_.end()) {
-        if (active_ && it->second->size() == last_allocation_size_) {
-            free_transfers_.emplace_back(std::move(it->second));
+    auto it = allocated_buffers_.find(buffer);
+    if (it != allocated_buffers_.end()) {
+        if (it->second->buffer_size() == buffer_size_) {
+            free_buffers_.emplace_back(std::move(it->second));
         } else {
             getlog("decklink")->debug("Releasing transfer, current count {}", --allocations_g);
+            // unique_ptr destroyed at erase below.
         }
-
-        allocated_transfers_.erase(it);
+        allocated_buffers_.erase(it);
     } else {
-        throw std::runtime_error("DeckLink allocator trying to release unknown frame");
+        throw std::runtime_error("DeckLink allocator trying to release unknown buffer");
     }
 
     gpu::context_s::rewind_current();
-    return S_OK;
 }
 
-HRESULT allocator_s::Commit()
+gpu::transfer::transfer_i* allocator_s::get_transfer(IDeckLinkVideoBuffer* buffer)
 {
-    auto lock = ctx_->get_lock();
-    active_   = true;
-    return S_OK;
-}
-
-HRESULT allocator_s::Decommit()
-{
-    auto lock = ctx_->get_lock();
-
-    allocations_g -= free_transfers_.size();
-    free_transfers_.clear();
-
-    getlog("decklink")->debug("Decommitting transfers, current count {}", allocations_g.load());
-
-    active_ = false;
-    return S_OK;
-}
-
-gpu::transfer::transfer_i* allocator_s::get_transfer(void* ptr)
-{
-    // Does not lock since it is called from locked contexts
-
-    auto it = allocated_transfers_.find(ptr);
-    if (it != allocated_transfers_.end()) {
-        return it->second.get();
-    }
-
-    for (auto& t : free_transfers_) {
-        assert(t->ptr() != ptr);
-    }
-
-    return nullptr;
+    return static_cast<video_buffer_s*>(buffer)->get_transfer();
 }
 
 bool allocator_s::register_texture(gpu::texture_s* texture)
@@ -139,10 +116,15 @@ bool allocator_s::end_texture_use(gpu::texture_s* texture)
 size_t allocator_s::destroy_free_transfers()
 {
     auto lock = ctx_->get_lock();
+    ctx_->make_current();
 
-    free_transfers_.clear();
+    allocations_g -= free_buffers_.size();
+    free_buffers_.clear();
 
-    return allocated_transfers_.size();
+    getlog("decklink")->debug("Destroying free transfers, current count {}", allocations_g.load());
+
+    gpu::context_s::rewind_current();
+    return allocated_buffers_.size();
 }
 
 } // namespace miximus::nodes::decklink::detail
