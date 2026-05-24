@@ -1,4 +1,5 @@
 #include "nodes/interface.hpp"
+#include "core/app_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "nodes/node.hpp"
@@ -39,9 +40,9 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
 
             iface = node->find_interface(con.from_interface);
 
-            if (iface != nullptr && !state.executed) {
-                state.executed = true;
-                node->execute(app, nodes, state);
+            if (iface != nullptr && !app->frame_info.executed_nodes.contains(record->first)) {
+                app->frame_info.executed_nodes.emplace(record->first);
+                node->execute(app, nodes, record->second.state);
             }
         }
 

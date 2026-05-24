@@ -369,28 +369,28 @@ void node_manager_s::tick_one_frame(app_state_s* app)
             _log()->info("Copied node config graph");
         } else {
             lock.unlock();
-            for (auto& node : nodes_copy_) {
-                node.second.state.executed = false;
-            }
         }
     }
 
     app->ctx()->make_current();
 
-    std::vector<nodes::node_record_s*> must_execute;
+    app->frame_info.executed_nodes.clear();
+
+    std::vector<std::pair<std::string_view, nodes::node_record_s*>> must_execute;
 
     // Call prepare on all nodes, and collect their traits
-    for (auto& [_, record] : nodes_copy_) {
+    for (auto& [id, record] : nodes_copy_) {
         nodes::node_i::traits_s traits = {};
         record.node->prepare(app, record.state, &traits);
 
         if (traits.must_run) {
-            must_execute.emplace_back(&record);
+            must_execute.emplace_back(id, &record);
         }
     }
 
-    for (auto record : must_execute) {
-        if (!record->state.executed) {
+    for (auto [id, record] : must_execute) {
+        if (!app->frame_info.executed_nodes.contains(id)) {
+            app->frame_info.executed_nodes.emplace(id);
             record->node->execute(app, nodes_copy_, record->state);
         }
     }

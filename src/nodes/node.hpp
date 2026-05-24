@@ -30,7 +30,7 @@ class node_i
     };
 
     virtual std::string_view type() const = 0;
-    virtual void             prepare(core::app_state_s*, const node_state_s&, traits_s*){};
+    virtual void             prepare(core::app_state_s*, const node_state_s&, traits_s*) {};
     virtual void             execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
     virtual void             complete(core::app_state_s*) {}
 

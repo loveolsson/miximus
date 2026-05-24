@@ -32,7 +32,6 @@ struct node_state_s
 {
     con_map_t      con_map;
     nlohmann::json options;
-    mutable bool   executed{false};
 
     const con_set_t& get_connection_set(std::string_view name) const
     {

@@ -7,6 +7,8 @@
 #include "utils/flicks.hpp"
 
 #include <optional>
+#include <string_view>
+#include <unordered_set>
 
 #include <FiberPool.hpp>
 
@@ -43,10 +45,11 @@ class app_state_s
 
     struct
     {
-        utils::flicks timestamp;
-        utils::flicks pts;
-        utils::flicks duration;
-        bool          field_even{};
+        utils::flicks                        timestamp;
+        utils::flicks                        pts;
+        utils::flicks                        duration;
+        bool                                 field_even{};
+        std::unordered_set<std::string_view> executed_nodes;
     } frame_info;
 };
 
