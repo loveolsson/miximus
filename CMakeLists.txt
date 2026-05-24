@@ -73,6 +73,7 @@ if (MIXIMUS_TUNE_NATIVE)
     endif()
 endif()
 
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(submodules)
 add_subdirectory(src)
 add_subdirectory(static)

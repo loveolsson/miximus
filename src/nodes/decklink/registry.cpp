@@ -3,6 +3,8 @@
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <fmt/format.h>
+#include <future>
+#include <thread>
 
 namespace miximus::nodes::decklink {
 
@@ -37,7 +39,7 @@ static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
         discovery = nullptr;
     }
 #else
-    discovery     = CreateDeckLinkDiscoveryInstance();
+    discovery = CreateDeckLinkDiscoveryInstance();
 #endif
 
     return decklink_ptr(discovery, false);
@@ -56,7 +58,7 @@ static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
         conversion = nullptr;
     }
 #else
-    conversion    = CreateVideoConversionInstance();
+    conversion = CreateVideoConversionInstance();
 #endif
 
     return decklink_ptr(conversion, false);
@@ -75,7 +77,7 @@ static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 #else
     const char* n = nullptr;
     device->GetDisplayName(&n);
-    name             = n;
+    name = n;
 #endif
 
     /**
@@ -185,9 +187,22 @@ void decklink_registry_s::uninstall()
 {
     const std::shared_lock lock(device_mutex_);
 
-    if (discovery_) {
-        getlog("decklink")->debug("Uninstalling DeckLink discovery");
+    if (!discovery_) {
+        return;
+    }
+
+    getlog("decklink")->debug("Uninstalling DeckLink discovery");
+
+    std::promise<void> done;
+    auto               future = done.get_future();
+
+    std::thread([this, p = std::move(done)]() mutable {
         discovery_->UninstallDeviceNotifications();
+        p.set_value();
+    }).detach();
+
+    if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
+        getlog("decklink")->warn("DeckLink uninstall timed out — kernel module may need rebuilding (dkms autoinstall)");
     }
 }
 

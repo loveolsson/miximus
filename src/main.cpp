@@ -33,6 +33,15 @@ auto& get_signal_status()
 
 void signal_handler(int /*signal*/) { get_signal_status() = 1; }
 
+void start_shutdown_watchdog()
+{
+    std::thread([] {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::cerr << "Shutdown timed out, forcing exit\n";
+        std::_Exit(1);
+    }).detach();
+}
+
 void load_settings(core::node_manager_s* manager, const path& settings_path)
 {
     auto log = getlog("app");
@@ -71,6 +80,7 @@ void save_settings(core::node_manager_s* manager, const path& settings_path)
 int main(int argc, char* argv[])
 {
     (void)std::signal(SIGINT, signal_handler);
+    (void)std::signal(SIGTERM, signal_handler);
 
     auto log_level     = spdlog::level::info;
     auto settings_path = path(argv[0]).parent_path() / "settings.json";
@@ -94,10 +104,12 @@ int main(int argc, char* argv[])
     utils::set_max_thread_priority();
 
     try {
-        auto web_server = web_server::create_web_server();
-
         {
             core::app_state_s app;
+            // web_server declared AFTER app so it is destroyed BEFORE app — the
+            // websocketpp endpoint holds a raw pointer to cfg_executor_ and must
+            // not outlive it.
+            auto web_server = web_server::create_web_server();
             web_server->start(HTTP_PORT, app.cfg_executor());
 
             core::node_manager_s node_manager;
@@ -138,19 +150,18 @@ int main(int argc, char* argv[])
             }
 
             getlog("app")->info("Exiting...");
+            start_shutdown_watchdog();
 
             web_server->stop();
             node_manager.clear_adapters();
             save_settings(&node_manager, settings_path);
             node_manager.clear_nodes(&app);
         }
-
     } catch (std::exception& e) {
         std::cout << "Panic: " << e.what() << std::endl;
     }
 
     // gpu::context_s::terminate();
     spdlog::shutdown();
-
     return EXIT_SUCCESS;
 }

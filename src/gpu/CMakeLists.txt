@@ -36,7 +36,7 @@ PRIVATE
     logger
     stb
 PUBLIC
-    glad
+    glad_gl
     glm::glm
 )   
 

@@ -54,7 +54,7 @@ class web_server_impl : public server_s
 
     virtual void subscribe(topic_e topic, const callback_t& callback) override;
     virtual void set_config_getters(const config_getters_t& getters) override;
-    virtual void start(uint16_t port, boost::asio::io_service* service) override;
+    virtual void start(uint16_t port, boost::asio::io_context* service) override;
     void         stop() final;
 
     void send_message(const nlohmann::json& msg, int64_t connection_id) final;

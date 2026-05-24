@@ -1,5 +1,4 @@
 #include "core/app_state.hpp"
-#include "detail/frame.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -156,12 +155,18 @@ class callback_s : public IDeckLinkInputCallback
             frame.src_dim = src_dim;
         }
 
-        void* src_data = nullptr;
-        if (videoFrame->GetBytes(&src_data) == S_OK) {
-            // Map the buffer to client memory address space
-            void* dst_data = glMapNamedBuffer(frame.buffer_id, GL_WRITE_ONLY);
-            memcpy(dst_data, src_data, row_bytes * tx_dim.y);
-            glUnmapNamedBuffer(frame.buffer_id);
+        IDeckLinkVideoBuffer* video_buffer = nullptr;
+        if (videoFrame->QueryInterface(IID_IDeckLinkVideoBuffer, (void**)&video_buffer) == S_OK) {
+            if (video_buffer->StartAccess(bmdBufferAccessRead) == S_OK) {
+                void* src_data = nullptr;
+                video_buffer->GetBytes(&src_data);
+                // Map the buffer to client memory address space
+                void* dst_data = glMapNamedBuffer(frame.buffer_id, GL_WRITE_ONLY);
+                memcpy(dst_data, src_data, row_bytes * tx_dim.y);
+                glUnmapNamedBuffer(frame.buffer_id);
+                video_buffer->EndAccess(bmdBufferAccessRead);
+            }
+            video_buffer->Release();
         }
 
         frame.sync = std::make_unique<gpu::sync_s>();

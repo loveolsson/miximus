@@ -46,7 +46,7 @@ if(WIN32)
 
     target_link_libraries(decklink PRIVATE
         ${DECKLINK_DVP_LIB}
-        glad    
+        glad_gl    
     )
 
     target_include_directories(decklink PUBLIC
@@ -74,7 +74,7 @@ else()
     )
 
     target_link_libraries(decklink PRIVATE
-        glad
+        glad_gl
     )
 
     target_link_libraries(decklink INTERFACE

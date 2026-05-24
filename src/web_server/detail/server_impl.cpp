@@ -7,6 +7,7 @@
 
 #include <boost/property_tree/detail/xml_parser_utils.hpp>
 #include <fmt/format.h>
+#include <future>
 #include <nlohmann/json.hpp>
 
 namespace {
@@ -408,7 +409,7 @@ void web_server_impl::send(const con_hdl_t& hdl, const nlohmann::json& msg) { se
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 {
-    endpoint_.get_io_service().post([this, topic, callback]() {
+    boost::asio::post(endpoint_.get_io_context(), [this, topic, callback]() {
         auto index                    = enum_index(topic);
         subscription_by_topic_[index] = callback;
     });
@@ -416,7 +417,7 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 
 void web_server_impl::set_config_getters(const config_getters_t& getters) { config_getters_ = getters; }
 
-void web_server_impl::start(uint16_t port, boost::asio::io_service* service)
+void web_server_impl::start(uint16_t port, boost::asio::io_context* service)
 {
     using namespace websocketpp::log;
     // Initialize the Asio transport policy
@@ -439,7 +440,10 @@ void web_server_impl::stop()
 
     endpoint_.get_alog().write(alevel::app, "Stopping server");
 
-    endpoint_.get_io_service().post([&]() {
+    std::promise<void> done;
+    auto               future = done.get_future();
+
+    boost::asio::post(endpoint_.get_io_context(), [this, p = std::move(done)]() mutable {
         endpoint_.stop_listening();
 
         for (auto& connection : connections_) {
@@ -449,13 +453,18 @@ void web_server_impl::stop()
                 endpoint_.get_alog().write(elevel::rerror, fmt::format("Error closing connection: {}", ec.message()));
             }
         }
+
+        p.set_value();
     });
+
+    future.wait();
 }
 
 void web_server_impl::send_message(const nlohmann::json& msg, int64_t connection_id)
 {
-    endpoint_.get_io_service().post(
-        [this, serialized = msg.dump(), connection_id]() { send_message_sync(serialized, connection_id); });
+    boost::asio::post(endpoint_.get_io_context(), [this, serialized = msg.dump(), connection_id]() {
+        send_message_sync(serialized, connection_id);
+    });
 }
 
 void web_server_impl::send_message_sync(const nlohmann::json& msg, int64_t connection_id)
@@ -482,8 +491,9 @@ void web_server_impl::broadcast_message(const nlohmann::json& msg)
 {
     auto topic = get_topic_from_payload(msg);
     if (topic.has_value()) {
-        endpoint_.get_io_service().post(
-            [this, topic = *topic, serialized = msg.dump()]() { broadcast_message_sync(topic, serialized); });
+        boost::asio::post(endpoint_.get_io_context(), [this, topic = *topic, serialized = msg.dump()]() {
+            broadcast_message_sync(topic, serialized);
+        });
     }
 }
 

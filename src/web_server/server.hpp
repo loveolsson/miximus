@@ -25,7 +25,7 @@ class server_s
 
     virtual void subscribe(topic_e topic, const callback_t& callback)   = 0;
     virtual void set_config_getters(const config_getters_t& getters)    = 0;
-    virtual void start(uint16_t port, boost::asio::io_service* service) = 0;
+    virtual void start(uint16_t port, boost::asio::io_context* service) = 0;
     virtual void stop()                                                 = 0;
 
     /**

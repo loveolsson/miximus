@@ -1,5 +1,4 @@
 #include "core/app_state.hpp"
-#include "detail/frame.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -103,10 +102,15 @@ class callback_s
 
         if (SUCCEEDED(device_->CreateVideoFrame(
                 mode_info_.dim.x, mode_info_.dim.y, mode_info.dim.x * 2, bmdFormat8BitYUV, 0, &frame))) {
-            uint16_t* data = nullptr;
-            frame->GetBytes(reinterpret_cast<void**>(&data));
-
-            std::fill(data, data + static_cast<size_t>(mode_info_.dim.x * mode_info_.dim.y), 0x0000);
+            IDeckLinkVideoBuffer* buffer = nullptr;
+            if (frame->QueryInterface(IID_IDeckLinkVideoBuffer, (void**)&buffer) == S_OK) {
+                buffer->StartAccess(bmdBufferAccessWrite);
+                uint16_t* data = nullptr;
+                buffer->GetBytes(reinterpret_cast<void**>(&data));
+                std::fill(data, data + static_cast<size_t>(mode_info_.dim.x * mode_info_.dim.y), 0x0000);
+                buffer->EndAccess(bmdBufferAccessWrite);
+                buffer->Release();
+            }
 
             for (int i = 0; i < 4; i++) {
                 device_->ScheduleVideoFrame(frame, pts_, mode_info_.frame_duration, mode_info_.time_scale);
@@ -183,13 +187,17 @@ class callback_s
 
             if (SUCCEEDED(
                     device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
-                void* dst_ptr = nullptr;
-                dst_frame->GetBytes(&dst_ptr);
-
-                auto size = row_bytes * frame.dim.y;
-                assert(size > 0);
-
-                memcpy(dst_ptr, frame.ptr, static_cast<size_t>(size));
+                IDeckLinkVideoBuffer* dst_buffer = nullptr;
+                if (dst_frame->QueryInterface(IID_IDeckLinkVideoBuffer, (void**)&dst_buffer) == S_OK) {
+                    dst_buffer->StartAccess(bmdBufferAccessWrite);
+                    void* dst_ptr = nullptr;
+                    dst_buffer->GetBytes(&dst_ptr);
+                    auto size = row_bytes * frame.dim.y;
+                    assert(size > 0);
+                    memcpy(dst_ptr, frame.ptr, static_cast<size_t>(size));
+                    dst_buffer->EndAccess(bmdBufferAccessWrite);
+                    dst_buffer->Release();
+                }
 
                 last_frame_ = dst_frame;
                 dst_frame->Release();

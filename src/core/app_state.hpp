@@ -18,13 +18,14 @@ namespace miximus::core {
 
 class app_state_s
 {
-    using io_service_t  = boost::asio::io_service;
+    using io_service_t  = boost::asio::io_context;
+    using work_guard_t  = boost::asio::executor_work_guard<io_service_t::executor_type>;
     using thread_pool_t = FiberPool::FiberPool<true>;
 
-    io_service_t                        cfg_executor_;
-    std::unique_ptr<io_service_t::work> cfg_work_;
-    std::thread                         cfg_thread_;
-    std::unique_ptr<thread_pool_t>      thread_pool_;
+    io_service_t                   cfg_executor_;
+    std::unique_ptr<work_guard_t>  cfg_work_;
+    std::thread                    cfg_thread_;
+    std::unique_ptr<thread_pool_t> thread_pool_;
 
     std::unique_ptr<gpu::context_s>                       ctx_;
     std::unique_ptr<nodes::decklink::decklink_registry_s> decklink_registry_;

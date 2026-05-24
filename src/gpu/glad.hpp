@@ -4,4 +4,4 @@
 #include <Windows.h>
 #endif
 
-#include <glad/glad.h>
+#include <glad/gl.h>

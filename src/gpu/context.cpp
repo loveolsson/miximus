@@ -101,7 +101,7 @@ context_s::context_s(bool visible, context_s* parent)
     const int visible_flag = visible ? GLFW_TRUE : GLFW_FALSE;
     glfwWindowHint(GLFW_SRGB_CAPABLE, visible_flag);
     glfwWindowHint(GLFW_VISIBLE, visible_flag);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, visible_flag);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
 
     auto parent_window = (parent != nullptr) ? parent->window_ : nullptr;
     window_            = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
@@ -116,7 +116,7 @@ context_s::context_s(bool visible, context_s* parent)
 
     static std::once_flag glad_init;
     std::call_once(glad_init, []() {
-        if (gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) == 0) {
+        if (gladLoadGL(glfwGetProcAddress) == 0) {
             throw std::runtime_error("GLAD failed to load OpenGL procs");
         }
 
