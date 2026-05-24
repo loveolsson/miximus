@@ -31,7 +31,6 @@ PRIVATE
     app
     gpu
 
-#    msquic
     Boost::system
     Boost::fiber
     magic_enum::magic_enum
@@ -48,4 +47,3 @@ endmacro()
 
 copy_library_to_binary_dir(static_files)
 copy_library_to_binary_dir(decklink)
-#copy_library_to_binary_dir(msquic)
