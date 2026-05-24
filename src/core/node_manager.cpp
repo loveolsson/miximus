@@ -84,7 +84,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     }
 
     for (const auto& rcon : removed_connections) {
-        handle_remove_connection(rcon, client_id);
+        remove_connection_locked(rcon, client_id);
     }
 
     for (auto& adapter : adapters_) {
@@ -242,7 +242,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     to_iface->add_connection(&to_connections, con, &removed_connections);
 
     for (const auto& rcon : removed_connections) {
-        handle_remove_connection(rcon, client_id);
+        remove_connection_locked(rcon, client_id);
     }
 
     for (auto& adapter : adapters_) {
@@ -254,10 +254,8 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id)
+error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con, int64_t client_id)
 {
-    const std::unique_lock lock(nodes_mutex_);
-
     _log()->info(
         "Removing connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
 
@@ -291,6 +289,12 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
     nodes_dirty_ = true;
 
     return error_e::no_error;
+}
+
+error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id)
+{
+    const std::unique_lock lock(nodes_mutex_);
+    return remove_connection_locked(con, client_id);
 }
 
 json node_manager_s::get_config()
