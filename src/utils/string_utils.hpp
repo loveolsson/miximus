@@ -1,28 +1,54 @@
 #pragma once
 
-#include <codecvt>
-#include <locale>
+#include <cstdint>
 #include <string>
 
 namespace miximus::utils {
 
-/**
- * @brief Convert UTF-8 encoded string to UTF-32 encoded string
- *
- * This utility function converts a UTF-8 string to UTF-32 for proper
- * Unicode handling in text rendering and processing systems.
- *
- * @param utf8_string The input UTF-8 encoded string
- * @return std::u32string The UTF-32 encoded string
- */
 inline std::u32string utf8_to_utf32(const std::string& utf8_string)
 {
-    struct destructible_codecvt : public std::codecvt<char32_t, char, std::mbstate_t>
-    {
-    };
+    std::u32string result;
+    result.reserve(utf8_string.size());
 
-    std::wstring_convert<destructible_codecvt, char32_t> utf32_converter;
-    return utf32_converter.from_bytes(utf8_string);
+    const auto* p   = reinterpret_cast<const uint8_t*>(utf8_string.data());
+    const auto* end = p + utf8_string.size();
+
+    while (p < end) {
+        char32_t cp;
+        if (*p < 0x80) {
+            cp = *p++;
+        } else if ((*p & 0xE0) == 0xC0) {
+            cp = (*p++ & 0x1F) << 6;
+            if (p < end && (*p & 0xC0) == 0x80) {
+                cp |= (*p++ & 0x3F);
+            }
+        } else if ((*p & 0xF0) == 0xE0) {
+            cp = (*p++ & 0x0F) << 12;
+            if (p < end && (*p & 0xC0) == 0x80) {
+                cp |= (*p++ & 0x3F) << 6;
+            }
+            if (p < end && (*p & 0xC0) == 0x80) {
+                cp |= (*p++ & 0x3F);
+            }
+        } else if ((*p & 0xF8) == 0xF0) {
+            cp = (*p++ & 0x07) << 18;
+            if (p < end && (*p & 0xC0) == 0x80) {
+                cp |= (*p++ & 0x3F) << 12;
+            }
+            if (p < end && (*p & 0xC0) == 0x80) {
+                cp |= (*p++ & 0x3F) << 6;
+            }
+            if (p < end && (*p & 0xC0) == 0x80) {
+                cp |= (*p++ & 0x3F);
+            }
+        } else {
+            ++p; // skip invalid byte
+            continue;
+        }
+        result.push_back(cp);
+    }
+
+    return result;
 }
 
 } // namespace miximus::utils

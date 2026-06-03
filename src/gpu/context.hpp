@@ -35,6 +35,7 @@ class context_s
     void        make_current();
     static void rewind_current();
     static bool has_current();
+    static bool require_current();
 
     void swap_buffers();
 

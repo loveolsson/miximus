@@ -1,4 +1,5 @@
 #include "gpu/sync.hpp"
+#include "gpu/context.hpp"
 
 namespace miximus::gpu {
 sync_s::sync_s()
@@ -9,6 +10,9 @@ sync_s::sync_s()
 sync_s::~sync_s()
 {
     if (sync_ != nullptr) {
+        if (!context_s::require_current()) {
+            return;
+        }
         glDeleteSync(sync_);
     }
 }

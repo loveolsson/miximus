@@ -7,10 +7,10 @@ namespace miximus::nodes {
 void to_json(nlohmann::json& j, const connection_s& con)
 {
     j = {
-        {"from_node", con.from_node},
+        {"from_node",      con.from_node     },
         {"from_interface", con.from_interface},
-        {"to_node", con.to_node},
-        {"to_interface", con.to_interface},
+        {"to_node",        con.to_node       },
+        {"to_interface",   con.to_interface  },
     };
 }
 

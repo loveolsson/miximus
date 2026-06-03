@@ -1,4 +1,5 @@
 #include "texture.hpp"
+#include "context.hpp"
 
 #include <stdexcept>
 
@@ -67,7 +68,13 @@ texture_s::texture_s(vec2i_t dimensions, format_e color)
     glTextureStorage2D(id_, mip_map_levels, internal_format, texture_dimensions_.x, texture_dimensions_.y);
 }
 
-texture_s::~texture_s() { glDeleteTextures(1, &id_); }
+texture_s::~texture_s()
+{
+    if (!context_s::require_current()) {
+        return;
+    }
+    glDeleteTextures(1, &id_);
+}
 
 void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
 

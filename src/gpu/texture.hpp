@@ -30,10 +30,10 @@ class texture_s
     texture_s(vec2i_t dimensions, format_e color);
     ~texture_s();
 
-    texture_s(const texture_s&) = delete;
-    texture_s(texture_s&&)      = delete;
+    texture_s(const texture_s&)      = delete;
+    texture_s(texture_s&&)           = delete;
     void operator=(const texture_s&) = delete;
-    void operator=(texture_s&&) = delete;
+    void operator=(texture_s&&)      = delete;
 
     void     init();
     vec2i_t  display_dimensions() { return display_dimensions_; }

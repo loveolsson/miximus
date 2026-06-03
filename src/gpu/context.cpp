@@ -11,6 +11,8 @@
 #include "stb_image.h"
 #include <frozen/map.h>
 
+#include <chrono>
+
 namespace {
 using namespace miximus;
 
@@ -142,8 +144,6 @@ context_s::context_s(bool visible, context_s* parent)
                 stbi_image_free(logo.pixels);
             }
         }
-    } else {
-        // glfwSwapInterval(0);
     }
 
     glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
@@ -237,6 +237,13 @@ void context_s::rewind_current()
 }
 
 bool context_s::has_current() { return !current_stack_.empty(); }
+
+bool context_s::require_current()
+{
+    const bool ok = !current_stack_.empty();
+    assert(ok);
+    return ok;
+}
 
 void context_s::swap_buffers() { glfwSwapBuffers(window_); }
 

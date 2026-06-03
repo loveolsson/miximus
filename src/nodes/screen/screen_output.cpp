@@ -12,7 +12,12 @@
 #include "utils/frame_queue.hpp"
 #include "utils/thread_priority.hpp"
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
+#include <atomic>
 #include <memory>
+#include <thread>
 
 namespace {
 using namespace miximus;
@@ -57,19 +62,23 @@ class node_impl : public node_i
         }
     };
 
+    // All state the render thread touches lives in render_state_s and is held
+    // behind a shared_ptr so the thread lambda and node_impl share ownership.
+    struct render_state_s
+    {
+        std::condition_variable            frame_cv;
+        utils::frame_queue_s<frame_info_s> frames_rendered;
+        utils::frame_queue_s<frame_info_s> frames_free;
+        std::atomic<bool>                  thread_run{false};
+        std::unique_ptr<gpu::context_s>    ctx;
+    };
+
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
-    std::mutex                          ctx_mtx_;
-    std::unique_ptr<gpu::context_s>     ctx_;
+    std::shared_ptr<render_state_s>     render_state_;
+    std::thread                         render_thread_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
-
-    std::condition_variable            frame_cv_;
-    utils::frame_queue_s<frame_info_s> frames_rendered_;
-    utils::frame_queue_s<frame_info_s> frames_free_;
-
-    bool              thread_run_{};
-    std::future<bool> thread_future_{};
 
   public:
     explicit node_impl() { register_interface(&iface_tex_); }
@@ -88,15 +97,13 @@ class node_impl : public node_i
         if (enabled) {
             traits->must_run = true;
 
-            if (!ctx_) {
-                auto lock = frames_rendered_.get_lock();
-                {
-                    const std::unique_lock lock(ctx_mtx_);
-                    ctx_        = gpu::context_s::create_unique_context(true, app->ctx());
-                    thread_run_ = true;
-                }
+            if (!render_state_) {
+                render_state_             = std::make_shared<render_state_s>();
+                render_state_->ctx        = gpu::context_s::create_unique_context(true, app->ctx());
+                render_state_->thread_run = true;
 
-                thread_future_ = std::async(&node_impl::run, this);
+                auto state_cap = render_state_;
+                render_thread_ = std::thread([state_cap]() mutable { run_render(state_cap); });
             }
 
             gpu::recti_s rect{};
@@ -108,18 +115,18 @@ class node_impl : public node_i
             rect.size.y               = state.get_option<int>("sizey", 100);
 
             if (fullscreen) {
-                ctx_->set_fullscreen_monitor(monitor_name, rect);
+                render_state_->ctx->set_fullscreen_monitor(monitor_name, rect);
             } else {
-                ctx_->set_window_rect(rect);
+                render_state_->ctx->set_window_rect(rect);
             }
-        } else if (ctx_) {
+        } else if (render_state_) {
             stop_thread();
         }
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        if (!ctx_) {
+        if (!render_state_) {
             return;
         }
 
@@ -138,8 +145,8 @@ class node_impl : public node_i
 
         // Avoid blocking the main thread with a wait by not using the 2 most recently
         // displayed buffers, as it might still be used by the display context
-        decltype(frames_free_)::record_s record;
-        if (frames_free_.pop_frame_if_count(3, &record)) {
+        decltype(render_state_->frames_free)::record_s record;
+        if (render_state_->frames_free.pop_frame_if_count(3, &record)) {
             frame = std::move(record.frame);
         }
 
@@ -158,7 +165,7 @@ class node_impl : public node_i
             frame = std::move(new_frame);
         }
 
-        frame.fb_size = ctx_->get_framebuffer_size();
+        frame.fb_size = render_state_->ctx->get_framebuffer_size();
 
         framebuffer_->bind();
 
@@ -194,13 +201,13 @@ class node_impl : public node_i
         // glMemoryBarrierByRegion(GL_TEXTURE_FETCH_BARRIER_BIT);
 
         {
-            if (frames_rendered_.size() < 3) {
+            if (render_state_->frames_rendered.size() < 3) {
                 frame.sync = std::make_unique<gpu::sync_s>();
-                frames_rendered_.push_frame(std::move(frame), app->frame_info.timestamp);
-                frame_cv_.notify_one();
+                render_state_->frames_rendered.push_frame(std::move(frame), app->frame_info.timestamp);
+                render_state_->frame_cv.notify_one();
             } else {
                 // TODO(Love): log or signal this
-                frames_free_.push_frame(std::move(frame));
+                render_state_->frames_free.push_frame(std::move(frame));
             }
         }
     }
@@ -239,95 +246,112 @@ class node_impl : public node_i
 
     std::string_view type() const final { return "screen_output"; }
 
-    bool run()
+    // render_state is passed by value (shared_ptr copy) so the thread keeps
+    // the state alive for the duration of the render loop.
+    static void run_render(std::shared_ptr<render_state_s> state)
     {
-        ctx_->make_current();
+        state->ctx->make_current();
         glEnable(GL_FRAMEBUFFER_SRGB);
+        // Don't block in swap_buffers waiting for the compositor's frame callback.
+        // On Wayland the compositor throttles (or stops) delivering frame callbacks
+        // for windows it considers hidden, which makes swap_buffers block indefinitely.
+        // Rate limiting is handled by the main thread's 60 fps loop instead.
+        glfwSwapInterval(0);
 
-        gpu::draw_state_s draw_state;
-        auto              shader = ctx_->get_shader(gpu::shader_program_s::name_e::basic);
-        draw_state.set_shader_program(shader);
-        draw_state.set_vertex_data(gpu::full_screen_quad_verts);
-        shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
-        shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
-        shader->set_uniform("opacity", 1.0);
+        {
+            gpu::draw_state_s draw_state;
+            auto              shader = state->ctx->get_shader(gpu::shader_program_s::name_e::basic);
+            draw_state.set_shader_program(shader);
+            draw_state.set_vertex_data(gpu::full_screen_quad_verts);
+            shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
+            shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
+            shader->set_uniform("opacity", 1.0);
 
-        std::unique_ptr<gpu::texture_s> texture;
+            std::unique_ptr<gpu::texture_s> texture;
 
-        while (true) {
-            frame_info_s frame;
+            while (true) {
+                frame_info_s frame;
 
-            {
-                auto lock = frames_rendered_.get_lock();
-                frame_cv_.wait(lock, [this]() { return !thread_run_ || frames_rendered_.size_while_lock_held() > 1; });
+                {
+                    auto lock = state->frames_rendered.get_lock();
+                    state->frame_cv.wait(lock, [&state]() {
+                        return !state->thread_run || state->frames_rendered.size_while_lock_held() > 1;
+                    });
 
-                if (!thread_run_) {
-                    break;
+                    if (!state->thread_run) {
+                        break;
+                    }
+                }
+
+                decltype(state->frames_rendered)::record_s record;
+                if (state->frames_rendered.pop_frame_if_count(2, &record)) {
+                    // Avoid waiting by buffering one frame, so that the frame being displayed
+                    // is not currently being rendered
+                    frame = std::move(record.frame);
+                }
+
+                if (frame.sync && frame.id != 0) {
+                    frame.sync->gpu_wait();
+                    frame.sync.reset();
+
+                    if (!texture || texture->texture_dimensions() != frame.tx_size) {
+                        texture = std::make_unique<gpu::texture_s>(frame.tx_size, gpu::texture_s::format_e::bgra_u8);
+                    }
+
+                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, frame.id);
+                    glTextureSubImage2D(
+                        texture->id(), 0, 0, 0, frame.tx_size.x, frame.tx_size.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+                    glViewport(0, 0, frame.fb_size.x, frame.fb_size.y);
+                    glClearColor(0, 0, 0, 0);
+                    glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) |
+                            static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+
+                    // EXPERIMENT: behaves better on Linux
+                    // glTextureBarrier();
+
+                    texture->bind(0);
+                    draw_state.draw();
+                    gpu::texture_s::unbind(0);
+
+                    if (!state->thread_run) {
+                        break;
+                    }
+
+                    state->ctx->swap_buffers();
+
+                    frame.sync = std::make_unique<gpu::sync_s>();
+
+                    state->frames_free.push_frame(std::move(frame));
                 }
             }
 
-            decltype(frames_rendered_)::record_s record;
-            if (frames_rendered_.pop_frame_if_count(2, &record)) {
-                // Avoid waiting by buffering one frame, so that the frame being displayed
-                // is not currently being rendering
-                frame = std::move(record.frame);
-            }
-
-            if (frame.sync && frame.id != 0) {
-                frame.sync->gpu_wait();
-                frame.sync.reset();
-
-                if (!texture || texture->texture_dimensions() != frame.tx_size) {
-                    texture = std::make_unique<gpu::texture_s>(frame.tx_size, gpu::texture_s::format_e::bgra_u8);
-                }
-
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, frame.id);
-                glTextureSubImage2D(
-                    texture->id(), 0, 0, 0, frame.tx_size.x, frame.tx_size.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
-                glViewport(0, 0, frame.fb_size.x, frame.fb_size.y);
-                glClearColor(0, 0, 0, 0);
-                glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
-
-                // EXPERIMENT: behaves better on Linux
-                // glTextureBarrier();
-
-                texture->bind(0);
-                draw_state.draw();
-                gpu::texture_s::unbind(0);
-
-                ctx_->swap_buffers();
-
-                frame.sync = std::make_unique<gpu::sync_s>();
-
-                frames_free_.push_frame(std::move(frame));
-            }
-        }
+            // Drain queued frames (and their PBOs) while the context is still
+            // current, then destroy draw_state and texture. ✓
+            state->frames_rendered.clear();
+            state->frames_free.clear();
+        } // draw_state, texture destroyed here — context still current ✓
 
         gpu::context_s::rewind_current();
-
-        return true;
     }
 
     void stop_thread()
     {
+        if (!render_thread_.joinable()) {
+            return;
+        }
+
         {
-            auto lock   = frames_rendered_.get_lock();
-            thread_run_ = false;
+            auto lock                 = render_state_->frames_rendered.get_lock();
+            render_state_->thread_run = false;
         }
 
-        frames_rendered_.clear();
-        frames_free_.clear();
-
-        frame_cv_.notify_one();
-
-        if (thread_future_.valid()) {
-            thread_future_.get();
-        }
-
-        const std::unique_lock lock(ctx_mtx_);
-        ctx_.reset();
+        render_state_->frames_rendered.clear();
+        render_state_->frames_free.clear();
+        render_state_->frame_cv.notify_one();
+        render_thread_.join();
+        render_state_.reset();
     }
 };
 

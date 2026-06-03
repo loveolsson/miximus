@@ -1,4 +1,5 @@
 #include "gpu/shader.hpp"
+#include "gpu/context.hpp"
 #include "logger/logger.hpp"
 #include "static_files/files.hpp"
 
@@ -132,7 +133,13 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     }
 }
 
-shader_program_s::~shader_program_s() { glDeleteProgram(program_); }
+shader_program_s::~shader_program_s()
+{
+    if (!context_s::require_current()) {
+        return;
+    }
+    glDeleteProgram(program_);
+}
 
 void shader_program_s::use() const { glUseProgram(program_); }
 

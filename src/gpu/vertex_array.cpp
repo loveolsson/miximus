@@ -1,10 +1,17 @@
 #include "vertex_array.hpp"
+#include "context.hpp"
 
 namespace miximus::gpu {
 
 vertex_array_s::vertex_array_s() { glGenVertexArrays(1, &id_); }
 
-vertex_array_s::~vertex_array_s() { glDeleteVertexArrays(1, &id_); }
+vertex_array_s::~vertex_array_s()
+{
+    if (!context_s::require_current()) {
+        return;
+    }
+    glDeleteVertexArrays(1, &id_);
+}
 
 void vertex_array_s::bind() const { glBindVertexArray(id_); }
 

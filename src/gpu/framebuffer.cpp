@@ -1,4 +1,5 @@
 #include "framebuffer.hpp"
+#include "context.hpp"
 #include "logger/logger.hpp"
 
 namespace miximus::gpu {
@@ -29,6 +30,9 @@ framebuffer_s::framebuffer_s(vec2i_t dimensions, texture_s::format_e color)
 
 framebuffer_s::~framebuffer_s()
 {
+    if (!context_s::require_current()) {
+        return;
+    }
     glDeleteFramebuffers(1, &id_);
     glDeleteRenderbuffers(1, &rbo_id_);
 }

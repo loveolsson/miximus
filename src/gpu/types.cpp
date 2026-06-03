@@ -6,7 +6,7 @@ namespace miximus::gpu {
 void to_json(nlohmann::json& j, const rect_s& v)
 {
     j = {
-        {"pos", v.pos},
+        {"pos",  v.pos },
         {"size", v.size},
     };
 }

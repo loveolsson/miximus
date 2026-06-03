@@ -151,7 +151,6 @@ int main(int argc, char* argv[])
 
             getlog("app")->info("Exiting...");
             start_shutdown_watchdog();
-
             web_server->stop();
             node_manager.clear_adapters();
             save_settings(&node_manager, settings_path);

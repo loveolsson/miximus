@@ -1,11 +1,18 @@
 #include "vertex_buffer.hpp"
+#include "context.hpp"
 #include "glad.hpp"
 
 namespace miximus::gpu {
 
 vertex_buffer_s::vertex_buffer_s() { glGenBuffers(1, &id_); }
 
-vertex_buffer_s::~vertex_buffer_s() { glDeleteBuffers(1, &id_); }
+vertex_buffer_s::~vertex_buffer_s()
+{
+    if (!context_s::require_current()) {
+        return;
+    }
+    glDeleteBuffers(1, &id_);
+}
 
 void vertex_buffer_s::bind() const { glBindBuffer(GL_ARRAY_BUFFER, id_); }
 
