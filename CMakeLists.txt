@@ -32,13 +32,17 @@ set(MIXIMUS_CLANG_TIDY_PARAMS
     -readability-identifier-length
     -abseil*
     -bugprone-easily-swappable-parameters
-    -readability-container-data-pointer,
-    -readability-qualified-auto,
+    -readability-container-data-pointer
+    -readability-qualified-auto
     -llvm-qualified-auto
+    -clang-diagnostic-*
+    -llvm-prefer-static-over-anonymous-namespace
+    -misc-include-cleaner
+    -misc-use-internal-linkage
 )
 
 list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)
-#set(MIXIMUS_CLANG_TIDY "clang-tidy;${MIXIMUS_CLANG_TIDY_PARAMS_STR}")
+#set(MIXIMUS_CLANG_TIDY "clang-tidy;${MIXIMUS_CLANG_TIDY_PARAMS_STR};--extra-arg=-DFMT_CONSTEVAL=")
 
 find_package(Sanitizers REQUIRED)
 find_package(Threads REQUIRED)

@@ -4,6 +4,7 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "utils/bind.hpp"
+#include <memory>
 
 using namespace boost::asio;
 
@@ -23,7 +24,7 @@ app_state_s::app_state_s()
 app_state_s::~app_state_s()
 {
     decklink_registry_->uninstall();
-    cfg_work_.reset();
+    cfg_work_ = nullptr;
     ctx_.reset();
     cfg_executor_.stop();
     cfg_thread_.join();

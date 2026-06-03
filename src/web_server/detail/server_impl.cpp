@@ -6,9 +6,14 @@
 #include "web_server/templates.hpp"
 
 #include <boost/property_tree/detail/xml_parser_utils.hpp>
+#include <exception>
 #include <fmt/format.h>
 #include <future>
 #include <nlohmann/json.hpp>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace {
 
@@ -117,9 +122,9 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     con->set_status(status_code::ok);
 }
 
-void web_server_impl::handle_api_request(server_t::connection_ptr con,
-                                         const std::string&       method,
-                                         const url_parser&        parser)
+void web_server_impl::handle_api_request(const server_t::connection_ptr& con,
+                                         const std::string&              method,
+                                         const url_parser&               parser)
 {
     using namespace websocketpp::http;
 
@@ -137,8 +142,8 @@ void web_server_impl::handle_api_request(server_t::connection_ptr con,
     }
 
     // Parse API endpoint
-    const auto&      path     = parser.get_path();
-    std::string_view api_path = path.substr(API_V1_PREFIX.length());
+    const auto&            path     = parser.get_path();
+    const std::string_view api_path = path.substr(API_V1_PREFIX.length());
 
     try {
         if (method == HTTP_GET && api_path == "config") {
@@ -160,7 +165,7 @@ void web_server_impl::handle_api_request(server_t::connection_ptr con,
     }
 }
 
-void web_server_impl::handle_api_v1_get_config(server_t::connection_ptr con)
+void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& con) const
 {
     using namespace websocketpp::http;
 
@@ -174,7 +179,7 @@ void web_server_impl::handle_api_v1_get_config(server_t::connection_ptr con)
     }
 
     try {
-        nlohmann::json config = config_getters_.node_config();
+        const nlohmann::json config = config_getters_.node_config();
         con->set_body(config.dump());
         con->set_status(status_code::ok);
     } catch (const std::exception& e) {
@@ -185,7 +190,7 @@ void web_server_impl::handle_api_v1_get_config(server_t::connection_ptr con)
     }
 }
 
-void web_server_impl::handle_api_v1_post_control(server_t::connection_ptr con)
+void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr& con)
 {
     using namespace websocketpp::http;
 
@@ -266,8 +271,9 @@ error_e web_server_impl::handle_user_command(nlohmann::json&& doc, int64_t conne
 
     // subscription_by_topic_ has the length of enum_count<topic_e>,
     // so we can safely access it using the index of a valid topic.
-    auto        index        = enum_index(*topic);
-    const auto& subscription = subscription_by_topic_[index];
+    auto        index = enum_index(*topic);
+    const auto& subscription =
+        subscription_by_topic_[index]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
 
     if (!subscription) {
         return error_e::internal_error;
@@ -285,16 +291,19 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
 
     auto con = connections_.find(hdl);
     if (con == connections_.end()) {
-        return terminate_and_log(hdl, "connection not found");
+        terminate_and_log(hdl, "connection not found");
+        return;
     }
 
     if (msg->get_opcode() != opcode::text) {
-        return terminate_and_log(hdl, "only text paylods are accepted");
+        terminate_and_log(hdl, "only text paylods are accepted");
+        return;
     }
 
     auto doc = nlohmann::json::parse(msg->get_payload(), nullptr, false);
     if (doc.is_discarded() || !doc.is_object()) {
-        return terminate_and_log(hdl, "invalid JSON payload");
+        terminate_and_log(hdl, "invalid JSON payload");
+        return;
     }
 
     auto action = get_action_from_payload(doc);
@@ -318,7 +327,7 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
                 auto index = enum_index(*topic);
 
                 con->second.topics.at(index) = true;
-                connections_by_topic_[index].emplace(hdl);
+                connections_by_topic_[index].emplace(hdl); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
 
                 response = create_result_base_payload(token);
             } else {
@@ -345,7 +354,7 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             }
 
             con->second.topics.at(index) = false;
-            connections_by_topic_[index].erase(hdl);
+            connections_by_topic_[index].erase(hdl); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
             send(hdl, create_result_base_payload(token));
         } break;
 
@@ -372,7 +381,7 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
 
     auto id = next_connection_id_++;
 
-    connections_.emplace(hdl, websocket_connection{id, {}});
+    connections_.emplace(hdl, websocket_connection{.id = id, .topics = {}});
     connections_by_id_.emplace(id, hdl);
 
     send(hdl, create_socket_info_payload(id));
@@ -391,7 +400,7 @@ void web_server_impl::on_close(const con_hdl_t& hdl)
     auto& topics = con->second.topics;
     for (size_t index = 0; index < topics.size(); index++) {
         if (topics.at(index)) {
-            connections_by_topic_[index].erase(hdl);
+            connections_by_topic_[index].erase(hdl); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
         }
     }
 
@@ -411,7 +420,7 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 {
     boost::asio::post(endpoint_.get_io_context(), [this, topic, callback]() {
         auto index                    = enum_index(topic);
-        subscription_by_topic_[index] = callback;
+        subscription_by_topic_[index] = callback; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     });
 }
 
@@ -509,7 +518,7 @@ void web_server_impl::broadcast_message_sync(topic_e topic, const std::string& m
 {
     auto index = enum_index(topic);
 
-    auto& con_set = connections_by_topic_[index];
+    auto& con_set = connections_by_topic_[index]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
     for (const auto& hdl : con_set) {
         send(hdl, msg);
     }

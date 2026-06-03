@@ -13,12 +13,12 @@ class websocket_config_s : public node_manager_s::adapter_i
     node_manager_s&       manager_;
     web_server::server_s& server_;
 
-    void handle_add_node(nlohmann::json&& msg, int64_t client_id);
-    void handle_remove_node(nlohmann::json&& msg, int64_t client_id);
-    void handle_update_node(nlohmann::json&& msg, int64_t client_id);
-    void handle_add_connection(nlohmann::json&& msg, int64_t client_id);
-    void handle_remove_connection(nlohmann::json&& msg, int64_t client_id);
-    void handle_config(nlohmann::json&& msg, int64_t client_id);
+    void handle_add_node(const nlohmann::json& msg, int64_t client_id);
+    void handle_remove_node(const nlohmann::json& msg, int64_t client_id);
+    void handle_update_node(const nlohmann::json& msg, int64_t client_id);
+    void handle_add_connection(const nlohmann::json& msg, int64_t client_id);
+    void handle_remove_connection(const nlohmann::json& msg, int64_t client_id);
+    void handle_config(const nlohmann::json& msg, int64_t client_id);
 
     void
     emit_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id) final;

@@ -10,7 +10,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <memory>
+#include <mutex>
 #include <set>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 auto _log() { return getlog("app"); };
@@ -133,7 +141,7 @@ static bool is_connection_circular(const nodes::node_map_t&    nodes,
                                    std::string_view            target_node_id,
                                    const nodes::connection_s&  con)
 {
-    if (cleared_nodes->count(con.from_node) > 0) {
+    if (cleared_nodes->contains(con.from_node)) {
         return false;
     }
 
@@ -177,7 +185,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     _log()->info(
         "Adding connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
 
-    if (std::find(connections_.begin(), connections_.end(), con) != connections_.end()) {
+    if (std::ranges::find(connections_, con) != connections_.end()) {
         return error_e::duplicate_id;
     }
 
@@ -211,7 +219,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
         std::swap(from_node_it, to_node_it);
 
         // Re-check duplication after swap
-        if (std::find(connections_.begin(), connections_.end(), con) != connections_.end()) {
+        if (std::ranges::find(connections_, con) != connections_.end()) {
             return error_e::duplicate_id;
         }
     } else if (from_dir == dir_e::input || to_dir == dir_e::output) {
@@ -259,7 +267,7 @@ error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con,
     _log()->info(
         "Removing connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
 
-    auto con_it = std::find(connections_.begin(), connections_.end(), con);
+    auto con_it = std::ranges::find(connections_, con);
     if (con_it == connections_.end()) {
         return error_e::not_found;
     }
@@ -269,7 +277,7 @@ error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con,
             auto& state = node_it->second.state;
 
             if (auto cons_it = state.con_map.find(iface_name); cons_it != state.con_map.end()) {
-                auto con_it = std::find(cons_it->second.begin(), cons_it->second.end(), con);
+                auto con_it = std::ranges::find(cons_it->second, con);
                 if (con_it != cons_it->second.end()) {
                     cons_it->second.erase(con_it);
                 }

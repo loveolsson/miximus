@@ -110,7 +110,7 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     }
 
     // Returns the underlying transfer for a buffer previously obtained from AllocateVideoBuffer.
-    transfer_i* get_transfer(IDeckLinkVideoBuffer* buffer);
+    static transfer_i* get_transfer(IDeckLinkVideoBuffer* buffer);
 
     bool   register_texture(gpu::texture_s* texture);
     bool   unregister_texture(gpu::texture_s* texture);

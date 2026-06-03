@@ -4,6 +4,7 @@
 #include "nodes/node.hpp"
 
 #include <glm/glm.hpp>
+#include <memory>
 
 namespace {
 using namespace miximus;
@@ -25,7 +26,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        gpu::texture_s* texture = nullptr;
+        gpu::texture_s* texture = nullptr; // NOLINT(misc-const-correctness)
 
         auto fb = iface_fb_.resolve_value(app, nodes, state);
         if (fb != nullptr) {

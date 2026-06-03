@@ -7,6 +7,8 @@
 
 #ifdef _MSC_VER
 #include <malloc.h>
+#include <memory>
+#include <stdexcept>
 #define ALIGNED_ALLOC(a, s) _aligned_malloc(s, a)
 #define ALIGNED_FREE(p) _aligned_free(p)
 #else

@@ -11,9 +11,15 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string_view>
 #include <thread>
 
 using namespace miximus;
@@ -157,7 +163,7 @@ int main(int argc, char* argv[])
             node_manager.clear_nodes(&app);
         }
     } catch (std::exception& e) {
-        std::cout << "Panic: " << e.what() << std::endl;
+        std::cout << "Panic: " << e.what() << '\n';
     }
 
     // gpu::context_s::terminate();

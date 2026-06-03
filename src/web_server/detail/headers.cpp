@@ -4,6 +4,8 @@
 #include <cassert>
 #include <charconv>
 #include <ranges>
+#include <string_view>
+#include <system_error>
 
 namespace miximus::web_server::detail {
 
@@ -19,7 +21,7 @@ bool accept_encoding_has_gzip(std::string_view header) noexcept
         auto  semi_pos = part.find_first_of(';');
 
         if (semi_pos != std::string_view::npos) {
-            enc         = {part.data(), semi_pos};
+            enc         = part.substr(0, semi_pos);
             auto eq_pos = part.find_first_of('=', semi_pos);
 
             if (eq_pos != std::string_view::npos) {

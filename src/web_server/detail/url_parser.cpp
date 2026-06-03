@@ -1,10 +1,12 @@
 #include "url_parser.hpp"
 #include <algorithm>
 #include <cctype>
+#include <string>
+#include <string_view>
 
 namespace miximus::web_server::detail {
 
-const url_parser url_parser::parse(std::string_view resource) { return url_parser(resource); }
+url_parser url_parser::parse(std::string_view resource) { return url_parser(resource); }
 
 url_parser::url_parser(std::string_view resource)
 {
@@ -43,10 +45,7 @@ std::string_view url_parser::get_query_param(std::string_view name) const
     return {};
 }
 
-bool url_parser::has_query_param(std::string_view name) const
-{
-    return query_params_.find(name) != query_params_.end();
-}
+bool url_parser::has_query_param(std::string_view name) const { return query_params_.contains(name); }
 
 void url_parser::parse_query_string(std::string_view query)
 {
@@ -85,43 +84,39 @@ void url_parser::parse_query_string(std::string_view query)
     }
 }
 
+namespace {
+int hex_char_value(char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return c - 'a' + 10;
+}
+} // namespace
+
 std::string url_parser::url_decode(std::string_view encoded)
 {
     std::string result;
     result.reserve(encoded.length());
 
     for (size_t i = 0; i < encoded.length(); ++i) {
-        char c = encoded[i];
+        const char c = encoded[i];
 
         if (c == '%' && i + 2 < encoded.length()) {
-            // Parse hex digits
-            char hex1 = encoded[i + 1];
-            char hex2 = encoded[i + 2];
+            const char hex1 = encoded[i + 1];
+            const char hex2 = encoded[i + 2];
 
-            if (std::isxdigit(hex1) && std::isxdigit(hex2)) {
-                // Convert hex to character
-                int value = 0;
-                if (hex1 >= '0' && hex1 <= '9')
-                    value += (hex1 - '0') * 16;
-                else if (hex1 >= 'A' && hex1 <= 'F')
-                    value += (hex1 - 'A' + 10) * 16;
-                else if (hex1 >= 'a' && hex1 <= 'f')
-                    value += (hex1 - 'a' + 10) * 16;
-
-                if (hex2 >= '0' && hex2 <= '9')
-                    value += (hex2 - '0');
-                else if (hex2 >= 'A' && hex2 <= 'F')
-                    value += (hex2 - 'A' + 10);
-                else if (hex2 >= 'a' && hex2 <= 'f')
-                    value += (hex2 - 'a' + 10);
-
+            if (static_cast<bool>(std::isxdigit(hex1)) && static_cast<bool>(std::isxdigit(hex2))) {
+                const int value = (hex_char_value(hex1) * 16) + hex_char_value(hex2);
                 result.push_back(static_cast<char>(value));
-                i += 2; // Skip the two hex digits
+                i += 2;
             } else {
                 result.push_back(c);
             }
         } else if (c == '+') {
-            // '+' is often used to represent space in query strings
             result.push_back(' ');
         } else {
             result.push_back(c);

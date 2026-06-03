@@ -9,6 +9,7 @@
 #include "nodes/validate_option.hpp"
 
 #include "glm/common.hpp"
+#include <memory>
 
 namespace {
 using namespace miximus;

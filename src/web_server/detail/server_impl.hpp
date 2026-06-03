@@ -27,10 +27,10 @@ class web_server_impl : public server_s
 
     void terminate_and_log(const con_hdl_t& hdl, const std::string& msg);
 
-    void    on_http(const con_hdl_t& hdl);
-    void    handle_api_request(server_t::connection_ptr con, const std::string& method, const url_parser& parser);
-    void    handle_api_v1_get_config(server_t::connection_ptr con);
-    void    handle_api_v1_post_control(server_t::connection_ptr con);
+    void on_http(const con_hdl_t& hdl);
+    void handle_api_request(const server_t::connection_ptr& con, const std::string& method, const url_parser& parser);
+    void handle_api_v1_get_config(const server_t::connection_ptr& con) const;
+    void handle_api_v1_post_control(const server_t::connection_ptr& con);
     error_e handle_user_command(nlohmann::json&& doc, int64_t connection_id);
     void    on_message(const con_hdl_t& hdl, const msg_ptr_t& msg);
     void    on_open(const con_hdl_t& hdl);

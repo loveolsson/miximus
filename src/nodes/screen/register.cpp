@@ -1,4 +1,5 @@
 #include "register.hpp"
+#include <memory>
 
 namespace miximus::nodes::screen {
 

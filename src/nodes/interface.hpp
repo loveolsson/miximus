@@ -128,8 +128,11 @@ class output_interface_s : public interface_i
     }
     ~output_interface_s() = default;
 
-    dir_e            direction() const final { return dir_e::output; }
-    interface_type_e type() const final { return get_interface_type<T>(); }
+    dir_e direction() const final { return dir_e::output; } // NOLINT(portability-template-virtual-member-function)
+    interface_type_e type() const final
+    {
+        return get_interface_type<T>();
+    } // NOLINT(portability-template-virtual-member-function)
 
     T    get_value() const { return value_; }
     void set_value(const T& value) { value_ = value; }

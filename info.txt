@@ -1,0 +1,119 @@
+[main] Building folder: /home/love/projects/miximus/build clean
+[build] Starting build
+[proc] Executing command: /usr/bin/cmake --build /home/love/projects/miximus/build --config RelWithDebInfo --target clean -j 16 --
+[driver] Build completed: 00:00:00.072
+[build] Build finished with exit code 0
+[main] Building folder: /home/love/projects/miximus/build 
+[build] Starting build
+[proc] Executing command: /usr/bin/cmake --build /home/love/projects/miximus/build --config RelWithDebInfo --target all -j 16 --
+[build] [  1%] glad_gl-generate
+[build] Cleaning /home/love/projects/miximus/build/submodules/gladsources/glad_gl
+[build] [  2%] Checking for web file changes...
+[build] [  3%] Building CXX object src/logger/CMakeFiles/logger.dir/logger.cpp.o
+[build] [  5%] Building CXX object src/wrapper/stb/CMakeFiles/stb.dir/stb_impl.cpp.o
+[build] [  6%] Building CXX object static/bundler/CMakeFiles/bundler.dir/src/main.cpp.o
+[build] -- Web files unchanged
+[build] Generating with args --out-path /home/love/projects/miximus/build/submodules/gladsources/glad_gl --api gl:core=4.6 --reproducible c
+[build] [  6%] Built target check_web_files_hash
+[build] [03.06.2026 20:08:04][INFO	][glad   	]: getting 'gl' specification from remote location
+[build] [03.06.2026 20:08:04][DEBUG	][glad.files	]: intercepted attempt to retrieve resource: 'https://raw.githubusercontent.com/KhronosGroup/OpenGL-Registry/main/xml/gl.xml'
+[build] [03.06.2026 20:08:04][INFO	][glad   	]: generating gl:core/gl=Version(major=4, minor=6)
+[build] [03.06.2026 20:08:04][INFO	][glad   	]: adding all extensions for api gl to result
+[build] [03.06.2026 20:08:04][INFO	][glad   	]: generating feature set FeatureSet(name=gl, info=[gl:core=4.6], extensions=619)
+[build] [03.06.2026 20:08:05][DEBUG	][glad.files	]: intercepted attempt to retrieve resource: 'https://raw.githubusercontent.com/KhronosGroup/EGL-Registry/main/api/KHR/khrplatform.h'
+[build] Writing /home/love/projects/miximus/build/submodules/gladsources/glad_gl/args.txt
+[build] [  7%] Building C object submodules/CMakeFiles/glad_gl.dir/gladsources/glad_gl/src/gl.c.o
+[build] [  8%] Linking CXX static library libstb.a
+[build] [  8%] Built target stb
+[build] [ 10%] Linking C static library libglad_gl.a
+[build] [ 10%] Built target glad_gl
+[build] [ 11%] Building CXX object src/wrapper/decklink-sdk/CMakeFiles/decklink.dir/__/__/__/3rd-party/decklink-sdk/Linux/include/DeckLinkAPIDispatch.cpp.o
+[build] [ 12%] Linking CXX shared library libdecklink.so
+[build] [ 12%] Built target decklink
+[build] [ 13%] Linking CXX executable bundler
+[build] [ 13%] Built target bundler
+[build] [ 16%] Generating resource_files.cpp
+[build] [ 16%] Generating web_files.cpp from web/dist/
+[build] Running bundler
+[build] Bundling folder/home/love/projects/miximus/resources/to /home/love/projects/miximus/build/static/resource_files.cpp
+[build] Using namespace miximus::static_files
+[build] Running bundler
+[build] Bundling folder/home/love/projects/miximus/web/dist/to /home/love/projects/miximus/build/static/web_files.cpp
+[build] Using namespace miximus::static_files
+[build] [ 17%] Building CXX object static/CMakeFiles/static_files.dir/resource_files.cpp.o
+[build] [ 18%] Building CXX object static/CMakeFiles/static_files.dir/src/files.cpp.o
+[build] [ 20%] Building CXX object static/CMakeFiles/static_files.dir/web_files.cpp.o
+[build] [ 21%] Linking CXX shared library libstatic_files.so
+[build] [ 21%] Built target static_files
+[build] [ 22%] Linking CXX static library liblogger.a
+[build] [ 22%] Built target logger
+[build] [ 23%] Building CXX object src/gpu/CMakeFiles/gpu.dir/vertex_buffer.cpp.o
+[build] [ 25%] Building CXX object src/gpu/CMakeFiles/gpu.dir/vertex_array.cpp.o
+[build] [ 26%] Building CXX object src/gpu/CMakeFiles/gpu.dir/context.cpp.o
+[build] [ 27%] Building CXX object src/gpu/CMakeFiles/gpu.dir/context_logging.cpp.o
+[build] [ 28%] Building CXX object src/gpu/CMakeFiles/gpu.dir/framebuffer.cpp.o
+[build] [ 30%] Building CXX object src/gpu/CMakeFiles/gpu.dir/shader.cpp.o
+[build] [ 31%] Building CXX object src/web_server/CMakeFiles/web_server.dir/server.cpp.o
+[build] [ 32%] Building CXX object src/gpu/CMakeFiles/gpu.dir/sync.cpp.o
+[build] [ 33%] Building CXX object src/gpu/CMakeFiles/gpu.dir/types.cpp.o
+[build] [ 36%] Building CXX object src/web_server/CMakeFiles/web_server.dir/detail/url_parser.cpp.o
+[build] [ 36%] Building CXX object src/gpu/CMakeFiles/gpu.dir/transfer/transfer.cpp.o
+[build] [ 37%] Building CXX object src/gpu/CMakeFiles/gpu.dir/texture.cpp.o
+[build] [ 40%] Building CXX object src/web_server/CMakeFiles/web_server.dir/detail/headers.cpp.o
+[build] [ 38%] Building CXX object src/web_server/CMakeFiles/web_server.dir/detail/server_impl.cpp.o
+[build] [ 41%] Building CXX object src/gpu/CMakeFiles/gpu.dir/transfer/detail/fallback.cpp.o
+[build] [ 42%] Building CXX object src/gpu/CMakeFiles/gpu.dir/draw_state.cpp.o
+[build] [ 43%] Building CXX object src/gpu/CMakeFiles/gpu.dir/transfer/detail/persistent.cpp.o
+[build] [ 45%] Linking CXX static library libgpu.a
+[build] [ 45%] Built target gpu
+[build] [ 46%] Building CXX object src/render/CMakeFiles/render.dir/font/font_registry.cpp.o
+[build] [ 47%] Building CXX object src/render/CMakeFiles/render.dir/font/font_instance.cpp.o
+[build] [ 48%] Building CXX object src/render/CMakeFiles/render.dir/font/font_loader.cpp.o
+[build] [ 50%] Building CXX object src/render/CMakeFiles/render.dir/font/font_registry_fontconfig.cpp.o
+[build] [ 51%] Building CXX object src/render/CMakeFiles/render.dir/surface/surface.cpp.o
+[build] [ 52%] Linking CXX static library librender.a
+[build] [ 52%] Built target render
+[build] [ 53%] Building CXX object src/nodes/CMakeFiles/nodes.dir/node.cpp.o
+[build] [ 55%] Building CXX object src/nodes/CMakeFiles/nodes.dir/interface.cpp.o
+[build] [ 56%] Building CXX object src/nodes/CMakeFiles/nodes.dir/connection.cpp.o
+[build] [ 58%] Building CXX object src/nodes/CMakeFiles/nodes.dir/decklink/register.cpp.o
+[build] [ 58%] Building CXX object src/nodes/CMakeFiles/nodes.dir/register_all.cpp.o
+[build] [ 60%] Building CXX object src/nodes/CMakeFiles/nodes.dir/decklink/detail/allocator.cpp.o
+[build] [ 61%] Building CXX object src/nodes/CMakeFiles/nodes.dir/decklink/input.cpp.o
+[build] [ 62%] Building CXX object src/nodes/CMakeFiles/nodes.dir/decklink/output.cpp.o
+[build] [ 63%] Building CXX object src/nodes/CMakeFiles/nodes.dir/decklink/registry.cpp.o
+[build] [ 65%] Building CXX object src/nodes/CMakeFiles/nodes.dir/math/register.cpp.o
+[build] [ 66%] Building CXX object src/nodes/CMakeFiles/nodes.dir/math/math.cpp.o
+[build] [ 67%] Building CXX object src/nodes/CMakeFiles/nodes.dir/math/lerp.cpp.o
+[build] [ 68%] Building CXX object src/nodes/CMakeFiles/nodes.dir/screen/register.cpp.o
+[build] [ 70%] Building CXX object src/nodes/CMakeFiles/nodes.dir/ffmpeg/register.cpp.o
+[build] [ 71%] Building CXX object src/nodes/CMakeFiles/nodes.dir/screen/screen_output.cpp.o
+[build] [ 72%] Building CXX object src/nodes/CMakeFiles/nodes.dir/ffmpeg/player.cpp.o
+[build] [ 73%] Building CXX object src/nodes/CMakeFiles/nodes.dir/utils/register.cpp.o
+[build] [ 75%] Building CXX object src/nodes/CMakeFiles/nodes.dir/utils/rect.cpp.o
+[build] [ 76%] Building CXX object src/nodes/CMakeFiles/nodes.dir/utils/vec2.cpp.o
+[build] [ 77%] Building CXX object src/nodes/CMakeFiles/nodes.dir/utils/framebuffer.cpp.o
+[build] [ 78%] Building CXX object src/nodes/CMakeFiles/nodes.dir/utils/framebuffer_to_texture.cpp.o
+[build] [ 80%] Building CXX object src/nodes/CMakeFiles/nodes.dir/teleprompter/register.cpp.o
+[build] [ 81%] Linking CXX static library libweb_server.a
+[build] [ 81%] Built target web_server
+[build] [ 82%] Building CXX object src/nodes/CMakeFiles/nodes.dir/teleprompter/teleprompter.cpp.o
+[build] [ 83%] Building CXX object src/nodes/CMakeFiles/nodes.dir/text/register.cpp.o
+[build] [ 85%] Building CXX object src/nodes/CMakeFiles/nodes.dir/text/text.cpp.o
+[build] [ 86%] Building CXX object src/nodes/CMakeFiles/nodes.dir/debug/register.cpp.o
+[build] [ 87%] Building CXX object src/nodes/CMakeFiles/nodes.dir/debug/sinus_source.cpp.o
+[build] [ 88%] Building CXX object src/nodes/CMakeFiles/nodes.dir/composite/register.cpp.o
+[build] [ 90%] Building CXX object src/nodes/CMakeFiles/nodes.dir/composite/draw_box.cpp.o
+[build] [ 91%] Building CXX object src/nodes/CMakeFiles/nodes.dir/composite/infinite_multiviewer.cpp.o
+[build] [ 92%] Linking CXX static library libnodes.a
+[build] [ 92%] Built target nodes
+[build] [ 93%] Building CXX object src/core/CMakeFiles/app.dir/app_state.cpp.o
+[build] [ 95%] Building CXX object src/core/CMakeFiles/app.dir/node_manager.cpp.o
+[build] [ 96%] Building CXX object src/core/CMakeFiles/app.dir/adapters/adapter_websocket.cpp.o
+[build] [ 97%] Linking CXX static library libapp.a
+[build] [ 97%] Built target app
+[build] [ 98%] Building CXX object src/CMakeFiles/miximus.dir/main.cpp.o
+[build] [100%] Linking CXX executable ../miximus
+[build] [100%] Built target miximus
+[driver] Build completed: 00:09:55.329
+[build] Build finished with exit code 0

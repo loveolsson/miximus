@@ -14,9 +14,18 @@
 #include "render/surface/surface.hpp"
 #include "utils/string_utils.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 using namespace miximus;
@@ -77,7 +86,10 @@ class node_impl : public node_i
     {
         for (auto& rl : render_lines_) {
             if (rl->ready.valid()) {
-                rl->ready.get();
+                try {
+                    rl->ready.get();
+                } catch (...) { // NOLINT(bugprone-empty-catch) -- destructor must not throw
+                }
             }
         }
     }
@@ -112,8 +124,8 @@ class node_impl : public node_i
                                                       nodes,
                                                       state,
                                                       {
-                                                          {0,   0  },
-                                                          {1.0, 1.0}
+                                                          .pos = {0,   0  },
+                                                            .size = {1.0, 1.0}
         });
 
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
@@ -170,7 +182,7 @@ class node_impl : public node_i
             // Resize render line vector, this can not be a simple resize, since
             // we need to wait for the future to finish
             const int total_line_height       = font_size_ + line_height_extra_;
-            const int visible_lines_plus_four = (fb_dim.y + total_line_height - 1) / total_line_height + 4;
+            const int visible_lines_plus_four = ((fb_dim.y + total_line_height - 1) / total_line_height) + 4;
 
             while (render_lines_.size() < visible_lines_plus_four) {
                 render_lines_.emplace_back(std::make_unique<line_info_s>());
@@ -296,11 +308,11 @@ class node_impl : public node_i
 
     std::string_view type() const final { return "teleprompter"; }
 
-    static text_s load_file(std::shared_ptr<render::font_loader_s>&& loader,
-                            const render::font_variant_s*            font_info,
-                            std::filesystem::path&&                  path,
-                            int                                      font_size,
-                            int                                      width)
+    static text_s load_file(const std::shared_ptr<render::font_loader_s>& loader,
+                            const render::font_variant_s*                 font_info,
+                            const std::filesystem::path&                  path,
+                            int                                           font_size,
+                            int                                           width)
     {
         text_s         res = {};
         std::u32string str;

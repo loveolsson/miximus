@@ -1,6 +1,9 @@
 #include "persistent.hpp"
 #include "gpu/texture.hpp"
+#include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <memory>
 
 namespace miximus::gpu::transfer::detail {
 

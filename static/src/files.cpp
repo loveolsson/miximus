@@ -9,6 +9,7 @@
 #include <gzip/decompress.hpp>
 
 #include <stdexcept>
+#include <string>
 
 namespace miximus::static_files {
 

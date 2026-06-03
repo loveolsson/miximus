@@ -8,6 +8,7 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
+#include <memory>
 #include <queue>
 
 namespace {

@@ -14,10 +14,14 @@
 #include "utils/frame_queue.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
+#include <algorithm>
+#include <atomic>
+#include <map>
 #include <memory>
 #include <optional>
 #include <queue>
 #include <unordered_set>
+#include <utility>
 
 namespace {
 using namespace miximus;
@@ -103,7 +107,7 @@ class callback_s
         if (SUCCEEDED(device_->CreateVideoFrame(
                 mode_info_.dim.x, mode_info_.dim.y, mode_info.dim.x * 2, bmdFormat8BitYUV, 0, &frame))) {
             IDeckLinkVideoBuffer* buffer = nullptr;
-            if (frame->QueryInterface(IID_IDeckLinkVideoBuffer, (void**)&buffer) == S_OK) {
+            if (frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&buffer)) == S_OK) {
                 buffer->StartAccess(bmdBufferAccessWrite);
                 uint16_t* data = nullptr;
                 buffer->GetBytes(reinterpret_cast<void**>(&data));
@@ -188,7 +192,8 @@ class callback_s
             if (SUCCEEDED(
                     device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
                 IDeckLinkVideoBuffer* dst_buffer = nullptr;
-                if (dst_frame->QueryInterface(IID_IDeckLinkVideoBuffer, (void**)&dst_buffer) == S_OK) {
+                if (dst_frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&dst_buffer)) ==
+                    S_OK) {
                     dst_buffer->StartAccess(bmdBufferAccessWrite);
                     void* dst_ptr = nullptr;
                     dst_buffer->GetBytes(&dst_ptr);

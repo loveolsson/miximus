@@ -11,7 +11,13 @@
 #include "stb_image.h"
 #include <frozen/map.h>
 
+#include <array>
 #include <chrono>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
 
 namespace {
 using namespace miximus;
@@ -203,7 +209,7 @@ void context_s::set_fullscreen_monitor(const std::string& name, recti_s rect)
 
 void context_s::make_current()
 {
-    GLFWwindow* old = nullptr;
+    const GLFWwindow* old = nullptr;
     if (!current_stack_.empty()) {
         old = current_stack_.back();
     }

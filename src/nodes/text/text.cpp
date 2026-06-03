@@ -12,6 +12,10 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 #include "utils/string_utils.hpp"
+#include <algorithm>
+#include <memory>
+#include <mutex>
+#include <string>
 
 namespace {
 using namespace miximus;
@@ -88,14 +92,14 @@ class node_impl : public node_i
         }
     }
 
-    void render_text(core::app_state_s* app, const node_state_s& state)
+    void render_text(core::app_state_s* app, [[maybe_unused]] const node_state_s& state)
     {
-        std::unique_lock<::mutex> lock(ctx_mtx_);
+        const std::unique_lock<::mutex> lock(ctx_mtx_);
         ctx_->make_current();
 
         // Load font if needed
         {
-            std::unique_lock<::mutex> font_lock(font_mtx_);
+            const std::unique_lock<::mutex> font_lock(font_mtx_);
 
             const render::font_variant_s* font_info = nullptr;
 
@@ -146,10 +150,11 @@ class node_impl : public node_i
 
         // Create surface with generous padding to ensure no character cutoff
         // Use font size as height reference and add extra width padding
-        int padding = std::max(40, text_info_->last_font_size / 2);
+        const int padding = std::max(40, text_info_->last_font_size / 2);
 
-        gpu::vec2i_t surface_size{static_cast<int>(text_dim.pixels_advanced) + padding * 2, // More generous padding
-                                  text_info_->last_font_size + padding * 2};
+        const gpu::vec2i_t surface_size{static_cast<int>(text_dim.pixels_advanced) +
+                                            (padding * 2), // More generous padding
+                                        text_info_->last_font_size + (padding * 2)};
 
         if (!text_info_->surface || text_info_->surface->dimensions() != surface_size) {
             text_info_->surface = std::make_unique<render::surface_s>(surface_size);
@@ -159,7 +164,7 @@ class node_impl : public node_i
         text_info_->surface->clear({0, 0, 0, 0});
 
         // Position text with adequate padding from the top-left
-        gpu::vec2i_t text_position{padding, text_info_->last_font_size + padding / 2};
+        const gpu::vec2i_t text_position{padding, text_info_->last_font_size + (padding / 2)};
 
         // Render text in white
         font_instance_->render_string(utf32_text, text_info_->surface.get(), text_position);
@@ -216,10 +221,10 @@ class node_impl : public node_i
         // Calculate the scale to render text at its natural pixel size
         // Convert surface dimensions to framebuffer coordinates
         const gpu::vec2i_t fb_dim       = fb->texture()->texture_dimensions();
-        auto               surface_size = text_info_->surface->dimensions();
+        const auto         surface_size = text_info_->surface->dimensions();
 
-        gpu::vec2_t scale{static_cast<float>(surface_size.x) / static_cast<float>(fb_dim.x),
-                          static_cast<float>(surface_size.y) / static_cast<float>(fb_dim.y)};
+        const gpu::vec2_t scale{static_cast<float>(surface_size.x) / static_cast<float>(fb_dim.x),
+                                static_cast<float>(surface_size.y) / static_cast<float>(fb_dim.y)};
 
         shader->set_uniform("scale", scale);
 

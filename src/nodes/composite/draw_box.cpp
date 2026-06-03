@@ -9,6 +9,7 @@
 #include "nodes/validate_option.hpp"
 
 #include "glm/common.hpp"
+#include <memory>
 
 namespace {
 using namespace miximus;
@@ -53,8 +54,8 @@ class node_impl : public node_i
                                                    nodes,
                                                    state,
                                                    {
-                                                       {0,   0  },
-                                                       {1.0, 1.0}
+                                                       .pos = {0,   0  },
+                                                         .size = {1.0, 1.0}
         });
 
         auto opacity_opt = state.get_option<double>("opacity", 1.0);

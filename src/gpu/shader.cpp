@@ -6,6 +6,8 @@
 #include <array>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace miximus::gpu {
@@ -89,13 +91,12 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTES, &count);
     log->debug("Active Attributes: {}", count);
 
-    for (GLuint i = 0; i < count; i++) {
+    for (GLuint i = 0; std::cmp_less(i, count); i++) {
         std::array<GLchar, 32> name{};
         GLint                  size{};
         GLenum                 type{};
 
         glGetActiveAttrib(program_, i, name.size(), nullptr, &size, &type, name.data());
-
         log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, name.data());
 
         const GLint loc = glGetAttribLocation(program_, name.data());
@@ -112,7 +113,7 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     glGetProgramiv(program_, GL_ACTIVE_UNIFORMS, &count);
     log->debug("Active Uniforms: {}", count);
 
-    for (GLuint i = 0; i < count; i++) {
+    for (GLuint i = 0; std::cmp_less(i, count); i++) {
         std::array<GLchar, 32> name{};
         GLint                  size{};
         GLenum                 type{};

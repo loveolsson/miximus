@@ -16,8 +16,11 @@
 #include <GLFW/glfw3.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <string>
 #include <thread>
+#include <utility>
 
 namespace {
 using namespace miximus;

@@ -3,13 +3,16 @@
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 
+#include <cstdint>
 #include <glm/common.hpp>
+#include <memory>
+#include <string_view>
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 
-enum operation_e
+enum class operation_e : uint8_t
 {
     add,
     sub,

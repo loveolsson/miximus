@@ -1,5 +1,6 @@
 #include "logger/logger.hpp"
 
+#include <memory>
 #include <spdlog/async.h>
 #include <spdlog/async_logger.h>
 #include <spdlog/sinks/stdout_color_sinks.h>

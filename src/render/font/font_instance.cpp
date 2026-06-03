@@ -3,6 +3,10 @@
 #include "render/surface/surface.hpp"
 
 #include <cwctype>
+#include <filesystem>
+#include <memory>
+#include <string_view>
+#include <utility>
 
 namespace miximus::render {
 
@@ -32,7 +36,7 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
     FT_UInt    prior_index = 0;
     const auto slot        = face_->glyph;
 
-    for (int i = 0; i < str.size(); ++i) {
+    for (size_t i = 0; i < str.size(); ++i) {
         const char32_t c = str[i];
 
         if (std::iswspace(c) != 0 || i == str.size() - 1) {
@@ -66,7 +70,7 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
 
         word_len += static_cast<size_t>(slot->advance.x + kerning.x) >> 6U;
 
-        if (word_len >= width) {
+        if (std::cmp_greater_equal(word_len, width)) {
             if (info.consumed_chars == 0) {
                 // Accept word if it's longer than the line, and it's the first word
                 info.consumed_chars = i;

@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include <algorithm>
+#include <memory>
 #include <stdexcept>
 
 namespace miximus::render {
@@ -22,14 +23,15 @@ void surface_s::clear(const rgba_pixel_t& color)
     std::fill(ptr(), ptr() + static_cast<size_t>(dimensions_.x * dimensions_.y), color);
 }
 
+namespace {
 template <typename SrcT, typename Op>
-static inline void copy_operation(const SrcT*              src_ptr,
-                                  gpu::vec2i_t             src_dim,
-                                  size_t                   src_pitch,
-                                  surface_s::rgba_pixel_t* dst_ptr,
-                                  gpu::vec2i_t             dst_dim,
-                                  gpu::vec2i_t             pos,
-                                  Op                       op)
+void copy_operation(const SrcT*              src_ptr,
+                    gpu::vec2i_t             src_dim,
+                    size_t                   src_pitch,
+                    surface_s::rgba_pixel_t* dst_ptr,
+                    gpu::vec2i_t             dst_dim,
+                    gpu::vec2i_t             pos,
+                    Op                       op)
 {
     if (src_pitch < src_dim.x * sizeof(SrcT)) {
         throw std::length_error("copy_operation called with invalid pitch");
@@ -59,7 +61,7 @@ static inline void copy_operation(const SrcT*              src_ptr,
             }
 
             const auto& sp = reinterpret_cast<const SrcT*>(src_p)[sx];
-            auto        dp = &dst_ptr[dst_dim.x * dy + dx];
+            auto        dp = &dst_ptr[(dst_dim.x * dy) + dx];
 
             op(sp, dp);
         }
@@ -67,6 +69,7 @@ static inline void copy_operation(const SrcT*              src_ptr,
         src_p += src_pitch;
     }
 }
+} // namespace
 
 void surface_s::copy(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {

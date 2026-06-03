@@ -3,6 +3,7 @@
 #include "utils/bind.hpp"
 #include "web_server/payload.hpp"
 #include "web_server/templates.hpp"
+#include <string_view>
 
 namespace miximus::core {
 
@@ -21,7 +22,7 @@ websocket_config_s::websocket_config_s(node_manager_s& manager, web_server::serv
     server_.subscribe(topic_e::config, utils::bind(&websocket_config_s::handle_config, this));
 }
 
-void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
+void websocket_config_s::handle_add_node(const json& msg, int64_t client_id)
 {
     auto token = get_token_from_payload(msg);
 
@@ -45,7 +46,7 @@ void websocket_config_s::handle_add_node(json&& msg, int64_t client_id)
     }
 }
 
-void websocket_config_s::handle_remove_node(json&& msg, int64_t client_id)
+void websocket_config_s::handle_remove_node(const json& msg, int64_t client_id)
 {
     auto token = get_token_from_payload(msg);
 
@@ -66,7 +67,7 @@ void websocket_config_s::handle_remove_node(json&& msg, int64_t client_id)
     }
 }
 
-void websocket_config_s::handle_update_node(json&& msg, int64_t client_id)
+void websocket_config_s::handle_update_node(const json& msg, int64_t client_id)
 {
     auto token = get_token_from_payload(msg);
 
@@ -88,7 +89,7 @@ void websocket_config_s::handle_update_node(json&& msg, int64_t client_id)
     }
 }
 
-void websocket_config_s::handle_add_connection(json&& msg, int64_t client_id)
+void websocket_config_s::handle_add_connection(const json& msg, int64_t client_id)
 {
     auto token = get_token_from_payload(msg);
 
@@ -110,7 +111,7 @@ void websocket_config_s::handle_add_connection(json&& msg, int64_t client_id)
     }
 }
 
-void websocket_config_s::handle_remove_connection(json&& msg, int64_t client_id)
+void websocket_config_s::handle_remove_connection(const json& msg, int64_t client_id)
 {
     auto token = get_token_from_payload(msg);
 
@@ -132,7 +133,7 @@ void websocket_config_s::handle_remove_connection(json&& msg, int64_t client_id)
     }
 }
 
-void websocket_config_s::handle_config(json&& msg, int64_t client_id)
+void websocket_config_s::handle_config(const json& msg, int64_t client_id)
 {
     auto token    = get_token_from_payload(msg);
     auto response = create_result_base_payload(token);

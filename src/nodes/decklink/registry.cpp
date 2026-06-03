@@ -2,14 +2,22 @@
 #include "logger/logger.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
+#include <chrono>
 #include <fmt/format.h>
 #include <future>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 namespace miximus::nodes::decklink {
 
+namespace {
 #if _WIN32
-static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
+std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
 {
     int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
 
@@ -19,14 +27,14 @@ static std::string wcs_tp_mbs(const wchar_t* pstr, long wslen)
     return dblstr;
 }
 
-static std::string bstr_to_mbs(BSTR bstr)
+std::string bstr_to_mbs(BSTR bstr)
 {
     int wslen = ::SysStringLen(bstr);
     return wcs_tp_mbs((wchar_t*)bstr, wslen);
 }
 #endif
 
-static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
+decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
 {
     IDeckLinkDiscovery* discovery = nullptr;
 
@@ -45,7 +53,7 @@ static decklink_ptr<IDeckLinkDiscovery> get_device_discovery()
     return decklink_ptr(discovery, false);
 }
 
-static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
+decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
 {
     IDeckLinkVideoConversion* conversion = nullptr;
 
@@ -64,7 +72,7 @@ static decklink_ptr<IDeckLinkVideoConversion> get_device_conversion()
     return decklink_ptr(conversion, false);
 }
 
-static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
+std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 {
     std::string name;
     int64_t     id = 0;
@@ -95,6 +103,7 @@ static std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 
     return fmt::format("{} [{}]", name, id);
 }
+} // namespace
 
 std::string decklink_registry_s::get_display_mode_name(IDeckLinkDisplayMode* mode)
 {

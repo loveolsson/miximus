@@ -5,6 +5,7 @@
 #include "nodes/validate_option.hpp"
 
 #include <glm/glm.hpp>
+#include <memory>
 
 namespace {
 using namespace miximus;

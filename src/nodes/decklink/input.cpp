@@ -14,9 +14,11 @@
 #include "utils/frame_queue.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <unordered_set>
+#include <utility>
 
 namespace {
 using namespace miximus;
@@ -156,9 +158,9 @@ class callback_s : public IDeckLinkInputCallback
         }
 
         IDeckLinkVideoBuffer* video_buffer = nullptr;
-        if (videoFrame->QueryInterface(IID_IDeckLinkVideoBuffer, (void**)&video_buffer) == S_OK) {
+        if (videoFrame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&video_buffer)) == S_OK) {
             if (video_buffer->StartAccess(bmdBufferAccessRead) == S_OK) {
-                void* src_data = nullptr;
+                void* src_data = nullptr; // NOLINT(misc-const-correctness)
                 video_buffer->GetBytes(&src_data);
                 // Map the buffer to client memory address space
                 void* dst_data = glMapNamedBuffer(frame.buffer_id, GL_WRITE_ONLY);

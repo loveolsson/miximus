@@ -1,5 +1,6 @@
 #include "gpu/sync.hpp"
 #include "gpu/context.hpp"
+#include <chrono>
 
 namespace miximus::gpu {
 sync_s::sync_s()

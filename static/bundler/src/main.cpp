@@ -8,10 +8,12 @@
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -25,35 +27,33 @@ int bundle(const std::filesystem::path& src,
            std::string_view             nspace,
            std::string_view             mapname)
 {
-    using std::endl;
-
     std::ofstream     target(dst);
     std::stringstream map;
 
     if (!target.is_open()) {
-        std::cout << "Failed to open output file" << endl;
+        std::cout << "Failed to open output file" << '\n';
         return EXIT_FAILURE;
     }
 
     auto files = get_file_paths(src);
 
     // Add the header of the file
-    target << "#ifdef _WIN32" << endl;
-    target << "#define LIBRARY_EXPORTS" << endl;
-    target << "#endif" << endl << endl;
+    target << "#ifdef _WIN32" << '\n';
+    target << "#define LIBRARY_EXPORTS" << '\n';
+    target << "#endif" << '\n' << '\n';
 
-    target << "#include \"static_files/files.hpp\"" << endl;
-    target << "#include <array>" << endl;
-    target << "#include <cstdint>" << endl << endl;
+    target << "#include \"static_files/files.hpp\"" << '\n';
+    target << "#include <array>" << '\n';
+    target << "#include <cstdint>" << '\n' << '\n';
 
     if (!nspace.empty()) {
-        target << "namespace " << nspace << " {" << endl << endl;
+        target << "namespace " << nspace << " {" << '\n' << '\n';
     }
 
     // Create the declaration of the map containing the uncompressed files
-    map << "const file_map_s& " << mapname << "()" << endl;
-    map << "{" << endl;
-    map << tab(1) << "static const file_map_s files({" << endl;
+    map << "const file_map_s& " << mapname << "()" << '\n';
+    map << "{" << '\n';
+    map << tab(1) << "static const file_map_s files({" << '\n';
 
     // Iterate the files in the folder
     for (int fi = 0; fi < files.size(); ++fi) {
@@ -61,11 +61,11 @@ int bundle(const std::filesystem::path& src,
         const auto  arr_name  = fmt::format("fileData{}", fi);
         auto        unix_name = filename.string();
 
-        std::replace(unix_name.begin(), unix_name.end(), '\\', '/');
+        std::ranges::replace(unix_name, '\\', '/');
 
         std::ifstream file(src / filename, std::ifstream::binary);
         if (!file.is_open()) {
-            std::cout << "Failed to read file: " << filename << endl;
+            std::cout << "Failed to read file: " << filename << '\n';
             return EXIT_FAILURE;
         }
 
@@ -79,9 +79,9 @@ int bundle(const std::filesystem::path& src,
 
         const auto comment = fmt::format("// File: {} ({} / {} compressed)", unix_name, file_data.size(), arr_size);
 
-        target << comment << endl;
+        target << comment << '\n';
 
-        target << "constexpr std::array<uint8_t, " << arr_size << "> " << arr_name << " = {" << endl;
+        target << "constexpr std::array<uint8_t, " << arr_size << "> " << arr_name << " = {" << '\n';
 
         for (size_t i = 0; i < arr_size;) {
             target << tab(1);
@@ -91,34 +91,34 @@ int bundle(const std::filesystem::path& src,
                 target << fmt_u8(compressed[i]) << ", ";
             }
 
-            target << endl;
+            target << '\n';
         }
 
-        target << "};" << endl << endl;
+        target << "};" << '\n' << '\n';
 
         // Add an entry to the map that decompresses the file into the map
-        map << tab(2) << "{ " << comment << endl;
-        map << tab(3) << "\"" << unix_name << "\"," << endl;
-        map << tab(3) << "{" << endl;
+        map << tab(2) << "{ " << comment << '\n';
+        map << tab(3) << "\"" << unix_name << "\"," << '\n';
+        map << tab(3) << "{" << '\n';
         map << tab(4) << ".gzipped = {reinterpret_cast<const char*>(" << arr_name << ".data()), " << arr_size << "},"
-            << endl;
-        map << tab(4) << ".size = " << file_data.size() << "," << endl;
-        map << tab(4) << ".filename = \"" << unix_name << "\"," << endl;
-        map << tab(4) << ".filename_lowercase = \"" << boost::to_lower_copy(unix_name) << "\"," << endl;
-        map << tab(4) << ".mime = \"" << get_mime(filename) << "\"," << endl;
-        map << tab(3) << "}," << endl;
-        map << tab(2) << "}," << endl;
+            << '\n';
+        map << tab(4) << ".size = " << file_data.size() << "," << '\n';
+        map << tab(4) << ".filename = \"" << unix_name << "\"," << '\n';
+        map << tab(4) << ".filename_lowercase = \"" << boost::to_lower_copy(unix_name) << "\"," << '\n';
+        map << tab(4) << ".mime = \"" << get_mime(filename) << "\"," << '\n';
+        map << tab(3) << "}," << '\n';
+        map << tab(2) << "}," << '\n';
     }
 
     // Terminate the map declaration and add it to the file
-    map << tab(1) << "});" << endl << endl;
-    map << tab(1) << "return files;" << endl;
-    map << "};" << endl;
+    map << tab(1) << "});" << '\n' << '\n';
+    map << tab(1) << "return files;" << '\n';
+    map << "};" << '\n';
 
     target << map.rdbuf();
 
     if (!nspace.empty()) {
-        target << endl << "} // namespace " << nspace << endl;
+        target << '\n' << "} // namespace " << nspace << '\n';
     }
 
     target.close();
@@ -129,9 +129,7 @@ int bundle(const std::filesystem::path& src,
 
 int main(int argc, char* argv[])
 {
-    using std::endl;
-
-    std::cout << "Running bundler" << endl;
+    std::cout << "Running bundler" << '\n';
 
     try {
         std::string_view src;
@@ -143,7 +141,7 @@ int main(int argc, char* argv[])
             const std::string_view opt(argv[i]);
 
             if (i + 1 >= argc) {
-                std::cout << "Parameter " << opt << " is missing value" << endl;
+                std::cout << "Parameter " << opt << " is missing value" << '\n';
                 return EXIT_FAILURE;
             }
 
@@ -159,18 +157,18 @@ int main(int argc, char* argv[])
         }
 
         if (src.empty() || dst.empty() || mapname.empty()) {
-            std::cout << "Missing parameter" << endl;
+            std::cout << "Missing parameter" << '\n';
             return EXIT_FAILURE;
         }
 
-        std::cout << "Bundling folder" << src << "to " << dst << endl;
+        std::cout << "Bundling folder" << src << "to " << dst << '\n';
         if (!nspace.empty()) {
-            std::cout << "Using namespace " << nspace << endl;
+            std::cout << "Using namespace " << nspace << '\n';
         }
 
         return bundle(src, dst, nspace, mapname);
     } catch (std::exception& e) {
-        std::cout << "Exeption thrown: " << e.what() << endl;
+        std::cout << "Exeption thrown: " << e.what() << '\n';
         return EXIT_FAILURE;
     }
 }

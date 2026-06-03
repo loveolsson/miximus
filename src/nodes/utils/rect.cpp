@@ -2,6 +2,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
+#include <memory>
 
 namespace {
 using namespace miximus;
@@ -29,7 +30,7 @@ class node_impl : public node_i
         pos  = iface_pos_.resolve_value(app, nodes, state, pos);
         size = iface_size_.resolve_value(app, nodes, state, size);
 
-        iface_res_.set_value({pos, size});
+        iface_res_.set_value({.pos = pos, .size = size});
     }
 
     nlohmann::json get_default_options() const final

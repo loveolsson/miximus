@@ -1,6 +1,8 @@
 #include "node.hpp"
 #include "interface.hpp"
 #include "validate_option.hpp"
+#include <string_view>
+#include <utility>
 
 namespace miximus::nodes {
 void node_i::register_interface(const interface_i* iface) { interfaces_.emplace(iface->name(), iface); }

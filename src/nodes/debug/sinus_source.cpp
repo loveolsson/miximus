@@ -4,6 +4,7 @@
 #include "nodes/validate_option.hpp"
 
 #include <cmath>
+#include <memory>
 
 namespace {
 using namespace miximus;
@@ -23,7 +24,7 @@ class node_impl : public node_i
         auto speed  = state.get_option<double>("speed");
 
         const double s   = utils::to_seconds(app->frame_info.pts);
-        const double res = std::sin(s * speed) * size + center;
+        const double res = (std::sin(s * speed) * size) + center;
 
         iface_res_.set_value(res);
     }

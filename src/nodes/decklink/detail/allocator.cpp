@@ -2,6 +2,9 @@
 #include "logger/logger.hpp"
 
 #include <cassert>
+#include <memory>
+#include <stdexcept>
+#include <utility>
 
 namespace miximus::nodes::decklink::detail {
 
@@ -10,7 +13,7 @@ constexpr size_t MAX_ALLOCATIONS = 4;
 // Defined here because it references allocator_s::return_buffer.
 ULONG video_buffer_s::Release()
 {
-    ULONG count = --ref_count_;
+    const ULONG count = --ref_count_;
     if (count == 0) {
         allocator_->return_buffer(this);
     }
@@ -42,7 +45,7 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
             raw->reset_ref_count();
             allocated_buffers_.emplace(raw, std::move(front));
             free_buffers_.pop_front();
-            *allocatedBuffer = (IDeckLinkVideoBuffer*)raw;
+            *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(raw);
             gpu::context_s::rewind_current();
             return S_OK;
         }
@@ -62,7 +65,7 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
     auto* raw      = buffer.get();
     allocated_buffers_.emplace(raw, std::move(buffer));
 
-    *allocatedBuffer = (IDeckLinkVideoBuffer*)raw;
+    *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(raw);
     gpu::context_s::rewind_current();
     return S_OK;
 }
@@ -90,7 +93,8 @@ void allocator_s::return_buffer(video_buffer_s* buffer)
 
 gpu::transfer::transfer_i* allocator_s::get_transfer(IDeckLinkVideoBuffer* buffer)
 {
-    return static_cast<video_buffer_s*>(buffer)->get_transfer();
+    return static_cast<video_buffer_s*>(buffer)
+        ->get_transfer(); // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
 }
 
 bool allocator_s::register_texture(gpu::texture_s* texture)

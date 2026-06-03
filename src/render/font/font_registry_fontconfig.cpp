@@ -2,6 +2,8 @@
 #include "logger/logger.hpp"
 
 #include <fontconfig/fontconfig.h>
+#include <string>
+#include <utility>
 
 namespace miximus::render {
 
@@ -18,10 +20,10 @@ void font_registry_s::scan_fonts()
     auto os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, nullptr);
     auto fs     = FcFontList(config, pat, os);
     for (int i = 0; fs != nullptr && i < fs->nfont; ++i) {
-        FcPattern* font   = fs->fonts[i];
-        FcChar8*   file   = nullptr;
-        FcChar8*   style  = nullptr;
-        FcChar8*   family = nullptr;
+        const FcPattern* font   = fs->fonts[i];
+        FcChar8*         file   = nullptr; // NOLINT(misc-const-correctness)
+        FcChar8*         style  = nullptr; // NOLINT(misc-const-correctness)
+        FcChar8*         family = nullptr; // NOLINT(misc-const-correctness)
 
         if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch &&
             FcPatternGetString(font, FC_FAMILY, 0, &family) == FcResultMatch &&
