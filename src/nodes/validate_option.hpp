@@ -19,7 +19,7 @@ inline bool validate_number_option(nlohmann::json* val, std::optional<T> min, st
         return false;
     }
 
-    double mmin = min ? *min : std::numeric_limits<T>::min();
+    double mmin = min ? *min : std::numeric_limits<T>::lowest();
     double mmax = max ? *max : std::numeric_limits<T>::max();
 
     *val = static_cast<T>(glm::clamp(val->get<double>(), mmin, mmax));
