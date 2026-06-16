@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <magic_enum/magic_enum.hpp>
 #include <optional>
 #include <string_view>
@@ -25,7 +26,8 @@ constexpr auto enum_value = [](size_t i) { return magic_enum::enum_value<E>(i); 
  */
 constexpr auto enum_index = [](auto e) -> size_t {
     const auto opt = magic_enum::enum_index(e);
-    return opt.has_value() ? *opt : size_t(0); // Quiet warnings about unchecked optional
+    assert(opt.has_value()); // Caller must pass a valid named enum value
+    return opt.value_or(0);
 };
 
 /**
