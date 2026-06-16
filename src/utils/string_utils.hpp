@@ -1,51 +1,25 @@
 #pragma once
 
-#include <cstdint>
+#include <boost/locale/utf.hpp>
 #include <string>
+#include <string_view>
 
 namespace miximus::utils {
 
-inline std::u32string utf8_to_utf32(const std::string& utf8_string)
+inline std::u32string utf8_to_utf32(std::string_view utf8_string)
 {
     std::u32string result;
     result.reserve(utf8_string.size());
 
-    const auto* p   = reinterpret_cast<const uint8_t*>(utf8_string.data());
-    const auto* end = p + utf8_string.size();
+    using traits = boost::locale::utf::utf_traits<char>;
+    auto p       = utf8_string.cbegin();
+    auto end     = utf8_string.cend();
 
-    while (p < end) {
-        char32_t cp;
-        if (*p < 0x80) {
-            cp = *p++;
-        } else if ((*p & 0xE0) == 0xC0) {
-            cp = (*p++ & 0x1F) << 6;
-            if (p < end && (*p & 0xC0) == 0x80) {
-                cp |= (*p++ & 0x3F);
-            }
-        } else if ((*p & 0xF0) == 0xE0) {
-            cp = (*p++ & 0x0F) << 12;
-            if (p < end && (*p & 0xC0) == 0x80) {
-                cp |= (*p++ & 0x3F) << 6;
-            }
-            if (p < end && (*p & 0xC0) == 0x80) {
-                cp |= (*p++ & 0x3F);
-            }
-        } else if ((*p & 0xF8) == 0xF0) {
-            cp = (*p++ & 0x07) << 18;
-            if (p < end && (*p & 0xC0) == 0x80) {
-                cp |= (*p++ & 0x3F) << 12;
-            }
-            if (p < end && (*p & 0xC0) == 0x80) {
-                cp |= (*p++ & 0x3F) << 6;
-            }
-            if (p < end && (*p & 0xC0) == 0x80) {
-                cp |= (*p++ & 0x3F);
-            }
-        } else {
-            ++p; // skip invalid byte
-            continue;
+    while (p != end) {
+        auto cp = traits::decode(p, end);
+        if (cp != boost::locale::utf::illegal && cp != boost::locale::utf::incomplete) {
+            result.push_back(static_cast<char32_t>(cp));
         }
-        result.push_back(cp);
     }
 
     return result;
