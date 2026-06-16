@@ -40,6 +40,7 @@ web_server_impl::web_server_impl()
     // Bind the handlers we are using
     endpoint_.set_open_handler(std::bind_front(&web_server_impl::on_open, this));
     endpoint_.set_close_handler(std::bind_front(&web_server_impl::on_close, this));
+    endpoint_.set_fail_handler(std::bind_front(&web_server_impl::on_fail, this));
     endpoint_.set_http_handler(std::bind_front(&web_server_impl::on_http, this));
     endpoint_.set_message_handler(std::bind_front(&web_server_impl::on_message, this));
 }
@@ -63,8 +64,9 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     using namespace websocketpp::log;
 
     // Extract connection_ptr from connection handle
-    auto con = endpoint_.get_con_from_hdl(hdl);
-    if (!con) {
+    websocketpp::lib::error_code ec;
+    auto                         con = endpoint_.get_con_from_hdl(hdl, ec);
+    if (ec) {
         return;
     }
 
@@ -383,6 +385,33 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
     send(hdl, create_socket_info_payload(id));
 }
 
+void web_server_impl::on_fail(const con_hdl_t& hdl)
+{
+    websocketpp::lib::error_code ec;
+    auto                         con = endpoint_.get_con_from_hdl(hdl, ec);
+    if (ec) {
+        return;
+    }
+
+    auto log = getlog("http");
+    if (!log) {
+        return;
+    }
+
+    const auto& conn_ec = con->get_ec();
+    // When stop_listening() cancels the pending async_accept, websocketpp's
+    // handle_accept converts asio::errc::operation_canceled to
+    // websocketpp::error::operation_canceled.  The pre-allocated accept socket
+    // (fd=-1) then emits EBADF on shutdown/remote_endpoint.  All benign.
+    if (conn_ec == websocketpp::error::make_error_code(websocketpp::error::operation_canceled)) {
+        log->debug("Connection canceled during accept (shutdown artifact)");
+        return;
+    }
+    // Real failure: avoid con->get_remote_endpoint() on a never-accepted socket
+    // because that call itself triggers an EBADF log via the error logger.
+    log->warn("Connection failed: {} ({})", conn_ec.value(), conn_ec.message());
+}
+
 void web_server_impl::on_close(const con_hdl_t& hdl)
 {
     using namespace websocketpp::log;
@@ -402,12 +431,28 @@ void web_server_impl::on_close(const con_hdl_t& hdl)
 
     connections_by_id_.erase(con->second.id);
     connections_.erase(con);
+
+    if (connections_.empty() && stop_promise_) {
+        // Post rather than set directly: we are still inside handle_terminate(),
+        // which calls log_close_result() and m_termination_handler() after
+        // returning from on_close().  m_termination_handler() accesses endpoint_
+        // to remove the connection from its internal tracking.  By posting, we
+        // guarantee those steps finish before stop() unblocks and the caller is
+        // free to destroy the web_server (and endpoint_).
+        auto p = std::move(*stop_promise_);
+        stop_promise_.reset();
+        boost::asio::post(endpoint_.get_io_context(), [p = std::move(p)]() mutable { p.set_value(); });
+    }
 }
 
 void web_server_impl::send(const con_hdl_t& hdl, const std::string& msg)
 {
-    using namespace websocketpp::frame;
-    endpoint_.send(hdl, msg, opcode::text);
+    using namespace websocketpp::log;
+    std::error_code ec;
+    endpoint_.send(hdl, msg, websocketpp::frame::opcode::text, ec);
+    if (ec) {
+        endpoint_.get_alog().write(alevel::fail, ec.message());
+    }
 }
 
 void web_server_impl::send(const con_hdl_t& hdl, const nlohmann::json& msg) { send(hdl, msg.dump()); }
@@ -451,6 +496,11 @@ void web_server_impl::stop()
     boost::asio::post(endpoint_.get_io_context(), [this, p = std::move(done)]() mutable {
         endpoint_.stop_listening();
 
+        // Suppress expected teardown noise: canceled async ops on connections
+        // being closed. Safe after stop_listening() — no new external failures
+        // can occur from this point.
+        endpoint_.clear_access_channels(alevel::fail);
+
         for (auto& connection : connections_) {
             error_code ec;
             endpoint_.close(connection.first, status::going_away, "server shutting down", ec);
@@ -459,7 +509,11 @@ void web_server_impl::stop()
             }
         }
 
-        p.set_value();
+        if (connections_.empty()) {
+            p.set_value();
+        } else {
+            stop_promise_ = std::move(p);
+        }
     });
 
     future.wait();

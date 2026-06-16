@@ -8,7 +8,9 @@
 
 #include <websocketpp/common/asio.hpp>
 
+#include <future>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string_view>
 
@@ -33,6 +35,7 @@ class web_server_impl : public server_s
     error_e handle_user_command(nlohmann::json&& doc, int64_t connection_id);
     void    on_message(const con_hdl_t& hdl, const msg_ptr_t& msg);
     void    on_open(const con_hdl_t& hdl);
+    void    on_fail(const con_hdl_t& hdl);
     void    on_close(const con_hdl_t& hdl);
 
     void send(const con_hdl_t& hdl, const std::string&);
@@ -46,6 +49,8 @@ class web_server_impl : public server_s
     config_getters_t config_getters_;
 
     int64_t next_connection_id_ = 0;
+
+    std::optional<std::promise<void>> stop_promise_;
 
   public:
     web_server_impl();

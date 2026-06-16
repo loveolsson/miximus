@@ -1,6 +1,7 @@
 #pragma once
 #include "logger/logger.hpp"
 
+#include <string_view>
 #include <websocketpp/common/cpp11.hpp>
 #include <websocketpp/logger/basic.hpp>
 #include <websocketpp/logger/levels.hpp>
@@ -60,9 +61,23 @@ class custom_logger : public basic<concurrency, names>
                 case elevel::library:
                     log->debug(msg);
                     break;
-                case elevel::info:
-                    log->info(msg);
+                case elevel::info: {
+                    // "Error getting remote endpoint: system:9" and
+                    // "asio async_shutdown error: system:9" are emitted by
+                    // websocketpp when it tears down the pre-allocated accept
+                    // socket after stop_listening() cancels the pending
+                    // async_accept.  That socket was never assigned a valid fd
+                    // by the OS, so EBADF is unavoidable.  These are not
+                    // indicative of a real problem; route them to debug.
+                    std::string_view sv(msg);
+                    if (sv.starts_with("asio async_shutdown error: system:9") ||
+                        sv.starts_with("Error getting remote endpoint: system:9")) {
+                        log->debug(msg);
+                    } else {
+                        log->info(msg);
+                    }
                     break;
+                }
                 case elevel::warn:
                     log->warn(msg);
                     break;
