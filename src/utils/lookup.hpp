@@ -1,9 +1,8 @@
 #pragma once
 
-#include <array>
-#include <cassert>
 #include <magic_enum/magic_enum.hpp>
-#include <tuple>
+#include <optional>
+#include <string_view>
 
 namespace miximus {
 
@@ -41,16 +40,7 @@ constexpr auto enum_to_string = [](auto v) -> std::string_view { return magic_en
 template <typename E>
 constexpr std::optional<E> enum_from_string(std::string_view e)
 {
-    constexpr auto count = enum_count<E>();
-
-    for (size_t i = 0; i < count; i++) {
-        const auto a = enum_value<E>(i);
-        if (e == enum_to_string(a)) {
-            return a;
-        }
-    }
-
-    return {};
+    return magic_enum::enum_cast<E>(e);
 }
 
 } // namespace miximus
