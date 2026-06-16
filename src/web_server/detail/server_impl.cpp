@@ -1,13 +1,13 @@
 #include "web_server/detail/server_impl.hpp"
 #include "headers.hpp"
 #include "url_parser.hpp"
-#include "utils/bind.hpp"
 #include "utils/lookup.hpp"
 #include "web_server/templates.hpp"
 
 #include <boost/property_tree/detail/xml_parser_utils.hpp>
 #include <exception>
 #include <fmt/format.h>
+#include <functional>
 #include <future>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -50,10 +50,10 @@ web_server_impl::web_server_impl()
     endpoint_.set_reuse_addr(true);
 
     // Bind the handlers we are using
-    endpoint_.set_open_handler(utils::bind(&web_server_impl::on_open, this));
-    endpoint_.set_close_handler(utils::bind(&web_server_impl::on_close, this));
-    endpoint_.set_http_handler(utils::bind(&web_server_impl::on_http, this));
-    endpoint_.set_message_handler(utils::bind(&web_server_impl::on_message, this));
+    endpoint_.set_open_handler(std::bind_front(&web_server_impl::on_open, this));
+    endpoint_.set_close_handler(std::bind_front(&web_server_impl::on_close, this));
+    endpoint_.set_http_handler(std::bind_front(&web_server_impl::on_http, this));
+    endpoint_.set_message_handler(std::bind_front(&web_server_impl::on_message, this));
 }
 
 void web_server_impl::terminate_and_log(const con_hdl_t& hdl, const std::string& msg)

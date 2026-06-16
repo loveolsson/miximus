@@ -3,7 +3,7 @@
 #include "core/node_manager.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
-#include "utils/bind.hpp"
+#include <functional>
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
@@ -123,7 +123,7 @@ int main(int argc, char* argv[])
 
             // Set up web server config getters
             web_server->set_config_getters({
-                .node_config = utils::bind(&core::node_manager_s::get_config, &node_manager),
+                .node_config = std::bind_front(&core::node_manager_s::get_config, &node_manager),
             });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load

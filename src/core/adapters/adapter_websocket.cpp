@@ -1,6 +1,6 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "logger/logger.hpp"
-#include "utils/bind.hpp"
+#include <functional>
 #include "web_server/payload.hpp"
 #include "web_server/templates.hpp"
 #include <string_view>
@@ -14,12 +14,12 @@ websocket_config_s::websocket_config_s(node_manager_s& manager, web_server::serv
     : manager_(manager)
     , server_(server)
 {
-    server_.subscribe(topic_e::add_node, utils::bind(&websocket_config_s::handle_add_node, this));
-    server_.subscribe(topic_e::remove_node, utils::bind(&websocket_config_s::handle_remove_node, this));
-    server_.subscribe(topic_e::add_connection, utils::bind(&websocket_config_s::handle_add_connection, this));
-    server_.subscribe(topic_e::remove_connection, utils::bind(&websocket_config_s::handle_remove_connection, this));
-    server_.subscribe(topic_e::update_node, utils::bind(&websocket_config_s::handle_update_node, this));
-    server_.subscribe(topic_e::config, utils::bind(&websocket_config_s::handle_config, this));
+    server_.subscribe(topic_e::add_node, std::bind_front(&websocket_config_s::handle_add_node, this));
+    server_.subscribe(topic_e::remove_node, std::bind_front(&websocket_config_s::handle_remove_node, this));
+    server_.subscribe(topic_e::add_connection, std::bind_front(&websocket_config_s::handle_add_connection, this));
+    server_.subscribe(topic_e::remove_connection, std::bind_front(&websocket_config_s::handle_remove_connection, this));
+    server_.subscribe(topic_e::update_node, std::bind_front(&websocket_config_s::handle_update_node, this));
+    server_.subscribe(topic_e::config, std::bind_front(&websocket_config_s::handle_config, this));
 }
 
 void websocket_config_s::handle_add_node(const json& msg, int64_t client_id)
