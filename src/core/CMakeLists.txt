@@ -13,6 +13,7 @@ PRIVATE
     render
     nodes
     magic_enum::magic_enum
+    Boost::system
 )
 
 #add_sanitizers(app)
