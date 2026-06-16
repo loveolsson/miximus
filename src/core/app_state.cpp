@@ -3,7 +3,6 @@
 #include "nodes/decklink/registry.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
-#include "utils/bind.hpp"
 #include <memory>
 
 using namespace boost::asio;

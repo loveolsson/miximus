@@ -5,7 +5,6 @@
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/validate_option.hpp"
-#include "utils/bind.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json.hpp>

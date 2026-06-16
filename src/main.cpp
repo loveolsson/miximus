@@ -3,9 +3,9 @@
 #include "core/node_manager.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
-#include <functional>
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
+#include <functional>
 
 #include <nlohmann/json.hpp>
 

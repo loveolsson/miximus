@@ -1,8 +1,8 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "logger/logger.hpp"
-#include <functional>
 #include "web_server/payload.hpp"
 #include "web_server/templates.hpp"
+#include <functional>
 #include <string_view>
 
 namespace miximus::core {
