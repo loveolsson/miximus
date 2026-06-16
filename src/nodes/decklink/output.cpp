@@ -183,7 +183,7 @@ class callback_s
                 frame.sync.reset();
             }
 
-            glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+            glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
             glFinish();
 
             IDeckLinkMutableVideoFrame* dst_frame = nullptr;

@@ -21,6 +21,7 @@ struct file_record_s
     std::string_view filename;
     std::string_view filename_lowercase;
     std::string_view mime;
+    std::string_view etag;
     LIBRARY_API std::string unzip() const;
 };
 

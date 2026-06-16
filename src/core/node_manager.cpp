@@ -135,21 +135,32 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
     return error_e::no_error;
 }
 
-// NOLINTNEXTLINE(misc-no-recursion, misc-use-anonymous-namespace)
-static bool is_connection_circular(const nodes::node_map_t&    nodes,
-                                   std::set<std::string_view>* cleared_nodes,
-                                   std::string_view            target_node_id,
-                                   const nodes::connection_s&  con)
+static bool is_connection_circular(const nodes::node_map_t&   nodes,
+                                   std::string_view           target_node_id,
+                                   const nodes::connection_s& initial_con)
 {
-    if (cleared_nodes->contains(con.from_node)) {
-        return false;
-    }
+    std::vector<std::string_view> stack;
+    std::set<std::string_view>    visited;
 
-    if (con.from_node == target_node_id) {
-        return true;
-    }
+    stack.push_back(initial_con.from_node);
 
-    if (auto node_it = nodes.find(con.from_node); node_it != nodes.end()) {
+    while (!stack.empty()) {
+        const auto node_id = stack.back();
+        stack.pop_back();
+
+        if (!visited.emplace(node_id).second) {
+            continue;
+        }
+
+        if (node_id == target_node_id) {
+            return true;
+        }
+
+        const auto node_it = nodes.find(std::string(node_id));
+        if (node_it == nodes.end()) {
+            continue;
+        }
+
         const auto& node    = node_it->second.node;
         const auto& con_map = node_it->second.state.con_map;
 
@@ -159,21 +170,16 @@ static bool is_connection_circular(const nodes::node_map_t&    nodes,
                 continue;
             }
 
-            auto connections = con_map.find(id);
-            if (connections == con_map.end()) {
-                assert(false);
-                continue;
-            }
-
-            for (const auto& c : connections->second) {
-                if (is_connection_circular(nodes, cleared_nodes, target_node_id, c)) {
-                    return true;
+            if (const auto it = con_map.find(id); it != con_map.end()) {
+                for (const auto& c : it->second) {
+                    if (!visited.contains(c.from_node)) {
+                        stack.push_back(c.from_node);
+                    }
                 }
             }
         }
     }
 
-    cleared_nodes->emplace(con.from_node);
     return false;
 }
 
@@ -234,8 +240,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
         return error_e::invalid_type;
     }
 
-    std::set<std::string_view> cleared_nodes;
-    if (is_connection_circular(nodes_, &cleared_nodes, con.to_node, con)) {
+    if (is_connection_circular(nodes_, con.to_node, con)) {
         _log()->warn("Attempted connection is circular");
         return error_e::circular_connection;
     }

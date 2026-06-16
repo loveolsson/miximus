@@ -111,6 +111,13 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
         return;
     }
 
+    const auto etag          = '"' + std::string(file_it->etag) + '"';
+    const auto if_none_match = con->get_request_header("If-None-Match");
+    if (!if_none_match.empty() && if_none_match == etag) {
+        con->set_status(status_code::not_modified);
+        return;
+    }
+
     if (accept_encoding_has_gzip(con->get_request_header("Accept-Encoding"))) {
         con->replace_header("Content-Encoding", "gzip");
         con->set_body(std::string(file_it->gzipped));
@@ -119,6 +126,8 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     }
 
     con->replace_header("Content-Type", std::string(file_it->mime));
+    con->replace_header("ETag", etag);
+    con->replace_header("Cache-Control", "no-cache");
     con->set_status(status_code::ok);
 }
 

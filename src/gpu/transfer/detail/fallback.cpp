@@ -20,7 +20,9 @@ bool fallback_transfer_s::perform_transfer(texture_s* texture)
         glBindTexture(GL_TEXTURE_2D, id);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, dims.x, dims.y, texture->format(), texture->type(), ptr_);
     } else {
-        //
+        // Synchronous readback — blocks until the GPU has written to ptr_.
+        glBindTexture(GL_TEXTURE_2D, id);
+        glGetTexImage(GL_TEXTURE_2D, 0, texture->format(), texture->type(), ptr_);
     }
 
     return true;

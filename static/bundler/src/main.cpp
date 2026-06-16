@@ -3,6 +3,8 @@
 #include "mime.hpp"
 #include "tab.hpp"
 
+#include <boost/uuid/detail/sha1.hpp>
+
 #include <fmt/format.h>
 #include <gzip/compress.hpp>
 
@@ -77,6 +79,14 @@ int bundle(const std::filesystem::path& src,
         const auto compressed = gzip::compress(file_data.data(), file_data.size(), Z_BEST_COMPRESSION);
         const auto arr_size   = compressed.size();
 
+        // SHA-1 of uncompressed data, used as ETag
+        boost::uuids::detail::sha1 sha1;
+        sha1.process_bytes(file_data.data(), file_data.size());
+        boost::uuids::detail::sha1::digest_type digest;
+        sha1.get_digest(digest);
+        const auto sha_hex =
+            fmt::format("{:08x}{:08x}{:08x}{:08x}{:08x}", digest[0], digest[1], digest[2], digest[3], digest[4]);
+
         const auto comment = fmt::format("// File: {} ({} / {} compressed)", unix_name, file_data.size(), arr_size);
 
         target << comment << '\n';
@@ -106,6 +116,7 @@ int bundle(const std::filesystem::path& src,
         map << tab(4) << ".filename = \"" << unix_name << "\"," << '\n';
         map << tab(4) << ".filename_lowercase = \"" << boost::to_lower_copy(unix_name) << "\"," << '\n';
         map << tab(4) << ".mime = \"" << get_mime(filename) << "\"," << '\n';
+        map << tab(4) << ".etag = \"" << sha_hex << "\"," << '\n';
         map << tab(3) << "}," << '\n';
         map << tab(2) << "}," << '\n';
     }

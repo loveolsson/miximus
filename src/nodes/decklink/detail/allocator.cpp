@@ -22,8 +22,8 @@ ULONG video_buffer_s::Release()
 
 allocator_s::allocator_s(std::shared_ptr<gpu::context_s> ctx, gpu::transfer::transfer_i::direction_e dir)
     : transfer_type_(transfer_i::get_prefered_type())
-    , ctx_(std::move(ctx))
     , direction_(dir)
+    , ctx_(std::move(ctx))
 {
 }
 
@@ -35,8 +35,15 @@ allocator_s::~allocator_s()
 
 HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
 {
+    // No GL context needed here: transfer_i construction only does aligned_alloc.
+    // make_current is deliberately omitted — DeckLink may call this from its own
+    // driver thread (including for auto-conversion target frames), and acquiring
+    // the GL context here would risk deadlocking against the render thread.
     auto lock = ctx_->get_lock();
-    ctx_->make_current();
+
+    if (buffer_size_ == 0) {
+        return E_OUTOFMEMORY;
+    }
 
     if (!free_buffers_.empty()) {
         auto& front = free_buffers_.front();
@@ -46,7 +53,6 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
             allocated_buffers_.emplace(raw, std::move(front));
             free_buffers_.pop_front();
             *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(raw);
-            gpu::context_s::rewind_current();
             return S_OK;
         }
         // Wrong size — discard and fall through to allocate a new one.
@@ -54,8 +60,7 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
         free_buffers_.pop_front();
     }
 
-    if (allocated_buffers_.size() > MAX_ALLOCATIONS) {
-        gpu::context_s::rewind_current();
+    if (allocated_buffers_.size() >= MAX_ALLOCATIONS) {
         return E_OUTOFMEMORY;
     }
 
@@ -66,7 +71,6 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
     allocated_buffers_.emplace(raw, std::move(buffer));
 
     *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(raw);
-    gpu::context_s::rewind_current();
     return S_OK;
 }
 
