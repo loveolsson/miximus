@@ -54,7 +54,6 @@ find_package(Boost REQUIRED COMPONENTS system fiber CONFIG)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/frozen/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/concurrentqueue
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/fiberpool/include
 )
 

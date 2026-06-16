@@ -4,9 +4,6 @@
 [submodule "submodules/gzip-hpp"]
 	path = submodules/gzip-hpp
 	url = https://github.com/mapbox/gzip-hpp.git
-[submodule "submodules/concurrentqueue"]
-	path = submodules/concurrentqueue
-	url = https://github.com/cameron314/concurrentqueue.git
 [submodule "submodules/stb"]
 	path = submodules/stb
 	url = https://github.com/nothings/stb.git
