@@ -14,4 +14,5 @@ target_include_directories(bundler PRIVATE
 target_link_libraries(bundler
     fmt::fmt
     ZLIB::ZLIB
+    Boost::headers
 )
