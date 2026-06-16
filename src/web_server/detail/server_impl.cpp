@@ -1,8 +1,10 @@
 #include "web_server/detail/server_impl.hpp"
 #include "headers.hpp"
-#include "url_parser.hpp"
 #include "utils/lookup.hpp"
+
 #include "web_server/templates.hpp"
+#include <boost/url/parse.hpp>
+#include <boost/url/url_view.hpp>
 
 #include <boost/property_tree/detail/xml_parser_utils.hpp>
 #include <exception>
@@ -83,15 +85,18 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
     const auto& resource = con->get_resource();
     const auto& method   = con->get_request().get_method();
 
-    // Parse the URL to separate path from query parameters and fragment
-    auto        parser = url_parser::parse(resource);
-    const auto& path   = parser.get_path();
+    auto             r      = boost::urls::parse_relative_ref(resource);
+    auto             parsed = r.has_value() ? *r : boost::urls::url_view{};
+    std::string_view path   = parsed.encoded_path();
+    if (path.empty()) {
+        path = "/";
+    }
 
     endpoint_.get_alog().write(alevel::http, std::string(path));
 
     // Handle API routes
     if (path.starts_with(API_V1_PREFIX)) {
-        handle_api_request(con, method, parser);
+        handle_api_request(con, method, path.substr(API_V1_PREFIX.length()));
         return;
     }
 
@@ -133,7 +138,7 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
 
 void web_server_impl::handle_api_request(const server_t::connection_ptr& con,
                                          const std::string&              method,
-                                         const url_parser&               parser)
+                                         std::string_view                api_path)
 {
     using namespace websocketpp::http;
 
@@ -149,10 +154,6 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& con,
         con->set_body("{}");
         return;
     }
-
-    // Parse API endpoint
-    const auto&            path     = parser.get_path();
-    const std::string_view api_path = path.substr(API_V1_PREFIX.length());
 
     try {
         if (method == HTTP_GET && api_path == "config") {

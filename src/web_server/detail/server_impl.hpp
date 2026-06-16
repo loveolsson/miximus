@@ -1,7 +1,6 @@
 #pragma once
 #include "static_files/files.hpp"
 #include "types/error.hpp"
-#include "url_parser.hpp"
 #include "web_server/detail/custom-config.hpp"
 #include "web_server/payload.hpp"
 #include "web_server/server.hpp"
@@ -28,7 +27,7 @@ class web_server_impl : public server_s
     void terminate_and_log(const con_hdl_t& hdl, const std::string& msg);
 
     void on_http(const con_hdl_t& hdl);
-    void handle_api_request(const server_t::connection_ptr& con, const std::string& method, const url_parser& parser);
+    void handle_api_request(const server_t::connection_ptr& con, const std::string& method, std::string_view api_path);
     void handle_api_v1_get_config(const server_t::connection_ptr& con) const;
     void handle_api_v1_post_control(const server_t::connection_ptr& con);
     error_e handle_user_command(nlohmann::json&& doc, int64_t connection_id);
