@@ -7,6 +7,7 @@ add_library(web_server
     detail/server_impl.hpp
     detail/headers.cpp
     detail/headers.hpp
+    detail/html.hpp
     detail/websocket_connection.hpp
     detail/custom-config.hpp
     detail/custom-logger.hpp

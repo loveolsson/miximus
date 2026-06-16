@@ -1,12 +1,11 @@
 #include "web_server/detail/server_impl.hpp"
 #include "headers.hpp"
+#include "html.hpp"
 #include "utils/lookup.hpp"
-
 #include "web_server/templates.hpp"
 #include <boost/url/parse.hpp>
 #include <boost/url/url_view.hpp>
 
-#include <boost/property_tree/detail/xml_parser_utils.hpp>
 #include <exception>
 #include <fmt/format.h>
 #include <functional>
@@ -21,22 +20,9 @@ namespace {
 
 constexpr std::string_view API_V1_PREFIX = "/api/v1/";
 
-// HTTP method constants
 constexpr std::string_view HTTP_GET     = "GET";
 constexpr std::string_view HTTP_POST    = "POST";
 constexpr std::string_view HTTP_OPTIONS = "OPTIONS";
-
-std::string create_404_body(const std::string& resource)
-{
-    using boost::property_tree::xml_parser::encode_char_entities;
-
-    return fmt::format("<!doctype html><html><head>"
-                       "<title>Error 404 (Resource not found)</title><body>"
-                       "<h1>Error 404</h1>"
-                       "<p>The requested URL {} was not found on this server.</p>"
-                       "</body></head></html>",
-                       encode_char_entities(resource));
-}
 
 } // namespace
 
