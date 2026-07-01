@@ -24,8 +24,10 @@ class interface_i
         output,
     };
 
-    interface_i(std::string_view name)
+    interface_i(std::string_view name, dir_e direction, interface_type_e type)
         : name_(name)
+        , direction_(direction)
+        , type_(type)
     {
     }
     virtual ~interface_i() = default;
@@ -33,16 +35,20 @@ class interface_i
     bool add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
     void set_max_connection_count(int count) { max_connection_count_ = count; }
 
-    virtual dir_e            direction() const = 0;
-    virtual interface_type_e type() const      = 0;
-    virtual bool             accepts(interface_type_e /*type*/) const { return false; }
-    std::string_view         name() const { return name_; }
+    dir_e            direction() const { return direction_; }
+    interface_type_e type() const { return type_; }
+    virtual bool     accepts(interface_type_e /*type*/) const { return false; }
+    std::string_view name() const { return name_; }
 
   protected:
     resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
 
     int              max_connection_count_{1};
     std::string_view name_;
+
+  private:
+    const dir_e            direction_;
+    const interface_type_e type_;
 };
 
 template <typename T>
@@ -53,14 +59,12 @@ class input_interface_s : public interface_i
 
   public:
     input_interface_s(std::string_view name)
-        : interface_i(name)
+        : interface_i(name, dir_e::input, get_interface_type<T>())
     {
     }
     ~input_interface_s() = default;
 
-    dir_e            direction() const final { return dir_e::input; }
-    interface_type_e type() const final { return get_interface_type<T>(); }
-    bool             accepts(interface_type_e type) const final;
+    bool accepts(interface_type_e type) const final;
 
     static T cast_iface_to_value(const interface_i* iface, T const& fallback);
 
@@ -113,7 +117,7 @@ class output_interface_s : public interface_i
 
   public:
     output_interface_s(std::string_view name)
-        : interface_i(name)
+        : interface_i(name, dir_e::output, get_interface_type<T>())
     {
         /**
          * Framebuffers are a special case only acceps a single output since the only way
@@ -127,12 +131,6 @@ class output_interface_s : public interface_i
         }
     }
     ~output_interface_s() = default;
-
-    dir_e direction() const final { return dir_e::output; } // NOLINT(portability-template-virtual-member-function)
-    interface_type_e type() const final
-    {
-        return get_interface_type<T>();
-    } // NOLINT(portability-template-virtual-member-function)
 
     T    get_value() const { return value_; }
     void set_value(const T& value) { value_ = value; }
