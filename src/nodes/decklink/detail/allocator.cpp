@@ -97,8 +97,8 @@ void allocator_s::return_buffer(video_buffer_s* buffer)
 
 gpu::transfer::transfer_i* allocator_s::get_transfer(IDeckLinkVideoBuffer* buffer)
 {
-    return static_cast<video_buffer_s*>(buffer)
-        ->get_transfer(); // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
+    return static_cast<video_buffer_s*>(buffer) // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
+        ->get_transfer();
 }
 
 bool allocator_s::register_texture(gpu::texture_s* texture)

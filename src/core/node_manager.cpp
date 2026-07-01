@@ -21,6 +21,54 @@
 
 namespace {
 auto _log() { return getlog("app"); };
+
+bool is_connection_circular(const miximus::nodes::node_map_t&   nodes,
+                            std::string_view                    target_node_id,
+                            const miximus::nodes::connection_s& initial_con)
+{
+    std::vector<std::string_view> stack;
+    std::set<std::string_view>    visited;
+
+    stack.push_back(initial_con.from_node);
+
+    while (!stack.empty()) {
+        const auto node_id = stack.back();
+        stack.pop_back();
+
+        if (!visited.emplace(node_id).second) {
+            continue;
+        }
+
+        if (node_id == target_node_id) {
+            return true;
+        }
+
+        const auto node_it = nodes.find(std::string(node_id));
+        if (node_it == nodes.end()) {
+            continue;
+        }
+
+        const auto& node    = node_it->second.node;
+        const auto& con_map = node_it->second.state.con_map;
+
+        for (const auto& [id, iface] : node->get_interfaces()) {
+            using dir_e = miximus::nodes::interface_i::dir_e;
+            if (iface->direction() == dir_e::output) {
+                continue;
+            }
+
+            if (const auto it = con_map.find(id); it != con_map.end()) {
+                for (const auto& c : it->second) {
+                    if (!visited.contains(c.from_node)) {
+                        stack.push_back(c.from_node);
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
 } // namespace
 
 namespace miximus::core {
@@ -132,54 +180,6 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
     dirty_nodes_.emplace(id_str);
 
     return error_e::no_error;
-}
-
-static bool is_connection_circular(const nodes::node_map_t&   nodes,
-                                   std::string_view           target_node_id,
-                                   const nodes::connection_s& initial_con)
-{
-    std::vector<std::string_view> stack;
-    std::set<std::string_view>    visited;
-
-    stack.push_back(initial_con.from_node);
-
-    while (!stack.empty()) {
-        const auto node_id = stack.back();
-        stack.pop_back();
-
-        if (!visited.emplace(node_id).second) {
-            continue;
-        }
-
-        if (node_id == target_node_id) {
-            return true;
-        }
-
-        const auto node_it = nodes.find(std::string(node_id));
-        if (node_it == nodes.end()) {
-            continue;
-        }
-
-        const auto& node    = node_it->second.node;
-        const auto& con_map = node_it->second.state.con_map;
-
-        for (const auto& [id, iface] : node->get_interfaces()) {
-            using dir_e = nodes::interface_i::dir_e;
-            if (iface->direction() == dir_e::output) {
-                continue;
-            }
-
-            if (const auto it = con_map.find(id); it != con_map.end()) {
-                for (const auto& c : it->second) {
-                    if (!visited.contains(c.from_node)) {
-                        stack.push_back(c.from_node);
-                    }
-                }
-            }
-        }
-    }
-
-    return false;
 }
 
 error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t client_id)

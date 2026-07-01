@@ -41,6 +41,15 @@ class web_server_impl : public server_s
     void send(const con_hdl_t& hdl, const std::string&);
     void send(const con_hdl_t& hdl, const nlohmann::json&);
 
+    callback_t& get_subscription_by_topic(topic_e t)
+    {
+        return subscription_by_topic_[enum_index(t)];
+    } // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    con_set_t& get_connections_by_topic(topic_e t)
+    {
+        return connections_by_topic_[enum_index(t)];
+    } // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+
     server_t         endpoint_;
     con_map_t        connections_;
     con_by_id_t      connections_by_id_;

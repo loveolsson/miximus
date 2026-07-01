@@ -267,11 +267,7 @@ error_e web_server_impl::handle_user_command(nlohmann::json&& doc, int64_t conne
         return error_e::invalid_topic;
     }
 
-    // subscription_by_topic_ has the length of enum_count<topic_e>,
-    // so we can safely access it using the index of a valid topic.
-    auto        index = enum_index(*topic);
-    const auto& subscription =
-        subscription_by_topic_[index]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    const auto& subscription = get_subscription_by_topic(*topic);
 
     if (!subscription) {
         return error_e::internal_error;
@@ -322,10 +318,8 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             auto token = get_token_from_payload(doc);
 
             if (topic.has_value()) {
-                auto index = enum_index(*topic);
-
-                con->second.topics.at(index) = true;
-                connections_by_topic_[index].emplace(hdl); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+                con->second.set_subscription(*topic, true);
+                get_connections_by_topic(*topic).emplace(hdl);
 
                 response = create_result_base_payload(token);
             } else {
@@ -344,15 +338,13 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
                 break;
             }
 
-            auto index = enum_index(*topic);
-
-            if (!con->second.topics.at(index)) {
+            if (!con->second.has_subscription(*topic)) {
                 send(hdl, create_error_base_payload(token, error_e::not_found));
                 break;
             }
 
-            con->second.topics.at(index) = false;
-            connections_by_topic_[index].erase(hdl); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+            con->second.set_subscription(*topic, false);
+            get_connections_by_topic(*topic).erase(hdl);
             send(hdl, create_result_base_payload(token));
         } break;
 
@@ -422,10 +414,9 @@ void web_server_impl::on_close(const con_hdl_t& hdl)
         return;
     }
 
-    auto& topics = con->second.topics;
-    for (size_t index = 0; index < topics.size(); index++) {
-        if (topics.at(index)) {
-            connections_by_topic_[index].erase(hdl); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    for (auto t : magic_enum::enum_values<topic_e>()) {
+        if (con->second.has_subscription(t)) {
+            get_connections_by_topic(t).erase(hdl);
         }
     }
 
@@ -459,10 +450,8 @@ void web_server_impl::send(const con_hdl_t& hdl, const nlohmann::json& msg) { se
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 {
-    boost::asio::post(endpoint_.get_io_context(), [this, topic, callback]() {
-        auto index                    = enum_index(topic);
-        subscription_by_topic_[index] = callback; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
-    });
+    boost::asio::post(endpoint_.get_io_context(),
+                      [this, topic, callback]() { get_subscription_by_topic(topic) = callback; });
 }
 
 void web_server_impl::set_config_getters(const config_getters_t& getters) { config_getters_ = getters; }
@@ -566,10 +555,7 @@ void web_server_impl::broadcast_message_sync(const nlohmann::json& msg)
 
 void web_server_impl::broadcast_message_sync(topic_e topic, const std::string& msg)
 {
-    auto index = enum_index(topic);
-
-    auto& con_set = connections_by_topic_[index]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
-    for (const auto& hdl : con_set) {
+    for (const auto& hdl : get_connections_by_topic(topic)) {
         send(hdl, msg);
     }
 }

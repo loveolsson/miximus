@@ -39,6 +39,7 @@ set(MIXIMUS_CLANG_TIDY_PARAMS
     -llvm-prefer-static-over-anonymous-namespace
     -misc-include-cleaner
     -misc-use-internal-linkage
+    -misc-const-correctness
 )
 
 list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)
