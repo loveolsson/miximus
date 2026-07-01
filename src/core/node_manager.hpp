@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace miximus::core {
@@ -38,13 +39,14 @@ class node_manager_s
   private:
     using adapter_list_t = std::vector<std::unique_ptr<adapter_i>>;
 
-    std::mutex               nodes_mutex_;
-    nodes::node_map_t        nodes_;
-    nodes::node_map_t        nodes_copy_;
-    bool                     nodes_dirty_{};
-    nodes::con_set_t         connections_;
-    nodes::constructor_map_t constructors_;
-    adapter_list_t           adapters_;
+    std::mutex                      nodes_mutex_;
+    nodes::node_map_t               nodes_;
+    nodes::node_map_t               nodes_copy_;
+    std::unordered_set<std::string> dirty_nodes_;
+    std::unordered_set<std::string> removed_nodes_;
+    nodes::con_set_t                connections_;
+    nodes::constructor_map_t        constructors_;
+    adapter_list_t                  adapters_;
 
     error_e remove_connection_locked(const nodes::connection_s& con, int64_t client_id);
 

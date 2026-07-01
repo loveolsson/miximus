@@ -64,7 +64,7 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
 
     record.node = std::move(node);
     nodes_.emplace(id, std::move(record));
-    nodes_dirty_ = true;
+    dirty_nodes_.emplace(id_str);
 
     return error;
 }
@@ -98,8 +98,8 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
         adapter->emit_remove_node(id, client_id);
     }
 
+    removed_nodes_.emplace(node_it->first);
     nodes_.erase(node_it);
-    nodes_dirty_ = true;
 
     return error_e::no_error;
 }
@@ -129,7 +129,7 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
         adapter->emit_update_node(id, state.options, client_id);
     }
 
-    nodes_dirty_ = true;
+    dirty_nodes_.emplace(id_str);
 
     return error_e::no_error;
 }
@@ -261,7 +261,8 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
         adapter->emit_add_connection(con, client_id);
     }
 
-    nodes_dirty_ = true;
+    dirty_nodes_.emplace(con.from_node);
+    dirty_nodes_.emplace(con.to_node);
 
     return error_e::no_error;
 }
@@ -298,7 +299,8 @@ error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con,
 
     connections_.erase(con_it);
 
-    nodes_dirty_ = true;
+    dirty_nodes_.emplace(con.from_node);
+    dirty_nodes_.emplace(con.to_node);
 
     return error_e::no_error;
 }
@@ -379,10 +381,18 @@ void node_manager_s::tick_one_frame(app_state_s* app)
          *      making resource management a lot simpler
          */
         std::unique_lock lock(nodes_mutex_);
-        if (nodes_dirty_) {
-            nodes_copy_  = nodes_;
-            nodes_dirty_ = false;
-            _log()->info("Copied node config graph");
+        if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
+            for (const auto& id : removed_nodes_) {
+                nodes_copy_.erase(id);
+            }
+            for (const auto& id : dirty_nodes_) {
+                if (auto it = nodes_.find(id); it != nodes_.end()) {
+                    nodes_copy_.insert_or_assign(it->first, it->second);
+                }
+            }
+            _log()->info("Updated render graph: {} changed, {} removed", dirty_nodes_.size(), removed_nodes_.size());
+            dirty_nodes_.clear();
+            removed_nodes_.clear();
         } else {
             lock.unlock();
         }
@@ -427,6 +437,8 @@ void node_manager_s::clear_nodes(app_state_s* app)
     nodes_copy_.clear();
     nodes_.clear();
     connections_.clear();
+    dirty_nodes_.clear();
+    removed_nodes_.clear();
 
     gpu::context_s::rewind_current();
 }

@@ -22,7 +22,7 @@ class web_server_impl : public server_s
     using con_map_t      = std::map<con_hdl_t, websocket_connection, std::owner_less<con_hdl_t>>;
     using con_by_id_t    = std::map<int64_t, con_hdl_t>;
     using con_set_t      = std::set<con_hdl_t, std::owner_less<con_hdl_t>>;
-    using con_by_topic_t = std::array<con_set_t, enum_count<topic_e>()>; // Includes invalid
+    using con_by_topic_t = std::array<con_set_t, enum_count<topic_e>()>;
     using sub_by_topic_t = std::array<callback_t, enum_count<topic_e>()>;
     using msg_ptr_t      = server_t::message_ptr;
 
