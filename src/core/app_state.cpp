@@ -1,4 +1,5 @@
 #include "app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "nodes/decklink/registry.hpp"
 #include "render/font/font_loader.hpp"
@@ -17,6 +18,7 @@ app_state_s::app_state_s()
     , thread_pool_(std::make_unique<thread_pool_t>(4))
     , ctx_(gpu::context_s::create_unique_context(false, nullptr))
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
+    , status_registry_(std::make_unique<node_status_registry_s>())
 {
 }
 

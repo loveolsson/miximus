@@ -13,16 +13,14 @@ struct rect_s
     vec2_t pos{0, 0};
     vec2_t size{1.0, 1.0};
 
-    constexpr bool operator==(const rect_s& o) const { return pos == o.pos && size == o.size; }
-    constexpr bool operator!=(const rect_s& o) const { return !(*this == o); }
+    constexpr bool operator==(const rect_s& o) const = default;
 };
 
 struct recti_s
 {
     vec2i_t pos, size;
 
-    constexpr bool operator==(const recti_s& o) const { return pos == o.pos && size == o.size; }
-    constexpr bool operator!=(const recti_s& o) const { return !(*this == o); }
+    constexpr bool operator==(const recti_s& o) const = default;
 };
 
 void to_json(nlohmann::json& j, const rect_s& v);

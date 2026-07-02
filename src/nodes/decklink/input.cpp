@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -268,6 +269,14 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
+        // Publish available input devices so the UI dropdown can populate.
+        {
+            auto  names = app->decklink_registry()->get_input_names();
+            auto* sr    = app->status_registry();
+            sr->write(id_, "device_names", nlohmann::json(names));
+            sr->write(id_, "connected", device_ != nullptr);
+        }
+
         if (device_ && callback_) {
             auto pts    = app->frame_info.timestamp;
             auto flush  = pts - app->frame_info.duration * 2;

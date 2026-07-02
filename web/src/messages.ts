@@ -15,6 +15,7 @@ export const enum topic_e {
   remove_connection = "remove_connection",
   update_node = "update_node",
   config = "config",
+  node_status = "node_status",
 }
 
 export const enum type_e {
@@ -121,10 +122,22 @@ export interface result_s extends message_s {
 interface config_s {
   nodes: node_s[];
   connections: connection_s[];
+  status?: Record<string, Record<string, unknown>>;
 }
 
 export interface result_config_s extends result_s {
   config: config_s;
+}
+
+export interface command_node_status_s extends command_s {
+  topic: topic_e.node_status;
+  id: string;
+  status: Record<string, unknown>;
+}
+
+export interface result_node_status_s extends result_s {
+  id: string;
+  status: Record<string, unknown>;
 }
 
 export interface error_s extends message_s {

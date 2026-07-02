@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -362,6 +363,21 @@ class node_impl : public node_i
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
         traits->must_run = true;
+
+        // Publish available output devices and display modes for the UI.
+        {
+            auto  names = app->decklink_registry()->get_output_names();
+            auto* sr    = app->status_registry();
+            sr->write(id_, "device_names", nlohmann::json(names));
+
+            std::vector<std::string> mode_names;
+            mode_names.reserve(display_modes_.size());
+            for (const auto& [name, _] : display_modes_) {
+                mode_names.push_back(name);
+            }
+            sr->write(id_, "display_modes", nlohmann::json(mode_names));
+            sr->write(id_, "connected", device_ != nullptr);
+        }
 
         auto device_name  = state.get_option<std::string>("device_name");
         auto display_mode = state.get_option<std::string>("display_mode");

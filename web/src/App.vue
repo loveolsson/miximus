@@ -103,6 +103,7 @@ import {
   command_add_connection_s,
   command_add_node_s,
   command_config_s,
+  command_node_status_s,
   command_remove_connection_s,
   command_remove_node_s,
   result_s,
@@ -114,6 +115,12 @@ import {
   type_e,
   position_t,
 } from "./messages";
+import {
+  update_node_status,
+  remove_node_status,
+  clear_all_status,
+  NodeStatus,
+} from "./nodes/status_store";
 
 @Component
 export default class Miximus extends Vue {
@@ -224,10 +231,17 @@ export default class Miximus extends Vue {
         }
       }
     );
-  }
-
-  mounted(): void {
-    // Custom option components now handle their own focus tracking
+    this.wsWrapper.subscribe<command_node_status_s>(
+      topic_e.node_status,
+      (msg) => {
+        if (
+          msg.action === action_e.command &&
+          msg.topic === topic_e.node_status
+        ) {
+          update_node_status(msg.id, msg.status);
+        }
+      }
+    );
   }
 
   destroyed(): void {
@@ -301,6 +315,12 @@ export default class Miximus extends Vue {
       if (msg.action === action_e.result) {
         this.clear_nodes();
 
+        if (msg.config.status) {
+          for (const [node_id, status] of Object.entries(msg.config.status)) {
+            update_node_status(node_id, status as NodeStatus);
+          }
+        }
+
         for (const node of msg.config.nodes) {
           this.handle_server_add_node(node.type, node.id);
           this.handle_server_update_node(node.id, node.options, false);
@@ -320,6 +340,7 @@ export default class Miximus extends Vue {
 
     this.connected = false;
     this.clear_nodes();
+    clear_all_status();
   }
 
   handle_server_add_node(type: string, id: string): void {
@@ -330,6 +351,14 @@ export default class Miximus extends Vue {
 
     const node = new node_type() as Node;
     node.id = id;
+
+    // Propagate the server-assigned ID into any nodeData objects on this node's
+    // options so that status-aware components can look up the correct entry.
+    for (const [, opt] of node.options) {
+      if (opt.nodeData) {
+        opt.nodeData.node_id = id;
+      }
+    }
 
     this.node_to_be_added = node;
     this.editor.addNode(node);
@@ -343,6 +372,7 @@ export default class Miximus extends Vue {
 
     this.node_to_be_removed = node;
     this.editor.removeNode(node);
+    remove_node_status(id);
   }
 
   handle_server_update_node(

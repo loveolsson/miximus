@@ -1,5 +1,6 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
+#include "core/node_status_registry_fwd.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/register_all.hpp"
@@ -28,6 +29,7 @@ class node_manager_s
         virtual void emit_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id)        = 0;
         virtual void emit_add_connection(const nodes::connection_s& con, int64_t client_id)                         = 0;
         virtual void emit_remove_connection(const nodes::connection_s& con, int64_t client_id)                      = 0;
+        virtual void emit_node_status(std::string_view id, const nlohmann::json& status)                            = 0;
 
       public:
         adapter_i()          = default;
@@ -47,6 +49,7 @@ class node_manager_s
     nodes::con_set_t                connections_;
     nodes::constructor_map_t        constructors_;
     adapter_list_t                  adapters_;
+    node_status_registry_s*         status_registry_{nullptr};
 
     error_e remove_connection_locked(const nodes::connection_s& con, int64_t client_id);
 
@@ -63,6 +66,7 @@ class node_manager_s
 
     nlohmann::json get_config();
     void           set_config(const nlohmann::json&);
+    nlohmann::json get_node_status(std::string_view id) const;
 
     void add_adapter(std::unique_ptr<adapter_i>&& adapter);
     void clear_adapters();

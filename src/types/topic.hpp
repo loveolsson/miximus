@@ -11,6 +11,7 @@ enum class topic_e
     remove_connection,
     update_node,
     config,
+    node_status,
 };
 
 constexpr auto topic_from_string = enum_from_string<topic_e>;

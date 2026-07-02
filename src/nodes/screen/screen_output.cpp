@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -95,6 +96,18 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
+        // Publish available monitors so the UI dropdown can populate.
+        {
+            std::vector<std::string> names;
+            names.reserve(gpu::context_s::monitors_g.size());
+            for (const auto& [name, _] : gpu::context_s::monitors_g) {
+                names.push_back(name);
+            }
+            auto* sr = app->status_registry();
+            sr->write(id_, "monitors", nlohmann::json(names));
+            sr->write(id_, "connected", render_state_ != nullptr);
+        }
+
         auto enabled = state.get_option<bool>("enabled", false);
 
         if (enabled) {

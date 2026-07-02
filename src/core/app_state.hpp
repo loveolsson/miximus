@@ -1,6 +1,7 @@
 #pragma once
 #include "utils/asio.hpp"
 
+#include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
@@ -32,6 +33,7 @@ class app_state_s
     std::unique_ptr<gpu::context_s>                       ctx_;
     std::unique_ptr<nodes::decklink::decklink_registry_s> decklink_registry_;
     std::unique_ptr<render::font_registry_s>              font_registry_;
+    std::unique_ptr<node_status_registry_s>               status_registry_;
 
   public:
     app_state_s();
@@ -42,6 +44,7 @@ class app_state_s
     auto decklink_registry() { return decklink_registry_.get(); }
     auto font_registry() { return font_registry_.get(); }
     auto thread_pool() { return thread_pool_.get(); }
+    auto status_registry() { return status_registry_.get(); }
 
     struct
     {

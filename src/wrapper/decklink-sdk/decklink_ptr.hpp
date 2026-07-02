@@ -39,9 +39,7 @@ class decklink_ptr
 
     explicit operator bool() const;
 
-    bool operator==(const decklink_ptr<T>& other) const;
-    bool operator!=(const decklink_ptr<T>& other) const;
-    bool operator<(const decklink_ptr<T>& other) const;
+    auto operator<=>(const decklink_ptr<T>& other) const = default;
 
   private:
     void release();
@@ -183,24 +181,6 @@ void decklink_ptr<T>::release()
 {
     if (m_ptr)
         m_ptr->Release();
-}
-
-template <typename T>
-bool decklink_ptr<T>::operator==(const decklink_ptr<T>& other) const
-{
-    return m_ptr == other.m_ptr;
-}
-
-template <typename T>
-bool decklink_ptr<T>::operator!=(const decklink_ptr<T>& other) const
-{
-    return m_ptr != other.m_ptr;
-}
-
-template <typename T>
-bool decklink_ptr<T>::operator<(const decklink_ptr<T>& other) const
-{
-    return m_ptr < other.m_ptr;
 }
 
 template <class T, class... Args>

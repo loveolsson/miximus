@@ -8,7 +8,12 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <string>
 #include <string_view>
+
+namespace miximus::core {
+class node_status_registry_s;
+}
 
 namespace miximus::nodes {
 
@@ -16,6 +21,7 @@ class node_i
 {
   protected:
     interface_map_t interfaces_;
+    std::string     id_;
 
     node_i()          = default;
     virtual ~node_i() = default;
@@ -30,6 +36,7 @@ class node_i
     };
 
     virtual std::string_view type() const = 0;
+    virtual void             init(std::string_view id, core::app_state_s* app);
     virtual void             prepare(core::app_state_s*, const node_state_s&, traits_s*) {};
     virtual void             execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
     virtual void             complete(core::app_state_s*) {}

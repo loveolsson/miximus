@@ -23,6 +23,8 @@ import { SinusSourceNode } from "./debug";
 import Vec2Option from "./options/Vec2Option.vue";
 import FocusTrackingStringOption from "./options/FocusTrackingStringOption.vue";
 import FocusTrackingNumberOption from "./options/FocusTrackingNumberOption.vue";
+import StatusDropdownOption from "./options/StatusDropdownOption.vue";
+import NodeStatusIndicator from "./options/NodeStatusIndicator.vue";
 import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
 
 /**
@@ -63,6 +65,8 @@ export function register_option_types(view: ViewPlugin): void {
   view.registerOption("Vec2Option", Vec2Option);
   view.registerOption("FocusTrackingStringOption", FocusTrackingStringOption);
   view.registerOption("FocusTrackingNumberOption", FocusTrackingNumberOption);
+  view.registerOption("StatusDropdownOption", StatusDropdownOption);
+  view.registerOption("NodeStatusIndicator", NodeStatusIndicator);
 }
 
 export function register_types(editor: Editor): void {

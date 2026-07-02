@@ -3,6 +3,8 @@ add_library(app
     app_state.cpp
     node_manager.hpp
     node_manager.cpp
+    node_status_registry.hpp
+    node_status_registry.cpp
 )
 
 add_subdirectory(adapters)

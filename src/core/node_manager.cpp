@@ -1,5 +1,6 @@
 #include "core/node_manager.hpp"
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
 #include "logger/logger.hpp"
@@ -330,10 +331,24 @@ json node_manager_s::get_config()
         connections.emplace_back(con);
     }
 
+    nlohmann::json status = nlohmann::json::object();
+    if (status_registry_) {
+        status = status_registry_->get_all();
+    }
+
     return {
         {"nodes",       std::move(nodes)      },
         {"connections", std::move(connections)},
+        {"status",      std::move(status)     },
     };
+}
+
+nlohmann::json node_manager_s::get_node_status(std::string_view id) const
+{
+    if (status_registry_ == nullptr) {
+        return nlohmann::json::object();
+    }
+    return status_registry_->get(id);
 }
 
 void node_manager_s::set_config(const json& settings)
@@ -372,6 +387,7 @@ void node_manager_s::clear_adapters()
 
 void node_manager_s::tick_one_frame(app_state_s* app)
 {
+    status_registry_ = app->status_registry();
     {
         /**
          * A few things are accomplished by copying the node map here:
@@ -384,10 +400,15 @@ void node_manager_s::tick_one_frame(app_state_s* app)
         if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
             for (const auto& id : removed_nodes_) {
                 nodes_copy_.erase(id);
+                app->status_registry()->remove_node(id);
             }
             for (const auto& id : dirty_nodes_) {
                 if (auto it = nodes_.find(id); it != nodes_.end()) {
+                    const bool is_new = !nodes_copy_.contains(id);
                     nodes_copy_.insert_or_assign(it->first, it->second);
+                    if (is_new) {
+                        it->second.node->init(id, app);
+                    }
                 }
             }
             _log()->info("Updated render graph: {} changed, {} removed", dirty_nodes_.size(), removed_nodes_.size());
@@ -428,6 +449,15 @@ void node_manager_s::tick_one_frame(app_state_s* app)
     }
 
     gpu::context_s::rewind_current();
+
+    // Broadcast status changes collected during this tick
+    const auto changed_ids = app->status_registry()->flush();
+    for (const auto& id : changed_ids) {
+        const auto status = app->status_registry()->get(id);
+        for (auto& adapter : adapters_) {
+            adapter->emit_node_status(id, status);
+        }
+    }
 }
 
 void node_manager_s::clear_nodes(app_state_s* app)
