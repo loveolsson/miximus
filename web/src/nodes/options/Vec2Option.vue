@@ -1,62 +1,104 @@
 <template>
   <div class="dark-num-input">
-    <div class="__content">
-      <div class="__label .text-truncate">{{ name }}</div>
-    </div>
+    <div class="__name">{{ intf.name }}</div>
     <div class="__content">
       <label>x=</label>
       <input
-        type="number"
         v-model="x"
+        type="number"
         class="dark-input"
-        ref="input"
+        style="text-align: right"
         @blur="doneEdit"
         @keydown.enter="doneEdit"
-        style="text-align: right"
       />
     </div>
     <div class="__content">
       <label>y=</label>
       <input
-        type="number"
         v-model="y"
+        type="number"
         class="dark-input"
-        ref="input"
+        style="text-align: right"
         @blur="doneEdit"
         @keydown.enter="doneEdit"
-        style="text-align: right"
       />
     </div>
   </div>
 </template>
 
-<script lang="ts">
-import { Component, Prop, Vue, Watch } from "vue-property-decorator";
-@Component
-export default class Vec2Option extends Vue {
-  @Prop({ type: Array })
-  value!: [number, number];
+<script setup lang="ts">
+import { ref, watch } from "vue";
+import type { NodeInterface } from "@baklavajs/core";
+import type { AbstractNode } from "@baklavajs/core";
 
-  @Prop({ type: String })
-  name!: string;
+const props = defineProps<{
+  modelValue: [number, number];
+  node: AbstractNode;
+  intf: NodeInterface<[number, number]>;
+}>();
 
-  x = this.value[0];
-  y = this.value[1];
+const emit = defineEmits<{
+  (e: "update:modelValue", value: [number, number]): void;
+}>();
 
-  @Watch("value")
-  setValue(newValue: [number, number]) {
-    this.x = newValue[0];
-    this.y = newValue[1];
-  }
+const x = ref(props.modelValue[0]);
+const y = ref(props.modelValue[1]);
 
-  doneEdit() {
-    console.log(this);
-    const nx = typeof this.x === "string" ? parseFloat(this.x) : this.x;
-    const ny = typeof this.y === "string" ? parseFloat(this.y) : this.y;
+watch(
+  () => props.modelValue,
+  (v) => {
+    x.value = v[0];
+    y.value = v[1];
+  },
+);
 
-    if (!Number.isNaN(nx) && !Number.isNaN(ny)) {
-      this.$emit("input", [nx, ny]);
-    }
+function doneEdit() {
+  const nx = typeof x.value === "string" ? parseFloat(x.value) : x.value;
+  const ny = typeof y.value === "string" ? parseFloat(y.value) : y.value;
+  if (!Number.isNaN(nx) && !Number.isNaN(ny)) {
+    emit("update:modelValue", [nx, ny]);
   }
 }
 </script>
+
+<style scoped>
+.dark-num-input {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 2px;
+}
+.__name {
+  color: #ccc;
+  font-size: 0.85em;
+  padding-bottom: 1px;
+}
+.__content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+label {
+  flex: 0 0 auto;
+  color: #aaa;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.dark-input {
+  flex: 1;
+  min-width: 0;
+  width: 0; /* overridden by flex-grow; forces it to shrink properly */
+  background: #1a1a2e;
+  border: 1px solid rgba(100, 100, 140, 0.5);
+  color: #e0e0e0;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 0.85em;
+  box-sizing: border-box;
+}
+.dark-input:focus {
+  outline: none;
+  border-color: #5379b5;
+}
+</style>

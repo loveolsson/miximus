@@ -1,107 +1,40 @@
-import { Editor } from "@baklavajs/core";
-import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
-import { type_e } from "@/messages";
-import {
-  F64LerpNode,
-  F64MathNode,
-  RectLerpNode,
-  Vec2LerpNode,
-  Vec2MathNode,
-} from "./math";
-import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
+import type { Editor } from "@baklavajs/core";
+import { BaklavaInterfaceTypes } from "@baklavajs/interface-types";
+import type { IBaklavaViewModel } from "@baklavajs/renderer-vue";
+import { t_texture, t_framebuffer, t_f64, t_vec2, t_rect } from "./interface_types";
+
+import { F64MathNode, Vec2MathNode, F64LerpNode, Vec2LerpNode, RectLerpNode } from "./math";
+import { Vec2Node, RectNode, FrameBufferNode, FramebufferToTextureNode } from "./utils";
+import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
+import { SinusSourceNode } from "./debug";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
-import {
-  FrameBufferNode,
-  FramebufferToTextureNode,
-  RectNode,
-  Vec2Node,
-} from "./utils";
 import { TeleprompterNode } from "./teleprompter";
 import TextNode from "./text";
-import { SinusSourceNode } from "./debug";
-import Vec2Option from "./options/Vec2Option.vue";
-import FocusTrackingStringOption from "./options/FocusTrackingStringOption.vue";
-import FocusTrackingNumberOption from "./options/FocusTrackingNumberOption.vue";
-import StatusDropdownOption from "./options/StatusDropdownOption.vue";
-import NodeStatusIndicator from "./options/NodeStatusIndicator.vue";
-import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
 
-/**
- * Color-blind optimized palette
- * https://personal.sron.nl/~pault/#fig:scheme_muted
- */
-const Color = {
-  Indigo: "#332288", // used
-  Cyan: "#88ccee", // used
-  Teal: "#44aa99",
-  Green: "#117733", // used
-  Olive: "#999933", // used
-  Sand: "#ddcc77",
-  Rose: "#cc6677", // used
-  Wine: "#882255",
-  Purple: "#aa4499",
-  PaleGray: "#dddddd",
-};
+export function register_node_types(editor: Editor): void {
+  editor.registerNodeType(F64MathNode, { category: "Math" });
+  editor.registerNodeType(Vec2MathNode, { category: "Math" });
+  editor.registerNodeType(F64LerpNode, { category: "Math" });
+  editor.registerNodeType(Vec2LerpNode, { category: "Math" });
+  editor.registerNodeType(RectLerpNode, { category: "Math" });
+  editor.registerNodeType(Vec2Node, { category: "Utils" });
+  editor.registerNodeType(RectNode, { category: "Utils" });
+  editor.registerNodeType(FrameBufferNode, { category: "Utils" });
+  editor.registerNodeType(FramebufferToTextureNode, { category: "Utils" });
+  editor.registerNodeType(DrawBoxNode, { category: "Composite" });
+  editor.registerNodeType(InfiniteMultiviewerNode, { category: "Composite" });
+  editor.registerNodeType(SinusSourceNode, { category: "Debug" });
+  editor.registerNodeType(ScreenOutputNode, { category: "Output" });
+  editor.registerNodeType(DeckLinkInputNode, { category: "Input" });
+  editor.registerNodeType(DeckLinkOutputNode, { category: "Output" });
+  editor.registerNodeType(TeleprompterNode, { category: "Content" });
+  editor.registerNodeType(TextNode, { category: "Content" });
+}
 
-export const connectionColorMap = new Map<string, string>([
-  ["texture", Color.Indigo],
-  ["framebuffer", Color.Cyan],
-  ["f64", Color.Green],
-  ["vec2", Color.Olive],
-  ["rect", Color.Rose],
-]);
-
-export function register_connection_types(iface: InterfaceTypePlugin): void {
-  connectionColorMap.forEach((color, name) => {
-    iface.addType(name, color);
+export function register_interface_types(baklava: IBaklavaViewModel): void {
+  const intfTypes = new BaklavaInterfaceTypes(baklava.editor, {
+    viewPlugin: baklava,
   });
-
-  iface.addConversion("f64", "vec2");
-  iface.addConversion("framebuffer", "texture");
-}
-
-export function register_option_types(view: ViewPlugin): void {
-  view.registerOption("Vec2Option", Vec2Option);
-  view.registerOption("FocusTrackingStringOption", FocusTrackingStringOption);
-  view.registerOption("FocusTrackingNumberOption", FocusTrackingNumberOption);
-  view.registerOption("StatusDropdownOption", StatusDropdownOption);
-  view.registerOption("NodeStatusIndicator", NodeStatusIndicator);
-}
-
-export function register_types(editor: Editor): void {
-  editor.registerNodeType(type_e.math_f64, F64MathNode, "Math");
-  editor.registerNodeType(type_e.math_vec2, Vec2MathNode, "Math");
-  editor.registerNodeType(type_e.lerp_f64, F64LerpNode, "Math");
-  editor.registerNodeType(type_e.lerp_vec2, Vec2LerpNode, "Math");
-  editor.registerNodeType(type_e.lerp_rect, RectLerpNode, "Math");
-
-  editor.registerNodeType(type_e.screen_output, ScreenOutputNode, "Outputs");
-  editor.registerNodeType(type_e.decklink_input, DeckLinkInputNode, "Inputs");
-  editor.registerNodeType(
-    type_e.decklink_output,
-    DeckLinkOutputNode,
-    "Outputs"
-  );
-
-  editor.registerNodeType(type_e.vec2, Vec2Node, "Utils");
-  editor.registerNodeType(type_e.rect, RectNode, "Utils");
-  editor.registerNodeType(type_e.framebuffer, FrameBufferNode, "Utils");
-  editor.registerNodeType(
-    type_e.framebuffer_to_texture,
-    FramebufferToTextureNode,
-    "Utils"
-  );
-
-  editor.registerNodeType(type_e.draw_box, DrawBoxNode, "Composite");
-  editor.registerNodeType(
-    type_e.infinite_multiviewer,
-    InfiniteMultiviewerNode,
-    "Composite"
-  );
-
-  editor.registerNodeType(type_e.teleprompter, TeleprompterNode, "Render");
-  editor.registerNodeType(type_e.text, TextNode, "Render");
-
-  editor.registerNodeType(type_e.sinus_source, SinusSourceNode, "Debug");
+  intfTypes.addTypes(t_texture, t_framebuffer, t_f64, t_vec2, t_rect);
 }

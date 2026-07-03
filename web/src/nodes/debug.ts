@@ -1,17 +1,18 @@
+import { defineNode, NodeInterface } from "@baklavajs/core";
+import { NumberInterface } from "@baklavajs/renderer-vue";
+import { setType } from "@baklavajs/interface-types";
+import { t_f64 } from "./interface_types";
 import { type_e } from "@/messages";
-import { Node } from "@baklavajs/core";
 
-export class SinusSourceNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.sinus_source;
-    this.name = "";
-    this.addOption("size", "NumberOption", 0, undefined);
-    this.addOption("center", "NumberOption", 0, undefined);
-    this.addOption("speed", "NumberOption", 0, undefined);
-    this.addOutputInterface("res", { type: "f64" });
-  }
-}
+export const SinusSourceNode = defineNode({
+  type: type_e.sinus_source,
+  title: "Sinus Source",
+  inputs: {
+    size: () => new NumberInterface("Size", 0).setPort(false),
+    center: () => new NumberInterface("Center", 0).setPort(false),
+    speed: () => new NumberInterface("Speed", 0).setPort(false),
+  },
+  outputs: {
+    res: () => new NodeInterface<number>("Result", 0).use(setType, t_f64),
+  },
+});

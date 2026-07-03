@@ -1,26 +1,27 @@
+import { defineNode, NodeInterface } from "@baklavajs/core";
+import { setType } from "@baklavajs/interface-types";
+import { t_framebuffer, t_vec2 } from "./interface_types";
 import { type_e } from "@/messages";
-import { Node } from "@baklavajs/core";
+import {
+  FocusTrackingStringInterface,
+  FocusTrackingNumberInterface,
+  Vec2Interface,
+} from "./interfaces";
 
-export default class TextNode extends Node {
-  type: type_e;
-  name: string;
+const TextNode = defineNode({
+  type: type_e.text,
+  title: "Text",
+  inputs: {
+    fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
+    position: () => new Vec2Interface("Position").use(setType, t_vec2),
+    text: () => new FocusTrackingStringInterface("Text", "Hello World"),
+    font_name: () => new FocusTrackingStringInterface("Font", "Arial"),
+    font_variant: () => new FocusTrackingStringInterface("Variant", "Regular"),
+    font_size: () => new FocusTrackingNumberInterface("Size", 48),
+  },
+  outputs: {
+    fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
+  },
+});
 
-  public constructor() {
-    super();
-    this.type = type_e.text;
-    this.name = "";
-
-    this.addInputInterface("fb_in", undefined, undefined, {
-      type: "framebuffer",
-    });
-    this.addInputInterface("position", undefined, 0, {
-      type: "vec2",
-    });
-    this.addOutputInterface("fb_out", { type: "framebuffer" });
-
-    this.addOption("text", "FocusTrackingStringOption", "Hello World");
-    this.addOption("font_name", "FocusTrackingStringOption", "Arial");
-    this.addOption("font_variant", "FocusTrackingStringOption", "Regular");
-    this.addOption("font_size", "FocusTrackingNumberOption", 48);
-  }
-}
+export default TextNode;

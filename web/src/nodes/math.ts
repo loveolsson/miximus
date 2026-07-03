@@ -1,84 +1,72 @@
+import { defineNode, NodeInterface } from "@baklavajs/core";
+import { NumberInterface, SelectInterface } from "@baklavajs/renderer-vue";
+import { setType } from "@baklavajs/interface-types";
+import { t_f64, t_vec2, t_rect } from "./interface_types";
 import { type_e } from "@/messages";
-import { Node } from "@baklavajs/core";
 
-export class F64MathNode extends Node {
-  type: type_e;
-  name: string;
+export const F64MathNode = defineNode({
+  type: type_e.math_f64,
+  title: "F64 Math",
+  inputs: {
+    a: () => new NumberInterface("A", 0).use(setType, t_f64),
+    b: () => new NumberInterface("B", 0).use(setType, t_f64),
+    operation: () =>
+      new SelectInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]).setPort(false),
+  },
+  outputs: {
+    res: () => new NodeInterface<number>("Result", 0).use(setType, t_f64),
+  },
+});
 
-  constructor() {
-    super();
-    this.type = type_e.math_f64;
-    this.name = "";
-    this.addInputInterface("a", "NumberOption", 0, { type: "f64" });
-    this.addInputInterface("b", "NumberOption", 0, { type: "f64" });
-    this.addOption("operation", "SelectOption", "add", undefined, {
-      items: ["add", "sub", "mul", "min", "max"],
-    });
-    this.addOutputInterface("res", { type: "f64" });
-  }
-}
+export const Vec2MathNode = defineNode({
+  type: type_e.math_vec2,
+  title: "Vec2 Math",
+  inputs: {
+    a: () => new NodeInterface<[number, number]>("A", [0, 0]).use(setType, t_vec2),
+    b: () => new NodeInterface<[number, number]>("B", [0, 0]).use(setType, t_vec2),
+    operation: () =>
+      new SelectInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]).setPort(false),
+  },
+  outputs: {
+    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+  },
+});
 
-export class Vec2MathNode extends Node {
-  type: type_e;
-  name: string;
+export const F64LerpNode = defineNode({
+  type: type_e.lerp_f64,
+  title: "F64 Lerp",
+  inputs: {
+    a: () => new NumberInterface("A", 0).use(setType, t_f64),
+    b: () => new NumberInterface("B", 0).use(setType, t_f64),
+    t: () => new NumberInterface("T", 0).use(setType, t_f64),
+  },
+  outputs: {
+    res: () => new NodeInterface<number>("Result", 0).use(setType, t_f64),
+  },
+});
 
-  constructor() {
-    super();
-    this.type = type_e.math_vec2;
-    this.name = "";
-    this.addInputInterface("a", "Vec2Option", [0, 0], { type: "vec2" });
-    this.addInputInterface("b", "Vec2Option", [0, 0], { type: "vec2" });
-    this.addOption("operation", "SelectOption", "add", undefined, {
-      items: ["add", "sub", "mul", "min", "max"],
-    });
-    this.addOutputInterface("res", { type: "vec2" });
-  }
-}
+export const Vec2LerpNode = defineNode({
+  type: type_e.lerp_vec2,
+  title: "Vec2 Lerp",
+  inputs: {
+    a: () => new NodeInterface<[number, number]>("A", [0, 0]).use(setType, t_vec2),
+    b: () => new NodeInterface<[number, number]>("B", [0, 0]).use(setType, t_vec2),
+    t: () => new NumberInterface("T", 0).use(setType, t_f64),
+  },
+  outputs: {
+    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+  },
+});
 
-export class F64LerpNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.lerp_f64;
-    this.name = "";
-    this.addInputInterface("a", "NumberOption", 0, { type: "f64" });
-    this.addInputInterface("b", "NumberOption", 0, { type: "f64" });
-    this.addInputInterface("t", "NumberOption", 0, { type: "f64" });
-
-    this.addOutputInterface("res", { type: "f64" });
-  }
-}
-
-export class Vec2LerpNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.lerp_vec2;
-    this.name = "";
-    this.addInputInterface("a", "Vec2Option", 0, { type: "vec2" });
-    this.addInputInterface("b", "Vec2Option", 0, { type: "vec2" });
-    this.addInputInterface("t", "NumberOption", 0, { type: "f64" });
-
-    this.addOutputInterface("res", { type: "vec2" });
-  }
-}
-
-export class RectLerpNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.lerp_rect;
-    this.name = "";
-    this.addInputInterface("a", undefined, 0, { type: "rect" });
-    this.addInputInterface("b", undefined, 0, { type: "rect" });
-    this.addInputInterface("t", "NumberOption", 0, { type: "f64" });
-
-    this.addOutputInterface("res", { type: "rect" });
-  }
-}
+export const RectLerpNode = defineNode({
+  type: type_e.lerp_rect,
+  title: "Rect Lerp",
+  inputs: {
+    a: () => new NodeInterface<null>("A", null).use(setType, t_rect),
+    b: () => new NodeInterface<null>("B", null).use(setType, t_rect),
+    t: () => new NumberInterface("T", 0).use(setType, t_f64),
+  },
+  outputs: {
+    res: () => new NodeInterface<null>("Result", null).use(setType, t_rect),
+  },
+});

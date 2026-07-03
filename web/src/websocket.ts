@@ -1,13 +1,6 @@
 import EventEmitter from "eventemitter3";
-import {
-  action_e,
-  command_s,
-  error_s,
-  message_s,
-  socket_info_s,
-  subscribe_s,
-  topic_e,
-} from "./messages";
+import { action_e, topic_e } from "./messages";
+import type { command_s, error_s, message_s, socket_info_s, subscribe_s } from "./messages";
 
 interface ws_events {
   on_connected: [number];
@@ -16,18 +9,15 @@ interface ws_events {
 
 export type message_callback_t<T extends message_s> = (
   msg: T | error_s,
-  is_origin: boolean
+  is_origin: boolean,
 ) => void;
 
 export class ws_wrapper extends EventEmitter<ws_events> {
   private ws?: WebSocket;
   private info?: socket_info_s;
-  private ping_timer?: number;
+  private ping_timer?: ReturnType<typeof setTimeout>;
   private callbacks = new Map<string, message_callback_t<message_s>>();
-  private subscriptions = new Map<
-    topic_e,
-    Set<message_callback_t<message_s>>
-  >();
+  private subscriptions = new Map<topic_e, Set<message_callback_t<message_s>>>();
   private next_token = 0;
   private closing = false;
 
@@ -48,7 +38,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.ws.onerror = this.handle_error.bind(this);
   }
 
-  private handle_open(ev: Event): void {
+  private handle_open(_ev: Event): void {
     //
   }
 
@@ -117,11 +107,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
 
       this.send(payload, (result) => {
         if (result.action === action_e.error) {
-          console.info(
-            `Failed to re-subscribe to ${topic} with: ${
-              (result as error_s).error
-            }`
-          );
+          console.info(`Failed to re-subscribe to ${topic} with: ${(result as error_s).error}`);
         }
       });
     }
@@ -137,14 +123,11 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   private handle_command(msg: command_s): void {
     const topic = this.subscriptions.get(msg.topic);
     if (!topic) {
-      return console.warn(
-        `Receiving command for topic ${msg.topic} not currently subscribed to`
-      );
+      return console.warn(`Receiving command for topic ${msg.topic} not currently subscribed to`);
     }
 
     for (const cb of topic) {
-      const is_origin =
-        this.info !== undefined && this.info.id === msg.origin_id;
+      const is_origin = this.info !== undefined && this.info.id === msg.origin_id;
       cb(msg, is_origin);
     }
   }
@@ -166,10 +149,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   private send_ping(): void {
     if (this.info) {
       this.send({ action: action_e.ping });
-      this.ping_timer = setTimeout(
-        this.handle_no_pong_response.bind(this),
-        2000
-      );
+      this.ping_timer = setTimeout(this.handle_no_pong_response.bind(this), 2000);
     }
   }
 
@@ -185,7 +165,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
 
   public send<T extends message_s, R extends message_s = message_s>(
     msg: T,
-    cb?: message_callback_t<R>
+    cb?: message_callback_t<R>,
   ): boolean {
     if (!this.info) {
       return false;
@@ -205,10 +185,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     return true;
   }
 
-  public subscribe<T extends message_s>(
-    topic: topic_e,
-    cb: message_callback_t<T>
-  ) {
+  public subscribe<T extends message_s>(topic: topic_e, cb: message_callback_t<T>) {
     let sub = this.subscriptions.get(topic);
     if (!sub) {
       sub = new Set();
@@ -216,9 +193,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     }
 
     if (sub.has(cb as message_callback_t<message_s>)) {
-      return console.warn(
-        `Subscribing to ${topic} with callback already in set`
-      );
+      return console.warn(`Subscribing to ${topic} with callback already in set`);
     }
 
     sub.add(cb as message_callback_t<message_s>);
@@ -230,21 +205,14 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     }
   }
 
-  public unsubscribe<T extends message_s>(
-    topic: topic_e,
-    cb: message_callback_t<T>
-  ): void {
+  public unsubscribe<T extends message_s>(topic: topic_e, cb: message_callback_t<T>): void {
     const sub = this.subscriptions.get(topic);
     if (!sub) {
-      return console.warn(
-        `Unsubscribing to topic ${topic} not currently subscribed to`
-      );
+      return console.warn(`Unsubscribing to topic ${topic} not currently subscribed to`);
     }
 
     if (!sub.delete(cb as message_callback_t<message_s>)) {
-      return console.warn(
-        `Unsubscribing with callback not registered to ${topic}`
-      );
+      return console.warn(`Unsubscribing with callback not registered to ${topic}`);
     }
 
     if (sub.size === 0) {

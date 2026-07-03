@@ -1,55 +1,34 @@
-import { Editor, NodeInterface, Node, Connection } from "@baklavajs/core";
+import type { Graph, AbstractNode, NodeInterface } from "@baklavajs/core";
 
-export class helpers {
-  static get_interface_name(iface: NodeInterface): string | undefined {
-    const parent = iface.parent;
-    for (const [name, _iface] of parent.interfaces) {
-      if (_iface === iface) {
-        return name;
-      }
+export function find_node(graph: Graph, id: string): AbstractNode | undefined {
+  return graph.nodes.find((n) => n.id === id);
+}
+
+export function find_interface(
+  graph: Graph,
+  nodeId: string,
+  name: string,
+): NodeInterface | undefined {
+  const node = find_node(graph, nodeId);
+  if (!node) return undefined;
+  return node.inputs[name] ?? node.outputs[name];
+}
+
+export function find_node_and_key_for_interface(
+  graph: Graph,
+  intf: NodeInterface,
+): [AbstractNode, string] | undefined {
+  for (const node of graph.nodes) {
+    for (const [key, i] of Object.entries(node.inputs)) {
+      if (i === intf) return [node, key];
     }
-
-    return undefined;
-  }
-
-  static find_node(editor: Editor, id: string): Node | undefined {
-    for (const node of editor.nodes) {
-      if (node.id === id) {
-        return node;
-      }
-    }
-
-    return undefined;
-  }
-
-  static find_connection(
-    connections: Set<Connection>,
-    from: NodeInterface,
-    to: NodeInterface
-  ): Connection | undefined {
-    for (const c of connections) {
-      if (c.from === from && c.to === to) {
-        return c;
-      }
-    }
-
-    return undefined;
-  }
-
-  static find_interface(
-    editor: Editor,
-    id: string,
-    name: string
-  ): NodeInterface | undefined {
-    const node = helpers.find_node(editor, id);
-    if (!node) {
-      return undefined;
-    }
-
-    try {
-      return node.getInterface(name);
-    } catch (e) {
-      return undefined;
+    for (const [key, i] of Object.entries(node.outputs)) {
+      if (i === intf) return [node, key];
     }
   }
+  return undefined;
+}
+
+export function find_connection(graph: Graph, fromIntf: NodeInterface, toIntf: NodeInterface) {
+  return graph.connections.find((c) => c.from === fromIntf && c.to === toIntf);
 }

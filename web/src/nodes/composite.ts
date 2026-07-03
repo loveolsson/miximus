@@ -1,44 +1,31 @@
+import { defineNode, NodeInterface } from "@baklavajs/core";
+import { NumberInterface } from "@baklavajs/renderer-vue";
+import { setType } from "@baklavajs/interface-types";
+import { t_texture, t_framebuffer, t_f64, t_rect } from "./interface_types";
 import { type_e } from "@/messages";
-import { Node } from "@baklavajs/core";
 
-export class DrawBoxNode extends Node {
-  type: type_e;
-  name: string;
+export const DrawBoxNode = defineNode({
+  type: type_e.draw_box,
+  title: "Draw Box",
+  inputs: {
+    fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
+    tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+    rect: () => new NodeInterface<null>("Rect", null).use(setType, t_rect),
+    opacity: () => new NumberInterface("Opacity", 1).use(setType, t_f64),
+  },
+  outputs: {
+    fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
+  },
+});
 
-  constructor() {
-    super();
-    this.type = type_e.draw_box;
-    this.name = "";
-    this.addInputInterface("fb_in", undefined, undefined, {
-      type: "framebuffer",
-    });
-    this.addInputInterface("tex", undefined, 0, {
-      type: "texture",
-    });
-    this.addInputInterface("rect", undefined, 0, {
-      type: "rect",
-    });
-    this.addInputInterface("opacity", "NumberOption", 1, {
-      type: "f64",
-    });
-    this.addOutputInterface("fb_out", { type: "framebuffer" });
-  }
-}
-
-export class InfiniteMultiviewerNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.infinite_multiviewer;
-    this.name = "";
-    this.addInputInterface("fb_in", undefined, undefined, {
-      type: "framebuffer",
-    });
-    this.addInputInterface("tex", undefined, 0, {
-      type: "texture",
-    });
-    this.addOutputInterface("fb_out", { type: "framebuffer" });
-  }
-}
+export const InfiniteMultiviewerNode = defineNode({
+  type: type_e.infinite_multiviewer,
+  title: "Infinite Multiviewer",
+  inputs: {
+    fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
+    tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+  },
+  outputs: {
+    fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
+  },
+});

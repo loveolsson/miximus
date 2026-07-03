@@ -3,35 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "serve": "NODE_OPTIONS=--openssl-legacy-provider vue-cli-service serve",
-    "build": "NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
-    "lint": "vue-cli-service lint",
-    "lint:fix": "vue-cli-service lint --fix"
+    "serve": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "format": "prettier --write \"src/**/*.{ts,vue}\""
   },
   "dependencies": {
-    "baklavajs": "^1.9.0",
-    "core-js": "^3.15.2",
-    "deep-equal": "^2.0.5",
+    "@baklavajs/themes": "^2.8.1",
+    "baklavajs": "^2.8.1",
     "eventemitter3": "^4.0.7",
-    "vue": "^2.6.14",
-    "vue-class-component": "^7.2.3",
-    "vue-property-decorator": "^9.1.2"
+    "vue": "^3.4.0"
   },
   "devDependencies": {
-    "@types/deep-equal": "^1.0.1",
-    "@typescript-eslint/eslint-plugin": "^4.28.2",
-    "@typescript-eslint/parser": "^4.28.2",
-    "@vue/cli-plugin-babel": "^4.5.13",
-    "@vue/cli-plugin-eslint": "^4.5.13",
-    "@vue/cli-plugin-typescript": "^4.5.13",
-    "@vue/cli-service": "^4.5.13",
-    "@vue/eslint-config-prettier": "^6.0.0",
-    "@vue/eslint-config-typescript": "^7.0.0",
-    "eslint": "^6.7.2",
-    "eslint-plugin-prettier": "^3.3.1",
-    "eslint-plugin-vue": "^6.2.2",
-    "prettier": "^2.3.2",
-    "typescript": "^4.1.6",
-    "vue-template-compiler": "^2.6.14"
+    "@eslint/js": "^10.0.1",
+    "@vitejs/plugin-vue": "^5.1.0",
+    "@vue/tsconfig": "^0.5.0",
+    "@vue/typescript-plugin": "^3.3.6",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.2",
+    "prettier": "^3.9.4",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.62.1",
+    "vite": "^5.4.0",
+    "vue-eslint-parser": "^10.4.1",
+    "vue-tsc": "^3.3.6"
   }
 }

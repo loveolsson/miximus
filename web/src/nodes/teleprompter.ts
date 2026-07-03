@@ -1,24 +1,19 @@
+import { defineNode, NodeInterface } from "@baklavajs/core";
+import { NumberInterface, TextInputInterface } from "@baklavajs/renderer-vue";
+import { setType } from "@baklavajs/interface-types";
+import { t_framebuffer, t_f64, t_rect } from "./interface_types";
 import { type_e } from "@/messages";
-import { Node } from "@baklavajs/core";
 
-export class TeleprompterNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.teleprompter;
-    this.name = "";
-    this.addInputInterface("fb_in", undefined, undefined, {
-      type: "framebuffer",
-    });
-    this.addInputInterface("scroll_pos", "NumberOption", 0, {
-      type: "f64",
-    });
-    this.addInputInterface("rect", undefined, 0, {
-      type: "rect",
-    });
-    this.addOutputInterface("fb_out", { type: "framebuffer" });
-    this.addOption("file_path", "InputOption", "");
-  }
-}
+export const TeleprompterNode = defineNode({
+  type: type_e.teleprompter,
+  title: "Teleprompter",
+  inputs: {
+    fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
+    scroll_pos: () => new NumberInterface("Scroll Pos", 0).use(setType, t_f64),
+    rect: () => new NodeInterface<null>("Rect", null).use(setType, t_rect),
+    file_path: () => new TextInputInterface("File Path", "").setPort(false),
+  },
+  outputs: {
+    fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
+  },
+});

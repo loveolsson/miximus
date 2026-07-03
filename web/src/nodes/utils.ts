@@ -1,56 +1,52 @@
+import { defineNode, NodeInterface } from "@baklavajs/core";
+import { NumberInterface } from "@baklavajs/renderer-vue";
+import { setType } from "@baklavajs/interface-types";
+import { t_texture, t_framebuffer, t_f64, t_vec2, t_rect } from "./interface_types";
 import { type_e } from "@/messages";
-import { Node } from "@baklavajs/core";
+import { Vec2Interface } from "./interfaces";
 
-export class Vec2Node extends Node {
-  type: type_e;
-  name: string;
+export const Vec2Node = defineNode({
+  type: type_e.vec2,
+  title: "Vec2",
+  inputs: {
+    x: () => new NumberInterface("X", 0).use(setType, t_f64),
+    y: () => new NumberInterface("Y", 0).use(setType, t_f64),
+  },
+  outputs: {
+    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+  },
+});
 
-  constructor() {
-    super();
-    this.type = type_e.vec2;
-    this.name = "";
-    this.addInputInterface("x", "NumberOption", 0, { type: "f64" });
-    this.addInputInterface("y", "NumberOption", 0, { type: "f64" });
-    this.addOutputInterface("res", { type: "vec2" });
-  }
-}
+export const RectNode = defineNode({
+  type: type_e.rect,
+  title: "Rect",
+  inputs: {
+    pos: () => new Vec2Interface("Pos").use(setType, t_vec2),
+    size: () => new Vec2Interface("Size").use(setType, t_vec2),
+  },
+  outputs: {
+    res: () => new NodeInterface<null>("Result", null).use(setType, t_rect),
+  },
+});
 
-export class RectNode extends Node {
-  type: type_e;
-  name: string;
+export const FrameBufferNode = defineNode({
+  type: type_e.framebuffer,
+  title: "Framebuffer",
+  inputs: {
+    size: () => new Vec2Interface("Size", [0, 0]).use(setType, t_vec2),
+  },
+  outputs: {
+    fb: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),
+  },
+});
 
-  constructor() {
-    super();
-    this.type = type_e.rect;
-    this.name = "";
-    this.addInputInterface("pos", "Vec2Option", undefined, { type: "vec2" });
-    this.addInputInterface("size", "Vec2Option", undefined, { type: "vec2" });
-    this.addOutputInterface("res", { type: "rect" });
-  }
-}
-
-export class FrameBufferNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.framebuffer;
-    this.name = "";
-    this.addInputInterface("size", "Vec2Option", [0, 0], { type: "vec2" });
-    this.addOutputInterface("fb", { type: "framebuffer" });
-  }
-}
-
-export class FramebufferToTextureNode extends Node {
-  type: type_e;
-  name: string;
-
-  constructor() {
-    super();
-    this.type = type_e.framebuffer_to_texture;
-    this.name = "";
-    this.addInputInterface("fb", undefined, undefined, { type: "framebuffer" });
-    this.addOutputInterface("tex", { type: "texture" });
-  }
-}
+export const FramebufferToTextureNode = defineNode({
+  type: type_e.framebuffer_to_texture,
+  title: "FB → Texture",
+  inputs: {
+    fb: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),
+  },
+  outputs: {
+    tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+  },
+});

@@ -1,595 +1,267 @@
-<style scoped>
-div.header {
-  display: inline-block;
-  flex: 0;
-  background-color: #232323;
-  border-bottom: 1px solid rgba(63, 63, 63, 0.8);
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
-  z-index: 1000;
-  display: flex;
-}
-
-div.header div.appinfo {
-  /* flex: 0; */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  height: 100%;
-  vertical-align: middle;
-}
-
-div.header div.appinfo sup {
-  vertical-align: super;
-  font-size: 0.6em;
-  color: #5379b5;
-}
-
-div.header .title {
-  flex: 0;
-  display: inline-block;
-  color: #ffffff;
-  font-size: 1.2em;
-  font-weight: bold;
-  padding-left: 1em;
-}
-
-div.header .title .offline {
-  color: #bb0000;
-  font-size: 1.2em;
-  font-weight: 600;
-  font-style: italic;
-  padding-left: 1em;
-}
-
-div.header .controls {
-  flex: 1;
-  text-align: right;
-}
-
-div.header button {
-  margin: 0.5em;
-  background-color: rgba(63, 63, 63, 0.8);
-  border: 0;
-  color: #ffffff;
-  border-radius: 0.5em;
-  padding: 0.5em 1em;
-  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.8));
-  transition: box-shadow 0.1s linear, filter 0.1s linear;
-}
-
-div.header button:hover {
-  box-shadow: 0 0 0 1px #5379b5;
-  filter: drop-shadow(0 0 7px rgba(0, 0, 0, 0.8));
-}
-</style>
-
 <template>
-  <div
-    style="height: 100vh; width: 100vw; display: flex; flex-direction: column"
-  >
+  <div class="app-root">
     <div class="header">
-      <div class="appinfo">
-        <span class="title"
-          >Miximus <sup>v0.0.1</sup>
-          <span class="offline" v-if="!connected">Offline</span></span
-        >
-      </div>
-      <div class="controls"></div>
-      <button v-on:click="center_view">Center view</button>
+      <span class="title">
+        Miximus <sup>v0.0.1</sup>
+        <span v-if="!connected" class="offline">&nbsp;— offline</span>
+      </span>
     </div>
-    <div style="flex: 1" ref="editorArea">
-      <baklava-editor :plugin="viewPlugin" />
+    <div class="editor-area">
+      <BaklavaEditor :view-model="baklava">
+        <template #connection="{ connection }">
+          <ColoredConnectionWrapper :connection="connection" />
+        </template>
+      </BaklavaEditor>
     </div>
   </div>
 </template>
 
-<script lang="ts">
-import { Vue, Component } from "vue-property-decorator";
-import { Editor, Node, Connection, NodeInterface } from "@baklavajs/core";
-import { ViewPlugin } from "@baklavajs/plugin-renderer-vue";
-import { OptionPlugin } from "@baklavajs/plugin-options-vue";
-import { InterfaceTypePlugin } from "@baklavajs/plugin-interface-types";
-import { ws_wrapper } from "./websocket";
+<script setup lang="ts">
+import { ref, nextTick, onUnmounted } from "vue";
 import {
-  register_connection_types,
-  register_option_types,
-  register_types,
-} from "./nodes/types";
-import { IViewNode } from "@baklavajs/plugin-renderer-vue/dist/baklavajs-plugin-renderer-vue/types";
-import { view_intercept } from "./view_intercept";
-import { helpers } from "./helpers";
+  BaklavaEditor,
+  useBaklava,
+  TOOLBAR_COMMANDS,
+  ZOOM_TO_FIT_GRAPH_COMMAND,
+} from "@baklavajs/renderer-vue";
+import "@baklavajs/themes/dist/syrup-dark.css";
+import ColoredConnectionWrapper from "./components/ColoredConnectionWrapper.vue";
+
+import { ws_wrapper } from "./websocket";
+import { register_node_types, register_interface_types } from "./nodes/types";
+import { update_node_status, clear_all_status } from "./nodes/status_store";
+import { useServerSync } from "./server_sync";
 import {
   action_e,
-  command_add_connection_s,
-  command_add_node_s,
-  command_config_s,
-  command_node_status_s,
-  command_remove_connection_s,
-  command_remove_node_s,
-  result_s,
-  result_config_s,
   topic_e,
-  connection_s,
-  options_s,
-  command_update_node_s,
-  type_e,
-  position_t,
+  type command_add_node_s,
+  type command_remove_node_s,
+  type command_update_node_s,
+  type command_add_connection_s,
+  type command_remove_connection_s,
+  type command_config_s,
+  type command_node_status_s,
+  type result_config_s,
 } from "./messages";
-import {
-  update_node_status,
-  remove_node_status,
-  clear_all_status,
-  NodeStatus,
-} from "./nodes/status_store";
 
-@Component
-export default class Miximus extends Vue {
-  editor = new Editor();
-  viewPlugin = new ViewPlugin();
-  intfTypePlugin = new InterfaceTypePlugin();
-  wsWrapper = new ws_wrapper();
-  view_intercept = new view_intercept(this.viewPlugin, this.wsWrapper);
-  option_plugin = new OptionPlugin();
-  nodes_mutated = true;
-  node_to_be_added?: Node;
-  node_to_be_removed?: Node;
-  connection_to_be_added?: [NodeInterface, NodeInterface];
-  connection_to_be_removed?: Connection;
-  connections = new Set<Connection>();
-  connected = false;
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
 
-  created(): void {
-    this.editor.use(this.viewPlugin);
-    this.editor.use(this.intfTypePlugin);
-    this.editor.use(this.option_plugin);
+const baklava = useBaklava();
+const ws = new ws_wrapper();
 
-    // Show a minimap in the top right corner
-    this.viewPlugin.enableMinimap = true;
+register_node_types(baklava.editor);
+register_interface_types(baklava);
 
-    register_option_types(this.viewPlugin);
-    register_types(this.editor);
-    register_connection_types(this.intfTypePlugin);
+// Remove toolbar items that are not meaningful in a server-driven graph.
+const _excludedToolbarCommands = new Set([
+  TOOLBAR_COMMANDS.UNDO.command,
+  TOOLBAR_COMMANDS.REDO.command,
+  TOOLBAR_COMMANDS.COPY.command,
+  TOOLBAR_COMMANDS.PASTE.command,
+  TOOLBAR_COMMANDS.CREATE_SUBGRAPH.command,
+]);
+baklava.settings.toolbar.commands = baklava.settings.toolbar.commands.filter(
+  (c) => !_excludedToolbarCommands.has(c.command),
+);
 
-    const token = {};
-    this.editor.events.addNode.addListener(token, (ev) =>
-      this.intercept_node_add(ev as Node)
-    );
-    this.editor.events.beforeRemoveNode.addListener(token, (ev) =>
-      this.intercept_node_remove(ev as Node)
-    );
-    this.editor.events.beforeAddConnection.addListener(token, (ev) =>
-      this.intercept_connection_add(ev as Connection)
-    );
-    this.editor.events.beforeRemoveConnection.addListener(token, (ev) =>
-      this.intercept_connection_remove(ev as Connection)
-    );
+const {
+  handle_server_add_node,
+  handle_server_remove_node,
+  handle_server_update_node,
+  handle_server_add_connection,
+  handle_server_remove_connection,
+  handle_server_init_node_status,
+  destroy: destroySync,
+} = useServerSync(baklava, ws);
 
-    this.wsWrapper.on("on_connected", this.handle_connected.bind(this));
-    this.wsWrapper.on("on_disconnected", this.handle_disconnected.bind(this));
+const connected = ref(false);
 
-    this.wsWrapper.subscribe<command_add_node_s>(
-      topic_e.add_node,
-      (msg, is_origin) => {
-        if (msg.action === action_e.command && msg.topic === topic_e.add_node) {
-          if (!is_origin) {
-            this.handle_server_add_node(msg.node.type, msg.node.id);
-          }
+// ---------------------------------------------------------------------------
+// WebSocket subscriptions
+// ---------------------------------------------------------------------------
 
-          this.handle_server_update_node(
-            msg.node.id,
-            msg.node.options,
-            is_origin
-          );
-        }
-      }
-    );
-
-    this.wsWrapper.subscribe<command_remove_node_s>(
-      topic_e.remove_node,
-      (msg) => {
-        if (
-          msg.action === action_e.command &&
-          msg.topic === topic_e.remove_node
-        ) {
-          this.handle_server_remove_node(msg.id);
-        }
-      }
-    );
-
-    this.wsWrapper.subscribe<command_update_node_s>(
-      topic_e.update_node,
-      (msg, is_origin) => {
-        if (
-          msg.action === action_e.command &&
-          msg.topic === topic_e.update_node
-        ) {
-          this.handle_server_update_node(msg.id, msg.options, is_origin);
-        }
-      }
-    );
-
-    this.wsWrapper.subscribe<command_add_connection_s>(
-      topic_e.add_connection,
-      (msg) => {
-        if (
-          msg.action === action_e.command &&
-          msg.topic === topic_e.add_connection
-        ) {
-          this.handle_server_add_connection(msg.connection);
-        }
-      }
-    );
-
-    this.wsWrapper.subscribe<command_remove_connection_s>(
-      topic_e.remove_connection,
-      (msg) => {
-        if (
-          msg.action === action_e.command &&
-          msg.topic === topic_e.remove_connection
-        ) {
-          this.handle_server_remove_connection(msg.connection);
-        }
-      }
-    );
-    this.wsWrapper.subscribe<command_node_status_s>(
-      topic_e.node_status,
-      (msg) => {
-        if (
-          msg.action === action_e.command &&
-          msg.topic === topic_e.node_status
-        ) {
-          update_node_status(msg.id, msg.status);
-        }
-      }
-    );
+// --- add_node ---
+ws.subscribe<command_add_node_s>(topic_e.add_node, (msg, is_origin) => {
+  if (msg.action !== action_e.command) return;
+  if (is_origin) {
+    // Our own add was acknowledged; server may have filled in options.
+    handle_server_update_node(msg.node.id, msg.node.options);
+    return;
   }
+  handle_server_add_node(msg.node.type, msg.node.id);
+  handle_server_update_node(msg.node.id, msg.node.options);
+});
 
-  destroyed(): void {
-    this.wsWrapper.destroy();
-  }
+// --- remove_node ---
+ws.subscribe<command_remove_node_s>(topic_e.remove_node, (msg, is_origin) => {
+  if (msg.action !== action_e.command) return;
+  if (is_origin) return;
+  handle_server_remove_node(msg.id);
+});
 
-  clear_nodes(): void {
-    while (this.editor.connections.length > 0) {
-      this.connection_to_be_removed = this.editor.connections[0];
-      this.editor.removeConnection(this.editor.connections[0]);
+// --- update_node ---
+ws.subscribe<command_update_node_s>(topic_e.update_node, (msg, is_origin) => {
+  if (msg.action !== action_e.command) return;
+  if (is_origin) return;
+  handle_server_update_node(msg.id, msg.options);
+});
+
+// --- add_connection ---
+ws.subscribe<command_add_connection_s>(topic_e.add_connection, (msg, is_origin) => {
+  if (msg.action !== action_e.command) return;
+  if (is_origin) return;
+  handle_server_add_connection(msg.connection);
+});
+
+// --- remove_connection ---
+// NOTE: do NOT guard on is_origin here. When the client adds a connection that
+// displaces an existing one, the server auto-removes the old connection and
+// broadcasts remove_connection with origin_id = this client. We must process
+// that side-effect. handle_server_remove_connection is idempotent (returns
+// early when the connection is already gone), so echoes of our own explicit
+// removals are also safe.
+ws.subscribe<command_remove_connection_s>(topic_e.remove_connection, (msg, _is_origin) => {
+  if (msg.action !== action_e.command) return;
+  handle_server_remove_connection(msg.connection);
+});
+
+// --- node_status (push broadcasts) ---
+ws.subscribe<command_node_status_s>(topic_e.node_status, (msg) => {
+  if (msg.action !== action_e.command) return;
+  update_node_status(msg.id, msg.status);
+  handle_server_init_node_status(msg.id);
+});
+
+// --- on_connected: request config via one-shot send (action:result response) ---
+ws.on("on_connected", () => {
+  const payload: command_config_s = {
+    action: action_e.command,
+    topic: topic_e.config,
+  };
+
+  ws.send<command_config_s, result_config_s>(payload, (msg) => {
+    if (msg.action !== action_e.result) return;
+    const config = (msg as result_config_s).config;
+
+    // Clear existing graph first.
+    for (const node of [...baklava.editor.graph.nodes]) {
+      handle_server_remove_node(node.id);
     }
 
-    while (this.editor.nodes.length > 0) {
-      this.node_to_be_removed = this.editor.nodes[0];
-      this.editor.removeNode(this.editor.nodes[0]);
-    }
-  }
-
-  center_view(): void {
-    // Scale and center the graph on the page
-    // NOTE(Love): This code is horrendous, remember to fix it
-    if (this.editor.nodes.length > 0) {
-      let x0 = Number.POSITIVE_INFINITY;
-      let y0 = Number.POSITIVE_INFINITY;
-      let x1 = Number.NEGATIVE_INFINITY;
-      let y1 = Number.NEGATIVE_INFINITY;
-
-      for (let node of this.editor.nodes) {
-        const pos = (node as unknown as IViewNode).position;
-        x0 = Math.min(x0, pos.x);
-        y0 = Math.min(y0, pos.y);
-        x1 = Math.max(x1, pos.x + 200);
-        y1 = Math.max(y1, pos.y + 200);
-      }
-
-      if (this.$refs.editorArea instanceof Element) {
-        const area = this.$refs.editorArea;
-        const w = x1 - x0 + 200;
-        const h = y1 - y0 + 200;
-
-        const scale = Math.min(
-          Math.min(
-            area.clientHeight / h, //
-            area.clientWidth / w
-          ),
-          1
-        );
-        this.viewPlugin.scaling = scale;
-
-        const mid_x = (x0 + x1) / 2 - area.clientWidth / scale / 2;
-        const mid_y = (y0 + y1) / 2 - area.clientHeight / scale / 2;
-        this.viewPlugin.panning.x = -mid_x;
-        this.viewPlugin.panning.y = -mid_y;
-      }
-    } else {
-      this.viewPlugin.panning.x = 0;
-      this.viewPlugin.panning.y = 0;
-      this.viewPlugin.scaling = 1;
-    }
-  }
-
-  handle_connected(): void {
-    this.connected = true;
-
-    const payload: command_config_s = {
-      action: action_e.command,
-      topic: topic_e.config,
-    };
-
-    this.wsWrapper.send<command_config_s, result_config_s>(payload, (msg) => {
-      if (msg.action === action_e.result) {
-        this.clear_nodes();
-
-        if (msg.config.status) {
-          for (const [node_id, status] of Object.entries(msg.config.status)) {
-            update_node_status(node_id, status as NodeStatus);
-          }
-        }
-
-        for (const node of msg.config.nodes) {
-          this.handle_server_add_node(node.type, node.id);
-          this.handle_server_update_node(node.id, node.options, false);
-        }
-
-        for (const con of msg.config.connections) {
-          this.handle_server_add_connection(con);
-        }
-
-        this.center_view();
-      }
-    });
-  }
-
-  handle_disconnected(code: number, reason: string): void {
-    console.log("WebSocket disconnected: ", code, reason);
-
-    this.connected = false;
-    this.clear_nodes();
-    clear_all_status();
-  }
-
-  handle_server_add_node(type: string, id: string): void {
-    const node_type = this.editor.nodeTypes.get(type);
-    if (!node_type) {
-      return console.error(`Node type ${type} not found`);
-    }
-
-    const node = new node_type() as Node;
-    node.id = id;
-
-    // Propagate the server-assigned ID into any nodeData objects on this node's
-    // options so that status-aware components can look up the correct entry.
-    for (const [, opt] of node.options) {
-      if (opt.nodeData) {
-        opt.nodeData.node_id = id;
+    // Restore persisted status.
+    if (config.status) {
+      for (const [id, status] of Object.entries(config.status)) {
+        update_node_status(id, status);
       }
     }
 
-    this.node_to_be_added = node;
-    this.editor.addNode(node);
+    for (const node of config.nodes) {
+      handle_server_add_node(node.type, node.id);
+      handle_server_update_node(node.id, node.options);
+    }
+
+    for (const con of config.connections) {
+      handle_server_add_connection(con);
+    }
+
+    // Push node_id into status-aware interfaces after graph is built.
+    for (const node of baklava.editor.graph.nodes) {
+      handle_server_init_node_status(node.id);
+    }
+
+    connected.value = true;
+    nextTick(() => baklava.commandHandler.executeCommand(ZOOM_TO_FIT_GRAPH_COMMAND));
+  });
+});
+
+// --- on_disconnected: clear graph and status ---
+ws.on("on_disconnected", () => {
+  connected.value = false;
+  for (const node of [...baklava.editor.graph.nodes]) {
+    handle_server_remove_node(node.id);
   }
+  clear_all_status();
+});
 
-  handle_server_remove_node(id: string): void {
-    const node = helpers.find_node(this.editor, id);
-    if (!node) {
-      return console.error(`Node ${id} not found`);
-    }
+// ---------------------------------------------------------------------------
+// Cleanup
+// ---------------------------------------------------------------------------
 
-    this.node_to_be_removed = node;
-    this.editor.removeNode(node);
-    remove_node_status(id);
-  }
-
-  handle_server_update_node(
-    id: string,
-    options: options_s,
-    is_origin: boolean
-  ): void {
-    const node = this.editor.nodes.find((node) => node.id === id);
-    if (!node) return;
-
-    for (let key in options) {
-      const value = options[key];
-      switch (key) {
-        case "node_visual_position":
-          {
-            if (is_origin) {
-              continue;
-            }
-            if (
-              Array.isArray(value) &&
-              value.length === 2 &&
-              typeof value[0] === "number" &&
-              typeof value[1] === "number"
-            ) {
-              if (!this.view_intercept.set_position(id, value as position_t)) {
-                // The node has not been rendered yet, so the node can be updated directly since there won't be any new local state
-                const view = node as unknown as IViewNode;
-                view.position.x = value[0];
-                view.position.y = value[1];
-              }
-            }
-          }
-          break;
-
-        case "name":
-          {
-            if (typeof value === "string") {
-              node.name = value;
-            }
-          }
-          break;
-
-        default: {
-          const opt = node.options.get(key);
-          if (opt) {
-            opt.value = value;
-            break;
-          }
-
-          const iface = node.interfaces.get(key);
-          if (iface && iface.isInput) {
-            iface.value = value;
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  handle_server_add_connection(con: connection_s): void {
-    const from = helpers.find_interface(
-      this.editor,
-      con.from_node,
-      con.from_interface
-    );
-    const to = helpers.find_interface(
-      this.editor,
-      con.to_node,
-      con.to_interface
-    );
-    if (!from || !to) {
-      return console.error(
-        `Trying to add a connection between interfaces that does not exist`
-      );
-    }
-
-    this.connection_to_be_added = [from, to];
-    const connection = this.editor.addConnection(from, to);
-    if (connection) {
-      this.connections.add(connection);
-    }
-  }
-
-  handle_server_remove_connection(con: connection_s): void {
-    const from = helpers.find_interface(
-      this.editor,
-      con.from_node,
-      con.from_interface
-    );
-    const to = helpers.find_interface(
-      this.editor,
-      con.to_node,
-      con.to_interface
-    );
-    if (!from || !to) {
-      return console.error(
-        `Trying to remove a connection between interfaces that does not exist`
-      );
-    }
-
-    const connection = helpers.find_connection(this.connections, from, to);
-    if (connection) {
-      this.connection_to_be_removed = connection;
-      this.editor.removeConnection(connection);
-    }
-  }
-
-  intercept_node_add(node: Node): boolean {
-    if (this.node_to_be_added === node) {
-      this.node_to_be_added = undefined;
-      return true;
-    }
-
-    // This needs to be put on a timer, otherwise the position is not set
-    setTimeout(() => {
-      const position = (node as unknown as IViewNode).position;
-
-      const payload: command_add_node_s = {
-        action: action_e.command,
-        topic: topic_e.add_node,
-        node: {
-          type: node.type as type_e,
-          id: node.id,
-          options: {
-            node_visual_position: [position.x, position.y],
-          },
-        },
-      };
-
-      this.wsWrapper.send<command_add_node_s, result_s>(payload, (msg) => {
-        if (msg.action === action_e.error) {
-          this.node_to_be_removed = node;
-          this.editor.removeNode(node);
-        }
-      });
-    }, 0);
-
-    return false;
-  }
-
-  intercept_node_remove(node: Node): boolean {
-    if (this.node_to_be_removed === node) {
-      this.node_to_be_removed = undefined;
-      this.view_intercept.remove(node.id);
-      return true;
-    }
-
-    const payload: command_remove_node_s = {
-      action: action_e.command,
-      topic: topic_e.remove_node,
-      id: node.id,
-    };
-
-    this.wsWrapper.send(payload);
-
-    return false;
-  }
-
-  intercept_connection_add(con: Connection): boolean {
-    const tba = this.connection_to_be_added;
-    if (tba && tba[0] === con.from && tba[1] === con.to) {
-      this.connection_to_be_added = undefined;
-      return true;
-    }
-
-    if (!this.connected) {
-      return false;
-    }
-
-    const from_interface = helpers.get_interface_name(con.from);
-    const to_interface = helpers.get_interface_name(con.to);
-
-    if (!from_interface || !to_interface) return true;
-
-    const payload: command_add_connection_s = {
-      action: action_e.command,
-      topic: topic_e.add_connection,
-      connection: {
-        from_node: con.from.parent.id,
-        from_interface,
-        to_node: con.to.parent.id,
-        to_interface,
-      },
-    };
-
-    this.wsWrapper.send(payload);
-
-    return false;
-  }
-
-  intercept_connection_remove(con: Connection): boolean {
-    if (this.connection_to_be_removed === con) {
-      this.connection_to_be_removed = undefined;
-      this.connections.delete(con);
-      return true;
-    }
-
-    const from_interface = helpers.get_interface_name(con.from);
-    const to_interface = helpers.get_interface_name(con.to);
-    if (!from_interface || !to_interface) {
-      return false;
-    }
-
-    const payload: command_remove_connection_s = {
-      action: action_e.command,
-      topic: topic_e.remove_connection,
-      connection: {
-        from_node: con.from.parent.id,
-        from_interface,
-        to_node: con.to.parent.id,
-        to_interface,
-      },
-    };
-
-    this.wsWrapper.send(payload);
-
-    return false;
-  }
-}
+onUnmounted(() => {
+  destroySync();
+  ws.destroy();
+});
 </script>
+
+<style>
+/* Minimal global resets so the editor fills the viewport */
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Color port dots by interface type (data-interface-type is set by BaklavaInterfaceTypes) */
+.baklava-node-interface[data-interface-type="texture"] {
+  --baklava-node-interface-port-color: #332288;
+}
+.baklava-node-interface[data-interface-type="framebuffer"] {
+  --baklava-node-interface-port-color: #88ccee;
+}
+.baklava-node-interface[data-interface-type="f64"] {
+  --baklava-node-interface-port-color: #117733;
+}
+.baklava-node-interface[data-interface-type="vec2"] {
+  --baklava-node-interface-port-color: #999933;
+}
+.baklava-node-interface[data-interface-type="rect"] {
+  --baklava-node-interface-port-color: #cc6677;
+}
+</style>
+
+<style scoped>
+.app-root {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background: #0e0e16;
+  color: #e0e0e0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: #16162a;
+  border-bottom: 1px solid #2a2a4a;
+  flex-shrink: 0;
+  gap: 12px;
+  font-size: 0.9em;
+}
+
+.title {
+  font-weight: 600;
+}
+.title sup {
+  font-size: 0.65em;
+  color: #777;
+}
+.offline {
+  color: #cc5555;
+  font-weight: normal;
+  font-size: 0.9em;
+}
+
+.editor-area {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+</style>
