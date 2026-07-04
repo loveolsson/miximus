@@ -87,8 +87,11 @@ int bundle(const std::filesystem::path& src,
         sha1.process_bytes(file_data.data(), file_data.size());
         boost::uuids::detail::sha1::digest_type digest;
         sha1.get_digest(digest);
-        const auto sha_hex =
-            fmt::format("{:08x}{:08x}{:08x}{:08x}{:08x}", digest[0], digest[1], digest[2], digest[3], digest[4]);
+        std::string sha_hex;
+        sha_hex.reserve(40);
+        for (const auto byte : digest) {
+            sha_hex += fmt::format("{:02x}", byte);
+        }
 
         bundle_sha1.process_bytes(sha_hex.data(), sha_hex.size());
 
@@ -129,9 +132,11 @@ int bundle(const std::filesystem::path& src,
     // Terminate the map declaration and add it to the file
     boost::uuids::detail::sha1::digest_type bundle_digest;
     bundle_sha1.get_digest(bundle_digest);
-    const auto bundle_hash = fmt::format(
-        "{:08x}{:08x}{:08x}{:08x}{:08x}",
-        bundle_digest[0], bundle_digest[1], bundle_digest[2], bundle_digest[3], bundle_digest[4]);
+    std::string bundle_hash;
+    bundle_hash.reserve(40);
+    for (const auto byte : bundle_digest) {
+        bundle_hash += fmt::format("{:02x}", byte);
+    }
 
     map << tab(1) << "}, \"" << bundle_hash << "\");" << '\n' << '\n';
     map << tab(1) << "return files;" << '\n';
