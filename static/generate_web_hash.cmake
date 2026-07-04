@@ -67,5 +67,12 @@ endfunction()
 
 # Main execution
 if(DEFINED WEB_SOURCE_DIR AND DEFINED WEB_HASH_FILE)
+    # If the previous npm build failed, skip entirely so the existing dist
+    # hash and web_files.cpp are preserved (dist may be empty/partial).
+    if(DEFINED WEB_BUILD_FAILED_FILE AND EXISTS "${WEB_BUILD_FAILED_FILE}")
+        message(STATUS "Web build failed previously - skipping dist hash check to preserve bundled UI")
+        return()
+    endif()
+
     generate_web_files_hash("${WEB_SOURCE_DIR}" "${WEB_HASH_FILE}")
 endif()

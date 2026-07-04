@@ -89,6 +89,16 @@ set_target_properties(miximus
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
 
+# Print a prominent warning at the end of the build if the Web UI failed to build.
+set(WEB_BUILD_FAILED_FILE "${CMAKE_BINARY_DIR}/static/web_build_failed.txt")
+add_custom_target(report_build_summary ALL
+  COMMAND ${CMAKE_COMMAND}
+    -DWEB_BUILD_FAILED_FILE=${WEB_BUILD_FAILED_FILE}
+    -P "${CMAKE_SOURCE_DIR}/cmake/report_build_summary.cmake"
+  VERBATIM
+)
+add_dependencies(report_build_summary miximus)
+
 # if(CMAKE_BUILD_TYPE STREQUAL "Release")
 #     include(CheckIPOSupported)
 #     check_ipo_supported(RESULT result)

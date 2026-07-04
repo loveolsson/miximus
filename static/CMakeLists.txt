@@ -8,16 +8,35 @@ set(BUNDLER_NAMESPACE "miximus::static_files")
 # Generate hash file to track web directory changes  
 set(WEB_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/web_files.hash")
 
-# Create a custom target that always runs and checks for file changes
+# Step 1: hash web/src + config files; run `npm run build` only when something changed
+set(WEB_SRC_HASH_FILE    "${CMAKE_CURRENT_BINARY_DIR}/web_src.hash")
+set(WEB_BUILD_FAILED_FILE "${CMAKE_CURRENT_BINARY_DIR}/web_build_failed.txt")
+set(NPM_LS_STAMP_FILE    "${CMAKE_CURRENT_BINARY_DIR}/npm_ls.stamp")
+
+add_custom_target(build_web_if_changed ALL
+  COMMAND ${CMAKE_COMMAND}
+    -DWEB_DIR=${CMAKE_SOURCE_DIR}/web
+    -DSRC_HASH_FILE=${WEB_SRC_HASH_FILE}
+    -DNPM_LS_STAMP_FILE=${NPM_LS_STAMP_FILE}
+    -DWEB_BUILD_FAILED_FILE=${WEB_BUILD_FAILED_FILE}
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_web_src.cmake"
+  COMMENT "Checking web source files for changes..."
+  VERBATIM
+)
+
+# Step 2: hash web/dist; remove web_files.cpp if the bundled output needs refreshing
 add_custom_target(check_web_files_hash ALL
   COMMAND ${CMAKE_COMMAND} 
     -DWEB_SOURCE_DIR=${CMAKE_SOURCE_DIR}/web/dist
     -DWEB_HASH_FILE=${WEB_HASH_FILE}
     -DWEB_FILES_CPP=${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
+    -DWEB_BUILD_FAILED_FILE=${WEB_BUILD_FAILED_FILE}
     -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_web_hash.cmake"
   COMMENT "Checking for web file changes..."
   VERBATIM
 )
+
+add_dependencies(check_web_files_hash build_web_if_changed)
 
 add_custom_command(
   OUTPUT 
