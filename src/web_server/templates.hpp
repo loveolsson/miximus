@@ -15,11 +15,12 @@ static inline nlohmann::json create_ping_response_payload()
     };
 }
 
-static inline nlohmann::json create_socket_info_payload(int64_t id)
+static inline nlohmann::json create_socket_info_payload(int64_t id, std::string_view bundle_hash)
 {
     return {
-        {"action", enum_to_string(action_e::socket_info)},
-        {"id",     id                                   },
+        {"action",      enum_to_string(action_e::socket_info)},
+        {"id",          id                                   },
+        {"bundle_hash", bundle_hash                          },
     };
 }
 

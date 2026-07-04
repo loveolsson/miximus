@@ -20,6 +20,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   private subscriptions = new Map<topic_e, Set<message_callback_t<message_s>>>();
   private next_token = 0;
   private closing = false;
+  private last_bundle_hash?: string;
 
   constructor() {
     super();
@@ -96,6 +97,16 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   }
 
   private handle_socket_info(info: socket_info_s): void {
+    if (
+      import.meta.env.PROD &&
+      this.last_bundle_hash !== undefined &&
+      info.bundle_hash !== this.last_bundle_hash
+    ) {
+      location.reload();
+      return;
+    }
+    this.last_bundle_hash = info.bundle_hash;
+
     console.log(`Received socket info with id ${info.id}`);
     this.info = info;
 

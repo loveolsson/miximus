@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 // Allow importing .vue components. Volar generates precise per-component types
 // that take precedence over this wildcard; it serves as a fallback only.
 declare module "*.vue" {

@@ -374,7 +374,7 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
     connections_.emplace(hdl, websocket_connection{.id = id, .topics = {}});
     connections_by_id_.emplace(id, hdl);
 
-    send(hdl, create_socket_info_payload(id));
+    send(hdl, create_socket_info_payload(id, static_files::get_web_files().bundle_hash));
 }
 
 void web_server_impl::on_fail(const con_hdl_t& hdl)

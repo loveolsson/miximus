@@ -29,10 +29,12 @@ struct file_map_s
 {
     using map_t = std::unordered_map<std::string_view, file_record_s>;
 
-    const map_t files;
+    const map_t            files;
+    const std::string_view bundle_hash;
 
-    explicit file_map_s(map_t&& o)
+    explicit file_map_s(map_t&& o, std::string_view hash)
         : files(std::move(o))
+        , bundle_hash(hash)
     {
     }
 

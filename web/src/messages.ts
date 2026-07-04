@@ -65,8 +65,9 @@ export interface message_s {
 }
 
 export interface socket_info_s extends message_s {
-  action: action_e.command;
+  action: action_e.socket_info;
   id: number;
+  bundle_hash: string;
 }
 
 export interface subscribe_s extends message_s {

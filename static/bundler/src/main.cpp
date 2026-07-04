@@ -57,6 +57,9 @@ int bundle(const std::filesystem::path& src,
     map << "{" << '\n';
     map << tab(1) << "static const file_map_s files({" << '\n';
 
+    // Accumulate a bundle-level hash from each file's ETag
+    boost::uuids::detail::sha1 bundle_sha1;
+
     // Iterate the files in the folder
     for (int fi = 0; fi < files.size(); ++fi) {
         const auto& filename  = files[fi];
@@ -86,6 +89,8 @@ int bundle(const std::filesystem::path& src,
         sha1.get_digest(digest);
         const auto sha_hex =
             fmt::format("{:08x}{:08x}{:08x}{:08x}{:08x}", digest[0], digest[1], digest[2], digest[3], digest[4]);
+
+        bundle_sha1.process_bytes(sha_hex.data(), sha_hex.size());
 
         const auto comment = fmt::format("// File: {} ({} / {} compressed)", unix_name, file_data.size(), arr_size);
 
@@ -122,7 +127,13 @@ int bundle(const std::filesystem::path& src,
     }
 
     // Terminate the map declaration and add it to the file
-    map << tab(1) << "});" << '\n' << '\n';
+    boost::uuids::detail::sha1::digest_type bundle_digest;
+    bundle_sha1.get_digest(bundle_digest);
+    const auto bundle_hash = fmt::format(
+        "{:08x}{:08x}{:08x}{:08x}{:08x}",
+        bundle_digest[0], bundle_digest[1], bundle_digest[2], bundle_digest[3], bundle_digest[4]);
+
+    map << tab(1) << "}, \"" << bundle_hash << "\");" << '\n' << '\n';
     map << tab(1) << "return files;" << '\n';
     map << "};" << '\n';
 
