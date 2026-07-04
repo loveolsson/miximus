@@ -58,6 +58,7 @@ class web_server_impl : public server_s
     config_getters_t config_getters_;
 
     int64_t next_connection_id_ = 0;
+    bool    started_            = false;
 
     std::optional<std::promise<void>> stop_promise_;
 

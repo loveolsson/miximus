@@ -11,6 +11,7 @@
 #include <functional>
 #include <future>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -450,29 +451,55 @@ void web_server_impl::send(const con_hdl_t& hdl, const nlohmann::json& msg) { se
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
 {
+    if (!started_) {
+        throw std::logic_error("web_server: subscribe() called before start()");
+    }
     boost::asio::post(endpoint_.get_io_context(),
                       [this, topic, callback]() { get_subscription_by_topic(topic) = callback; });
 }
 
-void web_server_impl::set_config_getters(const config_getters_t& getters) { config_getters_ = getters; }
+void web_server_impl::set_config_getters(const config_getters_t& getters)
+{
+    if (!started_) {
+        throw std::logic_error("web_server: set_config_getters() called before start()");
+    }
+    boost::asio::post(endpoint_.get_io_context(), [this, getters]() { config_getters_ = getters; });
+}
 
 void web_server_impl::start(uint16_t port, boost::asio::io_context* service)
 {
     using namespace websocketpp::log;
-    // Initialize the Asio transport policy
+
     std::error_code ec;
     endpoint_.init_asio(service, ec);
     if (ec) {
-        endpoint_.get_alog().write(alevel::fail, ec.message());
+        throw std::runtime_error(fmt::format("web_server: init_asio failed: {}", ec.message()));
     }
 
-    endpoint_.get_alog().write(alevel::app, fmt::format("Starting web server on port {}", port));
-    endpoint_.listen(port);
-    endpoint_.start_accept();
+    endpoint_.listen(port, ec);
+    if (ec) {
+        throw std::runtime_error(fmt::format("web_server: listen on port {} failed: {}", port, ec.message()));
+    }
+
+    endpoint_.start_accept(ec);
+    if (ec) {
+        // listen() succeeded (acceptor is bound), so close it immediately to
+        // release the port rather than waiting for the endpoint destructor.
+        websocketpp::lib::error_code ignored;
+        endpoint_.stop_listening(ignored);
+        throw std::runtime_error(fmt::format("web_server: start_accept failed: {}", ec.message()));
+    }
+
+    endpoint_.get_alog().write(alevel::app, fmt::format("Web server listening on port {}", port));
+    started_ = true;
 }
 
 void web_server_impl::stop()
 {
+    if (!started_) {
+        return;
+    }
+
     using namespace websocketpp::log;
     using namespace websocketpp::close;
     using websocketpp::lib::error_code;
