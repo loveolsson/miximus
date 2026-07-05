@@ -12,6 +12,7 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 #include "utils/string_utils.hpp"
+
 #include <algorithm>
 #include <memory>
 #include <mutex>

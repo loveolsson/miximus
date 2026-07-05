@@ -1,10 +1,10 @@
 #pragma once
 #include "gpu/types.hpp"
 
-#include <glm/common.hpp>
 #include <nlohmann/json.hpp>
 
 #include <cassert>
+#include <glm/common.hpp>
 #include <optional>
 
 namespace miximus::nodes {

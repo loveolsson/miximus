@@ -2,9 +2,9 @@
 #include "nodes/connection.hpp"
 #include "utils/lookup.hpp"
 
-#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
+#include <format>
 #include <map>
 #include <memory>
 #include <vector>
@@ -39,7 +39,7 @@ struct node_state_s
             return it->second;
         }
 
-        throw std::runtime_error(fmt::format("missing connection set {}", name));
+        throw std::runtime_error(std::format("missing connection set {}", name));
     }
 
     template <typename T>

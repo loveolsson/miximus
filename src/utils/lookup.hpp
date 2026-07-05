@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cassert>
 #include <magic_enum/magic_enum.hpp>
+
+#include <cassert>
 #include <optional>
 #include <string_view>
 

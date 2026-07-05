@@ -5,9 +5,9 @@
 
 #include "static_files/files.hpp"
 
-#include <fmt/format.h>
 #include <gzip/decompress.hpp>
 
+#include <format>
 #include <stdexcept>
 #include <string>
 
@@ -19,7 +19,7 @@ std::string file_record_s::unzip() const
 
     if (data.size() != size) {
         throw std::runtime_error(
-            fmt::format("Unzipped file \"{}\" has size {} instead of expected size {}", filename, data.size(), size));
+            std::format("Unzipped file \"{}\" has size {} instead of expected size {}", filename, data.size(), size));
     }
 
     return data;
@@ -41,7 +41,7 @@ const file_record_s& file_map_s::get_file_or_throw(std::string_view filename) co
         return *it;
     }
 
-    throw std::out_of_range(fmt::format("File \"{}\" not found", filename));
+    throw std::out_of_range(std::format("File \"{}\" not found", filename));
 }
 
 } // namespace miximus::static_files

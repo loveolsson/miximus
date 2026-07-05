@@ -1,4 +1,5 @@
 #include "font_loader.hpp"
+
 #include <memory>
 #include <stdexcept>
 

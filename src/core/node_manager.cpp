@@ -1,4 +1,5 @@
 #include "core/node_manager.hpp"
+
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"

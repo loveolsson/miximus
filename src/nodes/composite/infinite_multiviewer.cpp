@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "glm/common.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -8,7 +9,6 @@
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 
-#include "glm/common.hpp"
 #include <memory>
 
 namespace {

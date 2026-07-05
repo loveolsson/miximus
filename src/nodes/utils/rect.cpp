@@ -2,6 +2,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
+
 #include <memory>
 
 namespace {

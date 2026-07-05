@@ -1,10 +1,11 @@
 #pragma once
 #include "logger/logger.hpp"
 
-#include <string_view>
 #include <websocketpp/common/cpp11.hpp>
 #include <websocketpp/logger/basic.hpp>
 #include <websocketpp/logger/levels.hpp>
+
+#include <string_view>
 
 namespace websocketpp::log {
 template <typename concurrency, typename names>

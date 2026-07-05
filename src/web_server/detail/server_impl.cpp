@@ -1,16 +1,18 @@
 #include "web_server/detail/server_impl.hpp"
+
 #include "headers.hpp"
 #include "html.hpp"
 #include "utils/lookup.hpp"
 #include "web_server/templates.hpp"
+
 #include <boost/url/parse.hpp>
 #include <boost/url/url_view.hpp>
+#include <nlohmann/json.hpp>
 
 #include <exception>
-#include <fmt/format.h>
+#include <format>
 #include <functional>
 #include <future>
-#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -105,7 +107,7 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
         return;
     }
 
-    const auto etag          = '"' + std::string(file_it->etag) + '"';
+    const auto etag          = std::format("\"{}\"", file_it->etag);
     const auto if_none_match = con->get_request_header("If-None-Match");
     if (!if_none_match.empty() && if_none_match == etag) {
         con->set_status(status_code::not_modified);
@@ -473,12 +475,12 @@ void web_server_impl::start(uint16_t port, boost::asio::io_context* service)
     std::error_code ec;
     endpoint_.init_asio(service, ec);
     if (ec) {
-        throw std::runtime_error(fmt::format("web_server: init_asio failed: {}", ec.message()));
+        throw std::runtime_error(std::format("web_server: init_asio failed: {}", ec.message()));
     }
 
     endpoint_.listen(port, ec);
     if (ec) {
-        throw std::runtime_error(fmt::format("web_server: listen on port {} failed: {}", port, ec.message()));
+        throw std::runtime_error(std::format("web_server: listen on port {} failed: {}", port, ec.message()));
     }
 
     endpoint_.start_accept(ec);
@@ -487,10 +489,10 @@ void web_server_impl::start(uint16_t port, boost::asio::io_context* service)
         // release the port rather than waiting for the endpoint destructor.
         websocketpp::lib::error_code ignored;
         endpoint_.stop_listening(ignored);
-        throw std::runtime_error(fmt::format("web_server: start_accept failed: {}", ec.message()));
+        throw std::runtime_error(std::format("web_server: start_accept failed: {}", ec.message()));
     }
 
-    endpoint_.get_alog().write(alevel::app, fmt::format("Web server listening on port {}", port));
+    endpoint_.get_alog().write(alevel::app, std::format("Web server listening on port {}", port));
     started_ = true;
 }
 
@@ -521,7 +523,7 @@ void web_server_impl::stop()
             error_code ec;
             endpoint_.close(connection.first, status::going_away, "server shutting down", ec);
             if (ec) {
-                endpoint_.get_alog().write(elevel::rerror, fmt::format("Error closing connection: {}", ec.message()));
+                endpoint_.get_alog().write(elevel::rerror, std::format("Error closing connection: {}", ec.message()));
             }
         }
 

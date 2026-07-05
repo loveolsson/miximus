@@ -1,4 +1,5 @@
 #include "context_logging.hpp"
+
 #include "logger/logger.hpp"
 
 #include <string_view>

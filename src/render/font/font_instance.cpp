@@ -1,4 +1,5 @@
 #include "font_instance.hpp"
+
 #include "render/font/font_loader.hpp"
 #include "render/surface/surface.hpp"
 

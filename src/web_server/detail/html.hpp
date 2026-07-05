@@ -1,5 +1,5 @@
 #pragma once
-#include <fmt/format.h>
+#include <format>
 #include <string>
 
 namespace miximus::web_server::detail {
@@ -32,7 +32,7 @@ inline std::string html_escape(const std::string& s)
 
 inline std::string create_404_body(const std::string& resource)
 {
-    return fmt::format("<!doctype html><html><head>"
+    return std::format("<!doctype html><html><head>"
                        "<title>Error 404 (Resource not found)</title><body>"
                        "<h1>Error 404</h1>"
                        "<p>The requested URL {} was not found on this server.</p>"

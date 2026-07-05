@@ -4,14 +4,13 @@
 #include "tab.hpp"
 
 #include <boost/uuid/detail/sha1.hpp>
-
-#include <fmt/format.h>
 #include <gzip/compress.hpp>
 
 #include <algorithm>
 #include <array>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -63,7 +62,7 @@ int bundle(const std::filesystem::path& src,
     // Iterate the files in the folder
     for (int fi = 0; fi < files.size(); ++fi) {
         const auto& filename  = files[fi];
-        const auto  arr_name  = fmt::format("fileData{}", fi);
+        const auto  arr_name  = std::format("fileData{}", fi);
         auto        unix_name = filename.string();
 
         std::ranges::replace(unix_name, '\\', '/');
@@ -90,12 +89,12 @@ int bundle(const std::filesystem::path& src,
         std::string sha_hex;
         sha_hex.reserve(40);
         for (const auto byte : digest) {
-            sha_hex += fmt::format("{:02x}", byte);
+            sha_hex += std::format("{:02x}", byte);
         }
 
         bundle_sha1.process_bytes(sha_hex.data(), sha_hex.size());
 
-        const auto comment = fmt::format("// File: {} ({} / {} compressed)", unix_name, file_data.size(), arr_size);
+        const auto comment = std::format("// File: {} ({} / {} compressed)", unix_name, file_data.size(), arr_size);
 
         target << comment << '\n';
 
@@ -135,7 +134,7 @@ int bundle(const std::filesystem::path& src,
     std::string bundle_hash;
     bundle_hash.reserve(40);
     for (const auto byte : bundle_digest) {
-        bundle_hash += fmt::format("{:02x}", byte);
+        bundle_hash += std::format("{:02x}", byte);
     }
 
     map << tab(1) << "}, \"" << bundle_hash << "\");" << '\n' << '\n';

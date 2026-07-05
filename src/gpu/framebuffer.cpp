@@ -1,6 +1,8 @@
 #include "framebuffer.hpp"
+
 #include "context.hpp"
 #include "logger/logger.hpp"
+
 #include <memory>
 
 namespace miximus::gpu {

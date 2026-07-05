@@ -1,8 +1,7 @@
 #include "surface.hpp"
 
-#include <glm/glm.hpp>
-
 #include <algorithm>
+#include <glm/glm.hpp>
 #include <memory>
 #include <stdexcept>
 

@@ -1,21 +1,18 @@
 #pragma once
-#include "utils/asio.hpp"
-
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
+#include "utils/asio.hpp"
 #include "utils/flicks.hpp"
 
-#include <optional>
-#include <string_view>
-#include <unordered_set>
-
 #include <FiberPool.hpp>
-
 #include <chrono>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <thread>
+#include <unordered_set>
 
 namespace miximus::core {
 

@@ -1,4 +1,5 @@
 #include "gpu/types.hpp"
+
 #include <nlohmann/json.hpp>
 
 namespace miximus::gpu {

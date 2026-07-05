@@ -1,9 +1,10 @@
 #include "registry.hpp"
+
 #include "logger/logger.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <chrono>
-#include <fmt/format.h>
+#include <format>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -101,7 +102,7 @@ std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
         }
     }
 
-    return fmt::format("{} [{}]", name, id);
+    return std::format("{} [{}]", name, id);
 }
 } // namespace
 

@@ -1,9 +1,11 @@
 #include "app_state.hpp"
+
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "nodes/decklink/registry.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
+
 #include <memory>
 
 using namespace boost::asio;

@@ -1,5 +1,7 @@
 #include "web_server/server.hpp"
+
 #include "web_server/detail/server_impl.hpp"
+
 #include <memory>
 
 namespace miximus::web_server {

@@ -5,7 +5,6 @@
 #include "logger/logger.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
-#include <functional>
 
 #include <nlohmann/json.hpp>
 
@@ -15,6 +14,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -91,18 +91,17 @@ int main(int argc, char* argv[])
     auto log_level     = spdlog::level::info;
     auto settings_path = path(argv[0]).parent_path() / "settings.json";
 
-    for (int i = 1; i < argc; ++i) {
-        const std::string_view param(argv[i]);
-        if (param == "--log-debug") {
-            log_level = spdlog::level::debug;
-        }
+    {
+        const std::vector<std::string_view> arguments(argv + 1, argv + argc);
 
-        if (param == "--log-trace") {
-            log_level = spdlog::level::trace;
-        }
-
-        if (param == "--settings" && i + 1 < argc) {
-            settings_path = argv[++i];
+        for (size_t i = 0; i < arguments.size(); ++i) {
+            if (arguments[i] == "--log-debug") {
+                log_level = spdlog::level::debug;
+            } else if (arguments[i] == "--log-trace") {
+                log_level = spdlog::level::trace;
+            } else if (arguments[i] == "--settings" && i + 1 < arguments.size()) {
+                settings_path = arguments[++i];
+            }
         }
     }
 

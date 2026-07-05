@@ -1,5 +1,7 @@
 #include "font_registry.hpp"
+
 #include "logger/logger.hpp"
+
 #include <memory>
 #include <string_view>
 #include <vector>

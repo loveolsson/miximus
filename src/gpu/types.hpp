@@ -1,7 +1,8 @@
 #pragma once
+#include <nlohmann/json_fwd.hpp>
+
 #include <glm/mat3x3.hpp>
 #include <glm/vec2.hpp>
-#include <nlohmann/json_fwd.hpp>
 
 namespace miximus::gpu {
 using vec2_t  = glm::dvec2;

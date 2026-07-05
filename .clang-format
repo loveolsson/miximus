@@ -1,7 +1,14 @@
 ---
 # TODO BreakBeforeLambdaBody
-# TODO IncludeBlocks
 Language: Cpp
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<(boost|nlohmann|websocketpp|frozen|spdlog|GLFW|glad|stb_image|magic_enum|gzip)'
+    Priority: 2
+  - Regex: '^<'
+    Priority: 3
 AccessModifierOffset: -2
 AlignAfterOpenBracket: Align
 AlignConsecutiveAssignments: true
@@ -61,13 +68,6 @@ ForEachMacros:
   - foreach
   - Q_FOREACH
   - BOOST_FOREACH
-IncludeCategories: 
-  - Regex: '^"(llvm|llvm-c|clang|clang-c)/'
-    Priority: 2
-  - Regex: '^(<|"(gtest|gmock|isl|json)/)'
-    Priority: 3
-  - Regex: '.*'
-    Priority: 1
 IncludeIsMainRegex: '(Test)?$'
 IndentCaseLabels: true
 #IndentPPDirectives: None

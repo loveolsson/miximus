@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/locale/utf.hpp>
+
 #include <string>
 #include <string_view>
 

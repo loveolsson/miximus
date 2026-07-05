@@ -1,4 +1,5 @@
 #include "register_all.hpp"
+
 #include "nodes/composite/register.hpp"
 #include "nodes/debug/register.hpp"
 #include "nodes/decklink/register.hpp"

@@ -3,7 +3,6 @@ add_executable(bundler
 )
 
 find_package(ZLIB REQUIRED)
-find_package(fmt REQUIRED)
 
 
 target_include_directories(bundler PRIVATE
@@ -12,7 +11,6 @@ target_include_directories(bundler PRIVATE
 )
 
 target_link_libraries(bundler
-    fmt::fmt
     ZLIB::ZLIB
     Boost::headers
 )

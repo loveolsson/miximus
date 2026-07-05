@@ -1,4 +1,5 @@
 #include "vertex_array.hpp"
+
 #include "context.hpp"
 
 namespace miximus::gpu {

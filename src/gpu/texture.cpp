@@ -1,4 +1,5 @@
 #include "texture.hpp"
+
 #include "context.hpp"
 
 #include <stdexcept>

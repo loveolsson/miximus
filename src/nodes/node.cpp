@@ -1,7 +1,9 @@
 #include "node.hpp"
+
 #include "core/app_state.hpp"
 #include "interface.hpp"
 #include "validate_option.hpp"
+
 #include <string_view>
 #include <utility>
 

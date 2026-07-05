@@ -1,4 +1,5 @@
 #include "context.hpp"
+
 #include "context_logging.hpp"
 #include "glad.hpp"
 #include "logger/logger.hpp"
@@ -6,13 +7,14 @@
 #include "static_files/files.hpp"
 
 #define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-
 #include "stb_image.h"
+
+#include <GLFW/glfw3.h>
 #include <frozen/map.h>
 
 #include <array>
 #include <chrono>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -57,12 +59,12 @@ GLFWimage load_image(std::string_view filename)
                                        4);
 
     if (img.pixels == nullptr) {
-        throw std::runtime_error(fmt::format("Failed to load logo {}", filename));
+        throw std::runtime_error(std::format("Failed to load logo {}", filename));
     }
 
     if (res_ch != 4) {
         stbi_image_free(img.pixels);
-        throw std::runtime_error(fmt::format("Logo {} is not RGBA", filename));
+        throw std::runtime_error(std::format("Logo {} is not RGBA", filename));
     }
 
     return img;
