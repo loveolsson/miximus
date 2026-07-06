@@ -216,7 +216,7 @@ void decklink_registry_s::uninstall()
     }
 }
 
-decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& name)
+decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(std::string_view name)
 {
     const std::shared_lock lock(device_mutex_);
     auto                   it = inputs_.find(name);
@@ -226,7 +226,7 @@ decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(const std::string& n
     return {};
 }
 
-decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(const std::string& name)
+decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(std::string_view name)
 {
     const std::shared_lock lock(device_mutex_);
     auto                   it = outputs_.find(name);

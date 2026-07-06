@@ -17,7 +17,7 @@ void font_registry_s::scan_fonts()
     FcInit();
     auto config = FcInitLoadConfigAndFonts();
     auto pat    = FcPatternCreate();
-    auto os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, nullptr);
+    auto os     = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_LANG, FC_FILE, FC_INDEX, nullptr);
     auto fs     = FcFontList(config, pat, os);
     for (int i = 0; fs != nullptr && i < fs->nfont; ++i) {
         const FcPattern* font   = fs->fonts[i];
@@ -32,12 +32,17 @@ void font_registry_s::scan_fonts()
             const std::string style_str(reinterpret_cast<const char*>(style));
             std::string       path_str(reinterpret_cast<const char*>(file));
 
+            int fc_index = 0;
+            FcPatternGetInteger(font, FC_INDEX, 0, &fc_index);
+
             font_variant_s v;
-            v.index = 0;
+            v.index = fc_index;
             v.name  = style_str;
             v.path  = std::move(path_str);
 
-            fonts_[family_str].variants.emplace(style_str, std::move(v));
+            auto& font_entry = fonts_[family_str];
+            font_entry.name  = family_str;
+            font_entry.variants.emplace(style_str, std::move(v));
         }
     }
 

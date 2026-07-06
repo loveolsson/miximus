@@ -21,7 +21,7 @@ void font_registry_s::log_fonts()
     }
 }
 
-const font_info_s* font_registry_s::find_font(const std::string& name) const
+const font_info_s* font_registry_s::find_font(std::string_view name) const
 {
     auto it = fonts_.find(name);
     if (it != fonts_.end()) {
@@ -31,7 +31,7 @@ const font_info_s* font_registry_s::find_font(const std::string& name) const
     return nullptr;
 }
 
-const font_variant_s* font_registry_s::find_font_variant(const std::string& name, const std::string& variant) const
+const font_variant_s* font_registry_s::find_font_variant(std::string_view name, std::string_view variant) const
 {
     const auto font = find_font(name);
     if (font == nullptr) {
@@ -58,7 +58,7 @@ std::vector<std::string_view> font_registry_s::get_font_names() const
     return res;
 }
 
-std::vector<std::string_view> font_registry_s::get_font_variant_names(const std::string& name) const
+std::vector<std::string_view> font_registry_s::get_font_variant_names(std::string_view name) const
 {
     std::vector<std::string_view> res;
 

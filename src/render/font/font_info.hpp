@@ -14,8 +14,8 @@ struct font_variant_s
 
 struct font_info_s
 {
-    std::string                           name;
-    std::map<std::string, font_variant_s> variants;
+    std::string                                        name;
+    std::map<std::string, font_variant_s, std::less<>> variants;
 };
 
 } // namespace miximus::render

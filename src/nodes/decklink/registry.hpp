@@ -23,10 +23,10 @@ class decklink_registry_s
     decklink_ptr<IDeckLinkDiscovery>    discovery_;
     std::unique_ptr<discovery_callback> callback_;
 
-    std::shared_mutex                                    device_mutex_;
-    std::map<IDeckLink*, std::string>                    names_;
-    std::map<std::string, decklink_ptr<IDeckLinkInput>>  inputs_;
-    std::map<std::string, decklink_ptr<IDeckLinkOutput>> outputs_;
+    std::shared_mutex                                                 device_mutex_;
+    std::map<IDeckLink*, std::string>                                 names_;
+    std::map<std::string, decklink_ptr<IDeckLinkInput>, std::less<>>  inputs_;
+    std::map<std::string, decklink_ptr<IDeckLinkOutput>, std::less<>> outputs_;
 
     friend class discovery_callback;
 
@@ -36,8 +36,8 @@ class decklink_registry_s
 
     void uninstall();
 
-    decklink_ptr<IDeckLinkInput>  get_input(const std::string& name);
-    decklink_ptr<IDeckLinkOutput> get_output(const std::string& name);
+    decklink_ptr<IDeckLinkInput>  get_input(std::string_view name);
+    decklink_ptr<IDeckLinkOutput> get_output(std::string_view name);
 
     std::vector<std::string> get_input_names();
     std::vector<std::string> get_output_names();

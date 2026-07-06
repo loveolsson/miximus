@@ -7,6 +7,7 @@
 
 #include FT_FREETYPE_H
 
+#include <filesystem>
 #include <string_view>
 
 namespace miximus::render {
@@ -24,10 +25,13 @@ class font_instance_s
     {
         size_t consumed_chars;
         size_t pixels_advanced;
-        bool   new_line;
     };
 
     font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path&, int index);
+    font_instance_s(const font_instance_s&)            = delete;
+    font_instance_s& operator=(const font_instance_s&) = delete;
+    font_instance_s(font_instance_s&&)                 = delete;
+    font_instance_s& operator=(font_instance_s&&)      = delete;
     ~font_instance_s();
 
     void set_size(int size_in_px);

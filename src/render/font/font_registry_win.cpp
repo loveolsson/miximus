@@ -6,15 +6,16 @@
 #include <Shlobj.h>
 #include <Windows.h>
 #include <string_view>
+#include <vector>
 
 namespace miximus::render {
 
 struct init_data_s
 {
-    HDC                                   hdc;
-    std::map<std::string, font_variant_s> files;
-    std::map<std::string, font_info_s>    fonts;
-    font_info_s*                          font;
+    HDC                                                hdc;
+    std::map<std::string, font_variant_s, std::less<>> files;
+    std::map<std::string, font_info_s, std::less<>>    fonts;
+    font_info_s*                                       font;
 };
 
 static std::string wchar_to_string(std::wstring_view wstr)
@@ -37,15 +38,10 @@ static std::string wchar_to_string(std::wstring_view wstr)
 
 static std::string fonts_path()
 {
-    auto str = new wchar_t[MAX_PATH];
-
+    wchar_t str[MAX_PATH] = {};
     SHGetSpecialFolderPathW(0, str, CSIDL_FONTS, FALSE);
-
-    auto res(wchar_to_string(str));
+    auto res = wchar_to_string(str);
     res += '\\';
-
-    delete[] str;
-
     return res;
 }
 
@@ -65,13 +61,14 @@ static void read_registry_fonts(init_data_s* data)
     DWORD maxValueNameSize, maxValueDataSize;
     result = RegQueryInfoKeyW(hKey, 0, 0, 0, 0, 0, 0, 0, &maxValueNameSize, &maxValueDataSize, 0, 0);
     if (result != ERROR_SUCCESS) {
+        RegCloseKey(hKey);
         return;
     }
 
-    DWORD  valueIndex = 0;
-    LPWSTR valueName  = new WCHAR[maxValueNameSize];
-    LPBYTE valueData  = new uint8_t[maxValueDataSize];
-    DWORD  valueNameSize, valueDataSize, valueType;
+    DWORD                valueIndex = 0;
+    std::vector<WCHAR>   valueName(maxValueNameSize + 1); // +1 for null terminator (not counted by RegQueryInfoKeyW)
+    std::vector<uint8_t> valueData(maxValueDataSize);
+    DWORD                valueNameSize, valueDataSize, valueType;
 
     auto path = fonts_path();
 
@@ -79,7 +76,8 @@ static void read_registry_fonts(init_data_s* data)
         valueDataSize = maxValueDataSize;
         valueNameSize = maxValueNameSize;
 
-        result = RegEnumValueW(hKey, valueIndex, valueName, &valueNameSize, 0, &valueType, valueData, &valueDataSize);
+        result = RegEnumValueW(
+            hKey, valueIndex, valueName.data(), &valueNameSize, 0, &valueType, valueData.data(), &valueDataSize);
 
         valueIndex++;
 
@@ -87,8 +85,9 @@ static void read_registry_fonts(init_data_s* data)
             continue;
         }
 
-        std::wstring_view wsValueName(valueName);
-        std::wstring_view wsValueData((wchar_t*)valueData);
+        std::wstring_view wsValueName(valueName.data(), valueNameSize);
+        std::wstring_view wsValueData(reinterpret_cast<const wchar_t*>(valueData.data()),
+                                      valueDataSize / sizeof(WCHAR) - 1);
 
         auto end_pos = wsValueName.find(L" (");
         if (end_pos == std::wstring_view::npos) {
@@ -117,9 +116,6 @@ static void read_registry_fonts(init_data_s* data)
         } while (end_pos != std::wstring_view::npos);
 
     } while (result != ERROR_NO_MORE_ITEMS);
-
-    delete[] valueName;
-    delete[] valueData;
 
     RegCloseKey(hKey);
 }
@@ -184,6 +180,7 @@ void font_registry_s::scan_fonts()
     }
 
     EnumFontFamiliesExW(data.hdc, NULL, font_enum_callback, (LPARAM)&data, 0);
+    ReleaseDC(nullptr, data.hdc);
 
     fonts_ = std::move(data.fonts);
     log_fonts();

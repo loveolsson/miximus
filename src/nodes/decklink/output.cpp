@@ -256,9 +256,9 @@ class callback_s
 
 class node_impl : public node_i
 {
-    decklink_ptr<IDeckLinkOutput>      device_;
-    decklink_ptr<callback_s>           callback_;
-    std::map<std::string, mode_info_s> display_modes_;
+    decklink_ptr<IDeckLinkOutput>                   device_;
+    decklink_ptr<callback_s>                        callback_;
+    std::map<std::string, mode_info_s, std::less<>> display_modes_;
 
     std::unique_ptr<gpu::framebuffer_s> framebuffer_yuv_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_scale_;
