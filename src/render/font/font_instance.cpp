@@ -41,7 +41,7 @@ font_instance_s::flow_info_s font_instance_s::flow_line(std::u32string_view str,
         const char32_t c = str[i];
 
         if (std::iswspace(c) != 0 || i == str.size() - 1) {
-            if (info.pixels_advanced + word_len < width) {
+            if (info.pixels_advanced + word_len < static_cast<size_t>(width)) {
                 info.pixels_advanced += word_len;
                 word_len            = 0;
                 info.consumed_chars = i + 1;

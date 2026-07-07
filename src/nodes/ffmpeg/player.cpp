@@ -26,7 +26,7 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final {}
+    void execute(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final {}
 
     nlohmann::json get_default_options() const final
     {

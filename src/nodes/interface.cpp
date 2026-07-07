@@ -11,7 +11,7 @@ namespace miximus::nodes {
 
 bool interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const
 {
-    if (connections->size() == max_connection_count_) {
+    if (connections->size() == static_cast<size_t>(max_connection_count_)) {
         // This causes a remove_connection action at a later stage
         removed->emplace(removed->end(), connections->front());
     }
@@ -36,8 +36,7 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
         const interface_i* iface = nullptr;
 
         if (auto record = nodes.find(con.from_node); record != nodes.end()) {
-            const auto& node  = record->second.node;
-            const auto& state = record->second.state;
+            const auto& node = record->second.node;
 
             iface = node->find_interface(con.from_interface);
 

@@ -60,7 +60,7 @@ int bundle(const std::filesystem::path& src,
     boost::uuids::detail::sha1 bundle_sha1;
 
     // Iterate the files in the folder
-    for (int fi = 0; fi < files.size(); ++fi) {
+    for (size_t fi = 0; fi < files.size(); ++fi) {
         const auto& filename  = files[fi];
         const auto  arr_name  = std::format("fileData{}", fi);
         auto        unix_name = filename.string();

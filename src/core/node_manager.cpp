@@ -108,8 +108,8 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
     }
 
     // Prime the state with a con_set_t for each interface
-    for (const auto& [id, _] : node->get_interfaces()) {
-        record.state.con_map.emplace(id, nodes::con_set_t{});
+    for (const auto& [iface_id, _] : node->get_interfaces()) {
+        record.state.con_map.emplace(iface_id, nodes::con_set_t{});
     }
 
     record.node = std::move(node);
@@ -135,8 +135,8 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     auto&            node = node_it->second.node;
 
     const auto& ifaces = node->get_interfaces();
-    for (const auto& [id, iface] : ifaces) {
-        const auto& cons = node_it->second.state.con_map.at(id);
+    for (const auto& [iface_id, iface] : ifaces) {
+        const auto& cons = node_it->second.state.con_map.at(iface_id);
         removed_connections.insert(removed_connections.end(), cons.begin(), cons.end());
     }
 
@@ -284,9 +284,9 @@ error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con,
             auto& state = node_it->second.state;
 
             if (auto cons_it = state.con_map.find(iface_name); cons_it != state.con_map.end()) {
-                auto con_it = std::ranges::find(cons_it->second, con);
-                if (con_it != cons_it->second.end()) {
-                    cons_it->second.erase(con_it);
+                auto existing_it = std::ranges::find(cons_it->second, con);
+                if (existing_it != cons_it->second.end()) {
+                    cons_it->second.erase(existing_it);
                 }
             }
         }

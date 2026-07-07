@@ -90,7 +90,7 @@ decklink_ptr<T>::decklink_ptr(REFIID iid, decklink_ptr<U> other)
     if (!other.m_ptr)
         return;
 
-    if (FAILED(other.m_ptr->QueryInterface(iid, (void**)&m_ptr)))
+    if (FAILED(other.m_ptr->QueryInterface(iid, reinterpret_cast<void**>(&m_ptr))))
         m_ptr = nullptr;
 }
 

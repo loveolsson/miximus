@@ -9,7 +9,7 @@
 
 namespace miximus::utils {
 
-static void set_max_thread_priority()
+inline void set_max_thread_priority()
 {
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), HIGH_PRIORITY_CLASS);

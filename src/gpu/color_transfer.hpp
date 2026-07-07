@@ -32,7 +32,7 @@ constexpr mat3 get_color_transfer_from_yuv(color_transfer_e c)
         int white = 235;
         int max   = 255;
 
-        return (float)(1.0 * max / (white - black) * v);
+        return static_cast<float>(1.0f * max / (white - black) * v);
     };
 
     return {
@@ -63,7 +63,7 @@ constexpr mat3 get_color_transfer_to_yuv(color_transfer_e c)
         int white = 235;
         int max   = 255;
 
-        return (float)(1.0 * max / (white - black) * v);
+        return static_cast<float>(1.0f * max / (white - black) * v);
     };
 
     return {

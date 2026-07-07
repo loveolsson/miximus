@@ -49,7 +49,7 @@ if(WIN32)
         glad_gl    
     )
 
-    target_include_directories(decklink PUBLIC
+    target_include_directories(decklink SYSTEM PUBLIC
         ${MIDL_OUTPUT_PATH}
     )
 else()
@@ -68,7 +68,7 @@ else()
         ${DECKLINK_COMMON_SOURCES}
     )
 
-    target_include_directories(decklink PUBLIC 
+    target_include_directories(decklink SYSTEM PUBLIC 
         ${DECKLINK_OS_DIR}/include
         ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/include
     )
@@ -76,6 +76,9 @@ else()
     target_link_libraries(decklink PRIVATE
         glad_gl
     )
+
+    # Suppress warnings from the SDK's own sources — third-party code we can't modify
+    target_compile_options(decklink PRIVATE -w)
 
     target_link_libraries(decklink INTERFACE
         ${DECKLINK_DVP_LIB}

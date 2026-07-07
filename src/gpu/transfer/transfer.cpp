@@ -68,8 +68,8 @@ transfer_i::type_e transfer_i::get_prefered_type()
         const GLubyte*         renderer = glGetString(GL_RENDERER);
         const std::string_view renderer_view(reinterpret_cast<const char*>(renderer));
 
-        const bool has_dvp        = renderer_view.find("Quadro") != std::string_view::npos;
-        const bool has_amd_pinned = gpu::context_s::has_extension("GL_AMD_pinned_memory");
+        [[maybe_unused]] const bool has_dvp        = renderer_view.find("Quadro") != std::string_view::npos;
+        [[maybe_unused]] const bool has_amd_pinned = gpu::context_s::has_extension("GL_AMD_pinned_memory");
 
         // TODO(Love): Implement
 

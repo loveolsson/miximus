@@ -13,13 +13,13 @@ using namespace boost::asio;
 namespace miximus::core {
 
 app_state_s::app_state_s()
-    : font_registry_(render::font_registry_s::create_font_registry())
-    , cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
+    : cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
     , cfg_thread_([this] { cfg_executor_.run(); })
     //    , thread_pool_(std::make_unique<thread_pool_t>(std::max(std::thread::hardware_concurrency(), 3u) - 2u))
     , thread_pool_(std::make_unique<thread_pool_t>(4))
     , ctx_(gpu::context_s::create_unique_context(false, nullptr))
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
+    , font_registry_(render::font_registry_s::create_font_registry())
     , status_registry_(std::make_unique<node_status_registry_s>())
 {
 }

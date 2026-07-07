@@ -79,6 +79,23 @@ endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(submodules)
+
+# Strict warnings — applied only to our own targets, after submodules are added.
+add_compile_options(
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wshadow
+    -Wnon-virtual-dtor
+    -Wold-style-cast
+    -Wcast-align
+    -Woverloaded-virtual
+    -Wnull-dereference
+    -Wdouble-promotion
+    -Wformat=2
+    -Wimplicit-fallthrough
+)
+
 add_subdirectory(src)
 add_subdirectory(static)
 

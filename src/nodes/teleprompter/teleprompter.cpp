@@ -168,7 +168,7 @@ class node_impl : public node_i
 
         if (text_future_.valid()) {
             if (text_future_.wait_for(0ms) == ::future_status::ready) {
-                text_ = std::move(text_future_.get());
+                text_ = text_future_.get();
             } else {
                 return;
             }
@@ -184,11 +184,11 @@ class node_impl : public node_i
             const int total_line_height       = font_size_ + line_height_extra_;
             const int visible_lines_plus_four = ((fb_dim.y + total_line_height - 1) / total_line_height) + 4;
 
-            while (render_lines_.size() < visible_lines_plus_four) {
+            while (render_lines_.size() < static_cast<size_t>(visible_lines_plus_four)) {
                 render_lines_.emplace_back(std::make_unique<line_info_s>());
             }
 
-            while (render_lines_.size() > visible_lines_plus_four) {
+            while (render_lines_.size() > static_cast<size_t>(visible_lines_plus_four)) {
                 auto& rl = render_lines_.back();
                 if (rl->ready.valid()) {
                     rl->ready.get();
@@ -218,7 +218,7 @@ class node_impl : public node_i
          */
         for (int i = -2; i < static_cast<int>(render_lines_.size()) - 2; ++i) {
             const int txt_line_index = static_cast<int>(std::floor(scroll_pos)) + i;
-            if (txt_line_index < 0 || txt_line_index >= text_.lines.size()) {
+            if (txt_line_index < 0 || txt_line_index >= static_cast<int>(text_.lines.size())) {
                 continue;
             }
 

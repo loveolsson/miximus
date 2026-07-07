@@ -77,6 +77,8 @@ struct frame_info_s
     }
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 class callback_s
     : public IDeckLinkVideoOutputCallback
     , public IDeckLinkAudioOutputCallback
@@ -96,12 +98,11 @@ class callback_s
   public:
     callback_s(std::shared_ptr<gpu::context_s> ctx, IDeckLinkOutput* device, mode_info_s mode_info)
         : ctx_(std::move(ctx))
+        , converter_(decklink_registry_s::get_converter())
         , device_(device)
         , mode_info_(mode_info)
-        , converter_(decklink_registry_s::get_converter())
     {
         auto lock = ctx_->get_lock();
-        auto dim  = mode_info_.dim;
 
         IDeckLinkMutableVideoFrame* frame = nullptr;
 
@@ -253,6 +254,7 @@ class callback_s
         return {};
     }
 };
+#pragma GCC diagnostic pop
 
 class node_impl : public node_i
 {
