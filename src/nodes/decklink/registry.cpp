@@ -151,6 +151,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
             log->info("Discovered DeckLink output: \"{}\"", name);
         }
 
+        ++registry_->device_list_version_;
         return S_OK;
     }
 
@@ -167,6 +168,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         registry_->inputs_.erase(name);
         registry_->outputs_.erase(name);
         registry_->names_.erase(it);
+        ++registry_->device_list_version_;
         return S_OK;
     }
 

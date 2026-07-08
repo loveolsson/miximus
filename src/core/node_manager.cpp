@@ -280,15 +280,24 @@ error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con,
     }
 
     auto remove_from_interface = [&](const auto& node_name, const auto& iface_name) {
-        if (auto node_it = nodes_.find(node_name); node_it != nodes_.end()) {
-            auto& state = node_it->second.state;
+        auto node_it = nodes_.find(node_name);
+        if (node_it == nodes_.end()) {
+            _log()->error("Node {} not found when removing connection, lists are out of sync", node_name);
+            return;
+        }
 
-            if (auto cons_it = state.con_map.find(iface_name); cons_it != state.con_map.end()) {
-                auto existing_it = std::ranges::find(cons_it->second, con);
-                if (existing_it != cons_it->second.end()) {
-                    cons_it->second.erase(existing_it);
-                }
-            }
+        auto& con_map = node_it->second.state.con_map;
+        auto  cons_it = con_map.find(iface_name);
+        if (cons_it == con_map.end()) {
+            _log()->error("Interface {} on node {} not found when removing connection, lists are out of sync",
+                          iface_name,
+                          node_name);
+            return;
+        }
+
+        const auto removed_count = std::erase(cons_it->second, con);
+        if (removed_count != 1) {
+            _log()->error("Connection not found in node {} interface {}, lists are out of sync", node_name, iface_name);
         }
     };
 

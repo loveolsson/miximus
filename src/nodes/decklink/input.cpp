@@ -16,6 +16,7 @@
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -227,6 +228,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
     std::optional<frame_info_s>         work_frame_;
+    uint64_t                            last_device_version_{std::numeric_limits<uint64_t>::max()};
 
     output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
@@ -269,13 +271,16 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
-        // Publish available input devices so the UI dropdown can populate.
-        {
-            auto  names = app->decklink_registry()->get_input_names();
-            auto* sr    = app->status_registry();
-            sr->write(id_, "device_names", nlohmann::json(names));
-            sr->write(id_, "connected", device_ != nullptr);
+        auto* sr = app->status_registry();
+
+        // Rebuild device list only when the registry has changed
+        const auto current_version = app->decklink_registry()->get_device_list_version();
+        if (current_version != last_device_version_) {
+            last_device_version_ = current_version;
+            sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_input_names()));
         }
+
+        sr->write(id_, "connected", device_ != nullptr);
 
         if (device_ && callback_) {
             auto pts    = app->frame_info.timestamp;

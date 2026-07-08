@@ -1,6 +1,7 @@
 #pragma once
 #include "wrapper/decklink-sdk/decklink_ptr.hpp"
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <shared_mutex>
@@ -27,6 +28,7 @@ class decklink_registry_s
     std::map<IDeckLink*, std::string>                                 names_;
     std::map<std::string, decklink_ptr<IDeckLinkInput>, std::less<>>  inputs_;
     std::map<std::string, decklink_ptr<IDeckLinkOutput>, std::less<>> outputs_;
+    std::atomic<uint64_t>                                             device_list_version_{0};
 
     friend class discovery_callback;
 
@@ -38,6 +40,8 @@ class decklink_registry_s
 
     decklink_ptr<IDeckLinkInput>  get_input(std::string_view name);
     decklink_ptr<IDeckLinkOutput> get_output(std::string_view name);
+
+    uint64_t get_device_list_version() { return device_list_version_.load(std::memory_order_relaxed); }
 
     std::vector<std::string> get_input_names();
     std::vector<std::string> get_output_names();

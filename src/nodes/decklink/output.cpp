@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -268,6 +269,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::draw_state_s>  draw_state_scale_;
     std::string                         display_mode_str_;
     mode_info_s*                        display_mode_{};
+    uint64_t                            last_device_version_{std::numeric_limits<uint64_t>::max()};
 
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
@@ -365,21 +367,16 @@ class node_impl : public node_i
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
         traits->must_run = true;
+        auto* sr         = app->status_registry();
 
-        // Publish available output devices and display modes for the UI.
-        {
-            auto  names = app->decklink_registry()->get_output_names();
-            auto* sr    = app->status_registry();
-            sr->write(id_, "device_names", nlohmann::json(names));
-
-            std::vector<std::string> mode_names;
-            mode_names.reserve(display_modes_.size());
-            for (const auto& [name, _] : display_modes_) {
-                mode_names.push_back(name);
-            }
-            sr->write(id_, "display_modes", nlohmann::json(mode_names));
-            sr->write(id_, "connected", device_ != nullptr);
+        // Rebuild device list only when the registry has changed
+        const auto current_version = app->decklink_registry()->get_device_list_version();
+        if (current_version != last_device_version_) {
+            last_device_version_ = current_version;
+            sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_output_names()));
         }
+
+        sr->write(id_, "connected", device_ != nullptr);
 
         auto device_name  = state.get_option<std::string>("device_name");
         auto display_mode = state.get_option<std::string>("display_mode");
@@ -395,6 +392,7 @@ class node_impl : public node_i
         } else {
             if (device_) {
                 free_device();
+                sr->write(id_, "display_modes", nlohmann::json::array());
             }
 
             auto& in_use = devices_in_use();
@@ -427,6 +425,15 @@ class node_impl : public node_i
                 }
 
                 itr->Release();
+            }
+
+            {
+                std::vector<std::string> mode_names;
+                mode_names.reserve(display_modes_.size());
+                for (const auto& [name, _] : display_modes_) {
+                    mode_names.push_back(name);
+                }
+                sr->write(id_, "display_modes", nlohmann::json(mode_names));
             }
 
             display_mode_str_ = display_mode;
