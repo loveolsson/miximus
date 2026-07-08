@@ -13,6 +13,7 @@ add_library(nodes
 )
 
 add_subdirectory(decklink)
+add_subdirectory(ndi)
 add_subdirectory(math)
 add_subdirectory(screen)
 add_subdirectory(ffmpeg)

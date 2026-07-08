@@ -1,6 +1,6 @@
 add_library(ndi INTERFACE)
 
-target_include_directories(ndi
+target_include_directories(ndi SYSTEM
 INTERFACE
     ${CMAKE_SOURCE_DIR}/3rd-party/ndi-sdk/include
 )

@@ -3,6 +3,7 @@
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "nodes/decklink/registry.hpp"
+#include "nodes/ndi/registry.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 
@@ -19,6 +20,7 @@ app_state_s::app_state_s()
     , thread_pool_(std::make_unique<thread_pool_t>(4))
     , ctx_(gpu::context_s::create_unique_context(false, nullptr))
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
+    , ndi_registry_(nodes::ndi::ndi_registry_s::create_ndi_registry())
     , font_registry_(render::font_registry_s::create_font_registry())
     , status_registry_(std::make_unique<node_status_registry_s>())
 {
