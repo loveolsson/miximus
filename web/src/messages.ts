@@ -29,6 +29,8 @@ export const enum type_e {
   screen_output = "screen_output",
   decklink_input = "decklink_input",
   decklink_output = "decklink_output",
+  ndi_input = "ndi_input",
+  ndi_output = "ndi_output",
   framebuffer = "framebuffer",
   framebuffer_to_texture = "framebuffer_to_texture",
   teleprompter = "teleprompter",

@@ -97,6 +97,8 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
         return error;
     }
 
+    node->init(id);
+
     nodes::node_record_s record;
     record.state.options = node->get_default_options();
     if (const auto e = node->set_options(record.state.options, options); e != error_e::no_error) {
@@ -398,6 +400,9 @@ void node_manager_s::clear_adapters()
 void node_manager_s::tick_one_frame(app_state_s* app)
 {
     status_registry_ = app->status_registry();
+
+    app->ctx()->make_current();
+
     {
         /**
          * A few things are accomplished by copying the node map here:
@@ -414,11 +419,7 @@ void node_manager_s::tick_one_frame(app_state_s* app)
             }
             for (const auto& id : dirty_nodes_) {
                 if (auto it = nodes_.find(id); it != nodes_.end()) {
-                    const bool is_new = !nodes_copy_.contains(id);
                     nodes_copy_.insert_or_assign(it->first, it->second);
-                    if (is_new) {
-                        it->second.node->init(id, app);
-                    }
                 }
             }
             _log()->info("Updated render graph: {} changed, {} removed", dirty_nodes_.size(), removed_nodes_.size());
@@ -428,8 +429,6 @@ void node_manager_s::tick_one_frame(app_state_s* app)
             lock.unlock();
         }
     }
-
-    app->ctx()->make_current();
 
     app->frame_info.executed_nodes.clear();
 

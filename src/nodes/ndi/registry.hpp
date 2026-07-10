@@ -11,8 +11,8 @@ namespace miximus::nodes::ndi {
 
 class ndi_registry_s
 {
-    void*  finder_{nullptr};
-    bool   initialized_{false};
+    void* finder_{nullptr};
+    bool  initialized_{false};
 
     mutable std::shared_mutex source_mutex_;
     std::vector<std::string>  source_names_;

@@ -1,6 +1,5 @@
 #include "node.hpp"
 
-#include "core/app_state.hpp"
 #include "interface.hpp"
 #include "validate_option.hpp"
 
@@ -10,7 +9,7 @@
 namespace miximus::nodes {
 void node_i::register_interface(const interface_i* iface) { interfaces_.emplace(iface->name(), iface); }
 
-void node_i::init(std::string_view id, core::app_state_s* /*app*/) { id_ = id; }
+void node_i::init(std::string_view id) { id_ = id; }
 
 bool node_i::is_valid_common_option(std::string_view name, nlohmann::json* value)
 {

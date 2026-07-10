@@ -9,6 +9,7 @@ import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
 import { SinusSourceNode } from "./debug";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
+import { NdiInputNode, NdiOutputNode } from "./ndi";
 import { TeleprompterNode } from "./teleprompter";
 import TextNode from "./text";
 
@@ -28,6 +29,8 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(ScreenOutputNode, { category: "Output" });
   editor.registerNodeType(DeckLinkInputNode, { category: "Input" });
   editor.registerNodeType(DeckLinkOutputNode, { category: "Output" });
+  editor.registerNodeType(NdiInputNode, { category: "Input" });
+  editor.registerNodeType(NdiOutputNode, { category: "Output" });
   editor.registerNodeType(TeleprompterNode, { category: "Content" });
   editor.registerNodeType(TextNode, { category: "Content" });
 }

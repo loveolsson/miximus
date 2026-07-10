@@ -36,10 +36,45 @@ class node_i
     };
 
     virtual std::string_view type() const = 0;
-    virtual void             init(std::string_view id, core::app_state_s* app);
-    virtual void             prepare(core::app_state_s*, const node_state_s&, traits_s*) {};
-    virtual void             execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
-    virtual void             complete(core::app_state_s*) {}
+
+    /**
+     * Called once on the config thread immediately after the node is constructed,
+     * while the config lock is held. No GL context is available. Use only for
+     * lightweight one-time setup that does not require the render thread.
+     */
+    virtual void init(std::string_view id);
+
+    /**
+     * Called every tick on the main thread. The main GL context is current.
+     * Nodes may make additional contexts current (e.g. for worker threads) provided
+     * they rewind the context stack before returning. Because the context stack
+     * makes re-entering an already-current context essentially free, nodes can
+     * unconditionally call make_current() if they need the context.
+     */
+    virtual void prepare(core::app_state_s*, const node_state_s&, traits_s*) {};
+
+    /**
+     * Called on the main thread with the main GL context current. Invoked lazily
+     * via dependency resolution — at most once per tick. May be called recursively
+     * from within another node's execute() when resolving interface connections.
+     * Nodes may push/pop additional contexts onto the stack.
+     */
+    virtual void execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
+
+    /**
+     * Called on the main thread with the main GL context current, AFTER
+     * gpu::context_s::finish() — all GPU commands submitted during execute() are
+     * guaranteed complete. Use for readback results or posting data to output
+     * queues. Must not block the main thread (use worker threads for slow I/O).
+     */
+    virtual void complete(core::app_state_s*) {}
+
+    /**
+     * Destructor — always called on the main thread with the main GL context
+     * current (make_current() is now the first call in tick_one_frame, before
+     * the update block that may trigger destruction, and clear_nodes() also
+     * calls make_current() first). GL cleanup is safe from the destructor.
+     */
 
     virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }
     virtual bool           test_option(std::string_view name, nlohmann::json* value) const = 0;

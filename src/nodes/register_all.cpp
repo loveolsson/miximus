@@ -5,6 +5,7 @@
 #include "nodes/decklink/register.hpp"
 #include "nodes/ffmpeg/register.hpp"
 #include "nodes/math/register.hpp"
+#include "nodes/ndi/register.hpp"
 #include "nodes/screen/register.hpp"
 #include "nodes/teleprompter/register.hpp"
 #include "nodes/text/register.hpp"
@@ -18,6 +19,7 @@ void register_all_nodes(constructor_map_t* map)
     utils::register_nodes(map);
     decklink::register_nodes(map);
     ffmpeg::register_nodes(map);
+    ndi::register_nodes(map);
     screen::register_nodes(map);
     teleprompter::register_nodes(map);
     text::register_nodes(map);
