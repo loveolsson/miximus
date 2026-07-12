@@ -147,28 +147,28 @@ void shader_program_s::use() const { glUseProgram(program_); }
 
 void shader_program_s::unuse() { glUseProgram(0); }
 
-void shader_program_s::set_uniform(const std::string& name, const vec2_t& val)
+void shader_program_s::set_uniform(std::string_view name, const vec2_t& val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
         glProgramUniform2f(program_, it->second.loc, static_cast<float>(val.x), static_cast<float>(val.y));
     }
 }
 
-void shader_program_s::set_uniform(const std::string& name, const mat3& val)
+void shader_program_s::set_uniform(std::string_view name, const mat3& val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
         glProgramUniformMatrix3fv(program_, it->second.loc, 1, GL_TRUE, &val[0][0]);
     }
 }
 
-void shader_program_s::set_uniform(const std::string& name, double val)
+void shader_program_s::set_uniform(std::string_view name, double val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
         glProgramUniform1f(program_, it->second.loc, static_cast<float>(val));
     }
 }
 
-void shader_program_s::set_uniform(const std::string& name, int val)
+void shader_program_s::set_uniform(std::string_view name, int val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {
         glProgramUniform1i(program_, it->second.loc, val);

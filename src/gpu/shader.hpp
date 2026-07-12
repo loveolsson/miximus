@@ -1,6 +1,7 @@
 #pragma once
 #include "gpu/glad.hpp"
 #include "gpu/vertex.hpp"
+#include "utils/transparent_string_hash.hpp"
 
 #include <string>
 #include <string_view>
@@ -27,7 +28,7 @@ class shader_program_s
     };
 
     using attr_list_t   = std::vector<attribute_s>;
-    using uniform_map_t = std::unordered_map<std::string, uniform_s>;
+    using uniform_map_t = std::unordered_map<std::string, uniform_s, utils::transparent_string_hash, std::equal_to<>>;
 
     GLuint        program_;
     attr_list_t   attributes_;
@@ -58,10 +59,10 @@ class shader_program_s
     template <typename T>
     void set_vertex_type();
 
-    void set_uniform(const std::string& name, const vec2_t& val);
-    void set_uniform(const std::string& name, const mat3& val);
-    void set_uniform(const std::string& name, double val);
-    void set_uniform(const std::string& name, int val);
+    void set_uniform(std::string_view name, const vec2_t& val);
+    void set_uniform(std::string_view name, const mat3& val);
+    void set_uniform(std::string_view name, double val);
+    void set_uniform(std::string_view name, int val);
 };
 
 template <typename T>

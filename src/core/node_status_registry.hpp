@@ -1,4 +1,6 @@
 #pragma once
+#include "utils/transparent_string_hash.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <mutex>
@@ -17,9 +19,12 @@ class node_status_registry_s
         std::string key;
     };
 
-    mutable std::mutex                              mutex_;
-    std::unordered_map<std::string, nlohmann::json> states_;
-    std::vector<pending_entry_s>                    pending_;
+    using state_map_t =
+        std::unordered_map<std::string, nlohmann::json, utils::transparent_string_hash, std::equal_to<>>;
+
+    mutable std::mutex           mutex_;
+    state_map_t                  states_;
+    std::vector<pending_entry_s> pending_;
 
   public:
     node_status_registry_s()  = default;

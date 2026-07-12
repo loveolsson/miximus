@@ -1,6 +1,7 @@
 #pragma once
 #include "nodes/connection.hpp"
 #include "utils/lookup.hpp"
+#include "utils/transparent_string_hash.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -82,6 +83,6 @@ struct node_record_s
 };
 
 // Map of node records, keyed of node id
-using node_map_t = std::unordered_map<std::string, node_record_s>;
+using node_map_t = std::unordered_map<std::string, node_record_s, utils::transparent_string_hash, std::equal_to<>>;
 
 } // namespace miximus::nodes

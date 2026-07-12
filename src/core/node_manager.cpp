@@ -45,7 +45,7 @@ bool is_connection_circular(const miximus::nodes::node_map_t&   nodes,
             return true;
         }
 
-        const auto node_it = nodes.find(std::string(node_id));
+        const auto node_it = nodes.find(node_id);
         if (node_it == nodes.end()) {
             continue;
         }
@@ -87,7 +87,7 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
 
     const std::string id_str(id);
 
-    if (nodes_.contains(id_str)) {
+    if (nodes_.contains(id)) {
         _log()->warn("Node id {} already in use", id);
         return error_e::duplicate_id;
     }
@@ -127,7 +127,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
 
     _log()->info("Removing node with id {}", id);
 
-    auto node_it = nodes_.find(std::string(id));
+    auto node_it = nodes_.find(id);
     if (node_it == nodes_.end()) {
         _log()->warn("Node with id {} not found", id);
         return error_e::not_found;
@@ -162,7 +162,7 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
 
     const std::string id_str(id);
 
-    auto node_it = nodes_.find(id_str);
+    auto node_it = nodes_.find(id);
     if (node_it == nodes_.end()) {
         _log()->warn("Update node: Id {} not found", id);
         return error_e::not_found;

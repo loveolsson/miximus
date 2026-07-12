@@ -23,7 +23,9 @@ void node_status_registry_s::write(std::string_view node_id, std::string_view ke
 void node_status_registry_s::remove_node(std::string_view node_id)
 {
     std::lock_guard lock(mutex_);
-    states_.erase(std::string(node_id));
+    if (const auto it = states_.find(node_id); it != states_.end()) {
+        states_.erase(it);
+    }
 }
 
 std::vector<std::string> node_status_registry_s::flush()
@@ -50,7 +52,7 @@ nlohmann::json node_status_registry_s::get(std::string_view node_id) const
 {
     std::lock_guard lock(mutex_);
 
-    if (auto it = states_.find(std::string(node_id)); it != states_.end()) {
+    if (auto it = states_.find(node_id); it != states_.end()) {
         return it->second;
     }
 
