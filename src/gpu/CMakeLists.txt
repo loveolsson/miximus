@@ -39,8 +39,8 @@ PRIVATE
 PUBLIC
     glad_gl
     glm::glm
+    cuda
     dvp
 )
 
 add_sanitizers(gpu)
-

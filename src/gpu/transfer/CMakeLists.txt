@@ -8,4 +8,6 @@ PRIVATE
     detail/persistent.cpp
     detail/dvp.hpp
     detail/dvp.cpp
+    detail/cuda.hpp
+    detail/cuda.cpp
 )

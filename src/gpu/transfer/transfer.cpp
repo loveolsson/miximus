@@ -1,5 +1,6 @@
 #include "transfer.hpp"
 
+#include "detail/cuda.hpp"
 #include "detail/dvp.hpp"
 #include "detail/fallback.hpp"
 #include "detail/persistent.hpp"
@@ -100,15 +101,20 @@ void transfer_i::initialize_preferred_type()
         }
     }
 
+    if (detail::cuda_transfer_s::initialize_context()) {
+        getlog("gpu")->info("Transfer: using CUDA/OpenGL interoperability");
+        g_prefered_type = type_e::cuda;
+        return;
+    }
+
     // TODO(Love): Implement AMD pinned memory path
     g_prefered_type = type_e::persistent;
 }
 
 void transfer_i::shutdown()
 {
-    if (g_prefered_type == type_e::dvp) {
-        detail::dvp_transfer_s::shutdown_context();
-    }
+    detail::cuda_transfer_s::shutdown_context();
+    detail::dvp_transfer_s::shutdown_context();
 
     g_prefered_type = type_e::persistent;
     g_initialized   = false;
@@ -123,6 +129,9 @@ transfer_i::create_transfer(transfer_i::type_e type, size_t size, transfer_i::di
 
         case type_e::persistent:
             return std::make_unique<detail::pinned_transfer_s>(size, dir);
+
+        case type_e::cuda:
+            return std::make_unique<detail::cuda_transfer_s>(size, dir);
 
         case type_e::dvp:
             return std::make_unique<detail::dvp_transfer_s>(size, dir);

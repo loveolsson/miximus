@@ -16,6 +16,7 @@ class transfer_i
     {
         basic,
         persistent,
+        cuda,
         dvp,
     };
 
@@ -38,8 +39,8 @@ class transfer_i
     virtual bool wait_for_copy()                  = 0;
 
     static type_e get_prefered_type();
-    // Called during application startup with the root GL context current. The
-    // selected backend remains persistent when optional DVP initialization fails.
+    // Called during application startup with the root GL context current. It
+    // selects DVP, CUDA/OpenGL interop, or the persistent-PBO fallback.
     static void initialize_preferred_type();
     // Called during application shutdown with the root GL context current, after
     // all transfers and registered textures have been destroyed.

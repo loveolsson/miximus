@@ -50,8 +50,9 @@ class node_impl : public node_i
     int                    frame_rate_n_{60};
     int                    frame_rate_d_{1};
 
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
-    std::unique_ptr<gpu::draw_state_s>  draw_state_;
+    std::unique_ptr<gpu::framebuffer_s>              framebuffer_;
+    std::unique_ptr<gpu::draw_state_s>               draw_state_;
+    std::optional<gpu::transfer::transfer_i::type_e> registered_transfer_type_;
 
     utils::frame_queue_s<ndi_frame_s> frames_free_;
     utils::frame_queue_s<ndi_frame_s> frames_pending_;
@@ -160,6 +161,11 @@ class node_impl : public node_i
             sender_ = nullptr;
         }
 
+        if (framebuffer_ && registered_transfer_type_) {
+            gpu::transfer::transfer_i::unregister_texture(*registered_transfer_type_, framebuffer_->texture());
+            registered_transfer_type_.reset();
+        }
+
         sender_name_.clear();
         execute_slot_.reset();
         framebuffer_.reset();
@@ -222,7 +228,12 @@ class node_impl : public node_i
         const auto dim = texture->display_dimensions();
 
         if (!framebuffer_ || framebuffer_->texture()->display_dimensions() != dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
+            if (framebuffer_ && registered_transfer_type_) {
+                gpu::transfer::transfer_i::unregister_texture(*registered_transfer_type_, framebuffer_->texture());
+            }
+            framebuffer_              = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
+            registered_transfer_type_ = gpu::transfer::transfer_i::get_prefered_type();
+            gpu::transfer::transfer_i::register_texture(*registered_transfer_type_, framebuffer_->texture());
         }
 
         // Non-blocking: drop frame if no free slot available.
@@ -241,7 +252,6 @@ class node_impl : public node_i
                 gpu::transfer::transfer_i::create_transfer(gpu::transfer::transfer_i::get_prefered_type(),
                                                            frame_size,
                                                            gpu::transfer::transfer_i::direction_e::gpu_to_cpu);
-            gpu::transfer::transfer_i::register_texture(slot.transfer->type(), framebuffer_->texture());
         }
 
         // Allow GL to render: for DVP, waits for pending DMA reads of this texture to complete.
@@ -291,9 +301,9 @@ class node_impl : public node_i
             return;
         }
 
-        // finish() has been called: all GPU work including glReadPixels is done.
-        // The transfer's glMemoryBarrier (issued in perform_transfer) and the
-        // queue mutex together ensure the worker sees coherent ptr() data.
+        // finish() has been called. Complete any backend-specific asynchronous
+        // readback before exposing the host buffer to the NDI worker.
+        execute_slot_->transfer->wait_for_copy();
         frames_pending_.push_frame(std::move(*execute_slot_));
         execute_slot_.reset();
         cv_.notify_one();
