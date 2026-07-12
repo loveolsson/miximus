@@ -7,7 +7,10 @@ const store = reactive({
 });
 
 export function update_node_status(node_id: string, status: NodeStatus): void {
-  store.statuses[node_id] = status;
+  store.statuses[node_id] = {
+    ...(store.statuses[node_id] ?? {}),
+    ...status,
+  };
 }
 
 export function remove_node_status(node_id: string): void {

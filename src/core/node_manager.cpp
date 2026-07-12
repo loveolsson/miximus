@@ -460,11 +460,10 @@ void node_manager_s::tick_one_frame(app_state_s* app)
     gpu::context_s::rewind_current();
 
     // Broadcast status changes collected during this tick
-    const auto changed_ids = app->status_registry()->flush();
-    for (const auto& id : changed_ids) {
-        const auto status = app->status_registry()->get(id);
+    const auto status_updates = app->status_registry()->flush();
+    for (const auto& update : status_updates) {
         for (auto& adapter : adapters_) {
-            adapter->emit_node_status(id, status);
+            adapter->emit_node_status(update.node_id, update.status);
         }
     }
 }

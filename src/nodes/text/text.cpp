@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -14,8 +15,11 @@
 #include "utils/string_utils.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 
 namespace {
@@ -48,6 +52,8 @@ class node_impl : public node_i
     ::mutex                                  font_mtx_;
     std::unique_ptr<gpu::context_s>          ctx_;
     std::unique_ptr<render::font_instance_s> font_instance_;
+    uint64_t                                 last_font_version_{std::numeric_limits<uint64_t>::max()};
+    std::string                              last_status_font_name_;
 
   public:
     explicit node_impl()
@@ -62,6 +68,21 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
+        const auto font_version      = app->font_registry()->get_font_list_version();
+        const bool font_list_changed = font_version != last_font_version_;
+        const auto font_name         = state.get_option<std::string_view>("font_name");
+
+        if (font_list_changed) {
+            last_font_version_       = font_version;
+            text_info_->needs_update = true;
+            app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_names());
+        }
+        if (font_list_changed || font_name != last_status_font_name_) {
+            last_status_font_name_ = font_name;
+            app->status_registry()->write(
+                id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
+        }
+
         if (!ctx_) {
             ctx_ = gpu::context_s::create_unique_context(false, app->ctx());
         }
@@ -75,7 +96,6 @@ class node_impl : public node_i
 
         // Check if text or font settings have changed
         auto text         = state.get_option<std::string_view>("text");
-        auto font_name    = state.get_option<std::string_view>("font_name");
         auto font_variant = state.get_option<std::string_view>("font_variant");
         auto font_size    = state.get_option<int>("font_size");
 
@@ -102,7 +122,7 @@ class node_impl : public node_i
         {
             const std::unique_lock<::mutex> font_lock(font_mtx_);
 
-            const render::font_variant_s* font_info = nullptr;
+            std::optional<render::font_variant_s> font_info;
 
             spdlog::get("app")->info("Text rendering: '{}' with font '{}' size {}",
                                      text_info_->last_text,
@@ -114,26 +134,26 @@ class node_impl : public node_i
                     app->font_registry()->find_font_variant(text_info_->last_font_name, text_info_->last_font_variant);
             }
 
-            if (font_info == nullptr) {
+            if (!font_info) {
                 // Fallback to Arial Regular
                 font_info = app->font_registry()->find_font_variant("Arial", "Regular");
             }
 
-            if (font_info == nullptr) {
+            if (!font_info) {
                 // Try any available font
                 auto font_names = app->font_registry()->get_font_names();
                 if (!font_names.empty()) {
-                    font_info = app->font_registry()->find_font_variant(std::string(font_names[0]), "Regular");
+                    font_info = app->font_registry()->find_font_variant(font_names[0], "Regular");
                 }
             }
 
-            if (font_info == nullptr) {
+            if (!font_info) {
                 gpu::context_s::rewind_current();
                 return;
             }
 
             // Load font instance
-            font_instance_ = font_loader_->load_font(font_info);
+            font_instance_ = font_loader_->load_font(&*font_info);
             if (!font_instance_) {
                 gpu::context_s::rewind_current();
                 return;

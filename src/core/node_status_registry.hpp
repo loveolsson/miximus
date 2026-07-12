@@ -13,6 +13,14 @@ namespace miximus::core {
 
 class node_status_registry_s
 {
+  public:
+    struct status_update_s
+    {
+        std::string    node_id;
+        nlohmann::json status;
+    };
+
+  private:
     struct pending_entry_s
     {
         std::string node_id;
@@ -45,10 +53,10 @@ class node_status_registry_s
     void remove_node(std::string_view node_id);
 
     /**
-     * Drain pending changes and return the IDs of nodes whose status changed
-     * since the last flush. Called once per tick from tick_one_frame.
+     * Drain pending changes and return per-node status deltas. Multiple writes
+     * to a node during one tick are merged into a single update.
      */
-    std::vector<std::string> flush();
+    std::vector<status_update_s> flush();
 
     /**
      * Return the current status object for a single node (for pull queries).

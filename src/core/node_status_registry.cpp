@@ -2,8 +2,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <unordered_set>
-
 namespace miximus::core {
 
 void node_status_registry_s::write(std::string_view node_id, std::string_view key, nlohmann::json value)
@@ -28,23 +26,33 @@ void node_status_registry_s::remove_node(std::string_view node_id)
     }
 }
 
-std::vector<std::string> node_status_registry_s::flush()
+std::vector<node_status_registry_s::status_update_s> node_status_registry_s::flush()
 {
-    std::vector<pending_entry_s> changed;
-    {
-        std::lock_guard lock(mutex_);
-        changed.swap(pending_);
-    }
+    std::lock_guard lock(mutex_);
 
-    std::unordered_set<std::string> seen;
-    std::vector<std::string>        result;
+    std::vector<status_update_s>                                                             result;
+    std::unordered_map<std::string, size_t, utils::transparent_string_hash, std::equal_to<>> update_indices;
 
-    for (auto& entry : changed) {
-        if (seen.emplace(entry.node_id).second) {
-            result.push_back(std::move(entry.node_id));
+    for (const auto& entry : pending_) {
+        const auto node = states_.find(entry.node_id);
+        if (node == states_.end()) {
+            continue;
         }
+
+        const auto value = node->second.find(entry.key);
+        if (value == node->second.end()) {
+            continue;
+        }
+
+        const auto [index, inserted] = update_indices.try_emplace(entry.node_id, result.size());
+        if (inserted) {
+            result.push_back({entry.node_id, nlohmann::json::object()});
+        }
+
+        result[index->second].status[entry.key] = *value;
     }
 
+    pending_.clear();
     return result;
 }
 

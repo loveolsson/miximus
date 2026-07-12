@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
@@ -16,10 +17,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -67,6 +70,11 @@ class node_impl : public node_i
     int          font_size_{100};
     int          line_height_extra_{70};
     std::string  last_file_path_;
+    std::string  last_font_name_;
+    std::string  last_font_variant_;
+    std::string  last_status_font_name_;
+    uint64_t     last_loaded_font_version_{std::numeric_limits<uint64_t>::max()};
+    uint64_t     last_reported_font_version_{std::numeric_limits<uint64_t>::max()};
 
   public:
     explicit node_impl()
@@ -94,8 +102,22 @@ class node_impl : public node_i
         }
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& /*nodes*/, traits_s* /*traits*/) final
+    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
+        const auto font_version      = app->font_registry()->get_font_list_version();
+        const bool font_list_changed = font_version != last_reported_font_version_;
+        const auto font_name         = state.get_option<std::string_view>("font_name");
+
+        if (font_list_changed) {
+            last_reported_font_version_ = font_version;
+            app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_names());
+        }
+        if (font_list_changed || font_name != last_status_font_name_) {
+            last_status_font_name_ = font_name;
+            app->status_registry()->write(
+                id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
+        }
+
         if (!ctx_) {
             ctx_ = gpu::context_s::create_unique_context(false, app->ctx());
         }
@@ -111,7 +133,10 @@ class node_impl : public node_i
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto file_path = state.get_option<std::string_view>("file_path");
+        auto       file_path    = state.get_option<std::string_view>("file_path");
+        auto       font_name    = state.get_option<std::string_view>("font_name");
+        auto       font_variant = state.get_option<std::string_view>("font_variant");
+        const auto font_size    = state.get_option<int>("font_size", 100);
 
         auto fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
@@ -132,11 +157,21 @@ class node_impl : public node_i
         scroll_pos      = iface_scroll_pos_in_.resolve_value(app, nodes, state, scroll_pos);
 
         const gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
-        const gpu::vec2i_t tx_dim = {fb_dim.x, font_size_ * 2};
+        const gpu::vec2i_t tx_dim = {fb_dim.x, font_size * 2};
 
-        if (file_path != last_file_path_ || fb_dim != last_framebuffer_size) {
-            last_file_path_       = file_path;
-            last_framebuffer_size = fb_dim;
+        const auto font_version      = app->font_registry()->get_font_list_version();
+        const bool font_list_changed = font_version != last_loaded_font_version_;
+        const bool font_changed      = font_name != last_font_name_ || font_variant != last_font_variant_;
+        const bool font_size_changed = font_size != font_size_;
+
+        if (file_path != last_file_path_ || fb_dim != last_framebuffer_size || font_list_changed || font_changed ||
+            font_size_changed) {
+            last_file_path_           = file_path;
+            last_framebuffer_size     = fb_dim;
+            last_font_name_           = font_name;
+            last_font_variant_        = font_variant;
+            font_size_                = font_size;
+            last_loaded_font_version_ = font_version;
 
             for (auto& rl : render_lines_) {
                 rl->line_no = -1;
@@ -148,16 +183,19 @@ class node_impl : public node_i
 
             text_ = {};
 
-            auto font_info = app->font_registry()->find_font_variant("Liberation Sans", "Regular");
-            if (font_info == nullptr) {
+            auto font_info = app->font_registry()->find_font_variant(font_name, font_variant);
+            if (!font_info) {
+                font_info = app->font_registry()->find_font_variant("Liberation Sans", "Regular");
+            }
+            if (!font_info) {
                 font_info = app->font_registry()->find_font_variant("Arial", "Regular");
             }
-            if (font_info == nullptr) {
+            if (!font_info) {
                 return;
             }
 
             auto future =
-                app->thread_pool()->submit(load_file, font_loader_, font_info, last_file_path_, font_size_, fb_dim.x);
+                app->thread_pool()->submit(load_file, font_loader_, *font_info, last_file_path_, font_size_, fb_dim.x);
 
             if (future) {
                 text_future_ = std::move(*future);
@@ -285,7 +323,12 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Teleprompter"},
+            {"name",         "Teleprompter"   },
+            {"file_path",    ""               },
+            {"scroll_pos",   0                },
+            {"font_name",    "Liberation Sans"},
+            {"font_variant", "Regular"        },
+            {"font_size",    100              },
         };
     }
 
@@ -303,13 +346,17 @@ class node_impl : public node_i
             return validate_option<int>(value, 10, 100);
         }
 
+        if (name == "font_name" || name == "font_variant") {
+            return validate_option<std::string>(value);
+        }
+
         return false;
     }
 
     std::string_view type() const final { return "teleprompter"; }
 
     static text_s load_file(const std::shared_ptr<render::font_loader_s>& loader,
-                            const render::font_variant_s*                 font_info,
+                            render::font_variant_s                        font_info,
                             const std::filesystem::path&                  path,
                             int                                           font_size,
                             int                                           width)
@@ -329,7 +376,7 @@ class node_impl : public node_i
             return res;
         }
 
-        res.font = loader->load_font(font_info);
+        res.font = loader->load_font(&font_info);
 
         if (!res.font) {
             return res;
