@@ -16,6 +16,6 @@ enum class error_e
     circular_connection,
 };
 
-constexpr auto error_from_string = enum_from_string<error_e>;
+constexpr std::optional<error_e> error_from_string(std::string_view value) { return enum_from_string<error_e>(value); }
 
 } // namespace miximus

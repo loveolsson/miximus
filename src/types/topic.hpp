@@ -14,6 +14,6 @@ enum class topic_e
     node_status,
 };
 
-constexpr auto topic_from_string = enum_from_string<topic_e>;
+constexpr std::optional<topic_e> topic_from_string(std::string_view value) { return enum_from_string<topic_e>(value); }
 
 } // namespace miximus

@@ -14,6 +14,9 @@ enum class action_e
     error,
 };
 
-constexpr auto action_from_string = enum_from_string<action_e>;
+constexpr std::optional<action_e> action_from_string(std::string_view value)
+{
+    return enum_from_string<action_e>(value);
+}
 
 } // namespace miximus
