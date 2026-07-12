@@ -1,0 +1,169 @@
+# Miximus development guide
+
+## Repository map
+
+- `src/main.cpp`: startup, settings, frame timing, shutdown.
+- `src/core/`: application services, graph management, WebSocket adapter, status.
+- `src/nodes/`: native node groups, interfaces, connection model, validation, registration.
+- `src/gpu/`: OpenGL and transfer infrastructure.
+- `src/render/`: CPU surfaces and fonts.
+- `src/web_server/`: embedded web transport.
+- `src/wrapper/`: CMake targets wrapping system libraries and SDKs.
+- `src/utils/`: reusable low-level utilities.
+- `web/`: Vue/Baklava remote editor.
+- `static/`: build-time web/resource bundling.
+- `resources/`: embedded shaders, images, and settings resources.
+- `3rd-party/`: SDK installations and stable alias symlinks.
+- `submodules/`: source dependencies built with the project.
+
+Read [architecture.md](architecture.md) before changing graph/config/web synchronization. Read [gpu-and-media.md](gpu-and-media.md) before changing GL, transfers, SDK callbacks, registries, or workers.
+
+## Building and running
+
+Requirements include CMake 3.28+, a C++20 compiler, and Node.js 22+ for the web client.
+
+```bash
+cmake -S . -B build
+cmake --build build -j
+```
+
+Run:
+
+```bash
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json]
+```
+
+Build the web client directly when working on it:
+
+```bash
+cd web
+npm install
+npm run build
+```
+
+The native build hashes web sources, rebuilds `web/dist` only when needed, and bundles web output and `resources/` into `static_files`. Web-build failures are reported at the end of the native build.
+
+## Adding or changing a node
+
+A complete node generally requires native and web changes.
+
+### Native side
+
+1. Implement a `nodes::node_i` subclass under `src/nodes/<group>/`.
+2. Store interfaces as members and call `register_interface()` in the constructor.
+3. Implement `type()` with a stable protocol type string.
+4. Implement `get_default_options()` with every persisted option and its canonical default.
+5. Implement `test_option()` using `validate_option<T>()` where possible. Delegate to `node_i::is_valid_common_option()` unless intentionally following an existing exception.
+6. Use `prepare`, `execute`, and `complete` according to the frame lifecycle in [architecture.md](architecture.md).
+7. Add the factory to the group's `register.cpp`.
+8. Add sources to the group's `CMakeLists.txt`.
+9. Ensure the group is invoked from `nodes::register_all_nodes()`.
+
+### Web side
+
+1. Add or update the Baklava definition in `web/src/nodes/`.
+2. Match native type, interface names, option keys, and defaults exactly.
+3. Register new node types in `web/src/nodes/types.ts`.
+4. For a new connection type, update native `interface_type_e`, native conversions, web `interface_types.ts`, and the connection color map.
+5. Use focus-tracking option components for editable values that must not be overwritten while typing.
+6. Use `StatusDropdownInterface` for server-discovered lists and publish the exact status key natively.
+
+The native server remains authoritative; do not solve validation only in the browser.
+
+## Protocol changes
+
+Protocol actions/topics and payloads span:
+
+- `src/types/action.hpp`
+- `src/types/topic.hpp`
+- `src/web_server/`
+- `src/core/adapters/adapter_websocket.cpp`
+- `web/src/messages.ts`
+- `web/src/App.vue`
+- `web/src/server_sync.ts`
+
+Update all applicable layers together. Preserve request token handling, `origin_id` feedback suppression, and the special handling of server-side connection displacement.
+
+## CMake and external libraries
+
+Project targets are composed in the root and `src/**/CMakeLists.txt` files. External libraries are isolated behind wrapper targets under `src/wrapper/`. Follow that pattern rather than adding SDK paths to consumers.
+
+Current wrappers include:
+
+- CUDA via CMake `CUDAToolkit` and `CUDA::cudart`;
+- NVIDIA DVP from `3rd-party/dvp170_linux` or `dvp170_win`;
+- Blackmagic DeckLink SDK through `3rd-party/decklink-sdk`;
+- NDI through `3rd-party/ndi-sdk`;
+- NVIDIA Video Codec SDK through `3rd-party/video-sdk`;
+- system FFmpeg components;
+- stb implementation sources.
+
+CEF remains in the repository but is not enabled by `src/wrapper/CMakeLists.txt`.
+
+The alias paths are symlinks to selected SDK versions. Preserve stable aliases in build files rather than embedding versioned directory names.
+
+Strict warnings apply to project targets after submodules are configured. Third-party sources are isolated and may suppress warnings. Do not globally weaken warnings to accommodate an SDK.
+
+## C++ conventions
+
+- Use C++20 and existing project namespace/layout conventions.
+- Follow the established `_s` suffix for concrete structs/classes and `_i` for interfaces.
+- Prefer RAII and explicit ownership with smart pointers.
+- Use `std::string_view` for non-owning parameters, but do not store it past the owner's lifetime.
+- Ordered string maps use `std::less<>` for heterogeneous lookup.
+- Unordered string maps use `utils::transparent_string_hash` plus `std::equal_to<>` when lookup by view is useful.
+- C++20 does not have heterogeneous `unordered_map::erase(key)`; find by view and erase the iterator.
+- Use `std::format`, not fmt APIs.
+- Use component loggers from `logger/logger.hpp`: `app`, `http`, `gpu`, `nodes`, `decklink`, and `ndi`.
+- Use `error_e` for expected graph/config command failures. Follow existing exception usage for startup and unrecoverable construction failures.
+- Preserve constness and include dependencies explicitly; do not depend on unrelated transitive includes.
+
+## Concurrency and lifetime review
+
+Before adding a thread, callback, or asynchronously refreshed collection, document:
+
+- which thread owns and mutates each object;
+- how values cross threads;
+- what mutex/queue/fence provides ordering;
+- when workers stop and join;
+- whether returned pointers/views remain valid;
+- whether GL context ownership is required at construction/destruction.
+
+Mutable registries should protect collections, return owned values or stable handles, increment an atomic version after refresh, and let render nodes publish expensive lists only after version changes.
+
+## Formatting and validation
+
+There is currently no substantial automated test suite under `src/`. At minimum:
+
+### Native changes
+
+```bash
+clang-format -i <touched C/C++ files>
+cmake --build build -j
+git diff --check
+```
+
+### Web changes
+
+```bash
+cd web
+npx prettier --write <touched files>
+npm run build
+```
+
+The web build runs Vue TypeScript checking and a Vite production build.
+
+For changes involving nodes or the protocol, inspect both native and TypeScript definitions. For DeckLink, NDI, CUDA, DVP, font discovery, or display timing, perform runtime validation on suitable hardware; compilation alone cannot validate behavior.
+
+## Shutdown ordering
+
+Shutdown order is deliberate:
+
+1. Stop the web server and clear adapters.
+2. Save authoritative settings.
+3. Clear nodes with the root GL context current.
+4. Uninstall device discovery.
+5. Shut down CUDA/DVP transfer contexts while root GL is current.
+6. Destroy root GL and stop/join application service threads.
+
+`web_server` is declared after `app_state_s`, so it is destroyed first; websocketpp retains a raw pointer to the app's Asio executor. A five-second watchdog forces exit if teardown hangs. Do not casually reorder these lifetimes.
