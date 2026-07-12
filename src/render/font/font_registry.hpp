@@ -15,12 +15,14 @@ namespace miximus::render {
 
 class font_registry_s
 {
-    std::map<std::string, font_info_s, std::less<>> fonts_;
-    std::atomic<uint64_t>                           font_list_version_{0};
-    mutable std::shared_mutex                       font_mutex_;
+    using font_map_t = std::map<std::string, font_info_s, std::less<>>;
 
-    void log_fonts();
-    void scan_fonts();
+    font_map_t                fonts_;
+    std::atomic<uint64_t>     font_list_version_{0};
+    mutable std::shared_mutex font_mutex_;
+
+    static void       log_fonts(const font_map_t& fonts);
+    static font_map_t scan_fonts();
 
   public:
     font_registry_s();

@@ -163,25 +163,21 @@ static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW
     return 1;
 }
 
-void font_registry_s::scan_fonts()
+font_registry_s::font_map_t font_registry_s::scan_fonts()
 {
-    // Clear existing fonts
-    fonts_.clear();
-
     init_data_s data = {};
     read_registry_fonts(&data);
 
     data.hdc = GetDC(nullptr);
 
     if (data.hdc == nullptr) {
-        return;
+        return {};
     }
 
     EnumFontFamiliesExW(data.hdc, NULL, font_enum_callback, (LPARAM)&data, 0);
     ReleaseDC(nullptr, data.hdc);
 
-    fonts_ = std::move(data.fonts);
-    log_fonts();
+    return std::move(data.fonts);
 }
 
 } // namespace miximus::render

@@ -78,21 +78,22 @@ void ndi_registry_s::discovery_loop()
 
         log->debug("NDI sources changed: {} source(s)", names.size());
 
+        auto                     current_names = names;
+        std::vector<std::string> previous_names;
         {
             const std::unique_lock lock(source_mutex_);
+            previous_names = std::exchange(source_names_, std::move(names));
+        }
 
-            for (const auto& name : names) {
-                if (std::ranges::find(source_names_, name) == source_names_.end()) {
-                    log->info("NDI source found: \"{}\"", name);
-                }
+        for (const auto& name : current_names) {
+            if (std::ranges::find(previous_names, name) == previous_names.end()) {
+                log->info("NDI source found: \"{}\"", name);
             }
-            for (const auto& name : source_names_) {
-                if (std::ranges::find(names, name) == names.end()) {
-                    log->info("NDI source dropped: \"{}\"", name);
-                }
+        }
+        for (const auto& name : previous_names) {
+            if (std::ranges::find(current_names, name) == current_names.end()) {
+                log->info("NDI source dropped: \"{}\"", name);
             }
-
-            source_names_ = std::move(names);
         }
 
         ++source_list_version_;

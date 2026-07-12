@@ -7,10 +7,9 @@
 
 namespace miximus::render {
 
-void font_registry_s::scan_fonts()
+font_registry_s::font_map_t font_registry_s::scan_fonts()
 {
-    // Clear existing fonts
-    fonts_.clear();
+    font_map_t fonts;
 
     FcInit();
     auto config = FcInitLoadConfigAndFonts();
@@ -38,13 +37,11 @@ void font_registry_s::scan_fonts()
             v.name  = style_str;
             v.path  = std::move(path_str);
 
-            auto& font_entry = fonts_[family_str];
+            auto& font_entry = fonts[family_str];
             font_entry.name  = family_str;
             font_entry.variants.emplace(style_str, std::move(v));
         }
     }
-
-    log_fonts();
 
     if (fs != nullptr) {
         FcFontSetDestroy(fs);
@@ -63,6 +60,8 @@ void font_registry_s::scan_fonts()
     }
 
     FcFini();
+
+    return fonts;
 }
 
 } // namespace miximus::render

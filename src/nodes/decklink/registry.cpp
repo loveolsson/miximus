@@ -131,8 +131,6 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
     HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final
     {
-        const std::unique_lock lock(registry_->device_mutex_);
-
         auto log = getlog("decklink");
 
         decklink_ptr device(deckLinkDevice);
@@ -140,14 +138,26 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         auto                          name = get_decklink_name(device);
         decklink_ptr<IDeckLinkInput>  input(IID_IDeckLinkInput, device);
         decklink_ptr<IDeckLinkOutput> output(IID_IDeckLinkOutput, device);
+        const bool                    has_input  = input != nullptr;
+        const bool                    has_output = output != nullptr;
 
-        if (input) {
-            registry_->inputs_.emplace(name, std::move(input));
-            log->info("Discovered DeckLink input: \"{}\"", name);
+        {
+            const std::unique_lock lock(registry_->device_mutex_);
+            registry_->names_.insert_or_assign(deckLinkDevice, name);
+
+            if (input) {
+                registry_->inputs_.insert_or_assign(name, std::move(input));
+            }
+
+            if (output) {
+                registry_->outputs_.insert_or_assign(name, std::move(output));
+            }
         }
 
-        if (output) {
-            registry_->outputs_.emplace(name, std::move(output));
+        if (has_input) {
+            log->info("Discovered DeckLink input: \"{}\"", name);
+        }
+        if (has_output) {
             log->info("Discovered DeckLink output: \"{}\"", name);
         }
 

@@ -166,6 +166,13 @@ class node_impl : public node_i
 
         if (file_path != last_file_path_ || fb_dim != last_framebuffer_size || font_list_changed || font_changed ||
             font_size_changed) {
+            if (text_future_.valid()) {
+                if (text_future_.wait_for(0ms) != ::future_status::ready) {
+                    return;
+                }
+                (void)text_future_.get();
+            }
+
             last_file_path_           = file_path;
             last_framebuffer_size     = fb_dim;
             last_font_name_           = font_name;
@@ -175,10 +182,6 @@ class node_impl : public node_i
 
             for (auto& rl : render_lines_) {
                 rl->line_no = -1;
-            }
-
-            if (text_future_.valid()) {
-                text_future_.get();
             }
 
             text_ = {};
@@ -229,7 +232,10 @@ class node_impl : public node_i
             while (render_lines_.size() > static_cast<size_t>(visible_lines_plus_four)) {
                 auto& rl = render_lines_.back();
                 if (rl->ready.valid()) {
-                    rl->ready.get();
+                    if (rl->ready.wait_for(0ms) != ::future_status::ready) {
+                        break;
+                    }
+                    (void)rl->ready.get();
                 }
 
                 render_lines_.pop_back();
@@ -278,10 +284,6 @@ class node_impl : public node_i
                 continue;
             }
 
-            const std::unique_lock lock(rl->mtx);
-
-            auto texture = rl->surface->texture();
-
             if (rl->ready.valid()) {
                 // Render line has active processing
 
@@ -302,6 +304,9 @@ class node_impl : public node_i
                     continue;
                 }
             }
+
+            const std::unique_lock lock(rl->mtx);
+            auto                   texture = rl->surface->texture();
 
             texture->bind(0);
 

@@ -14,16 +14,21 @@ font_registry_s::font_registry_s() { refresh(); }
 
 void font_registry_s::refresh()
 {
-    const std::unique_lock lock(font_mutex_);
-    scan_fonts();
-    ++font_list_version_;
+    auto fonts = scan_fonts();
+    log_fonts(fonts);
+
+    {
+        const std::unique_lock lock(font_mutex_);
+        fonts_.swap(fonts);
+        ++font_list_version_;
+    }
 }
 
-void font_registry_s::log_fonts()
+void font_registry_s::log_fonts(const font_map_t& fonts)
 {
     auto log = getlog("app");
     log->debug("Found system fonts:");
-    for (const auto& [name, font] : fonts_) {
+    for (const auto& [name, font] : fonts) {
         log->debug("  \"{}\"", name);
 
         for (const auto& [v_name, variant] : font.variants) {
