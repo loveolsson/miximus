@@ -1,6 +1,7 @@
 #include "surface.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
 #include <stdexcept>
@@ -35,40 +36,37 @@ void copy_operation(const SrcT*              src_ptr,
                     gpu::vec2i_t             pos,
                     Op                       op)
 {
-    if (src_pitch < src_dim.x * sizeof(SrcT)) {
+    if (src_dim.x < 0 || src_dim.y < 0 || dst_dim.x < 0 || dst_dim.y < 0) {
+        throw std::length_error("copy_operation called with invalid dimensions");
+    }
+    if (src_pitch < static_cast<size_t>(src_dim.x) * sizeof(SrcT)) {
         throw std::length_error("copy_operation called with invalid pitch");
     }
 
-    const char* src_p = reinterpret_cast<const char*>(src_ptr);
+    const auto src_x = std::max<int64_t>(0, -static_cast<int64_t>(pos.x));
+    const auto src_y = std::max<int64_t>(0, -static_cast<int64_t>(pos.y));
+    const auto dst_x = std::max<int64_t>(0, pos.x);
+    const auto dst_y = std::max<int64_t>(0, pos.y);
 
-    for (int sy = 0; sy < src_dim.y; ++sy) {
-        const int dy = pos.y + sy;
+    const auto width  = std::min(static_cast<int64_t>(src_dim.x) - src_x, static_cast<int64_t>(dst_dim.x) - dst_x);
+    const auto height = std::min(static_cast<int64_t>(src_dim.y) - src_y, static_cast<int64_t>(dst_dim.y) - dst_y);
 
-        if (dy < 0) {
-            continue;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
+    const auto* src_row = reinterpret_cast<const char*>(src_ptr) + (src_y * src_pitch);
+    auto*       dst_row = dst_ptr + (dst_y * dst_dim.x) + dst_x;
+
+    for (int64_t y = 0; y < height; ++y) {
+        const auto* typed_src_row = reinterpret_cast<const SrcT*>(src_row) + src_x;
+
+        for (int64_t x = 0; x < width; ++x) {
+            op(typed_src_row[x], &dst_row[x]);
         }
 
-        if (dy >= dst_dim.y) {
-            break;
-        }
-
-        for (int sx = 0; sx < src_dim.x; ++sx) {
-            const int dx = pos.x + sx;
-            if (dx < 0) {
-                continue;
-            }
-
-            if (dx >= dst_dim.x) {
-                break;
-            }
-
-            const auto& sp = reinterpret_cast<const SrcT*>(src_p)[sx];
-            auto        dp = &dst_ptr[(dst_dim.x * dy) + dx];
-
-            op(sp, dp);
-        }
-
-        src_p += src_pitch;
+        src_row += src_pitch;
+        dst_row += dst_dim.x;
     }
 }
 } // namespace
