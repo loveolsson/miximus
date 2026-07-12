@@ -52,6 +52,9 @@ class node_impl : public node_i
             NDIlib_recv_destroy(recv_);
             recv_ = nullptr;
         }
+        if (transfer_ && upload_texture_) {
+            gpu::transfer::transfer_i::unregister_texture(transfer_->type(), upload_texture_.get());
+        }
         transfer_.reset();
         upload_texture_.reset();
         framebuffer_.reset();
@@ -146,12 +149,16 @@ class node_impl : public node_i
         const size_t       frame_size    = static_cast<size_t>(bytes_per_row) * video_frame.yres;
 
         if (new_dim != current_dim_ || !transfer_) {
+            if (transfer_ && upload_texture_) {
+                gpu::transfer::transfer_i::unregister_texture(transfer_->type(), upload_texture_.get());
+            }
             current_dim_    = new_dim;
             upload_texture_ = std::make_unique<gpu::texture_s>(new_dim, gpu::texture_s::format_e::bgra_u8);
             framebuffer_    = std::make_unique<gpu::framebuffer_s>(new_dim, gpu::texture_s::format_e::rgb_f16);
             transfer_       = gpu::transfer::transfer_i::create_transfer(gpu::transfer::transfer_i::get_prefered_type(),
                                                                    frame_size,
                                                                    gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
+            gpu::transfer::transfer_i::register_texture(transfer_->type(), upload_texture_.get());
         }
 
         // Copy NDI frame into transfer buffer, handling non-tight stride
@@ -191,6 +198,9 @@ class node_impl : public node_i
         draw_state_->draw();
         gpu::texture_s::unbind(0);
         gpu::framebuffer_s::unbind();
+
+        // Signal that GL is done sampling upload_texture; DVP may write again next frame.
+        gpu::transfer::transfer_i::end_texture_use(transfer_->type(), upload_texture_.get());
 
         auto* out_tex = framebuffer_->texture();
         out_tex->generate_mip_maps();

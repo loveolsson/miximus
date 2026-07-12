@@ -18,7 +18,7 @@ class surface_s
     using mono_pixel_t = uint8_t;
 
     surface_s(gpu::vec2i_t dim);
-    ~surface_s() = default;
+    ~surface_s(); // unregisters texture from transfer backend
 
     auto transfer() { return transfer_.get(); }
     auto texture() { return texture_.get(); }

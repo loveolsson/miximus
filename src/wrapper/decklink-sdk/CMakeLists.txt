@@ -8,7 +8,6 @@ set(DECKLINK_COMMON_SOURCES
 if(WIN32) 
     set(DECKLINK_OS_DIR ${DECKLINK_SDK_DIR}/Win)
     find_file(MIDL_FILE DeckLinkAPI.idl PATHS ${DECKLINK_OS_DIR}/include REQUIRED NO_DEFAULT_PATH)
-    find_file(DECKLINK_DVP_LIB dvp_static.lib PATHS ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/lib/x64 REQUIRED NO_DEFAULT_PATH)
 
     set(MIDL_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/Generated)
 
@@ -45,8 +44,7 @@ if(WIN32)
     )
 
     target_link_libraries(decklink PRIVATE
-        ${DECKLINK_DVP_LIB}
-        glad_gl    
+        glad_gl
     )
 
     target_include_directories(decklink SYSTEM PUBLIC
@@ -60,7 +58,6 @@ else()
     endif()
 
     find_file(DECKLINK_SOURCES DeckLinkAPIDispatch.cpp PATHS ${DECKLINK_OS_DIR}/include REQUIRED)
-    find_file(DECKLINK_DVP_LIB libdvp.so.1 PATHS ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/x86_64 REQUIRED)
     find_file(DECKLINK_TRANSFER_SRC VideoFrameTransfer.cpp PATHS ${DECKLINK_OS_DIR}/Samples/LoopThroughWithOpenGLCompositing/ REQUIRED)
 
     add_library(decklink SHARED
@@ -70,7 +67,6 @@ else()
 
     target_include_directories(decklink SYSTEM PUBLIC 
         ${DECKLINK_OS_DIR}/include
-        ${DECKLINK_OS_DIR}/Samples/NVIDIA_GPUDirect/include
     )
 
     target_link_libraries(decklink PRIVATE
@@ -79,8 +75,4 @@ else()
 
     # Suppress warnings from the SDK's own sources — third-party code we can't modify
     target_compile_options(decklink PRIVATE -w)
-
-    target_link_libraries(decklink INTERFACE
-        ${DECKLINK_DVP_LIB}
-    )
 endif()

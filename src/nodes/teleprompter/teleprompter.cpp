@@ -375,6 +375,7 @@ class node_impl : public node_i
             transfer->perform_copy();
             transfer->wait_for_copy();
             transfer->perform_transfer(texture);
+            gpu::transfer::transfer_i::end_texture_use(transfer->type(), texture); // signal DVP done
             texture->generate_mip_maps();
             sync.emplace();
 

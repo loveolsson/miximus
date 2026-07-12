@@ -1,5 +1,6 @@
 #include "fallback.hpp"
 
+#include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 
 namespace miximus::gpu::transfer::detail {
@@ -25,6 +26,18 @@ bool fallback_transfer_s::perform_transfer(texture_s* texture)
         glBindTexture(GL_TEXTURE_2D, id);
         glGetTexImage(GL_TEXTURE_2D, 0, texture->format(), texture->type(), ptr_);
     }
+
+    return true;
+}
+
+bool fallback_transfer_s::perform_transfer(framebuffer_s* fb)
+{
+    // gpu_to_cpu only: synchronous readback from the currently-bound framebuffer.
+    const auto   dims   = fb->texture()->texture_dimensions();
+    const auto   format = fb->texture()->format();
+    const GLenum type   = fb->texture()->type();
+
+    glReadPixels(0, 0, dims.x, dims.y, format, type, ptr_);
 
     return true;
 }

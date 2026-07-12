@@ -80,6 +80,15 @@ context_s::context_s(bool visible, context_s* parent)
 
     std::call_once(glfw_init, []() {
         _log()->debug("Initializing GLFW");
+
+#ifdef __linux__
+        // Force X11/XWayland so we get a GLX context.
+        // This enables DVP (GPU Direct), free borderless-window positioning, and
+        // avoids EGL restrictions. Professional video hardware (DeckLink, Quadro)
+        // requires GLX; the app runs as an XWayland client on Wayland desktops.
+        glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
+
         if (glfwInit() == GLFW_FALSE) {
             throw std::runtime_error("Failed to initialize GLFW");
         }

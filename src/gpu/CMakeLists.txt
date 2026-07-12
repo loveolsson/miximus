@@ -35,10 +35,12 @@ PRIVATE
     glfw
     logger
     stb
+    $<$<PLATFORM_ID:Linux>:GL>   # provides glXGetCurrentContext for DVP EGL detection
 PUBLIC
     glad_gl
     glm::glm
-)   
+    dvp
+)
 
 add_sanitizers(gpu)
 

@@ -2,6 +2,7 @@
 
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
+#include "gpu/transfer/transfer.hpp"
 #include "nodes/decklink/registry.hpp"
 #include "nodes/ndi/registry.hpp"
 #include "render/font/font_loader.hpp"
@@ -24,12 +25,24 @@ app_state_s::app_state_s()
     , font_registry_(render::font_registry_s::create_font_registry())
     , status_registry_(std::make_unique<node_status_registry_s>())
 {
+    // Transfer backend initialization must happen on the root GL context. It is
+    // intentionally part of app startup rather than context construction so a
+    // failed optional backend simply selects the persistent-PBO implementation.
+    ctx_->make_current();
+    gpu::transfer::transfer_i::initialize_preferred_type();
+    gpu::context_s::rewind_current();
 }
 
 app_state_s::~app_state_s()
 {
     decklink_registry_->uninstall();
     cfg_work_ = nullptr;
+
+    // DVP is tied to the root GL context and must be closed before that context
+    // is destroyed. Nodes and their transfers are destroyed before app_state.
+    ctx_->make_current();
+    gpu::transfer::transfer_i::shutdown();
+    gpu::context_s::rewind_current();
     ctx_.reset();
     cfg_executor_.stop();
     cfg_thread_.join();

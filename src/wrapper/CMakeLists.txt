@@ -2,6 +2,7 @@
 set(CMAKE_CXX_CLANG_TIDY "")
 
 #add_subdirectory(cef)
+add_subdirectory(dvp)
 add_subdirectory(decklink-sdk)
 add_subdirectory(ffmpeg)
 add_subdirectory(video-sdk)

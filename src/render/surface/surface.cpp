@@ -15,7 +15,10 @@ surface_s::surface_s(gpu::vec2i_t dim)
 
     texture_  = std::make_unique<gpu::texture_s>(dim, gpu::texture_s::format_e::rgba_f16);
     transfer_ = transfer_i::create_transfer(transfer_i::get_prefered_type(), size, transfer_i::direction_e::cpu_to_gpu);
+    gpu::transfer::transfer_i::register_texture(transfer_->type(), texture_.get());
 }
+
+surface_s::~surface_s() { gpu::transfer::transfer_i::unregister_texture(transfer_->type(), texture_.get()); }
 
 void surface_s::clear(const rgba_pixel_t& color)
 {

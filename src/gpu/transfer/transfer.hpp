@@ -3,6 +3,7 @@
 
 namespace miximus::gpu {
 class texture_s;
+class framebuffer_s;
 
 namespace transfer {
 
@@ -15,6 +16,7 @@ class transfer_i
     {
         basic,
         persistent,
+        dvp,
     };
 
     enum class direction_e
@@ -25,19 +27,27 @@ class transfer_i
 
     virtual ~transfer_i() = default;
 
-    size_t      size() const { return size_; }
-    direction_e direction() const { return direction_; }
+    size_t         size() const { return size_; }
+    direction_e    direction() const { return direction_; }
+    virtual type_e type() const = 0;
 
     void*        ptr() const { return ptr_; }
-    virtual bool perform_copy()               = 0;
-    virtual bool perform_transfer(texture_s*) = 0;
-    virtual bool wait_for_copy()              = 0;
+    virtual bool perform_copy()                   = 0;
+    virtual bool perform_transfer(texture_s*)     = 0;
+    virtual bool perform_transfer(framebuffer_s*) = 0;
+    virtual bool wait_for_copy()                  = 0;
 
     static type_e get_prefered_type();
-    static bool   register_texture(type_e type, gpu::texture_s* texture);
-    static bool   unregister_texture(type_e type, gpu::texture_s* texture);
-    static bool   begin_texture_use(type_e type, gpu::texture_s* texture);
-    static bool   end_texture_use(type_e type, gpu::texture_s* texture);
+    // Called during application startup with the root GL context current. The
+    // selected backend remains persistent when optional DVP initialization fails.
+    static void initialize_preferred_type();
+    // Called during application shutdown with the root GL context current, after
+    // all transfers and registered textures have been destroyed.
+    static void shutdown();
+    static bool register_texture(type_e type, gpu::texture_s* texture);
+    static bool unregister_texture(type_e type, gpu::texture_s* texture);
+    static bool begin_texture_use(type_e type, gpu::texture_s* texture);
+    static bool end_texture_use(type_e type, gpu::texture_s* texture);
 
     static std::unique_ptr<transfer_i> create_transfer(type_e type, size_t size, direction_e dir);
 

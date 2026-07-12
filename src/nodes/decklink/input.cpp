@@ -1,11 +1,13 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
+#include "detail/allocator.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/transfer/transfer.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
@@ -26,49 +28,41 @@ namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace miximus::nodes::decklink;
+using namespace miximus::nodes::decklink::detail;
 using namespace std::chrono_literals;
-
-using texture_ptr_t = std::unique_ptr<gpu::texture_s>;
-
-struct frame_info_s
-{
-    GLuint                       buffer_id{};
-    std::unique_ptr<gpu::sync_s> sync;
-    gpu::vec2i_t                 tx_dim{};
-    gpu::vec2i_t                 src_dim{};
-
-    frame_info_s() = default;
-    ~frame_info_s()
-    {
-        if (buffer_id != 0) {
-            glDeleteBuffers(1, &buffer_id); // Deleting 0 is safe
-        }
-    }
-
-    frame_info_s(const frame_info_s&) = delete;
-    frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
-    frame_info_s& operator=(const frame_info_s&) = delete;
-    frame_info_s& operator=(frame_info_s&& o) noexcept
-    {
-        buffer_id   = o.buffer_id;
-        o.buffer_id = 0;
-        sync        = std::move(o.sync);
-        tx_dim      = o.tx_dim;
-        src_dim     = o.src_dim;
-
-        return *this;
-    }
-};
-
-class node_impl;
 
 auto log() { return getlog("decklink"); }
 
-class callback_s : public IDeckLinkInputCallback
+// A frame that has already been uploaded to a UYUV GPU texture by the callback.
+struct frame_info_s
 {
-    std::atomic_ulong                      ref_count_{1};
+    std::unique_ptr<gpu::texture_s> texture; // 10-bit UYUV, pre-uploaded
+    std::unique_ptr<gpu::sync_s>    sync;
+    gpu::vec2i_t                    tx_dim{};  // texture dimensions (row_bytes/4 x height)
+    gpu::vec2i_t                    src_dim{}; // display dimensions (width x height)
+
+    frame_info_s() = default;
+
+    frame_info_s(const frame_info_s&)                = delete;
+    frame_info_s& operator=(const frame_info_s&)     = delete;
+    frame_info_s(frame_info_s&&) noexcept            = default;
+    frame_info_s& operator=(frame_info_s&&) noexcept = default;
+};
+
+// ─── callback_s ──────────────────────────────────────────────────────────────
+// Implements both IDeckLinkInputCallback (capture events) and
+// IDeckLinkVideoBufferAllocatorProvider (provides our transfer-backed buffers
+// so DeckLink DMA's directly into our memory instead of its own).
+
+class callback_s
+    : public IDeckLinkInputCallback
+    , public IDeckLinkVideoBufferAllocatorProvider
+{
+    std::atomic_ulong ref_count_{1};
+
     std::shared_ptr<gpu::context_s>        ctx_;
     decklink_ptr<IDeckLinkVideoConversion> converter_;
+    decklink_ptr<allocator_s>              allocator_;
 
     utils::frame_queue_s<frame_info_s> frames_rendered_;
     utils::frame_queue_s<frame_info_s> frames_free_;
@@ -81,9 +75,13 @@ class callback_s : public IDeckLinkInputCallback
         : ctx_(std::move(ctx))
         , converter_(decklink_registry_s::get_converter())
     {
+        // Pre-allocate free frame slots (texture will be created lazily on first capture).
         for (int i = 0; i < 5; i++) {
             frames_free_.push_frame({});
         }
+
+        // Allocator for CPU→GPU: DeckLink writes directly into our transfer buffer.
+        allocator_ = make_decklink_ptr<allocator_s>(ctx_, gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
     }
 
     ~callback_s() override
@@ -91,6 +89,15 @@ class callback_s : public IDeckLinkInputCallback
         auto lock = ctx_->get_lock();
         ctx_->make_current();
 
+        // Unregister textures from transfer backend before destroying.
+        for_each_frame([&](frame_info_s& f) {
+            if (f.texture) {
+                gpu::transfer::transfer_i::unregister_texture(gpu::transfer::transfer_i::get_prefered_type(),
+                                                              f.texture.get());
+            }
+        });
+
+        allocator_->destroy_free_transfers();
         frames_rendered_.clear();
         frames_free_.clear();
 
@@ -98,33 +105,38 @@ class callback_s : public IDeckLinkInputCallback
     }
 
     callback_s(const callback_s&)            = delete;
-    callback_s(callback_s&&)                 = delete;
     callback_s& operator=(const callback_s&) = delete;
+    callback_s(callback_s&&)                 = delete;
     callback_s& operator=(callback_s&&)      = delete;
 
-    /**
-     * IUnknown
-     */
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*iid*/, LPVOID* /*ppv*/) final { return E_NOTIMPL; }
+    // ── IDeckLinkVideoBufferAllocatorProvider ────────────────────────────────
 
-    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
-
-    ULONG STDMETHODCALLTYPE Release() final
+    HRESULT STDMETHODCALLTYPE GetVideoBufferAllocator(uint32_t bufferSize,
+                                                      uint32_t /*width*/,
+                                                      uint32_t /*height*/,
+                                                      uint32_t /*rowBytes*/,
+                                                      BMDPixelFormat                  pixelFormat,
+                                                      IDeckLinkVideoBufferAllocator** outAllocator) final
     {
-        const ULONG count = --ref_count_;
-        if (count == 0) {
-            delete this;
+        // Only hand over our allocator for the primary capture format.
+        // Conversion frames (different pixel format) use DeckLink's default.
+        if (pixelFormat != bmdFormat10BitYUV) {
+            *outAllocator = nullptr;
+            return E_NOTIMPL;
         }
-        return count;
+
+        allocator_->set_buffer_size(bufferSize);
+        allocator_->AddRef();
+        *outAllocator = allocator_.get();
+        return S_OK;
     }
 
-    /**
-     * IDeckLinkInputCallback
-     */
-    HRESULT
-    VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame, IDeckLinkAudioInputPacket* /*audioPacket*/) final
+    // ── IDeckLinkInputCallback ───────────────────────────────────────────────
+
+    HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame,
+                                                     IDeckLinkAudioInputPacket* /*audioPacket*/) final
     {
-        auto frame_arrival_time = utils::flicks_now();
+        const auto frame_arrival_time = utils::flicks_now();
 
         if (videoFrame == nullptr) {
             return S_OK;
@@ -141,56 +153,86 @@ class callback_s : public IDeckLinkInputCallback
 
         auto& frame = pop.first->frame;
 
-        const GLsizeiptr row_bytes = videoFrame->GetRowBytes();
-        assert(row_bytes % 4 == 0);
-
-        const gpu::vec2i_t tx_dim{row_bytes / 4, videoFrame->GetHeight()};
+        const GLsizeiptr   row_bytes = videoFrame->GetRowBytes();
+        const gpu::vec2i_t tx_dim{static_cast<int>(row_bytes) / 4, videoFrame->GetHeight()};
         const gpu::vec2i_t src_dim{videoFrame->GetWidth(), tx_dim.y};
 
-        if (frame.buffer_id == 0 || frame.tx_dim != tx_dim || frame.src_dim != src_dim) {
-            glDeleteBuffers(1, &frame.buffer_id); // Deleting 0 is safe
-            glCreateBuffers(1, &frame.buffer_id);
-            glNamedBufferStorage(frame.buffer_id,
-                                 row_bytes * tx_dim.y,
-                                 nullptr,
-                                 static_cast<GLbitfield>(GL_DYNAMIC_STORAGE_BIT) |
-                                     static_cast<GLbitfield>(GL_MAP_WRITE_BIT));
+        // Ensure texture dimensions match.
+        if (!frame.texture || frame.tx_dim != tx_dim) {
+            if (frame.texture) {
+                gpu::transfer::transfer_i::unregister_texture(gpu::transfer::transfer_i::get_prefered_type(),
+                                                              frame.texture.get());
+            }
+            frame.texture = std::make_unique<gpu::texture_s>(tx_dim, gpu::texture_s::format_e::uyuv_u10);
+            gpu::transfer::transfer_i::register_texture(gpu::transfer::transfer_i::get_prefered_type(),
+                                                        frame.texture.get());
             frame.tx_dim  = tx_dim;
             frame.src_dim = src_dim;
         }
 
+        // Try to get the transfer from our allocator (DeckLink wrote directly into it).
         IDeckLinkVideoBuffer* video_buffer = nullptr;
         if (videoFrame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&video_buffer)) == S_OK) {
+            auto* transfer = allocator_s::get_transfer(video_buffer);
+            video_buffer->Release();
+
+            if (transfer != nullptr) {
+                // Allocator path: transfer buffer already has the captured data.
+                // Signals differ per backend: for persistent this copies ptr→PBO,
+                // for CUDA/DVP this is a DMA signal.
+                gpu::transfer::transfer_i::end_texture_use(gpu::transfer::transfer_i::get_prefered_type(),
+                                                           frame.texture.get());
+                transfer->perform_copy();
+                transfer->perform_transfer(frame.texture.get());
+                transfer->wait_for_copy();
+
+                frame.sync = std::make_unique<gpu::sync_s>();
+                frames_rendered_.push_frame(std::move(frame), frame_arrival_time);
+                gpu::context_s::rewind_current();
+                return S_OK;
+            }
+        }
+
+        // Fallback path: DeckLink used its own buffer (e.g. internal conversion frame).
+        // Map the video buffer and copy manually into a GL PBO → texture.
+        if (video_buffer == nullptr) {
+            videoFrame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&video_buffer));
+        }
+
+        if (video_buffer != nullptr) {
             if (video_buffer->StartAccess(bmdBufferAccessRead) == S_OK) {
-                void* src_data = nullptr; // NOLINT(misc-const-correctness)
+                void* src_data = nullptr;
                 video_buffer->GetBytes(&src_data);
-                // Map the buffer to client memory address space
-                void* dst_data = glMapNamedBuffer(frame.buffer_id, GL_WRITE_ONLY);
-                memcpy(dst_data, src_data, row_bytes * tx_dim.y);
-                glUnmapNamedBuffer(frame.buffer_id);
+
+                // Upload directly via glTextureSubImage2D (synchronous fallback).
+                glTextureSubImage2D(frame.texture->id(),
+                                    0,
+                                    0,
+                                    0,
+                                    tx_dim.x,
+                                    tx_dim.y,
+                                    GL_RGBA,
+                                    GL_UNSIGNED_INT_2_10_10_10_REV,
+                                    src_data);
                 video_buffer->EndAccess(bmdBufferAccessRead);
             }
             video_buffer->Release();
         }
 
         frame.sync = std::make_unique<gpu::sync_s>();
-
         frames_rendered_.push_frame(std::move(frame), frame_arrival_time);
-
         gpu::context_s::rewind_current();
         return S_OK;
     }
 
-    HRESULT
-    VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
-                            IDeckLinkDisplayMode*            newDisplayMode,
-                            BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
+    HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
+                                                      IDeckLinkDisplayMode*            newDisplayMode,
+                                                      BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
     {
         if ((notificationEvents & bmdVideoInputDisplayModeChanged) != 0) {
             new_display_mode_      = newDisplayMode->GetDisplayMode();
             frame_field_dominance_ = newDisplayMode->GetFieldDominance();
         }
-
         return S_OK;
     }
 
@@ -207,24 +249,62 @@ class callback_s : public IDeckLinkInputCallback
                 res->sync.reset();
                 frames_free_.push_frame(std::move(*res));
             }
-
             res       = std::move(record.frame);
             timestamp = record.pts;
         }
-
         return res;
     }
 
     BMDDisplayMode get_new_display_mode() { return new_display_mode_.exchange(bmdModeUnknown); }
+
+    // ── IUnknown ─────────────────────────────────────────────────────────────
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    {
+        if (memcmp(&iid, &IID_IDeckLinkVideoBufferAllocatorProvider, sizeof(REFIID)) == 0) {
+            *ppv = static_cast<IDeckLinkVideoBufferAllocatorProvider*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOTIMPL;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() final
+    {
+        const ULONG count = --ref_count_;
+        if (count == 0) {
+            delete this;
+        }
+        return count;
+    }
+
+  private:
+    template <typename Fn>
+    void for_each_frame(Fn&& fn)
+    {
+        // Apply fn to all frames in both queues (used for cleanup).
+        // We access them by draining into a temp vector and restoring.
+        std::vector<frame_info_s>        tmp;
+        decltype(frames_free_)::record_s r;
+        while (frames_free_.pop_frame(&r))
+            tmp.push_back(std::move(r.frame));
+        decltype(frames_rendered_)::record_s rr;
+        while (frames_rendered_.pop_frame(&rr))
+            tmp.push_back(std::move(rr.frame));
+        for (auto& f : tmp)
+            fn(f);
+    }
 };
+
+// ─── node_impl ───────────────────────────────────────────────────────────────
 
 class node_impl : public node_i
 {
-    //    static inline std::unordered_set<IDeckLinkInput*> devices_in_use;
     decklink_ptr<IDeckLinkInput> device_;
     decklink_ptr<callback_s>     callback_;
 
-    std::unique_ptr<gpu::texture_s>     texture_;
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
     std::optional<frame_info_s>         work_frame_;
@@ -249,7 +329,6 @@ class node_impl : public node_i
 
         device_   = nullptr;
         callback_ = nullptr;
-        texture_.reset();
         framebuffer_.reset();
         work_frame_.reset();
     }
@@ -273,7 +352,6 @@ class node_impl : public node_i
     {
         auto* sr = app->status_registry();
 
-        // Rebuild device list only when the registry has changed
         const auto current_version = app->decklink_registry()->get_device_list_version();
         if (current_version != last_device_version_) {
             last_device_version_ = current_version;
@@ -289,9 +367,9 @@ class node_impl : public node_i
 
             auto new_mode = callback_->get_new_display_mode();
             if (new_mode != bmdModeUnknown) {
-                // TODO(Love): Error checking of DeckLink calls
                 device_->PauseStreams();
-                device_->EnableVideoInput(new_mode, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection);
+                device_->EnableVideoInputWithAllocatorProvider(
+                    new_mode, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection, callback_.get());
                 device_->StartStreams();
             }
         }
@@ -313,20 +391,20 @@ class node_impl : public node_i
             device_ = device;
             devices_in_use().emplace(device_.get());
 
-            auto ctx = gpu::context_s::create_shared_context(false, app->ctx());
-
+            auto ctx  = gpu::context_s::create_shared_context(false, app->ctx());
             callback_ = make_decklink_ptr<callback_s>(ctx);
             device_->SetCallback(callback_.get());
 
-            // TODO(Love): Error checking of DeckLink calls
-            device_->EnableVideoInput(bmdModeNTSC, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection);
+            // Use our allocator provider so DeckLink DMA's into our transfer buffers.
+            device_->EnableVideoInputWithAllocatorProvider(
+                bmdModeNTSC, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection, callback_.get());
             device_->StartStreams();
         }
     }
 
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
-        if (!work_frame_) {
+        if (!work_frame_ || !work_frame_->texture) {
             iface_tex_.set_value(framebuffer_ ? framebuffer_->texture() : nullptr);
             return;
         }
@@ -338,23 +416,20 @@ class node_impl : public node_i
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        auto tx_dim  = work_frame_->tx_dim;
-        auto src_dim = work_frame_->src_dim;
+        const auto src_dim = work_frame_->src_dim;
 
-        if (!texture_ || !framebuffer_ || texture_->texture_dimensions() != tx_dim) {
+        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != src_dim) {
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::format_e::rgb_f16);
-            texture_     = std::make_unique<gpu::texture_s>(tx_dim, gpu::texture_s::format_e::uyuv_u10);
         }
 
-        assert(work_frame_->sync);
+        // The UYUV texture was already uploaded in the callback — just wait for the sync.
         if (work_frame_->sync) {
             work_frame_->sync->gpu_wait();
         }
 
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, work_frame_->buffer_id);
-        glTextureSubImage2D(
-            texture_->id(), 0, 0, 0, tx_dim.x, tx_dim.y, GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV, nullptr);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        // Signal the transfer layer that GL is now using the texture.
+        gpu::transfer::transfer_i::begin_texture_use(gpu::transfer::transfer_i::get_prefered_type(),
+                                                     work_frame_->texture.get());
 
         auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2i_t{0, 0});
@@ -369,7 +444,7 @@ class node_impl : public node_i
         glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
 
         framebuffer_->bind();
-        texture_->bind(0);
+        work_frame_->texture->bind(0);
         draw_state_->draw();
         gpu::texture_s::unbind(0);
         gpu::framebuffer_s::unbind();
@@ -385,7 +460,6 @@ class node_impl : public node_i
             work_frame_->sync.reset();
             callback_->push_free_frame(std::move(*work_frame_));
         }
-
         work_frame_.reset();
     }
 
@@ -402,11 +476,9 @@ class node_impl : public node_i
         if (name == "device_name") {
             return validate_option<std::string_view>(value);
         }
-
         if (name == "enabled") {
             return validate_option<bool>(value);
         }
-
         return false;
     }
 
@@ -415,7 +487,5 @@ class node_impl : public node_i
 } // namespace
 
 namespace miximus::nodes::decklink {
-
 std::shared_ptr<node_i> create_input_node() { return std::make_shared<node_impl>(); }
-
 } // namespace miximus::nodes::decklink

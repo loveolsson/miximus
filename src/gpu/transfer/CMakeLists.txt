@@ -6,4 +6,6 @@ PRIVATE
     detail/fallback.cpp
     detail/persistent.hpp
     detail/persistent.cpp
+    detail/dvp.hpp
+    detail/dvp.cpp
 )

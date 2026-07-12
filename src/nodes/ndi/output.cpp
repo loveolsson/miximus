@@ -3,9 +3,9 @@
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
-#include "gpu/glad.hpp"
 #include "gpu/shader.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/transfer/transfer.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
@@ -32,36 +32,15 @@ auto log() { return getlog("ndi"); }
 
 struct ndi_frame_s
 {
-    GLuint        buffer_id{0};
-    void*         ptr{nullptr};
-    gpu::vec2i_t  dim{};
-    utils::flicks pts{};
+    std::unique_ptr<gpu::transfer::transfer_i> transfer;
+    gpu::vec2i_t                               dim{};
+    utils::flicks                              pts{};
 
-    ndi_frame_s() = default;
-    ~ndi_frame_s()
-    {
-        if (ptr != nullptr) {
-            glUnmapNamedBuffer(buffer_id);
-        }
-        if (buffer_id != 0) {
-            glDeleteBuffers(1, &buffer_id);
-        }
-    }
-
-    ndi_frame_s(const ndi_frame_s&)            = delete;
-    ndi_frame_s& operator=(const ndi_frame_s&) = delete;
-
-    ndi_frame_s(ndi_frame_s&& o) noexcept { *this = std::move(o); }
-    ndi_frame_s& operator=(ndi_frame_s&& o) noexcept
-    {
-        buffer_id   = o.buffer_id;
-        o.buffer_id = 0;
-        ptr         = o.ptr;
-        o.ptr       = nullptr;
-        dim         = o.dim;
-        pts         = o.pts;
-        return *this;
-    }
+    ndi_frame_s()                                  = default;
+    ndi_frame_s(const ndi_frame_s&)                = delete;
+    ndi_frame_s& operator=(const ndi_frame_s&)     = delete;
+    ndi_frame_s(ndi_frame_s&&) noexcept            = default;
+    ndi_frame_s& operator=(ndi_frame_s&&) noexcept = default;
 };
 
 class node_impl : public node_i
@@ -82,15 +61,17 @@ class node_impl : public node_i
     std::atomic<bool>       worker_running_{false};
     std::thread             worker_thread_;
 
-    // Slot prepared in execute(), consumed in complete().
+    // Slot prepared in execute(), posted to worker in complete().
     std::optional<ndi_frame_s> execute_slot_;
 
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
     static constexpr int FREE_FRAME_COUNT = 7;
 
-    // Worker thread: no GL context needed — finish() already guarantees the PBO
-    // data is ready. The worker only manages ownership with respect to NDI.
+    // Worker thread: no GL context needed.
+    // Ordering guarantee: complete() runs after finish() (node_manager contract),
+    // and the queue mutex provides the memory barrier between the main thread's
+    // GPU readback and this thread's read of transfer->ptr().
     void worker_loop()
     {
         std::optional<ndi_frame_s> inflight;
@@ -113,16 +94,15 @@ class node_impl : public node_i
             ndi_frame.yres                 = slot.dim.y;
             ndi_frame.FourCC               = NDIlib_FourCC_video_type_BGRA;
             ndi_frame.line_stride_in_bytes = slot.dim.x * 4;
-            ndi_frame.p_data               = static_cast<uint8_t*>(slot.ptr);
+            ndi_frame.p_data               = static_cast<uint8_t*>(slot.transfer->ptr());
             ndi_frame.frame_rate_N         = frame_rate_n_;
             ndi_frame.frame_rate_D         = frame_rate_d_;
             ndi_frame.timestamp            = slot.pts.count() * 10'000'000LL / utils::k_flicks_one_second.count();
 
             // May block briefly to fence the previous async send.
-            // This is the only blocking point, and it is off the main thread.
+            // This is the only blocking point, entirely off the main thread.
             NDIlib_send_send_video_async_v2(sender_, &ndi_frame);
 
-            // The fence above completed: inflight's p_data is no longer held by NDI.
             if (inflight.has_value()) {
                 frames_free_.push_frame(std::move(*inflight));
                 inflight.reset();
@@ -147,7 +127,7 @@ class node_impl : public node_i
 
         NDIlib_send_create_t create{};
         create.p_ndi_name  = name.c_str();
-        create.clock_video = false;
+        create.clock_video = false; // render loop is the clock
         create.clock_audio = false;
 
         sender_ = NDIlib_send_create(&create);
@@ -245,6 +225,7 @@ class node_impl : public node_i
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
         }
 
+        // Non-blocking: drop frame if no free slot available.
         utils::frame_queue_s<ndi_frame_s>::record_s record;
         if (!frames_free_.pop_frame(&record)) {
             return;
@@ -252,30 +233,24 @@ class node_impl : public node_i
 
         auto slot = std::move(record.frame);
 
-        const auto frame_size = static_cast<GLsizeiptr>(dim.x) * dim.y * 4;
-        if (slot.dim != dim || slot.buffer_id == 0) {
-            if (slot.ptr != nullptr) {
-                glUnmapNamedBuffer(slot.buffer_id);
-                slot.ptr = nullptr;
-            }
-            glDeleteBuffers(1, &slot.buffer_id);
-            glCreateBuffers(1, &slot.buffer_id);
-            glNamedBufferStorage(slot.buffer_id,
-                                 frame_size,
-                                 nullptr,
-                                 static_cast<GLbitfield>(GL_MAP_READ_BIT) |
-                                     static_cast<GLbitfield>(GL_DYNAMIC_STORAGE_BIT) |
-                                     static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT));
-            slot.ptr = glMapNamedBufferRange(slot.buffer_id,
-                                             0,
-                                             frame_size,
-                                             static_cast<GLbitfield>(GL_MAP_READ_BIT) |
-                                                 static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT));
+        // Recreate transfer if dimensions changed.
+        const size_t frame_size = static_cast<size_t>(dim.x) * dim.y * 4;
+        if (slot.dim != dim || !slot.transfer) {
             slot.dim = dim;
+            slot.transfer =
+                gpu::transfer::transfer_i::create_transfer(gpu::transfer::transfer_i::get_prefered_type(),
+                                                           frame_size,
+                                                           gpu::transfer::transfer_i::direction_e::gpu_to_cpu);
+            gpu::transfer::transfer_i::register_texture(slot.transfer->type(), framebuffer_->texture());
         }
+
+        // Allow GL to render: for DVP, waits for pending DMA reads of this texture to complete.
+        gpu::transfer::transfer_i::begin_texture_use(slot.transfer->type(), framebuffer_->texture());
 
         slot.pts = app->frame_info.pts;
 
+        // Blit input texture → bgra_u8 framebuffer with vertical flip so that
+        // glReadPixels (bottom-to-top) produces top-to-bottom NDI data.
         if (!draw_state_) {
             draw_state_ = std::make_unique<gpu::draw_state_s>();
             auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
@@ -297,9 +272,13 @@ class node_impl : public node_i
         draw_state_->draw();
         gpu::texture_s::unbind(0);
 
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, slot.buffer_id);
-        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, nullptr);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        // Async readback: transfer reads from the currently-bound framebuffer into
+        // its PBO. finish() (called by node_manager after all execute() calls)
+        // guarantees completion before complete() posts to the worker.
+        slot.transfer->perform_transfer(framebuffer_.get());
+        // perform_transfer handles the glMemoryBarrier and (for persistent) the sync.
+        // No separate glBindBuffer / glReadPixels / glBindBuffer needed.
+
         gpu::framebuffer_s::unbind();
 
         execute_slot_ = std::move(slot);
@@ -312,10 +291,9 @@ class node_impl : public node_i
             return;
         }
 
-        // finish() has been called: PBO is ready. Issue the memory barrier on the
-        // main context so the worker sees coherent data when it reads ptr.
-        glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-
+        // finish() has been called: all GPU work including glReadPixels is done.
+        // The transfer's glMemoryBarrier (issued in perform_transfer) and the
+        // queue mutex together ensure the worker sees coherent ptr() data.
         frames_pending_.push_frame(std::move(*execute_slot_));
         execute_slot_.reset();
         cv_.notify_one();
@@ -324,9 +302,9 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",        "NDI Output"},
-            {"enabled",     true        },
-            {"source_name", ""          },
+            {"name", std::format("NDI Output {}", id_)},
+            {"enabled", true},
+            {"source_name", ""},
         };
     }
 

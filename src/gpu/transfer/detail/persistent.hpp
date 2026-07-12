@@ -15,9 +15,14 @@ class pinned_transfer_s : public transfer_i
     pinned_transfer_s(size_t size, direction_e dir);
     ~pinned_transfer_s();
 
-    bool perform_copy() final;
-    bool perform_transfer(texture_s*) final;
-    bool wait_for_copy() final;
+    type_e type() const final { return type_e::persistent; }
+    bool   perform_copy() final;
+    bool   perform_transfer(texture_s*) final;
+    bool   perform_transfer(framebuffer_s*) final;
+    bool   wait_for_copy() final;
+
+  private:
+    void ensure_read_pbo(GLsizeiptr size);
 };
 
 } // namespace miximus::gpu::transfer::detail
