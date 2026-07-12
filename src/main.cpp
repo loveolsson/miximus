@@ -126,7 +126,8 @@ int main(int argc, char* argv[])
             });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            node_manager.add_adapter(std::make_unique<core::websocket_config_s>(node_manager, *web_server));
+            node_manager.add_adapter(
+                std::make_unique<core::websocket_config_s>(node_manager, *web_server, *app.font_registry()));
 
             app.frame_info.timestamp = utils::flicks_now();
             app.frame_info.pts       = utils::flicks{0};

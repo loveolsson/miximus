@@ -1,4 +1,5 @@
 import EventEmitter from "eventemitter3";
+import type { InjectionKey } from "vue";
 import { action_e, topic_e } from "./messages";
 import type { command_s, error_s, message_s, socket_info_s, subscribe_s } from "./messages";
 
@@ -238,3 +239,5 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.ws?.close();
   }
 }
+
+export const websocket_key: InjectionKey<ws_wrapper> = Symbol("websocket");

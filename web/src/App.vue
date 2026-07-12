@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onUnmounted } from "vue";
+import { ref, nextTick, onUnmounted, provide } from "vue";
 import {
   BaklavaEditor,
   useBaklava,
@@ -27,7 +27,7 @@ import {
 import "@baklavajs/themes/dist/syrup-dark.css";
 import ColoredConnectionWrapper from "./components/ColoredConnectionWrapper.vue";
 
-import { ws_wrapper } from "./websocket";
+import { websocket_key, ws_wrapper } from "./websocket";
 import { register_node_types, register_interface_types } from "./nodes/types";
 import { update_node_status, clear_all_status } from "./nodes/status_store";
 import { useServerSync } from "./server_sync";
@@ -50,6 +50,7 @@ import {
 
 const baklava = useBaklava();
 const ws = new ws_wrapper();
+provide(websocket_key, ws);
 
 register_node_types(baklava.editor);
 register_interface_types(baklava);

@@ -14,6 +14,7 @@ export const enum topic_e {
   add_connection = "add_connection",
   remove_connection = "remove_connection",
   update_node = "update_node",
+  font_registry = "font_registry",
   config = "config",
   node_status = "node_status",
 }
@@ -116,6 +117,11 @@ export interface command_remove_connection_s extends command_s {
 
 export interface command_config_s extends command_s {
   topic: topic_e.config;
+}
+
+export interface command_font_registry_s extends command_s {
+  topic: topic_e.font_registry;
+  command: "refresh";
 }
 
 export interface result_s extends message_s {

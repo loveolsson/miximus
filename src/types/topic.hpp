@@ -10,6 +10,7 @@ enum class topic_e
     add_connection,
     remove_connection,
     update_node,
+    font_registry,
     config,
     node_status,
 };

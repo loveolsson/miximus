@@ -7,6 +7,7 @@ import FocusTrackingNumberComponent from "./options/FocusTrackingNumberOption.vu
 import Vec2Component from "./options/Vec2Option.vue";
 import StatusDropdownComponent from "./options/StatusDropdownOption.vue";
 import NodeStatusComponent from "./options/NodeStatusIndicator.vue";
+import FontRegistryRefreshComponent from "./options/FontRegistryRefreshOption.vue";
 
 /**
  * Text input that blocks server updates while the user is focused,
@@ -70,6 +71,15 @@ export class NodeStatusInterface extends NodeInterface<null> {
     super("Status", null);
     this.nodeData = reactive({ node_id: "" });
     this.setComponent(markRaw(NodeStatusComponent));
+    this.setPort(false);
+  }
+}
+
+/** Application-wide font registry refresh control shown on font-using nodes. */
+export class FontRegistryRefreshInterface extends NodeInterface<null> {
+  constructor() {
+    super("Font Registry", null);
+    this.setComponent(markRaw(FontRegistryRefreshComponent));
     this.setPort(false);
   }
 }
