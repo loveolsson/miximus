@@ -9,5 +9,6 @@ Read [../docs/architecture.md](../docs/architecture.md) and [../docs/development
 - Node-status broadcasts are deltas. Merge them into existing status; config and explicit pulls provide full snapshots.
 - Use `StatusDropdownInterface` for registry-backed lists and match the native status key exactly.
 - Use focus-tracking inputs where server updates must not overwrite active user edits.
+- Use `NumericInterface` for number controls and choose precision, step, and bounds from the value's domain; pixel and font dimensions use integer presentation even when transported as numbers.
 - Register new nodes and interface types centrally in `web/src/nodes/types.ts` and `interface_types.ts`.
 - Format touched TypeScript/Vue files with Prettier and run `npm run build` before handoff.

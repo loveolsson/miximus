@@ -18,6 +18,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <glm/common.hpp>
 #include <memory>
 #include <string>
 #include <thread>
@@ -103,13 +104,15 @@ class node_impl : public node_i
                 render_thread_ = std::thread([state_cap]() mutable { run_render(state_cap); });
             }
 
-            gpu::recti_s rect{};
-            auto         fullscreen   = state.get_option<bool>("fullscreen", false);
-            auto         monitor_name = state.get_option<std::string>("monitor_name");
-            rect.pos.x                = state.get_option<int>("posx", 0);
-            rect.pos.y                = state.get_option<int>("posy", 0);
-            rect.size.x               = state.get_option<int>("sizex", 100);
-            rect.size.y               = state.get_option<int>("sizey", 100);
+            const auto position = state.get_option<gpu::vec2_t>("position", {0, 0});
+            const auto size     = state.get_option<gpu::vec2_t>("size", {100, 100});
+
+            gpu::recti_s rect{
+                .pos  = gpu::vec2i_t(glm::round(position)),
+                .size = gpu::vec2i_t(glm::round(size)),
+            };
+            auto fullscreen   = state.get_option<bool>("fullscreen", false);
+            auto monitor_name = state.get_option<std::string>("monitor_name");
 
             if (fullscreen) {
                 render_state_->ctx->set_fullscreen_monitor(monitor_name, rect);
@@ -188,9 +191,11 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",       "Screen output"},
-            {"enabled",    true           },
-            {"fullscreen", false          },
+            {"name",       "Screen output"      },
+            {"enabled",    true                 },
+            {"fullscreen", false                },
+            {"position",   gpu::vec2_t{0, 0}    },
+            {"size",       gpu::vec2_t{100, 100}},
         };
     }
 
@@ -204,12 +209,20 @@ class node_impl : public node_i
             return validate_option<std::string_view>(value);
         }
 
-        if (name == "posx" || name == "posy") {
-            return validate_option<int>(value);
+        if (name == "position") {
+            if (!validate_option<gpu::vec2_t>(value)) {
+                return false;
+            }
+            *value = glm::round(value->get<gpu::vec2_t>());
+            return true;
         }
 
-        if (name == "sizex" || name == "sizey") {
-            return validate_option<int>(value, 100);
+        if (name == "size") {
+            if (!validate_option<gpu::vec2_t>(value, gpu::vec2_t{100, 100})) {
+                return false;
+            }
+            *value = glm::round(value->get<gpu::vec2_t>());
+            return true;
         }
 
         return false;

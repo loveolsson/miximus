@@ -1,9 +1,11 @@
 import { markRaw, reactive } from "vue";
 import { NodeInterface } from "@baklavajs/core";
 import type { NodeData } from "./status_store";
+import type { NumericOptions } from "./numeric";
+
+export { NumericInterface, type NumericOptions } from "./numeric";
 
 import FocusTrackingStringComponent from "./options/FocusTrackingStringOption.vue";
-import FocusTrackingNumberComponent from "./options/FocusTrackingNumberOption.vue";
 import Vec2Component from "./options/Vec2Option.vue";
 import StatusDropdownComponent from "./options/StatusDropdownOption.vue";
 import NodeStatusComponent from "./options/NodeStatusIndicator.vue";
@@ -22,23 +24,19 @@ export class FocusTrackingStringInterface extends NodeInterface<string> {
 }
 
 /**
- * Number input with the same focus-tracking behaviour as above.
- */
-export class FocusTrackingNumberInterface extends NodeInterface<number> {
-  constructor(name: string, defaultValue = 0) {
-    super(name, defaultValue);
-    this.setComponent(markRaw(FocusTrackingNumberComponent));
-    this.setPort(false);
-  }
-}
-
-/**
  * Two-component vector input.  Has a port by default so it can also
  * receive a connection; the component shows when unconnected.
  */
 export class Vec2Interface extends NodeInterface<[number, number]> {
-  constructor(name: string, defaultValue: [number, number] = [0, 0]) {
+  readonly numericOptions: NumericOptions;
+
+  constructor(
+    name: string,
+    defaultValue: [number, number] = [0, 0],
+    numericOptions: NumericOptions = {},
+  ) {
     super(name, defaultValue);
+    this.numericOptions = numericOptions;
     this.setComponent(markRaw(Vec2Component));
   }
 }

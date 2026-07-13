@@ -61,7 +61,7 @@ A complete node generally requires native and web changes.
 8. Add sources to the group's `CMakeLists.txt`.
 9. Ensure the group is invoked from `nodes::register_all_nodes()`.
 
-Node registration also owns persisted schema evolution. Version 1 is implicit for a factory-only registration. `node_definition_s::migrations` is an append-only vector: element 0 migrates version 1 to 2, element 1 migrates version 2 to 3, and so on. The current schema version is derived from the vector length, so every schema bump necessarily has one ordered migration. Option migrations mutate the options object; input/output interface migrations rename the corresponding endpoint of saved connections. Migrations must throw if their claimed source data cannot be converted safely. Do not bump the schema for implementation-only changes.
+Node registration also owns persisted schema evolution. Version 1 is implicit for a factory-only registration. `node_definition_s::migrations` is an append-only vector: element 0 migrates version 1 to 2, element 1 migrates version 2 to 3, and so on. The current schema version is derived from the vector length, so every schema bump necessarily has one ordered migration. Keep each node's migration chain in a separate `<node>_migrations.hpp/.cpp` pair; a shared file is appropriate for a templated node family with one shared schema. Option migrations mutate the options object; input/output interface migrations rename the corresponding endpoint of saved connections. Migrations must throw if their claimed source data cannot be converted safely. Do not bump the schema for implementation-only changes.
 
 ### Web side
 
@@ -71,6 +71,7 @@ Node registration also owns persisted schema evolution. Version 1 is implicit fo
 4. For a new connection type, update native `interface_type_e`, native conversions, web `interface_types.ts`, and the connection color map.
 5. Use focus-tracking option components for editable values that must not be overwritten while typing.
 6. Use `StatusDropdownInterface` for server-discovered lists and publish the exact status key natively.
+7. Use `NumericInterface` for numeric controls and set its precision, step, and optional bounds according to the domain rather than the JSON/C++ storage type.
 
 The native server remains authoritative; do not solve validation only in the browser.
 

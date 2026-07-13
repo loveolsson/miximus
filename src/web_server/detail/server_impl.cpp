@@ -3,6 +3,7 @@
 #include "headers.hpp"
 #include "html.hpp"
 #include "utils/lookup.hpp"
+#include "web_server/payload.hpp"
 #include "web_server/templates.hpp"
 
 #include <boost/url/parse.hpp>

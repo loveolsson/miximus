@@ -1,104 +1,71 @@
 <template>
-  <div class="dark-num-input">
-    <div class="__name">{{ intf.name }}</div>
-    <div class="__content">
-      <label>x=</label>
-      <input
-        v-model="x"
-        type="number"
-        class="dark-input"
-        style="text-align: right"
-        @blur="doneEdit"
-        @keydown.enter="doneEdit"
-      />
-    </div>
-    <div class="__content">
-      <label>y=</label>
-      <input
-        v-model="y"
-        type="number"
-        class="dark-input"
-        style="text-align: right"
-        @blur="doneEdit"
-        @keydown.enter="doneEdit"
-      />
-    </div>
+  <div class="vec2-input">
+    <div class="vec2-input__name text-truncate" :title="intf.name">{{ intf.name }}</div>
+    <NumericComponent :intf="xInterface" />
+    <NumericComponent :intf="yInterface" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import type { NodeInterface } from "@baklavajs/core";
-import type { AbstractNode } from "@baklavajs/core";
+import { shallowReactive, watch } from "vue";
+import type { AbstractNode, NodeInterface } from "@baklavajs/core";
+import NumericComponent from "./NumericOption.vue";
+import { NumericInterface, type NumericOptions } from "../numeric";
+
+type Vec2NodeInterface = NodeInterface<[number, number]> & {
+  numericOptions: NumericOptions;
+};
 
 const props = defineProps<{
   modelValue: [number, number];
   node: AbstractNode;
-  intf: NodeInterface<[number, number]>;
+  intf: Vec2NodeInterface;
 }>();
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: [number, number]): void;
 }>();
 
-const x = ref(props.modelValue[0]);
-const y = ref(props.modelValue[1]);
+const xInterface = shallowReactive(
+  new NumericInterface("x", props.modelValue[0], props.intf.numericOptions),
+);
+const yInterface = shallowReactive(
+  new NumericInterface("y", props.modelValue[1], props.intf.numericOptions),
+);
+let syncingModel = false;
 
 watch(
   () => props.modelValue,
-  (v) => {
-    x.value = v[0];
-    y.value = v[1];
+  ([x, y]) => {
+    syncingModel = true;
+    xInterface.value = x;
+    yInterface.value = y;
+    syncingModel = false;
   },
+  { flush: "sync" },
 );
 
-function doneEdit() {
-  const nx = typeof x.value === "string" ? parseFloat(x.value) : x.value;
-  const ny = typeof y.value === "string" ? parseFloat(y.value) : y.value;
-  if (!Number.isNaN(nx) && !Number.isNaN(ny)) {
-    emit("update:modelValue", [nx, ny]);
-  }
-}
+watch(
+  [() => xInterface.value, () => yInterface.value],
+  ([x, y]) => {
+    if (!syncingModel && (x !== props.modelValue[0] || y !== props.modelValue[1])) {
+      emit("update:modelValue", [x, y]);
+    }
+  },
+  { flush: "sync" },
+);
 </script>
 
 <style scoped>
-.dark-num-input {
-  display: flex;
-  flex-direction: column;
+.vec2-input {
+  display: grid;
   width: 100%;
-  gap: 2px;
-}
-.__name {
-  color: #ccc;
-  font-size: 0.85em;
-  padding-bottom: 1px;
-}
-.__content {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: 0.25em;
   min-width: 0;
 }
-label {
-  flex: 0 0 auto;
-  color: #aaa;
-  font-size: 0.8em;
-  white-space: nowrap;
-}
-.dark-input {
-  flex: 1;
-  min-width: 0;
-  width: 0; /* overridden by flex-grow; forces it to shrink properly */
-  background: #1a1a2e;
-  border: 1px solid rgba(100, 100, 140, 0.5);
-  color: #e0e0e0;
-  border-radius: 3px;
-  padding: 2px 4px;
+
+.vec2-input__name {
+  color: var(--baklava-node-color-foreground);
   font-size: 0.85em;
-  box-sizing: border-box;
-}
-.dark-input:focus {
-  outline: none;
-  border-color: #5379b5;
 }
 </style>

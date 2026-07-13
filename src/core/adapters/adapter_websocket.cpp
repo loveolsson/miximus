@@ -6,6 +6,8 @@
 #include "web_server/payload.hpp"
 #include "web_server/templates.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <exception>
 #include <functional>
 #include <string_view>

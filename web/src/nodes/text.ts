@@ -5,7 +5,7 @@ import { type_e } from "@/messages";
 import {
   FocusTrackingStringInterface,
   FontRegistryRefreshInterface,
-  FocusTrackingNumberInterface,
+  NumericInterface,
   StatusDropdownInterface,
   Vec2Interface,
 } from "./interfaces";
@@ -15,11 +15,13 @@ const TextNode = defineNode({
   title: "Text",
   inputs: {
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
-    position: () => new Vec2Interface("Position").use(setType, t_vec2),
+    position: () =>
+      new Vec2Interface("Position", [0, 0], { precision: 3, step: 0.001 }).use(setType, t_vec2),
     text: () => new FocusTrackingStringInterface("Text", "Hello World"),
     font_name: () => new StatusDropdownInterface("Font", "font_names"),
     font_variant: () => new StatusDropdownInterface("Variant", "font_variants", "Regular"),
-    font_size: () => new FocusTrackingNumberInterface("Size", 48),
+    font_size: () =>
+      new NumericInterface("Size", 48, { precision: 0, step: 1, min: 1 }).setPort(false),
     refresh_fonts: () => new FontRegistryRefreshInterface(),
   },
   outputs: {
