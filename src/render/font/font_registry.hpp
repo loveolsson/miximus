@@ -13,6 +13,15 @@
 
 namespace miximus::render {
 
+constexpr std::string_view get_default_font_name()
+{
+#ifdef __linux__
+    return "Liberation Sans";
+#else
+    return "Arial";
+#endif
+}
+
 class font_registry_s
 {
     using font_map_t = std::map<std::string, font_info_s, std::less<>>;

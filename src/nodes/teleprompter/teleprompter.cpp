@@ -188,10 +188,7 @@ class node_impl : public node_i
 
             auto font_info = app->font_registry()->find_font_variant(font_name, font_variant);
             if (!font_info) {
-                font_info = app->font_registry()->find_font_variant("Liberation Sans", "Regular");
-            }
-            if (!font_info) {
-                font_info = app->font_registry()->find_font_variant("Arial", "Regular");
+                font_info = app->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
             }
             if (!font_info) {
                 return;
@@ -329,12 +326,12 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",         "Teleprompter"   },
-            {"file_path",    ""               },
-            {"scroll_pos",   0                },
-            {"font_name",    "Liberation Sans"},
-            {"font_variant", "Regular"        },
-            {"font_size",    100              },
+            {"name",         "Teleprompter"                              },
+            {"file_path",    ""                                          },
+            {"scroll_pos",   0                                           },
+            {"font_name",    std::string(render::get_default_font_name())},
+            {"font_variant", "Regular"                                   },
+            {"font_size",    100                                         },
         };
     }
 

@@ -135,8 +135,7 @@ class node_impl : public node_i
             }
 
             if (!font_info) {
-                // Fallback to Arial Regular
-                font_info = app->font_registry()->find_font_variant("Arial", "Regular");
+                font_info = app->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
             }
 
             if (!font_info) {
@@ -265,11 +264,11 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",         "Text"       },
-            {"text",         "Hello World"},
-            {"font_name",    "Arial"      },
-            {"font_variant", "Regular"    },
-            {"font_size",    48           }
+            {"name",         "Text"                                      },
+            {"text",         "Hello World"                               },
+            {"font_name",    std::string(render::get_default_font_name())},
+            {"font_variant", "Regular"                                   },
+            {"font_size",    48                                          }
         };
     }
 
