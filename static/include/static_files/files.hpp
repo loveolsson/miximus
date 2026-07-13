@@ -9,6 +9,8 @@
 #else
 #define LIBRARY_API __declspec(dllimport)
 #endif
+#elif defined(__GNUC__) || defined(__clang__)
+#define LIBRARY_API __attribute__((visibility("default")))
 #else
 #define LIBRARY_API
 #endif
@@ -38,8 +40,8 @@ struct file_map_s
     {
     }
 
-    const file_record_s* get_file(std::string_view filename) const noexcept;
-    const file_record_s& get_file_or_throw(std::string_view filename) const;
+    LIBRARY_API const file_record_s* get_file(std::string_view filename) const noexcept;
+    LIBRARY_API const file_record_s& get_file_or_throw(std::string_view filename) const;
 };
 
 LIBRARY_API extern const file_map_s& get_web_files();

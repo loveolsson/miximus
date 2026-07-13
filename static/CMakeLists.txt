@@ -5,8 +5,9 @@ add_subdirectory(bundler)
 
 set(BUNDLER_NAMESPACE "miximus::static_files")
 
-# Generate hash file to track web directory changes  
+# Generate hash files to track bundled directory changes
 set(WEB_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/web_files.hash")
+set(RESOURCE_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/resource_files.hash")
 
 # Step 1: hash web/src + config files; run `npm run build` only when something changed
 set(WEB_SRC_HASH_FILE    "${CMAKE_CURRENT_BINARY_DIR}/web_src.hash")
@@ -38,6 +39,16 @@ add_custom_target(check_web_files_hash ALL
 
 add_dependencies(check_web_files_hash build_web_if_changed)
 
+add_custom_target(check_resource_files_hash ALL
+  COMMAND ${CMAKE_COMMAND}
+    -DRESOURCE_SOURCE_DIR=${CMAKE_SOURCE_DIR}/resources
+    -DRESOURCE_HASH_FILE=${RESOURCE_HASH_FILE}
+    -DRESOURCE_FILES_CPP=${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/generate_resource_hash.cmake"
+  COMMENT "Checking for resource file changes..."
+  VERBATIM
+)
+
 add_custom_command(
   OUTPUT 
     ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
@@ -58,7 +69,8 @@ add_custom_command(
   ARGS 
     --src ${CMAKE_SOURCE_DIR}/resources/ --dst ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp --namespace ${BUNDLER_NAMESPACE} --mapname get_resource_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS bundler
+  DEPENDS bundler check_resource_files_hash
+  COMMENT "Generating resource_files.cpp from resources/"
 )
 
 add_library(static_files SHARED
@@ -70,6 +82,20 @@ add_library(static_files SHARED
 
 target_include_directories(static_files PUBLIC include)
 target_include_directories(static_files PRIVATE ${CMAKE_SOURCE_DIR}/submodules/gzip-hpp/include)
+
+set_target_properties(static_files PROPERTIES
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN YES
+)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_link_options(static_files PRIVATE
+    "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map"
+  )
+  set_property(TARGET static_files APPEND PROPERTY
+    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.map"
+  )
+endif()
 
 find_package(ZLIB REQUIRED)
 target_link_libraries(static_files ZLIB::ZLIB)

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <vector>
 
@@ -11,6 +12,8 @@ static std::vector<std::filesystem::path> get_file_paths(const std::filesystem::
             res.emplace_back(relative(*dir, root));
         }
     }
+
+    std::ranges::sort(res);
 
     return res;
 }

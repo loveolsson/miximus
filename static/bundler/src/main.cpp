@@ -105,7 +105,7 @@ int bundle(const std::filesystem::path& src,
 
             // Add the bytes in rows of BYTES_PER_LINE (18)
             for (size_t j = 0; (j < BYTES_PER_LINE) && (i < arr_size); ++j, ++i) {
-                target << fmt_u8(compressed[i]) << ", ";
+                target << hex_u8(static_cast<uint8_t>(compressed[i])) << ", ";
             }
 
             target << '\n';

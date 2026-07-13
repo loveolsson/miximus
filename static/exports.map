@@ -1,0 +1,7 @@
+{
+    global:
+        _ZN7miximus12static_files*;
+        _ZNK7miximus12static_files*;
+    local:
+        *;
+};
