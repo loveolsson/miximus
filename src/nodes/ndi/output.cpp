@@ -272,10 +272,7 @@ class node_impl : public node_i
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        framebuffer_->bind();
-        glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0, 0, 0, 0);
-        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
 
         auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2_t{0.0, 0.0});
@@ -293,7 +290,7 @@ class node_impl : public node_i
         // perform_transfer handles the glMemoryBarrier and (for persistent) the sync.
         // No separate glBindBuffer / glReadPixels / glBindBuffer needed.
 
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
 
         execute_slot_ = std::move(slot);
     }

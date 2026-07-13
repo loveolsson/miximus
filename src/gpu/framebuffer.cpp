@@ -42,6 +42,28 @@ framebuffer_s::~framebuffer_s()
 
 void framebuffer_s::bind() const { glBindFramebuffer(GL_FRAMEBUFFER, id_); }
 
+void framebuffer_s::begin_render(load_op_e load_op) const
+{
+    const auto dimensions = texture_->texture_dimensions();
+    begin_render(
+        {
+            .pos = {0, 0},
+              .size = dimensions
+    },
+        load_op);
+}
+
+void framebuffer_s::begin_render(recti_s viewport, load_op_e load_op) const
+{
+    bind();
+    glViewport(viewport.pos.x, viewport.pos.y, viewport.size.x, viewport.size.y);
+
+    if (load_op == load_op_e::clear) {
+        glClearColor(0, 0, 0, 0);
+        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+    }
+}
+
 void framebuffer_s::blit(framebuffer_s* target) const
 {
     if (target == nullptr) {
@@ -53,6 +75,8 @@ void framebuffer_s::blit(framebuffer_s* target) const
     glBlitNamedFramebuffer(
         id_, target->id(), 0, 0, src_dim.x, src_dim.y, 0, 0, dst_dim.x, dst_dim.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
+
+void framebuffer_s::end_render() { unbind(); }
 
 void framebuffer_s::unbind() { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
 

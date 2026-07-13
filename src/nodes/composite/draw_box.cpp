@@ -62,10 +62,7 @@ class node_impl : public node_i
         auto opacity     = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
         opacity          = glm::clamp(opacity, 0.0, 1.0);
 
-        fb->bind();
-
-        auto fb_dim = fb->texture()->texture_dimensions();
-        glViewport(0, 0, fb_dim.x, fb_dim.y);
+        fb->begin_render();
 
         if (!draw_state_) {
             draw_state_ = std::make_unique<gpu::draw_state_s>();
@@ -83,7 +80,7 @@ class node_impl : public node_i
         draw_state_->draw();
         gpu::texture_s::unbind(0);
 
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
     }
 
     nlohmann::json get_default_options() const final

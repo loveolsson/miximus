@@ -189,15 +189,14 @@ class node_impl : public node_i
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        framebuffer_->bind();
-        glViewport(0, 0, current_dim_.x, current_dim_.y);
+        framebuffer_->begin_render();
         upload_texture_->bind(0);
         auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2_t{0.0, 0.0});
         shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
         draw_state_->draw();
         gpu::texture_s::unbind(0);
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
 
         // Signal that GL is done sampling upload_texture; DVP may write again next frame.
         gpu::transfer::transfer_i::end_texture_use(transfer_->type(), upload_texture_.get());

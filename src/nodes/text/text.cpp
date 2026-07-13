@@ -238,7 +238,7 @@ class node_impl : public node_i
         auto shader = draw_state_->get_shader_program();
         shader->set_uniform("opacity", 1.0);
 
-        fb->bind();
+        fb->begin_render();
 
         // Calculate the scale to render text at its natural pixel size
         // Convert surface dimensions to framebuffer coordinates
@@ -257,7 +257,7 @@ class node_impl : public node_i
         draw_state_->draw();
 
         gpu::texture_s::unbind(0);
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
     }
 
     std::string_view type() const final { return "text"; }

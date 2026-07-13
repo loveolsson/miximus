@@ -229,16 +229,7 @@ class callback_s
                 void* src_data = nullptr;
                 video_buffer->GetBytes(&src_data);
 
-                // Upload directly via glTextureSubImage2D (synchronous fallback).
-                glTextureSubImage2D(frame.texture->id(),
-                                    0,
-                                    0,
-                                    0,
-                                    tx_dim.x,
-                                    tx_dim.y,
-                                    GL_RGBA,
-                                    GL_UNSIGNED_INT_2_10_10_10_REV,
-                                    src_data);
+                frame.texture->upload(src_data);
                 video_buffer->EndAccess(bmdBufferAccessRead);
             }
             video_buffer->Release();
@@ -478,15 +469,11 @@ class node_impl : public node_i
         shader->set_uniform("transfer_offset", yuv_conversion_.offset);
         shader->set_uniform("gamut_transfer", gamut_conversion_);
 
-        glViewport(0, 0, src_dim.x, src_dim.y);
-        glClearColor(0, 0, 0, 0);
-        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
-
-        framebuffer_->bind();
+        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
         work_frame_->texture->bind(0);
         draw_state_->draw();
         gpu::texture_s::unbind(0);
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
 
         auto fb_tex = framebuffer_->texture();
         fb_tex->generate_mip_maps();

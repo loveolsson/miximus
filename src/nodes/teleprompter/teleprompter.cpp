@@ -246,15 +246,16 @@ class node_impl : public node_i
         shader->set_uniform("scale", gpu::vec2_t{1, static_cast<double>(tx_dim.y) / fb_dim.y});
         shader->set_uniform("opacity", 1.0);
 
-        fb->bind();
-
         auto px = static_cast<int>(std::round(draw_rect.pos.x * fb_dim.x));
         auto py = static_cast<int>(std::round(draw_rect.pos.y * fb_dim.y));
         auto sx = static_cast<int>(std::round(draw_rect.size.x * fb_dim.x));
         auto sy = static_cast<int>(std::round(draw_rect.size.y * fb_dim.y));
         sx      = std::max(0, sx);
         sy      = std::max(0, sy);
-        glViewport(px, py, sx, sy);
+        fb->begin_render({
+            .pos = {px, py},
+              .size = {sx, sy}
+        });
 
         /**
          * Iterate over render lines, starting 2 lines over visible area, ending 2 lines below
@@ -322,7 +323,7 @@ class node_impl : public node_i
         }
 
         gpu::texture_s::unbind(0);
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
     }
 
     nlohmann::json get_default_options() const final

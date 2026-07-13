@@ -183,12 +183,7 @@ class node_impl : public node_i
 
         frame.fb_size = render_state_->ctx->get_framebuffer_size();
 
-        framebuffer_->bind();
-
-        glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0, 0, 0, 0);
-
-        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
 
         if (texture != nullptr) {
             if (!draw_state_) {
@@ -211,7 +206,7 @@ class node_impl : public node_i
         glBindBuffer(GL_PIXEL_PACK_BUFFER, frame.id);
         glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-        gpu::framebuffer_s::unbind();
+        gpu::framebuffer_s::end_render();
 
         // EXPERIMENT: behaves better on Linux
         // glMemoryBarrierByRegion(GL_TEXTURE_FETCH_BARRIER_BIT);

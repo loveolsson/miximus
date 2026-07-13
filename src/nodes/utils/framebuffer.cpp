@@ -38,12 +38,8 @@ class node_impl : public node_i
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(size, gpu::texture_s::format_e::rgba_f16);
         }
 
-        framebuffer_->bind();
-        auto dim = framebuffer_->texture()->texture_dimensions();
-        glViewport(0, 0, dim.x, dim.y);
-        glClearColor(0, 0, 0, 0);
-        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
-        gpu::framebuffer_s::unbind();
+        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
+        gpu::framebuffer_s::end_render();
 
         iface_fb_.set_value(framebuffer_.get());
     }

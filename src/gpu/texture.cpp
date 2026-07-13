@@ -81,6 +81,11 @@ void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
 
 void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 
+void texture_s::upload(const void* data) const
+{
+    glTextureSubImage2D(id_, 0, 0, 0, texture_dimensions_.x, texture_dimensions_.y, format_, type_, data);
+}
+
 void texture_s::generate_mip_maps() const
 {
     switch (colorspace_) {
