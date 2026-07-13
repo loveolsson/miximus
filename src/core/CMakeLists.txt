@@ -1,6 +1,8 @@
 add_library(app
     app_state.hpp
     app_state.cpp
+    configuration.hpp
+    configuration.cpp
     node_manager.hpp
     node_manager.cpp
     node_status_registry.hpp

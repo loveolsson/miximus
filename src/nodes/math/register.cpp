@@ -10,7 +10,7 @@ std::shared_ptr<node_i> create_lerp_f64_node();
 std::shared_ptr<node_i> create_lerp_vec2_node();
 std::shared_ptr<node_i> create_lerp_rect_node();
 
-void register_nodes(constructor_map_t* map)
+void register_nodes(node_definition_map_t* map)
 {
     // Math nodes
     map->emplace("math_f64", create_math_f64_node);

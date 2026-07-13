@@ -94,7 +94,9 @@ The node manager validates graph mutations. It:
 
 Each node supplies `get_default_options()` and validates updates in `test_option()`. `node_i::set_options()` starts from defaults, accepts common options or node-specific validated keys, and stores sanitized values. Common options include the display name and editor position.
 
-The persisted settings JSON contains node IDs/types/options and connections. Runtime status is returned with config responses for client initialization but is not persisted as node options.
+The persisted settings JSON is owned by `core::configuration_s`. Its JSON load/serialization API is separate from the file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version` plus node IDs, types, per-node schema versions, options, and connections. Runtime status is added only to client snapshots and is not written to disk.
+
+Unversioned documents and nodes are the version 1 baseline. When a node schema changes, its registered transitions migrate the options JSON in place. Connections replay the output-interface migrations for their source node and the input-interface migrations for their destination node over the same version range. Migration completes before the existing node and connection construction paths are called; any missing transition or construction error aborts startup.
 
 `main.cpp` loads settings before installing adapters so the initial import does not broadcast mutation events. On shutdown it removes adapters, saves the authoritative graph, and clears nodes with GL current.
 

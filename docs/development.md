@@ -61,6 +61,8 @@ A complete node generally requires native and web changes.
 8. Add sources to the group's `CMakeLists.txt`.
 9. Ensure the group is invoked from `nodes::register_all_nodes()`.
 
+Node registration also owns persisted schema evolution. Version 1 is implicit for a factory-only registration. `node_definition_s::migrations` is an append-only vector: element 0 migrates version 1 to 2, element 1 migrates version 2 to 3, and so on. The current schema version is derived from the vector length, so every schema bump necessarily has one ordered migration. Option migrations mutate the options object; input/output interface migrations rename the corresponding endpoint of saved connections. Migrations must throw if their claimed source data cannot be converted safely. Do not bump the schema for implementation-only changes.
+
 ### Web side
 
 1. Add or update the Baklava definition in `web/src/nodes/`.

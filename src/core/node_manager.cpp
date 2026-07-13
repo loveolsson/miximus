@@ -77,7 +77,7 @@ namespace miximus::core {
 using nlohmann::json;
 using namespace std::chrono_literals;
 
-node_manager_s::node_manager_s() { nodes::register_all_nodes(&constructors_); }
+node_manager_s::node_manager_s() { nodes::register_all_nodes(&node_definitions_); }
 
 error_e
 node_manager_s::handle_add_node(std::string_view type, std::string_view id, const json& options, int64_t client_id)
@@ -324,63 +324,12 @@ error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con,
     return remove_connection_locked(con, client_id);
 }
 
-json node_manager_s::get_config()
-{
-    const std::unique_lock lock(nodes_mutex_);
-
-    auto nodes       = json::array();
-    auto connections = json::array();
-
-    for (const auto& [id, record] : nodes_) {
-        nodes.emplace_back(json{
-            {"id",      id                  },
-            {"type",    record.node->type() },
-            {"options", record.state.options},
-        });
-    }
-
-    for (const auto& con : connections_) {
-        connections.emplace_back(con);
-    }
-
-    nlohmann::json status = nlohmann::json::object();
-    if (status_registry_) {
-        status = status_registry_->get_all();
-    }
-
-    return {
-        {"nodes",       std::move(nodes)      },
-        {"connections", std::move(connections)},
-        {"status",      std::move(status)     },
-    };
-}
-
 nlohmann::json node_manager_s::get_node_status(std::string_view id) const
 {
     if (status_registry_ == nullptr) {
         return nlohmann::json::object();
     }
     return status_registry_->get(id);
-}
-
-void node_manager_s::set_config(const json& settings)
-{
-    const auto& nodes       = settings.at("nodes");
-    const auto& connections = settings.at("connections");
-
-    for (const auto& node_obj : nodes) {
-        auto        type    = node_obj.at("type").get<std::string_view>();
-        auto        id      = node_obj.at("id").get<std::string_view>();
-        const auto& options = node_obj.at("options");
-
-        handle_add_node(type, id, options, -1);
-    }
-
-    for (const auto& con_obj : connections) {
-        auto con = con_obj.get<nodes::connection_s>();
-
-        handle_add_connection(con, -1);
-    }
 }
 
 void node_manager_s::add_adapter(std::unique_ptr<adapter_i>&& adapter)
@@ -483,12 +432,12 @@ void node_manager_s::clear_nodes(app_state_s* app)
 
 std::pair<std::shared_ptr<nodes::node_i>, error_e> node_manager_s::create_node(std::string_view type)
 {
-    auto it = constructors_.find(type);
-    if (it == constructors_.end()) {
+    auto it = node_definitions_.find(type);
+    if (it == node_definitions_.end()) {
         return {nullptr, error_e::invalid_type};
     }
 
-    auto n = it->second();
+    auto n = it->second.constructor();
     if (n->type() != type) {
         return {nullptr, error_e::internal_error};
     }

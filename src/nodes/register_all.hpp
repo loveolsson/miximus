@@ -5,6 +5,6 @@ namespace miximus::nodes {
 
 class node_i;
 
-void register_all_nodes(constructor_map_t* map);
+void register_all_nodes(node_definition_map_t* map);
 
 } // namespace miximus::nodes

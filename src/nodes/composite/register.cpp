@@ -7,7 +7,7 @@ namespace miximus::nodes::composite {
 std::shared_ptr<node_i> create_draw_box_node();
 std::shared_ptr<node_i> create_infinite_multiviewer_node();
 
-void register_nodes(constructor_map_t* map)
+void register_nodes(node_definition_map_t* map)
 {
     // Composite nodes
     map->emplace("draw_box", create_draw_box_node);

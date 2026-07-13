@@ -9,7 +9,7 @@ std::shared_ptr<node_i> create_framebuffer_to_texture_node();
 std::shared_ptr<node_i> create_rect_node();
 std::shared_ptr<node_i> create_vec2_node();
 
-void register_nodes(constructor_map_t* map)
+void register_nodes(node_definition_map_t* map)
 {
     // Utility nodes
     map->emplace("vec2", create_vec2_node);

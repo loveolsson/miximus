@@ -3,6 +3,6 @@
 
 namespace miximus::nodes::ndi {
 
-void register_nodes(constructor_map_t* map);
+void register_nodes(node_definition_map_t* map);
 
 } // namespace miximus::nodes::ndi

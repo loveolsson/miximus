@@ -1,21 +1,18 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "core/app_state.hpp"
+#include "core/configuration.hpp"
 #include "core/node_manager.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <functional>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -25,8 +22,6 @@
 using namespace miximus;
 using namespace std::filesystem;
 using namespace std::chrono_literals;
-using nlohmann::json;
-
 namespace {
 
 constexpr int HTTP_PORT = 7351;
@@ -46,39 +41,6 @@ void start_shutdown_watchdog()
         std::cerr << "Shutdown timed out, forcing exit\n";
         std::_Exit(1);
     }).detach();
-}
-
-void load_settings(core::node_manager_s* manager, const path& settings_path)
-{
-    auto log = getlog("app");
-
-    std::ifstream file(settings_path);
-    if (file.is_open()) {
-        log->info("Reading settings from {}", settings_path.string());
-
-        try {
-            manager->set_config(json::parse(file));
-        } catch (json::exception& e) {
-            // This error should panic as we don't want to run the app with a partial config, or
-            // overwrite the broken file with an empty config on exit
-            throw std::runtime_error(std::string("Failed to parse settings file: ") + e.what());
-        }
-    } else {
-        log->error("Failed to open settings file {}", settings_path.string());
-    }
-}
-
-void save_settings(core::node_manager_s* manager, const path& settings_path)
-{
-    auto log = getlog("app");
-
-    std::ofstream file(settings_path);
-    if (file.is_open()) {
-        log->info("Writing settings to {}", settings_path.string());
-        file << std::setfill(' ') << std::setw(2) << manager->get_config();
-    } else {
-        log->error("Failed to write settings to {}", settings_path.string());
-    }
 }
 
 } // namespace
@@ -117,17 +79,18 @@ int main(int argc, char* argv[])
             auto web_server = web_server::create_web_server();
             web_server->start(HTTP_PORT, app.cfg_executor());
 
-            core::node_manager_s node_manager;
-            load_settings(&node_manager, settings_path);
+            core::node_manager_s  node_manager;
+            core::configuration_s configuration(node_manager);
+            configuration.load_file(settings_path);
 
             // Set up web server config getters
             web_server->set_config_getters({
-                .node_config = std::bind_front(&core::node_manager_s::get_config, &node_manager),
+                .node_config = std::bind_front(&core::configuration_s::get_snapshot, &configuration),
             });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            node_manager.add_adapter(
-                std::make_unique<core::websocket_config_s>(node_manager, *web_server, *app.font_registry()));
+            node_manager.add_adapter(std::make_unique<core::websocket_config_s>(
+                node_manager, configuration, *web_server, *app.font_registry()));
 
             app.frame_info.timestamp = utils::flicks_now();
             app.frame_info.pts       = utils::flicks{0};
@@ -159,7 +122,11 @@ int main(int argc, char* argv[])
             start_shutdown_watchdog();
             web_server->stop();
             node_manager.clear_adapters();
-            save_settings(&node_manager, settings_path);
+            try {
+                configuration.save_file(settings_path);
+            } catch (const std::exception& error) {
+                getlog("app")->error("Failed to save configuration: {}", error.what());
+            }
             node_manager.clear_nodes(&app);
         }
     } catch (std::exception& e) {

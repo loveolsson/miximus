@@ -9,9 +9,12 @@
 
 namespace miximus::core {
 
+class configuration_s;
+
 class websocket_config_s : public node_manager_s::adapter_i
 {
     node_manager_s&          manager_;
+    configuration_s&         configuration_;
     web_server::server_s&    server_;
     render::font_registry_s& font_registry_;
 
@@ -33,7 +36,10 @@ class websocket_config_s : public node_manager_s::adapter_i
     void emit_node_status(std::string_view id, const nlohmann::json& status) final;
 
   public:
-    websocket_config_s(node_manager_s& manager, web_server::server_s& server, render::font_registry_s& font_registry);
+    websocket_config_s(node_manager_s&          manager,
+                       configuration_s&         configuration,
+                       web_server::server_s&    server,
+                       render::font_registry_s& font_registry);
     ~websocket_config_s() = default;
 };
 } // namespace miximus::core

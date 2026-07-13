@@ -52,6 +52,7 @@ export interface options_s {
 export interface node_s {
   id: string;
   type: type_e;
+  schema_version?: number;
   options: options_s;
 }
 
@@ -129,6 +130,7 @@ export interface result_s extends message_s {
 }
 
 interface config_s {
+  schema_version: number;
   nodes: node_s[];
   connections: connection_s[];
   status?: Record<string, Record<string, unknown>>;

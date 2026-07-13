@@ -18,6 +18,8 @@
 
 namespace miximus::core {
 
+class configuration_s;
+
 class node_manager_s
 {
   public:
@@ -39,6 +41,8 @@ class node_manager_s
     };
 
   private:
+    friend class configuration_s;
+
     using adapter_list_t = std::vector<std::unique_ptr<adapter_i>>;
 
     std::mutex                      nodes_mutex_;
@@ -47,7 +51,7 @@ class node_manager_s
     std::unordered_set<std::string> dirty_nodes_;
     std::unordered_set<std::string> removed_nodes_;
     nodes::con_set_t                connections_;
-    nodes::constructor_map_t        constructors_;
+    nodes::node_definition_map_t    node_definitions_;
     adapter_list_t                  adapters_;
     node_status_registry_s*         status_registry_{nullptr};
 
@@ -64,8 +68,6 @@ class node_manager_s
     error_e handle_add_connection(nodes::connection_s con, int64_t client_id);
     error_e handle_remove_connection(const nodes::connection_s& con, int64_t client_id);
 
-    nlohmann::json get_config();
-    void           set_config(const nlohmann::json&);
     nlohmann::json get_node_status(std::string_view id) const;
 
     void add_adapter(std::unique_ptr<adapter_i>&& adapter);

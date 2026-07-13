@@ -13,7 +13,7 @@
 
 namespace miximus::nodes {
 
-void register_all_nodes(constructor_map_t* map)
+void register_all_nodes(node_definition_map_t* map)
 {
     math::register_nodes(map);
     utils::register_nodes(map);

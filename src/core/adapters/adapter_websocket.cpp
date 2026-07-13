@@ -1,5 +1,6 @@
 #include "core/adapters/adapter_websocket.hpp"
 
+#include "core/configuration.hpp"
 #include "logger/logger.hpp"
 #include "render/font/font_registry.hpp"
 #include "web_server/payload.hpp"
@@ -15,9 +16,11 @@ using nlohmann::json;
 using namespace web_server;
 
 websocket_config_s::websocket_config_s(node_manager_s&          manager,
+                                       configuration_s&         configuration,
                                        web_server::server_s&    server,
                                        render::font_registry_s& font_registry)
     : manager_(manager)
+    , configuration_(configuration)
     , server_(server)
     , font_registry_(font_registry)
 {
@@ -169,7 +172,7 @@ void websocket_config_s::handle_config(const json& msg, int64_t client_id)
     auto token    = get_token_from_payload(msg);
     auto response = create_result_base_payload(token);
 
-    response["config"] = manager_.get_config();
+    response["config"] = configuration_.get_snapshot();
 
     server_.send_message_sync(response, client_id);
 }
