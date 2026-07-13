@@ -1,5 +1,6 @@
 add_library(web_server
     server.hpp
+    server_fwd.hpp
     server.cpp
     payload.hpp
     payload.cpp

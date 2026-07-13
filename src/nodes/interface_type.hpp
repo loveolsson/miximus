@@ -1,14 +1,11 @@
+#pragma once
+#include "gpu/framebuffer_fwd.hpp"
+#include "gpu/texture_fwd.hpp"
 #include "gpu/types.hpp"
 
 #include <string_view>
 
-namespace miximus {
-namespace gpu {
-class texture_s;
-class framebuffer_s;
-} // namespace gpu
-
-namespace nodes {
+namespace miximus::nodes {
 enum class interface_type_e
 {
     f64,
@@ -51,5 +48,4 @@ inline interface_type_e get_interface_type<gpu::framebuffer_s*>()
     return interface_type_e::framebuffer;
 }
 
-} // namespace nodes
-} // namespace miximus
+} // namespace miximus::nodes

@@ -10,6 +10,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
+#include "render/font/font_instance.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"

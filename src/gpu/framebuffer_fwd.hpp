@@ -1,6 +1,5 @@
 #pragma once
 
 namespace miximus::gpu {
-class context_scope_s;
-class context_s;
+class framebuffer_s;
 } // namespace miximus::gpu

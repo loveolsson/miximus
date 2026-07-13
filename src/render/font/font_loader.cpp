@@ -1,5 +1,8 @@
 #include "font_loader.hpp"
 
+#include "render/font/font_info.hpp"
+#include "render/font/font_instance.hpp"
+
 #include <memory>
 #include <stdexcept>
 

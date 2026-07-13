@@ -1,7 +1,8 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
+#include "core/configuration_fwd.hpp"
 #include "core/node_status_registry_fwd.hpp"
-#include "nodes/node.hpp"
+#include "nodes/node_fwd.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/register_all.hpp"
 #include "types/error.hpp"
@@ -17,8 +18,6 @@
 #include <vector>
 
 namespace miximus::core {
-
-class configuration_s;
 
 class node_manager_s
 {

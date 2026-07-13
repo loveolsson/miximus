@@ -1,11 +1,10 @@
 #pragma once
+#include "gpu/framebuffer_fwd.hpp"
+#include "gpu/texture_fwd.hpp"
+
 #include <memory>
 
-namespace miximus::gpu {
-class texture_s;
-class framebuffer_s;
-
-namespace transfer {
+namespace miximus::gpu { namespace transfer {
 
 constexpr size_t ALIGNMENT = 16;
 
@@ -62,5 +61,4 @@ class transfer_i
     const direction_e direction_;
     void*             ptr_;
 };
-} // namespace transfer
-} // namespace miximus::gpu
+}} // namespace miximus::gpu::transfer

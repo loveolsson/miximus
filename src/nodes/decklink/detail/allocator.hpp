@@ -1,6 +1,6 @@
 #pragma once
-#include "gpu/context.hpp"
-#include "gpu/texture.hpp"
+#include "gpu/context_fwd.hpp"
+#include "gpu/texture_fwd.hpp"
 #include "gpu/transfer/transfer.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 

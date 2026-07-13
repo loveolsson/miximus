@@ -1,5 +1,10 @@
 #pragma once
-#include "font_instance.hpp"
+#include "render/font/font_info_fwd.hpp"
+#include "render/font/font_instance_fwd.hpp"
+
+#include <ft2build.h>
+
+#include FT_FREETYPE_H
 
 #include <memory>
 

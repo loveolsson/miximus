@@ -1,6 +1,6 @@
 #pragma once
-#include "font_info.hpp"
 #include "gpu/types.hpp"
+#include "render/font/font_loader_fwd.hpp"
 #include "render/surface/surface_fwd.hpp"
 
 #include <ft2build.h>
@@ -8,11 +8,10 @@
 #include FT_FREETYPE_H
 
 #include <filesystem>
+#include <memory>
 #include <string_view>
 
 namespace miximus::render {
-
-class font_loader_s;
 
 class font_instance_s
 {

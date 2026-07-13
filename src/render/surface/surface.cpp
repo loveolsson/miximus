@@ -1,5 +1,7 @@
 #include "surface.hpp"
 
+#include "gpu/texture.hpp"
+
 #include <algorithm>
 #include <cstdint>
 #include <glm/glm.hpp>

@@ -1,5 +1,6 @@
 #include "allocator.hpp"
 
+#include "gpu/context.hpp"
 #include "logger/logger.hpp"
 
 #include <cassert>

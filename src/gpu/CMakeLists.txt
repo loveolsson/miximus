@@ -4,18 +4,21 @@ add_library(gpu
     vertex_array.hpp
     vertex_array.cpp
     context.hpp
+    context_fwd.hpp
     context.cpp
     context_logging.hpp
     context_logging.cpp
     shader.hpp
     shader.cpp
     framebuffer.hpp
+    framebuffer_fwd.hpp
     framebuffer.cpp
     vertex.hpp
     vertex_attr.hpp
     sync.hpp
     sync.cpp
     texture.hpp
+    texture_fwd.hpp
     texture.cpp
     types.hpp
     types.cpp

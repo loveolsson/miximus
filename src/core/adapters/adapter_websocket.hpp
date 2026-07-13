@@ -1,15 +1,14 @@
 #pragma once
+#include "core/configuration_fwd.hpp"
 #include "core/node_manager.hpp"
 #include "render/font/font_registry_fwd.hpp"
-#include "web_server/server.hpp"
+#include "web_server/server_fwd.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
 #include <string_view>
 
 namespace miximus::core {
-
-class configuration_s;
 
 class websocket_config_s : public node_manager_s::adapter_i
 {

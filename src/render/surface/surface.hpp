@@ -1,9 +1,11 @@
 #pragma once
-#include "gpu/texture.hpp"
+#include "gpu/texture_fwd.hpp"
 #include "gpu/transfer/transfer.hpp"
 #include "gpu/types.hpp"
 
+#include <cstdint>
 #include <glm/vec4.hpp>
+#include <memory>
 
 namespace miximus::render {
 

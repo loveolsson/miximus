@@ -1,7 +1,10 @@
 add_library(nodes
     node.hpp
+    node_fwd.hpp
+    node_definition.hpp
     node.cpp
     interface.hpp
+    interface_fwd.hpp
     interface.cpp
     interface_type.hpp
     connection.hpp

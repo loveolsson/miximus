@@ -1,5 +1,7 @@
 #pragma once
 #include "nodes/connection.hpp"
+#include "nodes/interface_fwd.hpp"
+#include "nodes/node_fwd.hpp"
 #include "utils/lookup.hpp"
 #include "utils/transparent_string_hash.hpp"
 
@@ -11,9 +13,6 @@
 #include <vector>
 
 namespace miximus::nodes {
-
-class node_i;
-class interface_i;
 
 // Set of connections connected to an interface
 using con_set_t = std::vector<connection_s>;

@@ -6,6 +6,7 @@
 #include "gpu/sync.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
+#include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 #include "web_server/server.hpp"
 

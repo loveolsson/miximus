@@ -1,4 +1,5 @@
 #pragma once
+#include "core/node_manager_fwd.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -6,8 +7,6 @@
 #include <filesystem>
 
 namespace miximus::core {
-
-class node_manager_s;
 
 class configuration_s
 {

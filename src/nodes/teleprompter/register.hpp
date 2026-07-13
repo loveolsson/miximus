@@ -1,5 +1,5 @@
 #pragma once
-#include "nodes/node.hpp"
+#include "nodes/node_definition.hpp"
 
 namespace miximus::nodes::teleprompter {
 

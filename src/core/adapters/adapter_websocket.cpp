@@ -4,6 +4,7 @@
 #include "logger/logger.hpp"
 #include "render/font/font_registry.hpp"
 #include "web_server/payload.hpp"
+#include "web_server/server.hpp"
 #include "web_server/templates.hpp"
 
 #include <nlohmann/json.hpp>
