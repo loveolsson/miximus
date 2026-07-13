@@ -6,18 +6,18 @@
 #include "gpu/shader.hpp"
 #include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
-#include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/validate_option.hpp"
 #include "utils/frame_queue.hpp"
-#include "utils/thread_priority.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <thread>
@@ -26,63 +26,44 @@
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
-using namespace std::chrono_literals;
 
 class node_impl : public node_i
 {
-    struct frame_info_s
+    static constexpr size_t FRAME_SLOT_COUNT = 4;
+
+    struct frame_slot_s
     {
-        GLuint                       id{};
-        std::unique_ptr<gpu::sync_s> sync;
-        gpu::vec2i_t                 tx_size{};
-        gpu::vec2i_t                 fb_size{};
-
-        frame_info_s() = default;
-
-        frame_info_s(const frame_info_s&) = delete;
-        frame_info_s(frame_info_s&& o) noexcept { *this = std::move(o); }
-        frame_info_s& operator=(const frame_info_s&) = delete;
-        frame_info_s& operator=(frame_info_s&& o) noexcept
-        {
-            if (id != 0) {
-                glDeleteBuffers(1, &id);
-            }
-
-            id      = o.id;
-            sync    = std::move(o.sync);
-            tx_size = o.tx_size;
-            fb_size = o.fb_size;
-
-            o.id = 0;
-
-            return *this;
-        }
-
-        ~frame_info_s()
-        {
-            if (id != 0) {
-                glDeleteBuffers(1, &id);
-            }
-        }
+        // The root context owns the framebuffer. Its texture and the sync
+        // objects are visible to the shared display context.
+        std::unique_ptr<gpu::framebuffer_s> target;
+        std::unique_ptr<gpu::sync_s>        ready;
+        std::unique_ptr<gpu::sync_s>        released;
     };
 
     // All state the render thread touches lives in render_state_s and is held
     // behind a shared_ptr so the thread lambda and node_impl share ownership.
     struct render_state_s
     {
-        std::condition_variable            frame_cv;
-        utils::frame_queue_s<frame_info_s> frames_rendered;
-        utils::frame_queue_s<frame_info_s> frames_free;
-        std::atomic<bool>                  thread_run{false};
-        std::unique_ptr<gpu::context_s>    ctx;
+        std::condition_variable                    frame_cv;
+        utils::frame_queue_s<size_t>               frames_rendered;
+        utils::frame_queue_s<size_t>               frames_free;
+        std::array<frame_slot_s, FRAME_SLOT_COUNT> frame_slots;
+        std::atomic<bool>                          thread_run{false};
+        std::unique_ptr<gpu::context_s>            ctx;
+
+        render_state_s()
+        {
+            for (size_t index = 0; index < frame_slots.size(); ++index) {
+                frames_free.push_frame(std::move(index));
+            }
+        }
     };
 
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
-    std::shared_ptr<render_state_s>     render_state_;
-    std::thread                         render_thread_;
-    std::unique_ptr<gpu::draw_state_s>  draw_state_;
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
+    std::shared_ptr<render_state_s>    render_state_;
+    std::thread                        render_thread_;
+    std::unique_ptr<gpu::draw_state_s> draw_state_;
 
   public:
     explicit node_impl() { register_interface(&iface_tex_); }
@@ -153,37 +134,26 @@ class node_impl : public node_i
             dim = texture->texture_dimensions();
         }
 
-        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
-        }
-
-        frame_info_s frame;
-
-        // Avoid blocking the main thread with a wait by not using the 2 most recently
-        // displayed buffers, as it might still be used by the display context
         decltype(render_state_->frames_free)::record_s record;
-        if (render_state_->frames_free.pop_frame_if_count(3, &record)) {
-            frame = std::move(record.frame);
+        if (!render_state_->frames_free.pop_frame(&record)) {
+            return;
         }
 
-        if (frame.sync) {
-            // Ensure buffer is done in the display context
-            frame.sync->gpu_wait();
-            frame.sync.reset();
+        auto  slot_index = record.frame;
+        auto& slot       = render_state_->frame_slots[slot_index];
+
+        if (slot.released) {
+            // Queue a GPU-side wait before overwriting a texture that the display
+            // context sampled during its previous presentation.
+            slot.released->gpu_wait();
+            slot.released.reset();
         }
 
-        if (frame.tx_size != dim || frame.id == 0) {
-            frame_info_s new_frame;
-            new_frame.tx_size = dim;
-
-            glCreateBuffers(1, &new_frame.id);
-            glNamedBufferData(new_frame.id, static_cast<GLsizeiptr>(dim.x) * dim.y * 4, nullptr, GL_DYNAMIC_COPY);
-            frame = std::move(new_frame);
+        if (!slot.target || slot.target->texture()->texture_dimensions() != dim) {
+            slot.target = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
         }
 
-        frame.fb_size = render_state_->ctx->get_framebuffer_size();
-
-        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
+        slot.target->begin_render(gpu::framebuffer_s::load_op_e::clear);
 
         if (texture != nullptr) {
             if (!draw_state_) {
@@ -203,24 +173,14 @@ class node_impl : public node_i
             gpu::texture_s::unbind(0);
         }
 
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, frame.id);
-        glReadPixels(0, 0, dim.x, dim.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         gpu::framebuffer_s::end_render();
 
-        // EXPERIMENT: behaves better on Linux
-        // glMemoryBarrierByRegion(GL_TEXTURE_FETCH_BARRIER_BIT);
+        slot.ready = std::make_unique<gpu::sync_s>();
+        // A fence consumed from another context must be flushed by its producer.
+        gpu::context_s::flush();
 
-        {
-            if (render_state_->frames_rendered.size() < 3) {
-                frame.sync = std::make_unique<gpu::sync_s>();
-                render_state_->frames_rendered.push_frame(std::move(frame), app->frame_info.timestamp);
-                render_state_->frame_cv.notify_one();
-            } else {
-                // TODO(Love): log or signal this
-                render_state_->frames_free.push_frame(std::move(frame));
-            }
-        }
+        render_state_->frames_rendered.push_frame(std::move(slot_index), app->frame_info.timestamp);
+        render_state_->frame_cv.notify_one();
     }
 
     void complete(core::app_state_s* /*app*/) final {}
@@ -278,15 +238,11 @@ class node_impl : public node_i
             shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
             shader->set_uniform("opacity", 1.0);
 
-            std::unique_ptr<gpu::texture_s> texture;
-
             while (true) {
-                frame_info_s frame;
-
                 {
                     auto lock = state->frames_rendered.get_lock();
                     state->frame_cv.wait(lock, [&state]() {
-                        return !state->thread_run || state->frames_rendered.size_while_lock_held() > 1;
+                        return !state->thread_run || state->frames_rendered.size_while_lock_held() > 0;
                     });
 
                     if (!state->thread_run) {
@@ -295,54 +251,35 @@ class node_impl : public node_i
                 }
 
                 decltype(state->frames_rendered)::record_s record;
-                if (state->frames_rendered.pop_frame_if_count(2, &record)) {
-                    // Avoid waiting by buffering one frame, so that the frame being displayed
-                    // is not currently being rendered
-                    frame = std::move(record.frame);
+                if (!state->frames_rendered.pop_frame(&record)) {
+                    continue;
                 }
 
-                if (frame.sync && frame.id != 0) {
-                    frame.sync->gpu_wait();
-                    frame.sync.reset();
+                auto  slot_index = record.frame;
+                auto& slot       = state->frame_slots[slot_index];
 
-                    if (!texture || texture->texture_dimensions() != frame.tx_size) {
-                        texture = std::make_unique<gpu::texture_s>(frame.tx_size, gpu::texture_s::format_e::bgra_u8);
-                    }
-
-                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, frame.id);
-                    glTextureSubImage2D(
-                        texture->id(), 0, 0, 0, frame.tx_size.x, frame.tx_size.y, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
-                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
-                    glViewport(0, 0, frame.fb_size.x, frame.fb_size.y);
-                    glClearColor(0, 0, 0, 0);
-                    glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) |
-                            static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
-
-                    // EXPERIMENT: behaves better on Linux
-                    // glTextureBarrier();
-
-                    texture->bind(0);
-                    draw_state.draw();
-                    gpu::texture_s::unbind(0);
-
-                    if (!state->thread_run) {
-                        break;
-                    }
-
-                    state->ctx->swap_buffers();
-
-                    frame.sync = std::make_unique<gpu::sync_s>();
-
-                    state->frames_free.push_frame(std::move(frame));
+                if (slot.ready) {
+                    slot.ready->gpu_wait();
+                    slot.ready.reset();
                 }
+
+                const auto framebuffer_size = state->ctx->get_framebuffer_size();
+                glViewport(0, 0, framebuffer_size.x, framebuffer_size.y);
+                glClearColor(0, 0, 0, 0);
+                glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
+
+                slot.target->texture()->bind(0);
+                draw_state.draw();
+                gpu::texture_s::unbind(0);
+
+                state->ctx->swap_buffers();
+
+                slot.released = std::make_unique<gpu::sync_s>();
+                gpu::context_s::flush();
+                state->frames_free.push_frame(std::move(slot_index));
             }
 
-            // Drain queued frames (and their PBOs) while the context is still
-            // current, then destroy draw_state and texture. ✓
-            state->frames_rendered.clear();
-            state->frames_free.clear();
-        } // draw_state, texture destroyed here — context still current ✓
+        } // draw_state destroyed here while the display context is still current.
 
         gpu::context_s::rewind_current();
     }
@@ -358,10 +295,11 @@ class node_impl : public node_i
             render_state_->thread_run = false;
         }
 
-        render_state_->frames_rendered.clear();
-        render_state_->frames_free.clear();
         render_state_->frame_cv.notify_one();
         render_thread_.join();
+
+        render_state_->frames_rendered.clear();
+        render_state_->frames_free.clear();
         render_state_.reset();
     }
 };
