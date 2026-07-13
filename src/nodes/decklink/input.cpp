@@ -1,6 +1,7 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/allocator.hpp"
+#include "detail/colorspace.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -40,6 +41,7 @@ struct frame_info_s
     std::unique_ptr<gpu::sync_s>    sync;
     gpu::vec2i_t                    tx_dim{};  // texture dimensions (row_bytes/4 x height)
     gpu::vec2i_t                    src_dim{}; // display dimensions (width x height)
+    BMDColorspace                   colorspace{bmdColorspaceRec709};
 
     frame_info_s() = default;
 
@@ -69,6 +71,28 @@ class callback_s
 
     std::atomic<BMDDisplayMode>    new_display_mode_{bmdModeUnknown};
     std::atomic<BMDFieldDominance> frame_field_dominance_{bmdUnknownFieldDominance};
+    std::atomic<BMDColorspace>     colorspace_{bmdColorspaceRec709};
+
+    BMDColorspace get_frame_colorspace(IDeckLinkVideoInputFrame* frame) const
+    {
+        IDeckLinkVideoFrameMetadataExtensions* metadata = nullptr;
+        if (frame->QueryInterface(IID_IDeckLinkVideoFrameMetadataExtensions, reinterpret_cast<void**>(&metadata)) ==
+            S_OK) {
+            int64_t value = 0;
+            if (metadata->GetInt(bmdDeckLinkFrameMetadataColorspace, &value) == S_OK) {
+                metadata->Release();
+                const auto colorspace = static_cast<BMDColorspace>(value);
+                if (colorspace == bmdColorspaceRec601 || colorspace == bmdColorspaceRec709 ||
+                    colorspace == bmdColorspaceRec2020) {
+                    return colorspace;
+                }
+                return colorspace_.load();
+            }
+            metadata->Release();
+        }
+
+        return colorspace_.load();
+    }
 
   public:
     explicit callback_s(std::shared_ptr<gpu::context_s> ctx)
@@ -156,6 +180,7 @@ class callback_s
         const GLsizeiptr   row_bytes = videoFrame->GetRowBytes();
         const gpu::vec2i_t tx_dim{static_cast<int>(row_bytes) / 4, videoFrame->GetHeight()};
         const gpu::vec2i_t src_dim{videoFrame->GetWidth(), tx_dim.y};
+        frame.colorspace = get_frame_colorspace(videoFrame);
 
         // Ensure texture dimensions match.
         if (!frame.texture || frame.tx_dim != tx_dim) {
@@ -233,6 +258,9 @@ class callback_s
             new_display_mode_      = newDisplayMode->GetDisplayMode();
             frame_field_dominance_ = newDisplayMode->GetFieldDominance();
         }
+        if ((notificationEvents & (bmdVideoInputDisplayModeChanged | bmdVideoInputColorspaceChanged)) != 0) {
+            colorspace_ = get_display_mode_colorspace(newDisplayMode);
+        }
         return S_OK;
     }
 
@@ -309,6 +337,9 @@ class node_impl : public node_i
     std::unique_ptr<gpu::draw_state_s>  draw_state_;
     std::optional<frame_info_s>         work_frame_;
     uint64_t                            last_device_version_{std::numeric_limits<uint64_t>::max()};
+    BMDColorspace                       colorspace_{bmdColorspaceRec709};
+    gpu::color_conversion_s yuv_conversion_{gpu::get_color_transfer_from_yuv(gpu::color_transfer_e::Rec709)};
+    gpu::mat3               gamut_conversion_{1.0f};
 
     output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
@@ -436,8 +467,16 @@ class node_impl : public node_i
         shader->set_uniform("scale", gpu::vec2i_t{1.0, 1.0});
         shader->set_uniform("target_width", src_dim.x);
 
-        constexpr auto transfer_matrix = gpu::get_color_transfer_from_yuv(gpu::color_transfer_e::Rec709);
-        shader->set_uniform("transfer", transfer_matrix);
+        if (colorspace_ != work_frame_->colorspace) {
+            colorspace_         = work_frame_->colorspace;
+            const auto transfer = get_color_transfer(colorspace_);
+            yuv_conversion_     = gpu::get_color_transfer_from_yuv(transfer);
+            gamut_conversion_   = gpu::get_gamut_transfer_to_rec709(transfer);
+        }
+
+        shader->set_uniform("transfer", yuv_conversion_.matrix);
+        shader->set_uniform("transfer_offset", yuv_conversion_.offset);
+        shader->set_uniform("gamut_transfer", gamut_conversion_);
 
         glViewport(0, 0, src_dim.x, src_dim.y);
         glClearColor(0, 0, 0, 0);

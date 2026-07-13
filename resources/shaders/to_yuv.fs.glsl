@@ -5,10 +5,12 @@ in vec2 TexCoord; // the input variable from the vertex shader (same name and sa
 uniform sampler2D tex;
 uniform int       target_width;
 uniform mat3      transfer;
+uniform vec3      transfer_offset;
+uniform mat3      gamut_transfer;
 
 vec3 rgb2yuv(vec3 rgb)
 {
-    return (transfer * fromLinear(rgb)) + vec3(0, 0.5, 0.5);
+    return (transfer * fromLinear(gamut_transfer * rgb)) + transfer_offset;
 
     // float Y, Cb, Cr;
     // r = Y + 1.5748 * Cr;

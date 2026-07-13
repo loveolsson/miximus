@@ -1,5 +1,6 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
+#include "detail/colorspace.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
@@ -37,10 +38,13 @@ auto log() { return getlog("decklink"); }
 
 struct mode_info_s
 {
-    BMDDisplayMode mode;
-    BMDTimeValue   frame_duration;
-    BMDTimeScale   time_scale;
-    gpu::vec2i_t   dim;
+    BMDDisplayMode          mode;
+    BMDTimeValue            frame_duration;
+    BMDTimeScale            time_scale;
+    gpu::vec2i_t            dim;
+    gpu::color_conversion_s yuv_conversion;
+    gpu::mat3               gamut_conversion;
+    BMDColorspace           colorspace;
 };
 
 struct frame_info_s
@@ -96,6 +100,16 @@ class callback_s
     mode_info_s      mode_info_;
     BMDTimeValue     pts_{0};
 
+    void set_colorspace_metadata(IDeckLinkMutableVideoFrame* frame) const
+    {
+        IDeckLinkVideoFrameMutableMetadataExtensions* metadata = nullptr;
+        if (frame->QueryInterface(IID_IDeckLinkVideoFrameMutableMetadataExtensions,
+                                  reinterpret_cast<void**>(&metadata)) == S_OK) {
+            (void)metadata->SetInt(bmdDeckLinkFrameMetadataColorspace, mode_info_.colorspace);
+            metadata->Release();
+        }
+    }
+
   public:
     callback_s(std::shared_ptr<gpu::context_s> ctx, IDeckLinkOutput* device, mode_info_s mode_info)
         : ctx_(std::move(ctx))
@@ -109,6 +123,7 @@ class callback_s
 
         if (SUCCEEDED(device_->CreateVideoFrame(
                 mode_info_.dim.x, mode_info_.dim.y, mode_info.dim.x * 2, bmdFormat8BitYUV, 0, &frame))) {
+            set_colorspace_metadata(frame);
             IDeckLinkVideoBuffer* buffer = nullptr;
             if (frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&buffer)) == S_OK) {
                 buffer->StartAccess(bmdBufferAccessWrite);
@@ -194,6 +209,7 @@ class callback_s
 
             if (SUCCEEDED(
                     device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
+                set_colorspace_metadata(dst_frame);
                 IDeckLinkVideoBuffer* dst_buffer = nullptr;
                 if (dst_frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&dst_buffer)) ==
                     S_OK) {
@@ -418,6 +434,11 @@ class node_impl : public node_i
                     mode.dim  = {imode->GetWidth(), imode->GetHeight()};
                     imode->GetFrameRate(&mode.frame_duration, &mode.time_scale);
 
+                    mode.colorspace       = detail::get_display_mode_colorspace(imode);
+                    const auto transfer   = detail::get_color_transfer(mode.colorspace);
+                    mode.yuv_conversion   = gpu::get_color_transfer_to_yuv(transfer);
+                    mode.gamut_conversion = gpu::get_gamut_transfer_from_rec709(transfer);
+
                     auto name = decklink_registry_s::get_display_mode_name(imode);
                     display_modes_.emplace(name, mode);
 
@@ -536,8 +557,9 @@ class node_impl : public node_i
         shader->set_uniform("scale", {1.0, 1.0});
         shader->set_uniform("target_width", draw_dim.x);
 
-        constexpr auto transfer_matrix = gpu::get_color_transfer_to_yuv(gpu::color_transfer_e::Rec709);
-        shader->set_uniform("transfer", transfer_matrix);
+        shader->set_uniform("transfer", display_mode_->yuv_conversion.matrix);
+        shader->set_uniform("transfer_offset", display_mode_->yuv_conversion.offset);
+        shader->set_uniform("gamut_transfer", display_mode_->gamut_conversion);
 
         framebuffer_scale_->texture()->bind(0);
         draw_state_yuv_->draw();

@@ -154,6 +154,13 @@ void shader_program_s::set_uniform(std::string_view name, const vec2_t& val)
     }
 }
 
+void shader_program_s::set_uniform(std::string_view name, const vec3_t& val)
+{
+    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
+        glProgramUniform3f(program_, it->second.loc, val.x, val.y, val.z);
+    }
+}
+
 void shader_program_s::set_uniform(std::string_view name, const mat3& val)
 {
     if (auto it = uniforms_.find(name); it != uniforms_.end()) {

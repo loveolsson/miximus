@@ -3,10 +3,12 @@
 
 #include <glm/mat3x3.hpp>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 namespace miximus::gpu {
 using vec2_t  = glm::dvec2;
 using vec2i_t = glm::ivec2;
+using vec3_t  = glm::vec3;
 using mat3    = glm::mat3x3;
 
 struct rect_s

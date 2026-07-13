@@ -60,6 +60,7 @@ class shader_program_s
     void set_vertex_type();
 
     void set_uniform(std::string_view name, const vec2_t& val);
+    void set_uniform(std::string_view name, const vec3_t& val);
     void set_uniform(std::string_view name, const mat3& val);
     void set_uniform(std::string_view name, double val);
     void set_uniform(std::string_view name, int val);

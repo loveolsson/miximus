@@ -5,6 +5,8 @@ in vec2 TexCoord; // the input variable from the vertex shader (same name and sa
 uniform sampler2D tex;
 uniform int       target_width;
 uniform mat3      transfer;
+uniform vec3      transfer_offset;
+uniform mat3      gamut_transfer;
 
 vec3 yuv2rgb(float Y, float Cb, float Cr)
 {
@@ -25,7 +27,7 @@ vec3 yuv2rgb(float Y, float Cb, float Cr)
     // b = Y + 1.8556 * Cb;
     // return vec3(r, g, b);
 
-    return vec3(Y, Cr - 0.5, Cb - 0.5) * transfer;
+    return (vec3(Y, Cb, Cr) - transfer_offset) * transfer;
 }
 
 void main(void)
@@ -84,6 +86,6 @@ void main(void)
             break;
     }
 
-    vec3 sRGB = yuv2rgb(Y, Cb, Cr);
-    FragColor = vec4(toLinear(sRGB), 1.0);
+    vec3 encoded_rgb = yuv2rgb(Y, Cb, Cr);
+    FragColor        = vec4(gamut_transfer * toLinear(encoded_rgb), 1.0);
 }

@@ -67,7 +67,9 @@ class node_impl : public node_i
 
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
-    static constexpr int FREE_FRAME_COUNT = 7;
+    static constexpr int  FREE_FRAME_COUNT = 7;
+    static constexpr auto COLOR_METADATA =
+        "<ndi_color_info primaries=\"bt_709\" transfer=\"bt_709\" matrix=\"bt_709\"/>";
 
     // Worker thread: no GL context needed.
     // Ordering guarantee: complete() runs after finish() (node_manager contract),
@@ -98,7 +100,9 @@ class node_impl : public node_i
             ndi_frame.p_data               = static_cast<uint8_t*>(slot.transfer->ptr());
             ndi_frame.frame_rate_N         = frame_rate_n_;
             ndi_frame.frame_rate_D         = frame_rate_d_;
-            ndi_frame.timestamp            = slot.pts.count() * 10'000'000LL / utils::k_flicks_one_second.count();
+            ndi_frame.frame_format_type    = NDIlib_frame_format_type_progressive;
+            ndi_frame.timecode             = slot.pts.count() * 10'000'000LL / utils::k_flicks_one_second.count();
+            ndi_frame.p_metadata           = COLOR_METADATA;
 
             // May block briefly to fence the previous async send.
             // This is the only blocking point, entirely off the main thread.
@@ -263,7 +267,7 @@ class node_impl : public node_i
         // glReadPixels (bottom-to-top) produces top-to-bottom NDI data.
         if (!draw_state_) {
             draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
             draw_state_->set_shader_program(shader);
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
