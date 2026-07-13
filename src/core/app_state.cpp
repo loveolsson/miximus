@@ -28,9 +28,8 @@ app_state_s::app_state_s()
     // Transfer backend initialization must happen on the root GL context. It is
     // intentionally part of app startup rather than context construction so a
     // failed optional backend simply selects the persistent-PBO implementation.
-    ctx_->make_current();
+    const gpu::context_scope_s context_scope(*ctx_);
     gpu::transfer::transfer_i::initialize_preferred_type();
-    gpu::context_s::rewind_current();
 }
 
 app_state_s::~app_state_s()
@@ -40,9 +39,10 @@ app_state_s::~app_state_s()
 
     // DVP is tied to the root GL context and must be closed before that context
     // is destroyed. Nodes and their transfers are destroyed before app_state.
-    ctx_->make_current();
-    gpu::transfer::transfer_i::shutdown();
-    gpu::context_s::rewind_current();
+    {
+        const gpu::context_scope_s context_scope(*ctx_);
+        gpu::transfer::transfer_i::shutdown();
+    }
     ctx_.reset();
     cfg_executor_.stop();
     cfg_thread_.join();

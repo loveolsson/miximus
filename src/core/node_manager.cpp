@@ -350,63 +350,64 @@ void node_manager_s::tick_one_frame(app_state_s* app)
 {
     status_registry_ = app->status_registry();
 
-    app->ctx()->make_current();
-
     {
-        /**
-         * A few things are accomplished by copying the node map here:
-         * - The config if fixed during this frame, while not locking up the config thread
-         * - The lifetime of a node is guaraneed for the duration of the frame
-         * - Any node that has been prepared at least once is guaranteed to be destroyed in this thread,
-         *      making resource management a lot simpler
-         */
-        std::unique_lock lock(nodes_mutex_);
-        if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
-            for (const auto& id : removed_nodes_) {
-                nodes_copy_.erase(id);
-                app->status_registry()->remove_node(id);
-            }
-            for (const auto& id : dirty_nodes_) {
-                if (auto it = nodes_.find(id); it != nodes_.end()) {
-                    nodes_copy_.insert_or_assign(it->first, it->second);
+        const gpu::context_scope_s context_scope(*app->ctx());
+
+        {
+            /**
+             * A few things are accomplished by copying the node map here:
+             * - The config if fixed during this frame, while not locking up the config thread
+             * - The lifetime of a node is guaraneed for the duration of the frame
+             * - Any node that has been prepared at least once is guaranteed to be destroyed in this thread,
+             *      making resource management a lot simpler
+             */
+            std::unique_lock lock(nodes_mutex_);
+            if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
+                for (const auto& id : removed_nodes_) {
+                    nodes_copy_.erase(id);
+                    app->status_registry()->remove_node(id);
                 }
+                for (const auto& id : dirty_nodes_) {
+                    if (auto it = nodes_.find(id); it != nodes_.end()) {
+                        nodes_copy_.insert_or_assign(it->first, it->second);
+                    }
+                }
+                _log()->info(
+                    "Updated render graph: {} changed, {} removed", dirty_nodes_.size(), removed_nodes_.size());
+                dirty_nodes_.clear();
+                removed_nodes_.clear();
+            } else {
+                lock.unlock();
             }
-            _log()->info("Updated render graph: {} changed, {} removed", dirty_nodes_.size(), removed_nodes_.size());
-            dirty_nodes_.clear();
-            removed_nodes_.clear();
-        } else {
-            lock.unlock();
+        }
+
+        app->frame_info.executed_nodes.clear();
+
+        std::vector<std::pair<std::string_view, nodes::node_record_s*>> must_execute;
+
+        // Call prepare on all nodes, and collect their traits
+        for (auto& [id, record] : nodes_copy_) {
+            nodes::node_i::traits_s traits = {};
+            record.node->prepare(app, record.state, &traits);
+
+            if (traits.must_run) {
+                must_execute.emplace_back(id, &record);
+            }
+        }
+
+        for (auto [id, record] : must_execute) {
+            if (!app->frame_info.executed_nodes.contains(id)) {
+                app->frame_info.executed_nodes.emplace(id);
+                record->node->execute(app, nodes_copy_, record->state);
+            }
+        }
+
+        gpu::context_s::finish();
+
+        for (auto& [_, record] : nodes_copy_) {
+            record.node->complete(app);
         }
     }
-
-    app->frame_info.executed_nodes.clear();
-
-    std::vector<std::pair<std::string_view, nodes::node_record_s*>> must_execute;
-
-    // Call prepare on all nodes, and collect their traits
-    for (auto& [id, record] : nodes_copy_) {
-        nodes::node_i::traits_s traits = {};
-        record.node->prepare(app, record.state, &traits);
-
-        if (traits.must_run) {
-            must_execute.emplace_back(id, &record);
-        }
-    }
-
-    for (auto [id, record] : must_execute) {
-        if (!app->frame_info.executed_nodes.contains(id)) {
-            app->frame_info.executed_nodes.emplace(id);
-            record->node->execute(app, nodes_copy_, record->state);
-        }
-    }
-
-    gpu::context_s::finish();
-
-    for (auto& [_, record] : nodes_copy_) {
-        record.node->complete(app);
-    }
-
-    gpu::context_s::rewind_current();
 
     // Broadcast status changes collected during this tick
     const auto status_updates = app->status_registry()->flush();
@@ -419,15 +420,13 @@ void node_manager_s::tick_one_frame(app_state_s* app)
 
 void node_manager_s::clear_nodes(app_state_s* app)
 {
-    app->ctx()->make_current();
+    const gpu::context_scope_s context_scope(*app->ctx());
 
     nodes_copy_.clear();
     nodes_.clear();
     connections_.clear();
     dirty_nodes_.clear();
     removed_nodes_.clear();
-
-    gpu::context_s::rewind_current();
 }
 
 std::pair<std::shared_ptr<nodes::node_i>, error_e> node_manager_s::create_node(std::string_view type)

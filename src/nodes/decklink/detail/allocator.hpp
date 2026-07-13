@@ -112,10 +112,11 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     // Returns the underlying transfer for a buffer previously obtained from AllocateVideoBuffer.
     static transfer_i* get_transfer(IDeckLinkVideoBuffer* buffer);
 
-    bool   register_texture(gpu::texture_s* texture);
-    bool   unregister_texture(gpu::texture_s* texture);
-    bool   begin_texture_use(gpu::texture_s* texture);
-    bool   end_texture_use(gpu::texture_s* texture);
+    bool register_texture(gpu::texture_s* texture);
+    bool unregister_texture(gpu::texture_s* texture);
+    bool begin_texture_use(gpu::texture_s* texture);
+    bool end_texture_use(gpu::texture_s* texture);
+    // The allocator's context must be current and its mutex held by the caller.
     size_t destroy_free_transfers();
 };
 

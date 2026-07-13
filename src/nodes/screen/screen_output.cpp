@@ -221,7 +221,7 @@ class node_impl : public node_i
     // the state alive for the duration of the render loop.
     static void run_render(std::shared_ptr<render_state_s> state)
     {
-        state->ctx->make_current();
+        const gpu::context_scope_s context_scope(*state->ctx);
         glEnable(GL_FRAMEBUFFER_SRGB);
         // Don't block in swap_buffers waiting for the compositor's frame callback.
         // On Wayland the compositor throttles (or stops) delivering frame callbacks
@@ -280,8 +280,6 @@ class node_impl : public node_i
             }
 
         } // draw_state destroyed here while the display context is still current.
-
-        gpu::context_s::rewind_current();
     }
 
     void stop_thread()

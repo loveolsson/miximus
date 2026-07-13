@@ -2,8 +2,8 @@
 
 Read [../../docs/gpu-and-media.md](../../docs/gpu-and-media.md) before changing this subtree.
 
-- OpenGL context ownership is explicit. Every `make_current()` must be paired with `rewind_current()` on every path.
-- GL resources must be created and destroyed with an appropriate context current. Shared contexts also require `context_s::get_lock()`.
+- OpenGL context ownership is explicit. Use `context_scope_s` whenever making a context current.
+- GL resources must be created and destroyed with an appropriate context current. Pass `context_lock_e::lock` to the scope for shared contexts.
 - Do not add node-specific PBO or readback implementations when `transfer_i` can express the operation.
 - Preserve transfer priority: DVP, CUDA/OpenGL interop, persistent PBO fallback.
 - Use the transfer instance's virtual `type()` for lifetime hooks.

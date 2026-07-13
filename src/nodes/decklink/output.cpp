@@ -127,13 +127,10 @@ class callback_s
 
     ~callback_s() override
     {
-        auto lock = ctx_->get_lock();
-        ctx_->make_current();
+        const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
 
         frames_free_.clear();
         frames_rendered_.clear();
-
-        gpu::context_s::rewind_current();
     }
 
     callback_s(callback_s&&)                 = delete;
@@ -167,8 +164,7 @@ class callback_s
             return S_OK;
         }
 
-        auto lock = ctx_->get_lock();
-        ctx_->make_current();
+        const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
 
         auto pop = frames_rendered_.pop_frame_if_count(3);
         if (pop.first) {
@@ -213,8 +209,6 @@ class callback_s
             device_->ScheduleVideoFrame(last_frame_.get(), pts_, duration, mode_info_.time_scale);
             pts_ += duration;
         }
-
-        gpu::context_s::rewind_current();
 
         return S_OK;
     }

@@ -2,16 +2,16 @@
 
 ## OpenGL context ownership
 
-`gpu::context_s` wraps a GLFW OpenGL 4.6 context and maintains a thread-local current-context stack. Every `make_current()` must be paired with `context_s::rewind_current()`, including early returns. Re-entering the same current context is supported.
+`gpu::context_s` wraps a GLFW OpenGL 4.6 context and maintains a thread-local current-context stack. Use `context_scope_s` to make a context current for a scope; its destructor rewinds the stack, including on early returns and exceptions. Re-entering the same current context is supported.
 
 The render loop makes the root hidden context current before node preparation and rewinds it after `complete()`. Shared worker contexts share objects with a parent and require external locking:
 
 ```cpp
-auto lock = ctx->get_lock();
-ctx->make_current();
+gpu::context_scope_s context_scope(*ctx, gpu::context_lock_e::lock);
 // GL work or GL-owned destruction
-gpu::context_s::rewind_current();
 ```
+
+The default `context_scope_s` does not take the context mutex and is appropriate for thread-owned contexts. Pass `context_lock_e::lock` for contexts used by callbacks or multiple threads. `context_s::get_lock()` remains available for synchronized operations that do not need a GL context current.
 
 Textures, framebuffers, shaders, GL sync objects, and transfer buffers assume an appropriate context is current for creation and destruction. Do not release them on arbitrary workers.
 

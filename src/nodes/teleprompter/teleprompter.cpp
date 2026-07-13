@@ -404,10 +404,9 @@ class node_impl : public node_i
         const std::unique_lock font_lock(font_mtx_);
 
         if (!line->surface || line->surface->dimensions() != dim) {
-            const std::unique_lock lock(ctx_mtx_);
-            ctx_->make_current();
+            const std::unique_lock     lock(ctx_mtx_);
+            const gpu::context_scope_s context_scope(*ctx_);
             line->surface = std::make_unique<render::surface_s>(dim);
-            gpu::context_s::rewind_current();
         }
 
         line->surface->clear({0, 0, 0, 0});
@@ -417,8 +416,8 @@ class node_impl : public node_i
         std::optional<gpu::sync_s> sync;
 
         {
-            const std::unique_lock lock(ctx_mtx_);
-            ctx_->make_current();
+            const std::unique_lock     lock(ctx_mtx_);
+            const gpu::context_scope_s context_scope(*ctx_);
 
             auto texture  = line->surface->texture();
             auto transfer = line->surface->transfer();
@@ -428,8 +427,6 @@ class node_impl : public node_i
             gpu::transfer::transfer_i::end_texture_use(transfer->type(), texture); // signal DVP done
             texture->generate_mip_maps();
             sync.emplace();
-
-            gpu::context_s::rewind_current();
         }
 
         return std::move(*sync);

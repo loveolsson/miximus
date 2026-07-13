@@ -110,8 +110,7 @@ class callback_s
 
     ~callback_s() override
     {
-        auto lock = ctx_->get_lock();
-        ctx_->make_current();
+        const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
 
         // Unregister textures from transfer backend before destroying.
         for_each_frame([&](frame_info_s& f) {
@@ -124,8 +123,6 @@ class callback_s
         allocator_->destroy_free_transfers();
         frames_rendered_.clear();
         frames_free_.clear();
-
-        gpu::context_s::rewind_current();
     }
 
     callback_s(const callback_s&)            = delete;
@@ -172,8 +169,7 @@ class callback_s
             return S_OK;
         }
 
-        auto lock = ctx_->get_lock();
-        ctx_->make_current();
+        const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
 
         auto& frame = pop.first->frame;
 
@@ -213,7 +209,6 @@ class callback_s
 
                 frame.sync = std::make_unique<gpu::sync_s>();
                 frames_rendered_.push_frame(std::move(frame), frame_arrival_time);
-                gpu::context_s::rewind_current();
                 return S_OK;
             }
         }
@@ -237,7 +232,6 @@ class callback_s
 
         frame.sync = std::make_unique<gpu::sync_s>();
         frames_rendered_.push_frame(std::move(frame), frame_arrival_time);
-        gpu::context_s::rewind_current();
         return S_OK;
     }
 

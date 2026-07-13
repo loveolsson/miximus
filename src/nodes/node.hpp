@@ -50,10 +50,10 @@ class node_i
 
     /**
      * Called every tick on the main thread. The main GL context is current.
-     * Nodes may make additional contexts current (e.g. for worker threads) provided
-     * they rewind the context stack before returning. Because the context stack
-     * makes re-entering an already-current context essentially free, nodes can
-     * unconditionally call make_current() if they need the context.
+     * Nodes may scope additional current contexts (e.g. for worker threads) with
+     * gpu::context_scope_s. Because the context stack makes re-entering the
+     * already-current context essentially free, nodes can create a scope
+     * unconditionally when they need the context.
      */
     virtual void prepare(core::app_state_s*, const node_state_s&, traits_s*) {};
 
@@ -75,9 +75,9 @@ class node_i
 
     /**
      * Destructor — always called on the main thread with the main GL context
-     * current (make_current() is now the first call in tick_one_frame, before
-     * the update block that may trigger destruction, and clear_nodes() also
-     * calls make_current() first). GL cleanup is safe from the destructor.
+     * current (the context scope begins before the update block that may trigger
+     * destruction, and clear_nodes() also establishes a context scope first).
+     * GL cleanup is safe from the destructor.
      */
 
     virtual nlohmann::json get_default_options() const { return nlohmann::json::object(); }

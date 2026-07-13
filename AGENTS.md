@@ -15,7 +15,7 @@ More specific `AGENTS.md` files apply inside complex subtrees. Read the nearest 
 - The server is authoritative for graph structure and options. Validate native changes before broadcasting them.
 - Native and TypeScript node types, interface names, option keys/defaults, protocol enums, conversions, and status keys must remain synchronized.
 - Normal `prepare`, `execute`, `complete`, and node destruction happen on the render thread with the root GL context current. Background work is explicit.
-- Pair every `context_s::make_current()` with `context_s::rewind_current()`, including early returns.
+- Use `context_scope_s` whenever making a GL context current so stack rewind is RAII-safe, including on early returns.
 - Preserve `tick_one_frame()` ordering and the stable `nodes_copy_` render snapshot.
 - Use `gpu::transfer::transfer_i` for host/GPU movement. Preserve registration, ownership transitions, completion waits, and teardown ordering.
 - Do not expose GPU-to-CPU transfer memory to a worker before `wait_for_copy()` succeeds.

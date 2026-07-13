@@ -74,6 +74,17 @@ GLFWimage load_image(std::string_view filename)
 
 namespace miximus::gpu {
 
+context_scope_s::context_scope_s(context_s& context, context_lock_e locking)
+    : lock_(context.mtx_, std::defer_lock)
+{
+    if (locking == context_lock_e::lock) {
+        lock_.lock();
+    }
+    context.make_current();
+}
+
+context_scope_s::~context_scope_s() { context_s::rewind_current(); }
+
 context_s::context_s(bool visible, context_s* parent)
 {
     static std::once_flag glfw_init;
@@ -131,7 +142,7 @@ context_s::context_s(bool visible, context_s* parent)
 
     glfwSetWindowUserPointer(window_, this);
 
-    make_current();
+    const context_scope_s context_scope(*this);
 
     static std::once_flag glad_init;
     std::call_once(glad_init, []() {
@@ -168,16 +179,15 @@ context_s::context_s(bool visible, context_s* parent)
     glEnablei(GL_BLEND, 0);
     glEnable(GL_MULTISAMPLE);
     glDisable(GL_FRAMEBUFFER_SRGB);
-
-    rewind_current();
 }
 
 context_s::~context_s()
 {
     if (window_ != nullptr) {
-        make_current();
-        shaders_.clear();
-        rewind_current();
+        {
+            const context_scope_s context_scope(*this);
+            shaders_.clear();
+        }
         glfwDestroyWindow(window_);
     }
 }

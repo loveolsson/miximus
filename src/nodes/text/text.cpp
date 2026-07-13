@@ -116,7 +116,7 @@ class node_impl : public node_i
     void render_text(core::app_state_s* app, [[maybe_unused]] const node_state_s& state)
     {
         const std::unique_lock<::mutex> lock(ctx_mtx_);
-        ctx_->make_current();
+        const gpu::context_scope_s      context_scope(*ctx_);
 
         // Load font if needed
         {
@@ -147,14 +147,12 @@ class node_impl : public node_i
             }
 
             if (!font_info) {
-                gpu::context_s::rewind_current();
                 return;
             }
 
             // Load font instance
             font_instance_ = font_loader_->load_font(&*font_info);
             if (!font_instance_) {
-                gpu::context_s::rewind_current();
                 return;
             }
 
@@ -199,8 +197,6 @@ class node_impl : public node_i
         texture->generate_mip_maps();
 
         text_info_->needs_update = false;
-
-        gpu::context_s::rewind_current();
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

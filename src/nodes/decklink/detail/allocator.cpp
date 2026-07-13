@@ -77,8 +77,7 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
 
 void allocator_s::return_buffer(video_buffer_s* buffer)
 {
-    auto lock = ctx_->get_lock();
-    ctx_->make_current();
+    const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
 
     auto it = allocated_buffers_.find(buffer);
     if (it != allocated_buffers_.end()) {
@@ -92,8 +91,6 @@ void allocator_s::return_buffer(video_buffer_s* buffer)
     } else {
         throw std::runtime_error("DeckLink allocator trying to release unknown buffer");
     }
-
-    gpu::context_s::rewind_current();
 }
 
 gpu::transfer::transfer_i* allocator_s::get_transfer(IDeckLinkVideoBuffer* buffer)
@@ -124,15 +121,11 @@ bool allocator_s::end_texture_use(gpu::texture_s* texture)
 
 size_t allocator_s::destroy_free_transfers()
 {
-    auto lock = ctx_->get_lock();
-    ctx_->make_current();
-
     allocations_g -= free_buffers_.size();
     free_buffers_.clear();
 
     getlog("decklink")->debug("Destroying free transfers, current count {}", allocations_g.load());
 
-    gpu::context_s::rewind_current();
     return allocated_buffers_.size();
 }
 
