@@ -1,5 +1,52 @@
 ---
-Checks: '*,-fuchsia-default-arguments-calls,-modernize-use-trailing-return-type,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-cppcoreguidelines-pro-type-reinterpret-cast,-google-build-using-namespace,-modernize-use-nodiscard,-fuchsia-overloaded-operator,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-hicpp-no-array-decay,-cppcoreguidelines-pro-type-union-access,-fuchsia-statically-constructed-objects,-cppcoreguidelines-no-malloc,-hicpp-no-malloc,-cppcoreguidelines-owning-memory,-cppcoreguidelines-macro-usage,-cppcoreguidelines-pro-type-vararg,-hicpp-vararg,-misc-non-private-member-variables-in-classes,-clang-analyzer-cplusplus.NewDelete,-llvmlibc*,-altera*,-readability-identifier-length,-abseil*,-bugprone-easily-swappable-parameters,-readability-container-data-pointer,-readability-qualified-auto,-llvm-qualified-auto,-clang-diagnostic-*,-llvm-prefer-static-over-anonymous-namespace,-misc-include-cleaner,-misc-use-internal-linkage,-misc-const-correctness'
+# Begin from an empty set so new platform and vendor check families are not
+# silently enabled by a clang-tidy upgrade. Keep canonical correctness, safety,
+# concurrency, performance, portability, modernization, and readability checks.
+Checks: >-
+  -*,
+  clang-analyzer-core.*,
+  clang-analyzer-cplusplus.*,
+  -clang-analyzer-cplusplus.NewDelete,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-optin.core.*,
+  clang-analyzer-optin.cplusplus.*,
+  clang-analyzer-optin.portability.*,
+  clang-analyzer-optin.taint.*,
+  clang-analyzer-security.*,
+  clang-analyzer-unix.*,
+  clang-analyzer-valist.*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-no-malloc,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-pro-type-vararg,
+  misc-*,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -misc-use-internal-linkage,
+  modernize-*,
+  -modernize-use-nodiscard,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  portability-*,
+  -portability-avoid-pragma-once,
+  -portability-restrict-system-includes,
+  readability-*,
+  -readability-container-contains,
+  -readability-container-data-pointer,
+  -readability-identifier-length,
+  -readability-identifier-naming,
+  -readability-magic-numbers,
+  -readability-qualified-auto
 ExtraArgs:
   - -DFMT_CONSTEVAL=
 ...
