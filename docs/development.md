@@ -29,6 +29,15 @@ cmake -S . -B build
 cmake --build build -j
 ```
 
+Enable clang-tidy during native compilation with:
+
+```bash
+cmake -S . -B build -DMIXIMUS_ENABLE_CLANG_TIDY=ON
+```
+
+The repository-root `.clang-tidy` contains the shared check configuration used by both CMake and supporting IDE
+extensions. CMake also exports `build/compile_commands.json` for clangd and other compilation-database consumers.
+
 Run:
 
 ```bash

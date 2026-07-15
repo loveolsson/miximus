@@ -2,48 +2,15 @@ cmake_minimum_required(VERSION 3.28)
 project(miximus)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/submodules/sanitizers-cmake/cmake")
 
-set(MIXIMUS_CLANG_TIDY_PARAMS
-    -checks=*
-    -fuchsia-default-arguments-calls
-    -modernize-use-trailing-return-type
-    -cppcoreguidelines-pro-bounds-pointer-arithmetic
-    -cppcoreguidelines-avoid-magic-numbers
-    -readability-magic-numbers
-    -cppcoreguidelines-pro-type-reinterpret-cast
-    -google-build-using-namespace
-    -modernize-use-nodiscard
-    -fuchsia-overloaded-operator
-    -cppcoreguidelines-pro-bounds-array-to-pointer-decay
-    -hicpp-no-array-decay
-    -cppcoreguidelines-pro-type-union-access
-    -fuchsia-statically-constructed-objects
-    -cppcoreguidelines-no-malloc
-    -hicpp-no-malloc
-    -cppcoreguidelines-owning-memory
-    -cppcoreguidelines-macro-usage
-    -cppcoreguidelines-pro-type-vararg
-    -hicpp-vararg
-    -misc-non-private-member-variables-in-classes
-    -clang-analyzer-cplusplus.NewDelete
-    -llvmlibc*
-    -altera*
-    -readability-identifier-length
-    -abseil*
-    -bugprone-easily-swappable-parameters
-    -readability-container-data-pointer
-    -readability-qualified-auto
-    -llvm-qualified-auto
-    -clang-diagnostic-*
-    -llvm-prefer-static-over-anonymous-namespace
-    -misc-include-cleaner
-    -misc-use-internal-linkage
-    -misc-const-correctness
-)
+option(MIXIMUS_ENABLE_CLANG_TIDY "Run clang-tidy while compiling Miximus targets" OFF)
 
-list(JOIN MIXIMUS_CLANG_TIDY_PARAMS "," MIXIMUS_CLANG_TIDY_PARAMS_STR)
-#set(MIXIMUS_CLANG_TIDY "clang-tidy;${MIXIMUS_CLANG_TIDY_PARAMS_STR};--extra-arg=-DFMT_CONSTEVAL=")
+if(MIXIMUS_ENABLE_CLANG_TIDY)
+    find_program(MIXIMUS_CLANG_TIDY_EXECUTABLE NAMES clang-tidy REQUIRED)
+    message(STATUS "clang-tidy enabled: ${MIXIMUS_CLANG_TIDY_EXECUTABLE}")
+endif()
 
 find_package(Sanitizers REQUIRED)
 find_package(Threads REQUIRED)
@@ -79,6 +46,10 @@ endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(submodules)
+
+if(MIXIMUS_ENABLE_CLANG_TIDY)
+    set(CMAKE_CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_EXECUTABLE}")
+endif()
 
 # Strict warnings — applied only to our own targets, after submodules are added.
 add_compile_options(

@@ -6,8 +6,6 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-set(CMAKE_CXX_CLANG_TIDY ${MIXIMUS_CLANG_TIDY})
-
 add_subdirectory(logger)
 add_subdirectory(types)
 add_subdirectory(utils)
