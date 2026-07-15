@@ -65,7 +65,8 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 
 ## Nodes, interfaces, and connections
 
-Native nodes derive from `nodes::node_i`. Interfaces are members registered in the node constructor with `register_interface()`.
+Native nodes derive from `nodes::node_i`. Interfaces are members constructed with the owning node and register
+themselves automatically. Duplicate interface names fail node construction.
 
 Supported native interface types are:
 

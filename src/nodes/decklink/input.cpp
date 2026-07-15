@@ -336,7 +336,7 @@ class node_impl : public node_i
     gpu::color_conversion_s yuv_conversion_{gpu::get_color_transfer_from_yuv(gpu::color_transfer_e::Rec709)};
     gpu::mat3               gamut_conversion_{1.0F};
 
-    output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
+    output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     static auto& devices_in_use()
     {
@@ -360,7 +360,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { register_interface(&iface_tex_); }
+    explicit node_impl() = default;
 
     ~node_impl() override
     {

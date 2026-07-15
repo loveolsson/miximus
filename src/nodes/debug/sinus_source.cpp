@@ -13,10 +13,10 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    output_interface_s<double> iface_res_{"res"};
+    output_interface_s<double> iface_res_{*this, "res"};
 
   public:
-    explicit node_impl() { register_interface(&iface_res_); }
+    explicit node_impl() = default;
 
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
     {

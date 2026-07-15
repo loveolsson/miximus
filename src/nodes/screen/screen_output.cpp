@@ -61,14 +61,14 @@ class node_impl : public node_i
         }
     };
 
-    input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
+    input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     std::shared_ptr<render_state_s>    render_state_;
     std::thread                        render_thread_;
     std::unique_ptr<gpu::draw_state_s> draw_state_;
 
   public:
-    explicit node_impl() { register_interface(&iface_tex_); }
+    explicit node_impl() = default;
 
     ~node_impl() override { stop_thread(); }
 

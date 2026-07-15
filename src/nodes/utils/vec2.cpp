@@ -12,17 +12,12 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<double>       iface_x_{"x"};
-    input_interface_s<double>       iface_y_{"y"};
-    output_interface_s<gpu::vec2_t> iface_res_{"res"};
+    input_interface_s<double>       iface_x_{*this, "x"};
+    input_interface_s<double>       iface_y_{*this, "y"};
+    output_interface_s<gpu::vec2_t> iface_res_{*this, "res"};
 
   public:
-    explicit node_impl()
-    {
-        register_interface(&iface_x_);
-        register_interface(&iface_y_);
-        register_interface(&iface_res_);
-    }
+    explicit node_impl() = default;
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {

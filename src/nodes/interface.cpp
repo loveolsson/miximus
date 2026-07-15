@@ -10,6 +10,14 @@
 
 namespace miximus::nodes {
 
+interface_i::interface_i(node_i& owner, std::string_view name, dir_e direction, interface_type_e type)
+    : name_(name)
+    , direction_(direction)
+    , type_(type)
+{
+    owner.register_interface(*this);
+}
+
 bool interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const
 {
     if (connections->size() == static_cast<size_t>(max_connection_count_)) {

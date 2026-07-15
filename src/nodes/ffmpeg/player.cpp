@@ -18,12 +18,12 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
+    output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
 
   public:
-    explicit node_impl() { register_interface(&iface_tex_); }
+    explicit node_impl() = default;
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 

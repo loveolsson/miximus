@@ -41,7 +41,7 @@ class node_impl : public node_i
     uint64_t    last_source_version_{std::numeric_limits<uint64_t>::max()};
     std::string connected_source_;
 
-    output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
+    output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void free_receiver()
     {
@@ -65,7 +65,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { register_interface(&iface_tex_); }
+    explicit node_impl() = default;
 
     ~node_impl() override { free_receiver(); }
 

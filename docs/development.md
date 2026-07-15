@@ -64,7 +64,8 @@ A complete node generally requires native and web changes.
 ### Native side
 
 1. Implement a `nodes::node_i` subclass under `src/nodes/<group>/`.
-2. Store interfaces as members and call `register_interface()` in the constructor.
+2. Store interfaces as members and construct each with the owning node (`*this`) and its stable protocol name. Interface
+   construction registers it automatically; duplicate names fail node construction.
 3. Implement `type()` with a stable protocol type string.
 4. Implement `get_default_options()` with every persisted option and its canonical default.
 5. Implement `normalize_option()` using `normalize_option_value<T>()` where possible. Return `ok` for an unchanged

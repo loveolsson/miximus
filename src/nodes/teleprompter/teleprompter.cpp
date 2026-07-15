@@ -54,10 +54,10 @@ class node_impl : public node_i
         std::unique_ptr<render::font_instance_s> font;
     };
 
-    input_interface_s<gpu::rect_s>          iface_rect_in_{"rect"};
-    input_interface_s<double>               iface_scroll_pos_in_{"scroll_pos"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
+    input_interface_s<gpu::rect_s>          iface_rect_in_{*this, "rect"};
+    input_interface_s<double>               iface_scroll_pos_in_{*this, "scroll_pos"};
+    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
     std::unique_ptr<gpu::draw_state_s>        draw_state_;
     ::mutex                                   font_mtx_;
@@ -79,13 +79,7 @@ class node_impl : public node_i
     uint64_t     last_reported_font_version_{std::numeric_limits<uint64_t>::max()};
 
   public:
-    explicit node_impl()
-    {
-        register_interface(&iface_rect_in_);
-        register_interface(&iface_scroll_pos_in_);
-        register_interface(&iface_fb_in_);
-        register_interface(&iface_fb_out_);
-    }
+    explicit node_impl() = default;
 
     node_impl(const node_impl&)      = delete;
     node_impl(node_impl&&)           = delete;

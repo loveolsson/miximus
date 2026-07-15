@@ -29,10 +29,10 @@ inline gpu::rect_s lerp<gpu::rect_s>(const gpu::rect_s& a, const gpu::rect_s& b,
 template <typename T>
 class node_impl : public node_i
 {
-    input_interface_s<T>      iface_a_{"a"};
-    input_interface_s<T>      iface_b_{"b"};
-    input_interface_s<double> iface_t_{"t"};
-    output_interface_s<T>     iface_res_{"res"};
+    input_interface_s<T>      iface_a_{*this, "a"};
+    input_interface_s<T>      iface_b_{*this, "b"};
+    input_interface_s<double> iface_t_{*this, "t"};
+    output_interface_s<T>     iface_res_{*this, "res"};
     std::string_view          type_;
     std::string_view          name_;
 
@@ -41,10 +41,6 @@ class node_impl : public node_i
         : type_(type)
         , name_(name)
     {
-        register_interface(&iface_a_);
-        register_interface(&iface_b_);
-        register_interface(&iface_t_);
-        register_interface(&iface_res_);
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

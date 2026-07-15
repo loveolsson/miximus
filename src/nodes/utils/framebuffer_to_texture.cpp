@@ -13,15 +13,11 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::framebuffer_s*> iface_fb_{"fb"};
-    output_interface_s<gpu::texture_s*>    iface_tex_{"tex"};
+    input_interface_s<gpu::framebuffer_s*> iface_fb_{*this, "fb"};
+    output_interface_s<gpu::texture_s*>    iface_tex_{*this, "tex"};
 
   public:
-    explicit node_impl()
-    {
-        register_interface(&iface_fb_);
-        register_interface(&iface_tex_);
-    }
+    explicit node_impl() = default;
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
 

@@ -44,9 +44,9 @@ class node_impl : public node_i
         int                                last_font_size{48};
     };
 
-    input_interface_s<gpu::vec2_t>          iface_position_in_{"position"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
+    input_interface_s<gpu::vec2_t>          iface_position_in_{*this, "position"};
+    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
     std::unique_ptr<gpu::draw_state_s>       draw_state_;
     std::shared_ptr<render::font_loader_s>   font_loader_;
@@ -61,10 +61,6 @@ class node_impl : public node_i
   public:
     explicit node_impl()
     {
-        register_interface(&iface_position_in_);
-        register_interface(&iface_fb_in_);
-        register_interface(&iface_fb_out_);
-
         text_info_   = std::make_unique<text_render_info_s>();
         font_loader_ = std::make_shared<render::font_loader_s>();
     }

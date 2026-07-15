@@ -3,11 +3,19 @@
 #include "interface.hpp"
 #include "normalize_option.hpp"
 
+#include <format>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 
 namespace miximus::nodes {
-void node_i::register_interface(const interface_i* iface) { interfaces_.emplace(iface->name(), iface); }
+void node_i::register_interface(const interface_i& iface)
+{
+    const auto [_, inserted] = interfaces_.emplace(iface.name(), &iface);
+    if (!inserted) {
+        throw std::logic_error(std::format("duplicate interface name {}", iface.name()));
+    }
+}
 
 void node_i::init(std::string_view id) { id_ = id; }
 

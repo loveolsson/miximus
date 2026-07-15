@@ -15,17 +15,13 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::vec2_t>          iface_size_{"size"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_{"fb"};
+    input_interface_s<gpu::vec2_t>          iface_size_{*this, "size"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_{*this, "fb"};
 
     std::unique_ptr<gpu::framebuffer_s> framebuffer_;
 
   public:
-    explicit node_impl()
-    {
-        register_interface(&iface_size_);
-        register_interface(&iface_fb_);
-    }
+    explicit node_impl() = default;
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {

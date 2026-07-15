@@ -25,9 +25,9 @@ enum class operation_e : uint8_t
 template <typename T>
 class node_impl : public node_i
 {
-    input_interface_s<T>  iface_a_{"a"};
-    input_interface_s<T>  iface_b_{"b"};
-    output_interface_s<T> iface_res_{"res"};
+    input_interface_s<T>  iface_a_{*this, "a"};
+    input_interface_s<T>  iface_b_{*this, "b"};
+    output_interface_s<T> iface_res_{*this, "res"};
     std::string_view      type_;
     std::string_view      name_;
 
@@ -36,9 +36,6 @@ class node_impl : public node_i
         : type_(type)
         , name_(name)
     {
-        register_interface(&iface_a_);
-        register_interface(&iface_b_);
-        register_interface(&iface_res_);
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

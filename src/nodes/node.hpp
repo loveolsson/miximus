@@ -13,14 +13,16 @@ namespace miximus::nodes {
 
 class node_i
 {
+    friend class interface_i;
+
+    void register_interface(const interface_i& iface);
+
   protected:
     interface_map_t interfaces_;
     std::string     id_;
 
     node_i()          = default;
     virtual ~node_i() = default;
-
-    void register_interface(const interface_i* iface);
 
   public:
     struct traits_s

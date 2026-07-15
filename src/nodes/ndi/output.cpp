@@ -67,7 +67,7 @@ class node_impl : public node_i
     // Slot prepared in execute(), posted to worker in complete().
     std::optional<ndi_frame_s> execute_slot_;
 
-    input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
+    input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     static constexpr int  FREE_FRAME_COUNT = 7;
     static constexpr auto COLOR_METADATA = R"(<ndi_color_info primaries="bt_709" transfer="bt_709" matrix="bt_709"/>)";
@@ -180,7 +180,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { register_interface(&iface_tex_); }
+    explicit node_impl() = default;
 
     ~node_impl() override { free_sender(); }
 

@@ -2,6 +2,7 @@
 #include "core/app_state_fwd.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface_type.hpp"
+#include "nodes/node_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
 
 #include <boost/container/small_vector.hpp>
@@ -24,13 +25,13 @@ class interface_i
         output,
     };
 
-    interface_i(std::string_view name, dir_e direction, interface_type_e type)
-        : name_(name)
-        , direction_(direction)
-        , type_(type)
-    {
-    }
+    interface_i(node_i& owner, std::string_view name, dir_e direction, interface_type_e type);
     virtual ~interface_i() = default;
+
+    interface_i(const interface_i&)            = delete;
+    interface_i(interface_i&&)                 = delete;
+    interface_i& operator=(const interface_i&) = delete;
+    interface_i& operator=(interface_i&&)      = delete;
 
     bool add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
     void set_max_connection_count(int count) { max_connection_count_ = count; }
@@ -58,8 +59,8 @@ class input_interface_s : public interface_i
     using resolved_values_t = boost::container::small_vector<T, S>;
 
   public:
-    input_interface_s(std::string_view name)
-        : interface_i(name, dir_e::input, get_interface_type<T>())
+    input_interface_s(node_i& owner, std::string_view name)
+        : interface_i(owner, name, dir_e::input, get_interface_type<T>())
     {
     }
     ~input_interface_s() = default;
@@ -116,8 +117,8 @@ class output_interface_s : public interface_i
     T value_{};
 
   public:
-    output_interface_s(std::string_view name)
-        : interface_i(name, dir_e::output, get_interface_type<T>())
+    output_interface_s(node_i& owner, std::string_view name)
+        : interface_i(owner, name, dir_e::output, get_interface_type<T>())
     {
         /**
          * Framebuffers are a special case only acceps a single output since the only way

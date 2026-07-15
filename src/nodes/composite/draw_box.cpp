@@ -18,23 +18,16 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::rect_s>          iface_rect_{"rect"};
-    input_interface_s<gpu::texture_s*>      iface_tex_{"tex"};
-    input_interface_s<double>               iface_opacity_{"opacity"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{"fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{"fb_out"};
+    input_interface_s<gpu::rect_s>          iface_rect_{*this, "rect"};
+    input_interface_s<gpu::texture_s*>      iface_tex_{*this, "tex"};
+    input_interface_s<double>               iface_opacity_{*this, "opacity"};
+    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
     std::unique_ptr<gpu::draw_state_s> draw_state_;
 
   public:
-    explicit node_impl()
-    {
-        register_interface(&iface_rect_);
-        register_interface(&iface_tex_);
-        register_interface(&iface_opacity_);
-        register_interface(&iface_fb_in_);
-        register_interface(&iface_fb_out_);
-    }
+    explicit node_impl() = default;
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {

@@ -254,7 +254,7 @@ class node_impl : public node_i
     uint64_t                                         last_device_version_{std::numeric_limits<uint64_t>::max()};
     std::optional<gpu::transfer::transfer_i::type_e> registered_yuv_transfer_type_;
 
-    input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
+    input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     static auto& devices_in_use()
     {
@@ -284,7 +284,7 @@ class node_impl : public node_i
     }
 
   public:
-    explicit node_impl() { register_interface(&iface_tex_); }
+    explicit node_impl() = default;
 
     ~node_impl() override
     {
