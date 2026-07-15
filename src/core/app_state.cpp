@@ -2,6 +2,8 @@
 
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
+#include "gpu/transfer/texture_download.hpp"
+#include "gpu/transfer/texture_upload.hpp"
 #include "gpu/transfer/transfer.hpp"
 #include "nodes/decklink/registry.hpp"
 #include "nodes/ndi/registry.hpp"
@@ -30,6 +32,8 @@ app_state_s::app_state_s()
     // failed optional backend simply selects the persistent-PBO implementation.
     const gpu::context_scope_s context_scope(*ctx_);
     gpu::transfer::transfer_i::initialize_preferred_type();
+    texture_upload_service_   = std::make_unique<gpu::transfer::texture_upload_service_s>(ctx_.get());
+    texture_download_service_ = std::make_unique<gpu::transfer::texture_download_service_s>(ctx_.get());
 }
 
 app_state_s::~app_state_s()
@@ -39,6 +43,8 @@ app_state_s::~app_state_s()
 
     // DVP is tied to the root GL context and must be closed before that context
     // is destroyed. Nodes and their transfers are destroyed before app_state.
+    texture_download_service_.reset();
+    texture_upload_service_.reset();
     {
         const gpu::context_scope_s context_scope(*ctx_);
         gpu::transfer::transfer_i::shutdown();

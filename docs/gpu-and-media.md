@@ -4,14 +4,14 @@
 
 `gpu::context_s` wraps a GLFW OpenGL 4.6 context and maintains a thread-local current-context stack. Use `context_scope_s` to make a context current for a scope; its destructor rewinds the stack, including on early returns and exceptions. Re-entering the same current context is supported.
 
-The render loop makes the root hidden context current before node preparation and rewinds it after `complete()`. Shared worker contexts share objects with a parent and require external locking:
+The render loop makes the root hidden context current before node preparation and rewinds it after `complete()`. Dedicated worker contexts share GL objects with their parent, but each context is owned by one native thread at a time:
 
 ```cpp
-gpu::context_scope_s context_scope(*ctx, gpu::context_lock_e::lock);
+gpu::context_scope_s context_scope(*ctx);
 // GL work or GL-owned destruction
 ```
 
-The default `context_scope_s` does not take the context mutex and is appropriate for thread-owned contexts. Pass `context_lock_e::lock` for contexts used by callbacks or multiple threads. `context_s::get_lock()` remains available for synchronized operations that do not need a GL context current.
+Do not make one context current on multiple threads or run GL work in the fiber pool. Fibers produce or consume CPU data, while the render thread and dedicated transfer/display workers own GL contexts.
 
 Textures, framebuffers, shaders, GL sync objects, and transfer buffers assume an appropriate context is current for creation and destruction. Do not release them on arbitrary workers.
 
@@ -29,16 +29,16 @@ On Linux, GLFW is forced to X11 to obtain a GLX context. DVP requires GLX and ma
 - `cpu_wait()` blocks the caller up to a timeout;
 - construction and destruction require GL current.
 
-The frame lifecycle also performs one global `glFinish()` between all node `execute()` calls and all `complete()` calls. Use `complete()` for handoffs that require frame GPU work to be finished.
+The frame lifecycle currently performs one global `glFinish()` between all node `execute()` calls and all `complete()` calls. Transfer code must not rely on that finish: transfer services fence their own work and publish or recycle slots only after completion on a transfer/display worker.
 
 ## Host/GPU transfer abstraction
 
-Use `gpu::transfer::transfer_i` instead of writing node-specific PBO/readback paths. Transfers expose:
+Nodes use the app-owned `texture_upload_service_s` and `texture_download_service_s`; they do not construct `transfer_i` directly. The services select and contain the backend-specific `transfer_i` implementation:
 
 - direction (`cpu_to_gpu` or `gpu_to_cpu`);
 - byte size and host-visible `ptr()`;
 - `perform_copy()`;
-- transfer to/from a texture or framebuffer;
+- transfer to/from a texture;
 - `wait_for_copy()`;
 - backend identity through virtual `type()`.
 
@@ -48,7 +48,23 @@ Preferred transfer selection is initialized once in `app_state_s` while the root
 2. CUDA/OpenGL interop.
 3. Persistent mapped OpenGL PBO fallback.
 
-The basic synchronous backend remains available explicitly.
+The basic synchronous backend remains available. Its blocking work runs on a transfer worker, not the render thread.
+
+### Upload streams
+
+An upload stream is a bounded, lazily allocated set of backend-owned writable slots. A CPU producer calls `try_acquire()`, writes through the returned lease, then calls `submit()`. The upload worker owns a permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes the texture. The render thread calls `consume_latest()` or `consume_through()`; both are polling operations and retain the previous texture while a newer upload is incomplete.
+
+Submitted leases also pin their writable memory until the producer releases the lease. This is important for SDK allocators such as DeckLink, which may retain a buffer after delivering its frame callback.
+
+Use `acquire_for()` only on native SDK threads that are allowed to wait for lazy slot allocation. Render and fiber workers use `try_acquire()` and yield/drop work when no slot is available.
+
+### Download streams
+
+A download stream owns bounded render-target/readback slots. The render thread calls `try_acquire()`, renders into the target framebuffer, and calls `submit()`. Submission only inserts and flushes a fence. The download worker waits for rendering and performs the DVP/CUDA/PBO/basic readback on its shared context.
+
+CPU consumers poll `try_consume_latest()`. Its frame lease keeps host memory reserved until an NDI send or DeckLink copy has finished. If no render target is free, the node drops that output frame instead of waiting.
+
+Both services enforce memory budgets and catch allocation failures. Slots are allocated only after a stream is first used, and stream destruction reclaims its resources on the owning GL worker. Per-stream slot limits bound latency and memory growth.
 
 ### Texture lifetime hooks
 
@@ -64,26 +80,21 @@ Use `begin_texture_use()` and `end_texture_use()` at the established GL/transfer
 
 ### CUDA format rule
 
-CUDA transfers register an OpenGL pixel buffer. CUDA copies between pinned host memory and the PBO; OpenGL uses `glTextureSubImage2D`, `glGetTexImage`, or `glReadPixels` to move between the PBO and texture.
+CUDA transfers normally register an OpenGL pixel buffer. CUDA copies between pinned host memory and the PBO; OpenGL performs any required format conversion while moving between the PBO and texture. Storage-identical download formats may instead register the texture as a CUDA image and copy its array directly, avoiding an OpenGL readback and its driver-wide serialization.
 
-This design is intentional. A texture's CUDA array reflects native storage, while host bytes use the texture's external format/type. For example, an RGBA8 host surface uploaded to `GL_RGBA16` requires OpenGL conversion. A raw CUDA-array copy would fill only half the row. Do not bypass the PBO conversion path unless formats are proven storage-identical.
+This distinction is intentional. A texture's CUDA array reflects native storage, while host bytes normally use the texture's external format/type. For example, an RGBA8 host surface uploaded to `GL_RGBA16` requires OpenGL conversion; a raw CUDA-array copy would fill only half the row. Use direct image copies only for explicitly storage-identical formats.
 
 ### Completion and handoff
 
-Before a non-GL worker reads a GPU-to-CPU transfer's `ptr()`, call `wait_for_copy()`. Queue mutexes provide memory ordering but do not complete GPU/DVP/CUDA work.
-
-CPU-to-GPU callers should preserve the established backend-independent sequencing around `perform_copy()`, `wait_for_copy()`, `perform_transfer()`, and texture ownership hooks. Representative users are:
-
-- DeckLink input custom allocator/callback;
-- NDI input upload;
-- NDI output readback and send worker;
-- `render::surface_s` used by text and teleprompter.
+Completion is represented by ownership, not a node-side wait. An upload texture is not visible through `consume_latest()` until its transfer fence has completed. A download frame is not visible through `try_consume_latest()` until its host buffer is safe to read. Queue mutexes alone never imply GPU/DVP/CUDA completion.
 
 Transfer shutdown runs from `app_state_s` with the root GL context current, after node transfers/textures are destroyed and before root-context destruction. DVP and CUDA context teardown must remain in that window.
 
 ## DeckLink
 
-DeckLink input uses an `IDeckLinkVideoBufferAllocatorProvider` and `IDeckLinkVideoBufferAllocator` implementation. SDK capture buffers wrap transfer-owned host memory, allowing DeckLink to write into the selected transfer backend. The callback owns a shared GL context, uploads captured UYUV frames, and passes synchronized textures to the render node.
+DeckLink input uses an `IDeckLinkVideoBufferAllocatorProvider` and `IDeckLinkVideoBufferAllocator` implementation. SDK capture buffers hold upload leases, allowing DeckLink DMA to write directly into backend-owned host memory. The SDK callback records frame metadata and submits the lease; it performs no GL work. The render node polls completed UYUV textures and retains the stream while sampling one.
+
+DeckLink output renders packed 10-bit YUV into a download target. The transfer worker completes readback, and the DeckLink scheduled-frame callback polls a CPU-frame lease and copies it into DeckLink-owned output memory. The callback neither makes a GL context current nor waits for a transfer.
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
 
@@ -93,9 +104,9 @@ SDK 16 buffer access uses `IDeckLinkVideoBuffer`: query it, call `StartAccess`, 
 
 The NDI registry runs a discovery thread, owns copied source names, protects them with a shared mutex, and increments `source_list_version_` after changes.
 
-NDI input captures frames, copies them into transfer memory, uploads to a registered texture, and converts gamma/YUV representation with GL shaders.
+NDI input owns a dedicated capture thread. Each render tick coalesces a FrameSync sampling request; that worker performs the immediate FrameSync capture and copies into an upload lease. The render thread only signals, polls completed textures, and performs color conversion, preserving FrameSync time-base correction without a render-thread memory copy.
 
-NDI output renders into a BGRA framebuffer and initiates GPU-to-CPU readback on the render thread. `complete()` waits for backend completion and enqueues host memory. A dedicated worker performs potentially blocking asynchronous NDI sends and recycles frame slots. Keep SDK sends off the render thread.
+NDI output renders into a storage-identical RGBA download target. Its worker polls completed CPU-frame leases, performs potentially blocking asynchronous sends, and retains each lease until the following NDI async-send call releases the SDK's use of that memory.
 
 ## Font registry and CPU surfaces
 
@@ -103,7 +114,7 @@ The font registry may refresh from the configuration thread. It uses a shared mu
 
 Do not reintroduce pointer/view results whose lifetime crosses the registry lock.
 
-`render::surface_s` owns CPU RGBA pixels, a GPU texture, and a CPU-to-GPU transfer. Its templated copy/blend helper clips once before pixel loops. Preserve the separation between clipping and pixel operations to avoid per-pixel boundary branches.
+`render::surface_s` is a non-owning CPU pixel view. Text and teleprompter rendering construct it over an upload lease, so font work never owns GL objects and can run in the fiber pool. Its templated copy/blend helper clips once before pixel loops. Preserve the separation between clipping and pixel operations to avoid per-pixel boundary branches.
 
 ## Real-time queues and workers
 
@@ -124,6 +135,8 @@ Worker/callback rules:
 - `src/gpu/framebuffer.hpp/.cpp`
 - `src/gpu/sync.hpp/.cpp`
 - `src/gpu/transfer/transfer.hpp/.cpp`
+- `src/gpu/transfer/texture_upload.hpp/.cpp`
+- `src/gpu/transfer/texture_download.hpp/.cpp`
 - `src/gpu/transfer/detail/`
 - `src/nodes/decklink/`
 - `src/nodes/ndi/`

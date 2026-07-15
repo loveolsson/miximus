@@ -1,6 +1,8 @@
 #pragma once
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
+#include "gpu/transfer/texture_download_fwd.hpp"
+#include "gpu/transfer/texture_upload_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
@@ -28,11 +30,13 @@ class app_state_s
     std::thread                    cfg_thread_;
     std::unique_ptr<thread_pool_t> thread_pool_;
 
-    std::unique_ptr<gpu::context_s>                       ctx_;
-    std::unique_ptr<nodes::decklink::decklink_registry_s> decklink_registry_;
-    std::unique_ptr<nodes::ndi::ndi_registry_s>           ndi_registry_;
-    std::unique_ptr<render::font_registry_s>              font_registry_;
-    std::unique_ptr<node_status_registry_s>               status_registry_;
+    std::unique_ptr<gpu::context_s>                            ctx_;
+    std::unique_ptr<gpu::transfer::texture_upload_service_s>   texture_upload_service_;
+    std::unique_ptr<gpu::transfer::texture_download_service_s> texture_download_service_;
+    std::unique_ptr<nodes::decklink::decklink_registry_s>      decklink_registry_;
+    std::unique_ptr<nodes::ndi::ndi_registry_s>                ndi_registry_;
+    std::unique_ptr<render::font_registry_s>                   font_registry_;
+    std::unique_ptr<node_status_registry_s>                    status_registry_;
 
   public:
     app_state_s();
@@ -40,6 +44,8 @@ class app_state_s
 
     auto cfg_executor() { return &cfg_executor_; }
     auto ctx() { return ctx_.get(); }
+    auto texture_upload_service() { return texture_upload_service_.get(); }
+    auto texture_download_service() { return texture_download_service_.get(); }
     auto decklink_registry() { return decklink_registry_.get(); }
     auto ndi_registry() { return ndi_registry_.get(); }
     auto font_registry() { return font_registry_.get(); }

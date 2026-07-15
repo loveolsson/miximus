@@ -4,19 +4,12 @@
 
 #include <map>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 struct GLFWwindow;
 struct GLFWmonitor;
 
 namespace miximus::gpu {
-
-enum class context_lock_e
-{
-    no_lock,
-    lock,
-};
 
 class context_scope_s;
 
@@ -30,10 +23,8 @@ class context_s
 
     GLFWwindow*  window_{};
     shader_map_t shaders_;
-    std::mutex   mtx_;
-
-    void        make_current();
-    static void rewind_current();
+    void         make_current();
+    static void  rewind_current();
 
   public:
     context_s(bool visible, context_s* parent);
@@ -56,22 +47,17 @@ class context_s
     static void terminate();
     static bool has_extension(const char* ext);
 
-    auto get_lock() { return std::unique_lock(mtx_); }
-
     shader_program_s* get_shader(shader_program_s::name_e name);
 
     static std::unique_ptr<context_s> create_unique_context(bool visible = false, context_s* parent = nullptr);
-    static std::shared_ptr<context_s> create_shared_context(bool visible = false, context_s* parent = nullptr);
 
     static inline std::map<std::string, GLFWmonitor*, std::less<>> monitors_g;
 };
 
 class context_scope_s
 {
-    std::unique_lock<std::mutex> lock_;
-
   public:
-    explicit context_scope_s(context_s& context, context_lock_e locking = context_lock_e::no_lock);
+    explicit context_scope_s(context_s& context);
     ~context_scope_s();
 
     context_scope_s(const context_scope_s&)            = delete;

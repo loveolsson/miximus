@@ -17,6 +17,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <glm/common.hpp>
@@ -39,7 +40,6 @@ class node_impl : public node_i
         // objects are visible to the shared display context.
         std::unique_ptr<gpu::framebuffer_s> target;
         std::unique_ptr<gpu::sync_s>        ready;
-        std::unique_ptr<gpu::sync_s>        released;
     };
 
     // All state the render thread touches lives in render_state_s and is held
@@ -145,13 +145,6 @@ class node_impl : public node_i
 
         auto  slot_index = record.frame;
         auto& slot       = render_state_->frame_slots.at(slot_index);
-
-        if (slot.released) {
-            // Queue a GPU-side wait before overwriting a texture that the display
-            // context sampled during its previous presentation.
-            slot.released->gpu_wait();
-            slot.released.reset();
-        }
 
         if (!slot.target || slot.target->texture()->texture_dimensions() != dim) {
             slot.target = std::make_unique<gpu::framebuffer_s>(dim, gpu::texture_s::format_e::bgra_u8);
@@ -296,8 +289,13 @@ class node_impl : public node_i
 
                 state->ctx->swap_buffers();
 
-                slot.released = std::make_unique<gpu::sync_s>();
+                auto released = std::make_unique<gpu::sync_s>();
                 gpu::context_s::flush();
+                // Keep presentation completion off the render thread. A slot is
+                // not advertised as free until the display context is finished
+                // sampling it, so its next render never inherits a GPU wait.
+                (void)released->cpu_wait(std::chrono::hours(1));
+                released.reset();
                 state->frames_free.push_frame(slot_index);
             }
 

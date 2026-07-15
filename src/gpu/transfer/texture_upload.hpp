@@ -1,0 +1,108 @@
+#pragma once
+#include "gpu/texture.hpp"
+#include "gpu/transfer/texture_upload_fwd.hpp"
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+
+namespace miximus::gpu {
+class context_s;
+}
+
+namespace miximus::gpu::transfer {
+namespace detail {
+struct texture_upload_service_state_s;
+struct texture_upload_slot_s;
+struct texture_upload_stream_state_s;
+} // namespace detail
+
+struct texture_upload_desc_s
+{
+    vec2i_t             dimensions{};
+    texture_s::format_e format{texture_s::format_e::bgra_u8};
+    size_t              byte_size{};
+    size_t              max_slots{3};
+    bool                generate_mip_maps{true};
+};
+
+class texture_upload_lease_s
+{
+    std::shared_ptr<detail::texture_upload_stream_state_s> stream_;
+    std::shared_ptr<detail::texture_upload_slot_s>         slot_;
+    bool                                                   submitted_{};
+
+    texture_upload_lease_s(std::shared_ptr<detail::texture_upload_stream_state_s> stream,
+                           std::shared_ptr<detail::texture_upload_slot_s>         slot);
+
+    friend class texture_upload_stream_s;
+
+  public:
+    texture_upload_lease_s() = default;
+    ~texture_upload_lease_s();
+
+    texture_upload_lease_s(const texture_upload_lease_s&)            = delete;
+    texture_upload_lease_s& operator=(const texture_upload_lease_s&) = delete;
+    texture_upload_lease_s(texture_upload_lease_s&&) noexcept;
+    texture_upload_lease_s& operator=(texture_upload_lease_s&&) noexcept;
+
+    void*    ptr() const;
+    size_t   size() const;
+    uint64_t version() const;
+    void     submit();
+    explicit operator bool() const { return slot_ != nullptr; }
+};
+
+class texture_upload_stream_s
+{
+    std::shared_ptr<detail::texture_upload_stream_state_s> state_;
+
+    explicit texture_upload_stream_s(std::shared_ptr<detail::texture_upload_stream_state_s> state);
+    friend class texture_upload_service_s;
+
+  public:
+    ~texture_upload_stream_s();
+
+    texture_upload_stream_s(const texture_upload_stream_s&)            = delete;
+    texture_upload_stream_s& operator=(const texture_upload_stream_s&) = delete;
+    texture_upload_stream_s(texture_upload_stream_s&&)                 = delete;
+    texture_upload_stream_s& operator=(texture_upload_stream_s&&)      = delete;
+
+    std::optional<texture_upload_lease_s> try_acquire();
+    std::optional<texture_upload_lease_s> acquire_for(std::chrono::milliseconds timeout);
+
+    // Called on the render thread with its GL context current. Never waits:
+    // only textures already completed by the upload worker are published.
+    texture_s* consume_latest();
+    texture_s* consume_through(uint64_t version);
+    uint64_t   latest_ready_version() const;
+    uint64_t   current_version() const;
+
+    bool allocation_failed() const;
+    auto desc() const -> texture_upload_desc_s;
+};
+
+class texture_upload_service_s
+{
+    std::shared_ptr<detail::texture_upload_service_state_s> state_;
+
+  public:
+    static constexpr size_t DEFAULT_MEMORY_BUDGET = size_t{1} << 30;
+
+    explicit texture_upload_service_s(context_s* parent, size_t memory_budget = DEFAULT_MEMORY_BUDGET);
+    ~texture_upload_service_s();
+
+    texture_upload_service_s(const texture_upload_service_s&)            = delete;
+    texture_upload_service_s& operator=(const texture_upload_service_s&) = delete;
+    texture_upload_service_s(texture_upload_service_s&&)                 = delete;
+    texture_upload_service_s& operator=(texture_upload_service_s&&)      = delete;
+
+    std::shared_ptr<texture_upload_stream_s> create_stream(texture_upload_desc_s desc);
+
+    size_t memory_usage() const;
+    size_t memory_budget() const;
+};
+
+} // namespace miximus::gpu::transfer

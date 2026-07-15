@@ -1,27 +1,20 @@
 #include "surface.hpp"
 
-#include "gpu/texture.hpp"
-
 #include <algorithm>
 #include <cstdint>
 #include <glm/glm.hpp>
-#include <memory>
 #include <stdexcept>
 
 namespace miximus::render {
 
-surface_s::surface_s(gpu::vec2i_t dim)
+surface_s::surface_s(gpu::vec2i_t dim, rgba_pixel_t* ptr)
     : dimensions_(dim)
+    , ptr_(ptr)
 {
-    using transfer_i  = gpu::transfer::transfer_i;
-    const size_t size = sizeof(rgba_pixel_t) * dim.x * dim.y;
-
-    texture_  = std::make_unique<gpu::texture_s>(dim, gpu::texture_s::format_e::rgba_f16);
-    transfer_ = transfer_i::create_transfer(transfer_i::get_prefered_type(), size, transfer_i::direction_e::cpu_to_gpu);
-    gpu::transfer::transfer_i::register_texture(transfer_->type(), texture_.get());
+    if (ptr_ == nullptr) {
+        throw std::invalid_argument("surface pointer must not be null");
+    }
 }
-
-surface_s::~surface_s() { gpu::transfer::transfer_i::unregister_texture(transfer_->type(), texture_.get()); }
 
 void surface_s::clear(const rgba_pixel_t& color)
 {

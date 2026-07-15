@@ -2,6 +2,12 @@ target_sources(gpu
 PRIVATE
     transfer.hpp
     transfer.cpp
+    texture_upload_fwd.hpp
+    texture_upload.hpp
+    texture_upload.cpp
+    texture_download_fwd.hpp
+    texture_download.hpp
+    texture_download.cpp
     detail/fallback.hpp
     detail/fallback.cpp
     detail/persistent.hpp

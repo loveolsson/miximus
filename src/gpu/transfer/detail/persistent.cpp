@@ -1,6 +1,5 @@
 #include "persistent.hpp"
 
-#include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 
 #include <chrono>
@@ -77,26 +76,6 @@ bool pinned_transfer_s::perform_transfer(texture_s* texture)
         glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
         sync_ = std::make_unique<sync_s>();
     }
-
-    return true;
-}
-
-bool pinned_transfer_s::perform_transfer(framebuffer_s* fb)
-{
-    // gpu_to_cpu only: read pixels from the currently-bound read framebuffer.
-    // The framebuffer must still be bound when this is called.
-    ensure_read_pbo(static_cast<GLsizeiptr>(size_));
-
-    const auto   dims   = fb->texture()->texture_dimensions();
-    const auto   format = fb->texture()->format();
-    const GLenum type   = fb->texture()->type();
-
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, id_);
-    glReadPixels(0, 0, dims.x, dims.y, format, type, nullptr);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-
-    glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
-    sync_ = std::make_unique<sync_s>();
 
     return true;
 }

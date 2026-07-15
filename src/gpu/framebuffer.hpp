@@ -9,7 +9,10 @@ class framebuffer_s
 {
     GLuint                     id_{};
     GLuint                     rbo_id_{};
-    std::unique_ptr<texture_s> texture_;
+    std::unique_ptr<texture_s> owned_texture_;
+    texture_s*                 texture_{};
+
+    void initialize();
 
   public:
     enum class load_op_e
@@ -19,6 +22,7 @@ class framebuffer_s
     };
 
     framebuffer_s(vec2i_t dimensions, texture_s::format_e color);
+    explicit framebuffer_s(texture_s* texture);
     ~framebuffer_s();
 
     void        bind() const;
@@ -27,7 +31,7 @@ class framebuffer_s
     void        blit(framebuffer_s* target) const;
     static void end_render();
     static void unbind();
-    texture_s*  texture() { return texture_.get(); }
+    texture_s*  texture() { return texture_; }
     GLuint      id() { return id_; }
 };
 

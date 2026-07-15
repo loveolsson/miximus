@@ -14,6 +14,8 @@ class cuda_transfer_s : public transfer_i
     cudaEvent_t           completion_{nullptr};
     GLuint                buffer_{0};
     cudaGraphicsResource* buffer_resource_{nullptr};
+    cudaGraphicsResource* texture_resource_{nullptr};
+    GLuint                registered_texture_{};
     bool                  pending_{false};
 
     static bool initialized_;
@@ -23,6 +25,8 @@ class cuda_transfer_s : public transfer_i
     bool ensure_buffer();
     bool copy_host_to_buffer();
     bool copy_buffer_to_host();
+    bool copy_texture_to_host(texture_s* texture);
+    bool ensure_texture_resource(texture_s* texture);
 
   public:
     cuda_transfer_s(size_t size, direction_e dir);
@@ -32,7 +36,6 @@ class cuda_transfer_s : public transfer_i
 
     bool perform_copy() final { return true; }
     bool perform_transfer(texture_s* texture) final;
-    bool perform_transfer(framebuffer_s* framebuffer) final;
     bool wait_for_copy() final;
 
     static bool initialize_context();

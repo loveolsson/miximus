@@ -35,6 +35,13 @@ texture_s::texture_s(vec2i_t dimensions, format_e color)
             glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             // glTexParameterf(id_, GL_TEXTURE_MAX_ANISOTROPY, 16.f);
             break;
+        case format_e::rgba_u8:
+            internal_format = GL_RGBA8;
+            format_         = GL_RGBA;
+            type_           = GL_UNSIGNED_BYTE;
+            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            break;
         case format_e::bgra_u8:
             internal_format = GL_RGBA8;
             format_         = GL_BGRA;

@@ -5,7 +5,7 @@
 #include "gpu/framebuffer.hpp"
 #include "gpu/shader.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/transfer/transfer.hpp"
+#include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
@@ -15,10 +15,14 @@
 #include "registry.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
 
+#include <atomic>
+#include <condition_variable>
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 
 namespace {
 using namespace miximus;
@@ -32,19 +36,89 @@ class node_impl : public node_i
     NDIlib_recv_instance_t      recv_{nullptr};
     NDIlib_framesync_instance_t framesync_{nullptr};
 
-    std::unique_ptr<gpu::texture_s>            upload_texture_; // bgra_u8 upload target
-    std::unique_ptr<gpu::framebuffer_s>        framebuffer_;    // rgb_f16 linearized output
-    std::unique_ptr<gpu::draw_state_s>         draw_state_;
-    std::unique_ptr<gpu::transfer::transfer_i> transfer_;
-    gpu::vec2i_t                               current_dim_{};
+    std::mutex                                              upload_mutex_;
+    std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
+    std::unique_ptr<gpu::framebuffer_s>                     framebuffer_; // rgb_f16 linearized output
+    std::unique_ptr<gpu::draw_state_s>                      draw_state_;
+    std::atomic<bool>                                       capture_running_;
+    std::mutex                                              capture_mutex_;
+    std::condition_variable                                 capture_cv_;
+    bool                                                    capture_requested_{};
+    std::thread                                             capture_thread_;
 
     uint64_t    last_source_version_{std::numeric_limits<uint64_t>::max()};
     std::string connected_source_;
 
     output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
+    void capture_loop(gpu::transfer::texture_upload_service_s* upload_service)
+    {
+        gpu::vec2i_t current_dim{};
+        while (true) {
+            {
+                std::unique_lock lock(capture_mutex_);
+                capture_cv_.wait(lock, [this] { return capture_requested_ || !capture_running_.load(); });
+                if (!capture_running_.load()) {
+                    break;
+                }
+                capture_requested_ = false;
+            }
+
+            NDIlib_video_frame_v2_t video_frame{};
+            NDIlib_framesync_capture_video(framesync_, &video_frame, NDIlib_frame_format_type_progressive);
+            if (video_frame.p_data == nullptr) {
+                NDIlib_framesync_free_video(framesync_, &video_frame);
+                continue;
+            }
+
+            const gpu::vec2i_t new_dim{video_frame.xres, video_frame.yres};
+            const int          bytes_per_row = video_frame.xres * 4;
+            const size_t       frame_size = static_cast<size_t>(bytes_per_row) * static_cast<size_t>(video_frame.yres);
+
+            std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
+            {
+                const std::scoped_lock lock(upload_mutex_);
+                if (new_dim != current_dim || !upload_stream_) {
+                    current_dim    = new_dim;
+                    upload_stream_ = upload_service->create_stream({
+                        .dimensions        = new_dim,
+                        .format            = gpu::texture_s::format_e::bgra_u8,
+                        .byte_size         = frame_size,
+                        .max_slots         = 4,
+                        .generate_mip_maps = false,
+                    });
+                }
+                stream = upload_stream_;
+            }
+
+            auto upload = stream->try_acquire();
+            if (upload) {
+                auto* dst = static_cast<uint8_t*>(upload->ptr());
+                auto* src = video_frame.p_data;
+                if (video_frame.line_stride_in_bytes == bytes_per_row) {
+                    std::memcpy(dst, src, frame_size);
+                } else {
+                    for (int y = 0; y < video_frame.yres; ++y) {
+                        std::memcpy(dst, src, static_cast<size_t>(bytes_per_row));
+                        dst += bytes_per_row;
+                        src += video_frame.line_stride_in_bytes;
+                    }
+                }
+                upload->submit();
+            }
+
+            NDIlib_framesync_free_video(framesync_, &video_frame);
+        }
+    }
+
     void free_receiver()
     {
+        capture_running_ = false;
+        capture_cv_.notify_one();
+        if (capture_thread_.joinable()) {
+            capture_thread_.join();
+        }
+        capture_requested_ = false;
         if (framesync_ != nullptr) {
             NDIlib_framesync_destroy(framesync_);
             framesync_ = nullptr;
@@ -53,14 +127,12 @@ class node_impl : public node_i
             NDIlib_recv_destroy(recv_);
             recv_ = nullptr;
         }
-        if (transfer_ && upload_texture_) {
-            gpu::transfer::transfer_i::unregister_texture(transfer_->type(), upload_texture_.get());
+        {
+            const std::scoped_lock lock(upload_mutex_);
+            upload_stream_.reset();
         }
-        transfer_.reset();
-        upload_texture_.reset();
         framebuffer_.reset();
         draw_state_.reset();
-        current_dim_      = {};
         connected_source_ = {};
     }
 
@@ -126,6 +198,8 @@ class node_impl : public node_i
             }
 
             connected_source_ = source_name;
+            capture_running_  = true;
+            capture_thread_   = std::thread(&node_impl::capture_loop, this, app->texture_upload_service());
         }
     }
 
@@ -136,51 +210,34 @@ class node_impl : public node_i
             return;
         }
 
-        NDIlib_video_frame_v2_t video_frame{};
-        NDIlib_framesync_capture_video(framesync_, &video_frame, NDIlib_frame_format_type_progressive);
+        {
+            const std::scoped_lock lock(capture_mutex_);
+            capture_requested_ = true;
+        }
+        capture_cv_.notify_one();
 
-        if (video_frame.p_data == nullptr) {
-            NDIlib_framesync_free_video(framesync_, &video_frame);
+        std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
+        {
+            const std::scoped_lock lock(upload_mutex_);
+            stream = upload_stream_;
+        }
+        if (!stream) {
             iface_tex_.set_value(framebuffer_ ? framebuffer_->texture() : nullptr);
             return;
         }
 
-        const gpu::vec2i_t new_dim{video_frame.xres, video_frame.yres};
-        const int          bytes_per_row = video_frame.xres * 4;
-        const size_t       frame_size    = static_cast<size_t>(bytes_per_row) * video_frame.yres;
-
-        if (new_dim != current_dim_ || !transfer_) {
-            if (transfer_ && upload_texture_) {
-                gpu::transfer::transfer_i::unregister_texture(transfer_->type(), upload_texture_.get());
-            }
-            current_dim_    = new_dim;
-            upload_texture_ = std::make_unique<gpu::texture_s>(new_dim, gpu::texture_s::format_e::bgra_u8);
-            framebuffer_    = std::make_unique<gpu::framebuffer_s>(new_dim, gpu::texture_s::format_e::rgb_f16);
-            transfer_       = gpu::transfer::transfer_i::create_transfer(gpu::transfer::transfer_i::get_prefered_type(),
-                                                                   frame_size,
-                                                                   gpu::transfer::transfer_i::direction_e::cpu_to_gpu);
-            gpu::transfer::transfer_i::register_texture(transfer_->type(), upload_texture_.get());
+        // Poll only; the render thread never waits for an upload. Until the new
+        // frame is ready, keep publishing the previous converted frame.
+        auto upload_texture = stream->consume_latest();
+        if (upload_texture == nullptr) {
+            iface_tex_.set_value(framebuffer_ ? framebuffer_->texture() : nullptr);
+            return;
         }
 
-        // Copy NDI frame into transfer buffer, handling non-tight stride
-        auto* dst = static_cast<uint8_t*>(transfer_->ptr());
-        auto* src = video_frame.p_data;
-        if (video_frame.line_stride_in_bytes == bytes_per_row) {
-            std::memcpy(dst, src, frame_size);
-        } else {
-            for (int y = 0; y < video_frame.yres; ++y) {
-                std::memcpy(dst, src, bytes_per_row);
-                dst += bytes_per_row;
-                src += video_frame.line_stride_in_bytes;
-            }
+        if (!framebuffer_ || framebuffer_->texture()->display_dimensions() != upload_texture->display_dimensions()) {
+            framebuffer_ = std::make_unique<gpu::framebuffer_s>(upload_texture->display_dimensions(),
+                                                                gpu::texture_s::format_e::rgb_f16);
         }
-
-        NDIlib_framesync_free_video(framesync_, &video_frame);
-
-        // Upload to GPU via transfer abstraction
-        transfer_->perform_copy();
-        transfer_->wait_for_copy();
-        transfer_->perform_transfer(upload_texture_.get());
 
         // Linearize from Rec.709 gamma into rgb_f16 framebuffer
         if (!draw_state_) {
@@ -191,16 +248,13 @@ class node_impl : public node_i
         }
 
         framebuffer_->begin_render();
-        upload_texture_->bind(0);
+        upload_texture->bind(0);
         auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2_t{0.0, 0.0});
         shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
         draw_state_->draw();
         gpu::texture_s::unbind(0);
         gpu::framebuffer_s::end_render();
-
-        // Signal that GL is done sampling upload_texture; DVP may write again next frame.
-        gpu::transfer::transfer_i::end_texture_use(transfer_->type(), upload_texture_.get());
 
         auto* out_tex = framebuffer_->texture();
         out_tex->generate_mip_maps();

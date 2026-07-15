@@ -13,6 +13,7 @@ class texture_s
     {
         rgb_f16,
         rgba_f16,
+        rgba_u8,
         bgra_u8,
         uyuv_u8,
         uyuv_u10,

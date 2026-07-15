@@ -1,6 +1,5 @@
 #include "cuda.hpp"
 
-#include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "logger/logger.hpp"
 
@@ -113,6 +112,9 @@ cuda_transfer_s::~cuda_transfer_s()
     if (buffer_resource_ != nullptr) {
         (void)cudaGraphicsUnregisterResource(buffer_resource_);
     }
+    if (texture_resource_ != nullptr) {
+        (void)cudaGraphicsUnregisterResource(texture_resource_);
+    }
     if (buffer_ != 0) {
         glDeleteBuffers(1, &buffer_);
     }
@@ -122,6 +124,63 @@ cuda_transfer_s::~cuda_transfer_s()
     if (ptr_ != nullptr) {
         (void)cudaFreeHost(ptr_);
     }
+}
+
+bool cuda_transfer_s::ensure_texture_resource(texture_s* texture)
+{
+    if (texture_resource_ != nullptr && registered_texture_ == texture->id()) {
+        return true;
+    }
+    if (texture_resource_ != nullptr) {
+        if (!check_cuda(cudaGraphicsUnregisterResource(texture_resource_), "cudaGraphicsUnregisterResource image")) {
+            return false;
+        }
+        texture_resource_   = nullptr;
+        registered_texture_ = 0;
+    }
+    if (!check_cuda(cudaSetDevice(device_), "cudaSetDevice during image registration")) {
+        return false;
+    }
+    if (!check_cuda(cudaGraphicsGLRegisterImage(
+                        &texture_resource_, texture->id(), GL_TEXTURE_2D, cudaGraphicsRegisterFlagsReadOnly),
+                    "cudaGraphicsGLRegisterImage")) {
+        return false;
+    }
+    registered_texture_ = texture->id();
+    return true;
+}
+
+bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
+{
+    const auto dimensions = texture->texture_dimensions();
+    if (dimensions.y <= 0 || size_ % static_cast<size_t>(dimensions.y) != 0 || !ensure_texture_resource(texture) ||
+        !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
+        return false;
+    }
+
+    cudaArray_t array{};
+    bool        success   = check_cuda(cudaGraphicsSubResourceGetMappedArray(&array, texture_resource_, 0, 0),
+                              "cudaGraphicsSubResourceGetMappedArray");
+    const auto  row_bytes = size_ / static_cast<size_t>(dimensions.y);
+    if (success) {
+        success = check_cuda(cudaMemcpy2DFromArrayAsync(ptr_,
+                                                        row_bytes,
+                                                        array,
+                                                        0,
+                                                        0,
+                                                        row_bytes,
+                                                        static_cast<size_t>(dimensions.y),
+                                                        cudaMemcpyDeviceToHost,
+                                                        stream_),
+                             "cudaMemcpy2DFromArrayAsync texture to host");
+    }
+
+    success =
+        check_cuda(cudaGraphicsUnmapResources(1, &texture_resource_, stream_), "cudaGraphicsUnmapResources image") &&
+        success;
+    success  = check_cuda(cudaEventRecord(completion_, stream_), "cudaEventRecord") && success;
+    pending_ = success;
+    return success;
 }
 
 bool cuda_transfer_s::ensure_buffer()
@@ -216,23 +275,17 @@ bool cuda_transfer_s::perform_transfer(texture_s* texture)
         return true;
     }
 
+    if (texture->color_type() == texture_s::format_e::rgba_u8 ||
+        texture->color_type() == texture_s::format_e::uyuv_u10) {
+        return copy_texture_to_host(texture);
+    }
+
+    if (!ensure_buffer()) {
+        return false;
+    }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
     glBindTexture(GL_TEXTURE_2D, texture->id());
     glGetTexImage(GL_TEXTURE_2D, 0, texture->format(), texture->type(), nullptr);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-    return copy_buffer_to_host();
-}
-
-bool cuda_transfer_s::perform_transfer(framebuffer_s* framebuffer)
-{
-    if (direction_ != direction_e::gpu_to_cpu || !ensure_buffer()) {
-        return false;
-    }
-
-    const auto dimensions = framebuffer->texture()->texture_dimensions();
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
-    glReadPixels(
-        0, 0, dimensions.x, dimensions.y, framebuffer->texture()->format(), framebuffer->texture()->type(), nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     return copy_buffer_to_host();
 }

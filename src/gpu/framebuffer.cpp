@@ -8,11 +8,23 @@
 namespace miximus::gpu {
 
 framebuffer_s::framebuffer_s(vec2i_t dimensions, texture_s::format_e color)
+    : owned_texture_(std::make_unique<texture_s>(dimensions, color))
+    , texture_(owned_texture_.get())
+{
+    initialize();
+}
+
+framebuffer_s::framebuffer_s(texture_s* texture)
+    : texture_(texture)
+{
+    initialize();
+}
+
+void framebuffer_s::initialize()
 {
     glGenFramebuffers(1, &id_);
     bind();
 
-    texture_ = std::make_unique<texture_s>(dimensions, color);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_->id(), 0);
 
     auto tex_dims = texture_->texture_dimensions();

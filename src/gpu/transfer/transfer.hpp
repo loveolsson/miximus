@@ -1,5 +1,4 @@
 #pragma once
-#include "gpu/framebuffer_fwd.hpp"
 #include "gpu/texture_fwd.hpp"
 
 #include <memory>
@@ -28,14 +27,12 @@ class transfer_i
     virtual ~transfer_i() = default;
 
     size_t         size() const { return size_; }
-    direction_e    direction() const { return direction_; }
     virtual type_e type() const = 0;
 
     void*        ptr() const { return ptr_; }
-    virtual bool perform_copy()                   = 0;
-    virtual bool perform_transfer(texture_s*)     = 0;
-    virtual bool perform_transfer(framebuffer_s*) = 0;
-    virtual bool wait_for_copy()                  = 0;
+    virtual bool perform_copy()               = 0;
+    virtual bool perform_transfer(texture_s*) = 0;
+    virtual bool wait_for_copy()              = 0;
 
     static type_e get_prefered_type();
     // Called during application startup with the root GL context current. It

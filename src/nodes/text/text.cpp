@@ -3,8 +3,8 @@
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
-#include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
@@ -35,13 +35,13 @@ class node_impl : public node_i
 {
     struct text_render_info_s
     {
-        std::mutex                         mtx;
-        std::unique_ptr<render::surface_s> surface;
-        bool                               needs_update{true};
-        std::string                        last_text;
-        std::string                        last_font_name;
-        std::string                        last_font_variant;
-        int                                last_font_size{48};
+        std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream;
+        gpu::vec2i_t                                            surface_size{};
+        bool                                                    needs_update{true};
+        std::string                                             last_text;
+        std::string                                             last_font_name;
+        std::string                                             last_font_variant;
+        int                                                     last_font_size{48};
     };
 
     input_interface_s<gpu::vec2_t>          iface_position_in_{*this, "position"};
@@ -51,9 +51,7 @@ class node_impl : public node_i
     std::unique_ptr<gpu::draw_state_s>       draw_state_;
     std::shared_ptr<render::font_loader_s>   font_loader_;
     std::unique_ptr<text_render_info_s>      text_info_;
-    ::mutex                                  ctx_mtx_;
     ::mutex                                  font_mtx_;
-    std::unique_ptr<gpu::context_s>          ctx_;
     std::unique_ptr<render::font_instance_s> font_instance_;
     uint64_t                                 last_font_version_{std::numeric_limits<uint64_t>::max()};
     std::string                              last_status_font_name_;
@@ -82,10 +80,6 @@ class node_impl : public node_i
                 id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
         }
 
-        if (!ctx_) {
-            ctx_ = gpu::context_s::create_unique_context(false, app->ctx());
-        }
-
         if (!draw_state_) {
             draw_state_ = std::make_unique<gpu::draw_state_s>();
             auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
@@ -105,6 +99,11 @@ class node_impl : public node_i
             text_info_->last_font_variant = std::string(font_variant);
             text_info_->last_font_size    = font_size;
             text_info_->needs_update      = true;
+
+            if (text.empty()) {
+                text_info_->upload_stream.reset();
+                text_info_->surface_size = {};
+            }
         }
 
         if (text_info_->needs_update && !text_info_->last_text.empty()) {
@@ -114,9 +113,6 @@ class node_impl : public node_i
 
     void render_text(core::app_state_s* app, [[maybe_unused]] const node_state_s& state)
     {
-        const std::unique_lock<::mutex> lock(ctx_mtx_);
-        const gpu::context_scope_s      context_scope(*ctx_);
-
         // Load font if needed
         {
             const std::unique_lock<::mutex> font_lock(font_mtx_);
@@ -173,27 +169,32 @@ class node_impl : public node_i
                                             (padding * 2), // More generous padding
                                         text_info_->last_font_size + (padding * 2)};
 
-        if (!text_info_->surface || text_info_->surface->dimensions() != surface_size) {
-            text_info_->surface = std::make_unique<render::surface_s>(surface_size);
+        if (!text_info_->upload_stream || text_info_->surface_size != surface_size) {
+            text_info_->surface_size = surface_size;
+            const auto byte_size     = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(surface_size.x) *
+                                   static_cast<size_t>(surface_size.y);
+            text_info_->upload_stream = app->texture_upload_service()->create_stream({
+                .dimensions = surface_size,
+                .format     = gpu::texture_s::format_e::rgba_f16,
+                .byte_size  = byte_size,
+                .max_slots  = 3,
+            });
         }
 
-        // Clear surface to transparent
-        text_info_->surface->clear({0, 0, 0, 0});
+        auto upload = text_info_->upload_stream->try_acquire();
+        if (!upload) {
+            return;
+        }
+
+        render::surface_s surface(surface_size, static_cast<render::surface_s::rgba_pixel_t*>(upload->ptr()));
+        surface.clear({0, 0, 0, 0});
 
         // Position text with adequate padding from the top-left
         const gpu::vec2i_t text_position{padding, text_info_->last_font_size + (padding / 2)};
 
         // Render text in white
-        font_instance_->render_string(utf32_text, text_info_->surface.get(), text_position);
-
-        // Transfer to GPU
-        auto texture  = text_info_->surface->texture();
-        auto transfer = text_info_->surface->transfer();
-        transfer->perform_copy();
-        transfer->wait_for_copy();
-        transfer->perform_transfer(texture);
-        gpu::transfer::transfer_i::end_texture_use(transfer->type(), texture); // GL will use texture; signal DVP done
-        texture->generate_mip_maps();
+        font_instance_->render_string(utf32_text, &surface, text_position);
+        upload->submit();
 
         text_info_->needs_update = false;
     }
@@ -221,9 +222,9 @@ class node_impl : public node_i
             render_text(app, state);
         }
 
-        // Skip rendering if no surface is ready
-        if (!text_info_->surface) {
-            spdlog::get("app")->debug("Text node: No surface ready for rendering");
+        auto texture = text_info_->upload_stream ? text_info_->upload_stream->consume_latest() : nullptr;
+        if (texture == nullptr) {
+            spdlog::get("app")->debug("Text node: No uploaded texture ready for rendering");
             return;
         }
 
@@ -237,14 +238,13 @@ class node_impl : public node_i
         // Calculate the scale to render text at its natural pixel size
         // Convert surface dimensions to framebuffer coordinates
         const gpu::vec2i_t fb_dim       = fb->texture()->texture_dimensions();
-        const auto         surface_size = text_info_->surface->dimensions();
+        const auto         surface_size = text_info_->surface_size;
 
         const gpu::vec2_t scale{static_cast<float>(surface_size.x) / static_cast<float>(fb_dim.x),
                                 static_cast<float>(surface_size.y) / static_cast<float>(fb_dim.y)};
 
         shader->set_uniform("scale", scale);
 
-        auto texture = text_info_->surface->texture();
         texture->bind(0);
 
         shader->set_uniform("offset", position);

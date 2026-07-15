@@ -18,7 +18,6 @@ class pinned_transfer_s : public transfer_i
     type_e type() const final { return type_e::persistent; }
     bool   perform_copy() final;
     bool   perform_transfer(texture_s*) final;
-    bool   perform_transfer(framebuffer_s*) final;
     bool   wait_for_copy() final;
 
   private:

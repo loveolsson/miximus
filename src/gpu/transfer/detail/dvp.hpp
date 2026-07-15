@@ -84,7 +84,6 @@ class dvp_transfer_s : public transfer_i
     type_e type() const final { return type_e::dvp; }
     bool   perform_copy() final { return true; } // no-op: ptr_ IS the DMA source/dest
     bool   perform_transfer(texture_s* texture) final;
-    bool   perform_transfer(framebuffer_s* fb) final;
     bool   wait_for_copy() final;
 
     // Called once during app initialization with the root GL context current.

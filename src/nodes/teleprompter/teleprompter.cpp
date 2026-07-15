@@ -3,8 +3,8 @@
 #include "gpu/context.hpp"
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
-#include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
@@ -42,10 +42,11 @@ class node_impl : public node_i
 {
     struct line_info_s
     {
-        std::mutex                         mtx;
-        ::future<gpu::sync_s>              ready;
-        int                                line_no{-1};
-        std::unique_ptr<render::surface_s> surface;
+        std::mutex                                              mtx;
+        ::future<void>                                          ready;
+        int                                                     line_no{-1};
+        uint64_t                                                upload_version{};
+        std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream;
     };
 
     struct text_s
@@ -65,8 +66,6 @@ class node_impl : public node_i
     ::future<text_s>                          text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
-    ::mutex                                   ctx_mtx_;
-    std::unique_ptr<gpu::context_s>           ctx_;
 
     gpu::vec2i_t last_framebuffer_size{0, 0};
     int          font_size_{100};
@@ -112,10 +111,6 @@ class node_impl : public node_i
             last_status_font_name_ = font_name;
             app->status_registry()->write(
                 id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
-        }
-
-        if (!ctx_) {
-            ctx_ = gpu::context_s::create_unique_context(false, app->ctx());
         }
 
         if (!draw_state_) {
@@ -167,6 +162,18 @@ class node_impl : public node_i
                     return;
                 }
                 (void)text_future_.get();
+            }
+
+            // Line workers read the current font. Do not replace it until all
+            // work using the previous text generation has finished.
+            for (auto& line : render_lines_) {
+                if (!line->ready.valid()) {
+                    continue;
+                }
+                if (line->ready.wait_for(0ms) != ::future_status::ready) {
+                    return;
+                }
+                line->ready.get();
             }
 
             last_file_path_           = file_path;
@@ -263,13 +270,30 @@ class node_impl : public node_i
             auto& rl = render_lines_[txt_line_index % render_lines_.size()];
 
             if (rl->line_no != txt_line_index && !rl->ready.valid()) {
+                if (!rl->upload_stream || rl->upload_stream->desc().dimensions != tx_dim) {
+                    const auto byte_size = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(tx_dim.x) *
+                                           static_cast<size_t>(tx_dim.y);
+                    rl->upload_stream = app->texture_upload_service()->create_stream({
+                        .dimensions = tx_dim,
+                        .format     = gpu::texture_s::format_e::rgba_f16,
+                        .byte_size  = byte_size,
+                        .max_slots  = 2,
+                    });
+                }
+
+                auto upload = rl->upload_stream->try_acquire();
+                if (!upload) {
+                    continue;
+                }
+
                 // The render line contains the wrong text line AND is available for processing
-                rl->line_no = txt_line_index;
+                rl->line_no        = txt_line_index;
+                rl->upload_version = upload->version();
 
                 auto t = text_.lines[txt_line_index];
 
-                auto future =
-                    app->thread_pool()->submit(&node_impl::process_line, this, rl.get(), std::move(t), tx_dim);
+                auto future = app->thread_pool()->submit(
+                    &node_impl::process_line, this, rl.get(), std::move(t), tx_dim, std::move(*upload));
                 assert(future);
 
                 if (future) {
@@ -283,14 +307,9 @@ class node_impl : public node_i
 
                 if (rl->ready.wait_for(0ms) == ::future_status::ready) {
                     // Processing is done
-                    auto sync = rl->ready.get();
+                    rl->ready.get();
                     if (rl->line_no == txt_line_index) {
-                        /**
-                         * Render line contains corrent line number after processing.
-                         * During high speed scrolling this might get out of sync, so it
-                         * can't be assumed that the line no is correct.
-                         */
-                        sync.gpu_wait();
+                        // The upload service publishes the new texture when ready.
                     } else {
                         continue;
                     }
@@ -300,7 +319,10 @@ class node_impl : public node_i
             }
 
             const std::unique_lock lock(rl->mtx);
-            auto                   texture = rl->surface->texture();
+            auto                   texture = rl->upload_stream ? rl->upload_stream->consume_latest() : nullptr;
+            if (texture == nullptr || rl->upload_stream->current_version() != rl->upload_version) {
+                continue;
+            }
 
             texture->bind(0);
 
@@ -394,38 +416,18 @@ class node_impl : public node_i
         return res;
     }
 
-    gpu::sync_s process_line(line_info_s* line, const std::u32string& str, const gpu::vec2i_t& dim)
+    void process_line(line_info_s*                          line,
+                      const std::u32string&                 str,
+                      const gpu::vec2i_t&                   dim,
+                      gpu::transfer::texture_upload_lease_s upload)
     {
         const std::unique_lock line_lock(line->mtx);
         const std::unique_lock font_lock(font_mtx_);
 
-        if (!line->surface || line->surface->dimensions() != dim) {
-            const std::unique_lock     lock(ctx_mtx_);
-            const gpu::context_scope_s context_scope(*ctx_);
-            line->surface = std::make_unique<render::surface_s>(dim);
-        }
-
-        line->surface->clear({0, 0, 0, 0});
-
-        text_.font->render_string(str, line->surface.get(), {0, font_size_});
-
-        std::optional<gpu::sync_s> sync;
-
-        {
-            const std::unique_lock     lock(ctx_mtx_);
-            const gpu::context_scope_s context_scope(*ctx_);
-
-            auto texture  = line->surface->texture();
-            auto transfer = line->surface->transfer();
-            transfer->perform_copy();
-            transfer->wait_for_copy();
-            transfer->perform_transfer(texture);
-            gpu::transfer::transfer_i::end_texture_use(transfer->type(), texture); // signal DVP done
-            texture->generate_mip_maps();
-            sync.emplace();
-        }
-
-        return std::move(*sync);
+        render::surface_s surface(dim, static_cast<render::surface_s::rgba_pixel_t*>(upload.ptr()));
+        surface.clear({0, 0, 0, 0});
+        text_.font->render_string(str, &surface, {0, font_size_});
+        upload.submit();
     }
 };
 

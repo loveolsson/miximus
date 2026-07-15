@@ -6,14 +6,13 @@
 #include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/transfer/transfer.hpp"
+#include "gpu/transfer/texture_download.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
-#include "utils/frame_queue.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <algorithm>
@@ -22,7 +21,6 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <queue>
 #include <unordered_set>
 #include <utility>
 
@@ -47,20 +45,6 @@ struct mode_info_s
     BMDColorspace           colorspace;
 };
 
-struct frame_info_s
-{
-    std::unique_ptr<gpu::transfer::transfer_i> transfer;
-    gpu::vec2i_t                               dim{};
-
-    frame_info_s()  = default;
-    ~frame_info_s() = default;
-
-    frame_info_s(const frame_info_s&)                = delete;
-    frame_info_s(frame_info_s&&) noexcept            = default;
-    frame_info_s& operator=(const frame_info_s&)     = delete;
-    frame_info_s& operator=(frame_info_s&&) noexcept = default;
-};
-
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 class callback_s
@@ -69,11 +53,8 @@ class callback_s
 {
     std::atomic_ulong ref_count_{1};
 
-    std::shared_ptr<gpu::context_s>        ctx_;
-    utils::frame_queue_s<frame_info_s>     frames_rendered_;
-    utils::frame_queue_s<frame_info_s>     frames_free_;
-    decklink_ptr<IDeckLinkVideoFrame>      last_frame_;
-    decklink_ptr<IDeckLinkVideoConversion> converter_;
+    std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
+    decklink_ptr<IDeckLinkVideoFrame>                         last_frame_;
 
     IDeckLinkOutput* device_;
     mode_info_s      mode_info_;
@@ -90,14 +71,13 @@ class callback_s
     }
 
   public:
-    callback_s(std::shared_ptr<gpu::context_s> ctx, IDeckLinkOutput* device, mode_info_s mode_info)
-        : ctx_(std::move(ctx))
-        , converter_(decklink_registry_s::get_converter())
+    callback_s(std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream,
+               IDeckLinkOutput*                                          device,
+               mode_info_s                                               mode_info)
+        : download_stream_(std::move(download_stream))
         , device_(device)
         , mode_info_(mode_info)
     {
-        auto lock = ctx_->get_lock();
-
         IDeckLinkMutableVideoFrame* frame = nullptr;
 
         if (SUCCEEDED(device_->CreateVideoFrame(
@@ -120,19 +100,9 @@ class callback_s
             last_frame_ = frame;
             frame->Release();
         }
-
-        for (int i = 0; i < 7; i++) {
-            frames_free_.push_frame({});
-        }
     }
 
-    ~callback_s() override
-    {
-        const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
-
-        frames_free_.clear();
-        frames_rendered_.clear();
-    }
+    ~callback_s() override = default;
 
     callback_s(callback_s&&)                 = delete;
     callback_s(const callback_s&)            = delete;
@@ -165,19 +135,13 @@ class callback_s
             return S_OK;
         }
 
-        const gpu::context_scope_s context_scope(*ctx_, gpu::context_lock_e::lock);
-
-        auto pop = frames_rendered_.pop_frame_if_count(3);
-        if (pop.first) {
-            auto& frame = pop.first->frame;
-
-            frame.transfer->wait_for_copy();
-
+        auto frame = download_stream_->try_consume_latest();
+        if (frame) {
             IDeckLinkMutableVideoFrame* dst_frame = nullptr;
-            const int32_t               row_bytes = ((frame.dim.x + 47) / 48) * 128;
+            const int32_t               row_bytes = ((mode_info_.dim.x + 47) / 48) * 128;
 
-            if (SUCCEEDED(
-                    device_->CreateVideoFrame(frame.dim.x, frame.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
+            if (SUCCEEDED(device_->CreateVideoFrame(
+                    mode_info_.dim.x, mode_info_.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
                 set_colorspace_metadata(dst_frame);
                 IDeckLinkVideoBuffer* dst_buffer = nullptr;
                 if (dst_frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&dst_buffer)) ==
@@ -185,9 +149,9 @@ class callback_s
                     dst_buffer->StartAccess(bmdBufferAccessWrite);
                     void* dst_ptr = nullptr;
                     dst_buffer->GetBytes(&dst_ptr);
-                    const auto size = static_cast<size_t>(row_bytes) * frame.dim.y;
-                    assert(size == frame.transfer->size());
-                    memcpy(dst_ptr, frame.transfer->ptr(), size);
+                    const auto size = static_cast<size_t>(row_bytes) * static_cast<size_t>(mode_info_.dim.y);
+                    assert(size == frame->size());
+                    memcpy(dst_ptr, frame->ptr(), size);
                     dst_buffer->EndAccess(bmdBufferAccessWrite);
                     dst_buffer->Release();
                 }
@@ -195,8 +159,6 @@ class callback_s
                 last_frame_ = dst_frame;
                 dst_frame->Release();
             }
-
-            frames_free_.push_frame(std::move(frame));
         }
 
         if (last_frame_) {
@@ -224,18 +186,6 @@ class callback_s
      * IDeckLinkAudioOutputCallback
      */
     HRESULT STDMETHODCALLTYPE RenderAudioSamples(BOOL /*preroll*/) final { return S_OK; }
-
-    void push_rendered_frame(frame_info_s&& frame) { frames_rendered_.push_frame(std::move(frame)); }
-
-    std::optional<frame_info_s> get_free_frame()
-    {
-        auto pop = frames_free_.pop_frame();
-        if (pop.first.has_value()) {
-            return std::move(pop.first->frame);
-        }
-
-        return {};
-    }
 };
 #pragma GCC diagnostic pop
 
@@ -245,14 +195,13 @@ class node_impl : public node_i
     decklink_ptr<callback_s>                        callback_;
     std::map<std::string, mode_info_s, std::less<>> display_modes_;
 
-    std::unique_ptr<gpu::framebuffer_s>              framebuffer_yuv_;
-    std::unique_ptr<gpu::framebuffer_s>              framebuffer_scale_;
-    std::unique_ptr<gpu::draw_state_s>               draw_state_yuv_;
-    std::unique_ptr<gpu::draw_state_s>               draw_state_scale_;
-    std::string                                      display_mode_str_;
-    mode_info_s*                                     display_mode_{};
-    uint64_t                                         last_device_version_{std::numeric_limits<uint64_t>::max()};
-    std::optional<gpu::transfer::transfer_i::type_e> registered_yuv_transfer_type_;
+    std::unique_ptr<gpu::framebuffer_s>                       framebuffer_scale_;
+    std::unique_ptr<gpu::draw_state_s>                        draw_state_yuv_;
+    std::unique_ptr<gpu::draw_state_s>                        draw_state_scale_;
+    std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
+    std::string                                               display_mode_str_;
+    mode_info_s*                                              display_mode_{};
+    uint64_t last_device_version_{std::numeric_limits<uint64_t>::max()};
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -260,15 +209,6 @@ class node_impl : public node_i
     {
         static std::unordered_set<IDeckLinkOutput*> devices;
         return devices;
-    }
-
-    void reset_yuv_framebuffer()
-    {
-        if (framebuffer_yuv_ && registered_yuv_transfer_type_) {
-            gpu::transfer::transfer_i::unregister_texture(*registered_yuv_transfer_type_, framebuffer_yuv_->texture());
-        }
-        registered_yuv_transfer_type_.reset();
-        framebuffer_yuv_.reset();
     }
 
     void free_device()
@@ -279,7 +219,7 @@ class node_impl : public node_i
         device_   = nullptr;
         callback_ = nullptr;
         framebuffer_scale_.reset();
-        reset_yuv_framebuffer();
+        download_stream_.reset();
         display_modes_.clear();
     }
 
@@ -290,8 +230,6 @@ class node_impl : public node_i
     {
         if (device_) {
             free_device();
-        } else {
-            reset_yuv_framebuffer();
         }
     }
 
@@ -343,9 +281,16 @@ class node_impl : public node_i
         assert(res == S_OK);
         (void)res;
 
-        auto ctx  = gpu::context_s::create_shared_context(false, app->ctx());
-        callback_ = make_decklink_ptr<callback_s>(ctx, device_.get(), *display_mode_);
-        res       = device_->SetScheduledFrameCompletionCallback(callback_.get());
+        const int    row_pixels = ((display_mode_->dim.x + 47) / 48) * 32;
+        const size_t frame_size = static_cast<size_t>(row_pixels) * static_cast<size_t>(display_mode_->dim.y) * 4;
+        download_stream_        = app->texture_download_service()->create_stream({
+                   .dimensions = {row_pixels, display_mode_->dim.y},
+                   .format     = gpu::texture_s::format_e::uyuv_u10,
+                   .byte_size  = frame_size,
+                   .max_slots  = 7,
+        });
+        callback_               = make_decklink_ptr<callback_s>(download_stream_, device_.get(), *display_mode_);
+        res                     = device_->SetScheduledFrameCompletionCallback(callback_.get());
         assert(res == S_OK);
         (void)res;
 
@@ -451,8 +396,8 @@ class node_impl : public node_i
             return;
         }
 
-        auto frame = callback_->get_free_frame();
-        if (!frame) {
+        auto target = download_stream_ ? download_stream_->try_acquire() : std::nullopt;
+        if (!target) {
             return;
         }
 
@@ -472,8 +417,6 @@ class node_impl : public node_i
 
         const auto dim = display_mode_->dim;
 
-        const int          row_pixels = ((dim.x + 47) / 48) * 32;
-        const gpu::vec2i_t target_dim{row_pixels, dim.y};
         const gpu::vec2i_t draw_dim{dim.x / 6 * 4, dim.y};
 
         if (!framebuffer_scale_ || framebuffer_scale_->texture()->texture_dimensions() != dim) {
@@ -494,24 +437,7 @@ class node_impl : public node_i
             gpu::framebuffer_s::end_render();
         }
 
-        if (!frame->transfer || frame->dim != dim) {
-            const auto frame_size = static_cast<size_t>(target_dim.x) * target_dim.y * 4;
-            frame->transfer =
-                gpu::transfer::transfer_i::create_transfer(gpu::transfer::transfer_i::get_prefered_type(),
-                                                           frame_size,
-                                                           gpu::transfer::transfer_i::direction_e::gpu_to_cpu);
-            frame->dim = dim;
-        }
-
-        if (!framebuffer_yuv_ || framebuffer_yuv_->texture()->texture_dimensions() != target_dim) {
-            reset_yuv_framebuffer();
-            framebuffer_yuv_ = std::make_unique<gpu::framebuffer_s>(target_dim, gpu::texture_s::format_e::uyuv_u10);
-            registered_yuv_transfer_type_ = frame->transfer->type();
-            gpu::transfer::transfer_i::register_texture(*registered_yuv_transfer_type_, framebuffer_yuv_->texture());
-        }
-
-        gpu::transfer::transfer_i::begin_texture_use(frame->transfer->type(), framebuffer_yuv_->texture());
-        framebuffer_yuv_->begin_render(
+        target->framebuffer()->begin_render(
             {
                 .pos  = {0, 0},
                 .size = draw_dim,
@@ -531,10 +457,9 @@ class node_impl : public node_i
         draw_state_yuv_->draw();
         gpu::texture_s::unbind(0);
 
-        frame->transfer->perform_transfer(framebuffer_yuv_.get());
         gpu::framebuffer_s::end_render();
 
-        callback_->push_rendered_frame(std::move(*frame));
+        target->submit();
     }
 
     void complete(core::app_state_s* /*app*/) final {}

@@ -74,14 +74,7 @@ GLFWimage load_image(std::string_view filename)
 
 namespace miximus::gpu {
 
-context_scope_s::context_scope_s(context_s& context, context_lock_e locking)
-    : lock_(context.mtx_, std::defer_lock)
-{
-    if (locking == context_lock_e::lock) {
-        lock_.lock();
-    }
-    context.make_current();
-}
+context_scope_s::context_scope_s(context_s& context) { context.make_current(); }
 
 context_scope_s::~context_scope_s() { context_s::rewind_current(); }
 
@@ -310,11 +303,6 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 std::unique_ptr<context_s> context_s::create_unique_context(bool visible, context_s* parent)
 {
     return std::make_unique<context_s>(visible, parent);
-}
-
-std::shared_ptr<context_s> context_s::create_shared_context(bool visible, context_s* parent)
-{
-    return std::make_shared<context_s>(visible, parent);
 }
 
 } // namespace miximus::gpu

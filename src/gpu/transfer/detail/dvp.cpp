@@ -1,6 +1,5 @@
 #include "dvp.hpp"
 
-#include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "logger/logger.hpp"
 
@@ -353,8 +352,6 @@ bool dvp_transfer_s::perform_transfer(texture_s* texture)
 
     return true;
 }
-
-bool dvp_transfer_s::perform_transfer(framebuffer_s* fb) { return perform_transfer(fb->texture()); }
 
 bool dvp_transfer_s::wait_for_copy()
 {
