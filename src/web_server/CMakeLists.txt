@@ -2,10 +2,8 @@ add_library(web_server
     server.hpp
     server_fwd.hpp
     server.cpp
-    payload.hpp
-    payload.cpp
-    templates.hpp
-    templates.cpp
+    payload_create.hpp
+    payload_parse.hpp
     detail/server_impl.cpp
     detail/server_impl.hpp
     detail/headers.cpp

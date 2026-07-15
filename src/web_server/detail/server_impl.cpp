@@ -3,8 +3,8 @@
 #include "headers.hpp"
 #include "html.hpp"
 #include "utils/lookup.hpp"
-#include "web_server/payload.hpp"
-#include "web_server/templates.hpp"
+#include "web_server/payload_create.hpp"
+#include "web_server/payload_parse.hpp"
 
 #include <boost/asio/post.hpp>
 #include <boost/url/parse.hpp>
@@ -155,14 +155,12 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& con,
             handle_api_v1_post_control(con);
         } else {
             // Method or endpoint not found
-            auto error       = create_error_base_payload("", error_e::internal_error);
-            error["message"] = "Invalid API endpoint or method";
+            const auto error = create_error_payload("", error_e::internal_error, "Invalid API endpoint or method");
             con->set_body(error.dump());
             con->set_status(status_code::not_found);
         }
     } catch (const std::exception& e) {
-        auto error       = create_error_base_payload("", error_e::internal_error);
-        error["message"] = e.what();
+        const auto error = create_error_payload("", error_e::internal_error, e.what());
         con->set_body(error.dump());
         con->set_status(status_code::internal_server_error);
     }
@@ -174,8 +172,7 @@ void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& c
 
     // Get current config
     if (!config_getters_.node_config) {
-        auto error       = create_error_base_payload("", error_e::internal_error);
-        error["message"] = "Config service not available";
+        const auto error = create_error_payload("", error_e::internal_error, "Config service not available");
         con->set_body(error.dump());
         con->set_status(status_code::service_unavailable);
         return;
@@ -186,8 +183,7 @@ void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& c
         con->set_body(config.dump());
         con->set_status(status_code::ok);
     } catch (const std::exception& e) {
-        auto error       = create_error_base_payload("", error_e::internal_error);
-        error["message"] = e.what();
+        const auto error = create_error_payload("", error_e::internal_error, e.what());
         con->set_body(error.dump());
         con->set_status(status_code::internal_server_error);
     }
@@ -201,8 +197,7 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
     const std::string& body = con->get_request_body();
 
     if (body.empty()) {
-        auto error       = create_error_base_payload("", error_e::malformed_payload);
-        error["message"] = "Request body is required";
+        const auto error = create_error_payload("", error_e::malformed_payload, "Request body is required");
         con->set_body(error.dump());
         con->set_status(status_code::bad_request);
         return;
@@ -210,8 +205,7 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
 
     auto doc = nlohmann::json::parse(body, nullptr, false);
     if (doc.is_discarded() || !doc.is_object()) {
-        auto error       = create_error_base_payload("", error_e::malformed_payload);
-        error["message"] = "Invalid JSON in request body";
+        const auto error = create_error_payload("", error_e::malformed_payload, "Invalid JSON in request body");
         con->set_body(error.dump());
         con->set_status(status_code::bad_request);
         return;
@@ -219,16 +213,15 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
 
     auto action = get_action_from_payload(doc);
     if (!action.has_value()) {
-        auto error       = create_error_base_payload("", error_e::malformed_payload);
-        error["message"] = "Invalid action";
+        const auto error = create_error_payload("", error_e::malformed_payload, "Invalid action");
         con->set_body(error.dump());
         con->set_status(status_code::bad_request);
         return;
     }
 
     if (*action != action_e::command) {
-        auto error       = create_error_base_payload("", error_e::malformed_payload);
-        error["message"] = "Only command actions are supported via HTTP API";
+        const auto error =
+            create_error_payload("", error_e::malformed_payload, "Only command actions are supported via HTTP API");
         con->set_body(error.dump());
         con->set_status(status_code::bad_request);
         return;
@@ -237,8 +230,7 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
     auto topic = get_topic_from_payload(doc);
 
     if (!topic.has_value()) {
-        auto error       = create_error_base_payload("", error_e::invalid_topic);
-        error["message"] = "Invalid topic";
+        const auto error = create_error_payload("", error_e::invalid_topic, "Invalid topic");
         con->set_body(error.dump());
         con->set_status(status_code::bad_request);
         return;
@@ -248,14 +240,15 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
     auto error_code = handle_user_command(std::move(doc), -1); // Use connection ID -1 for HTTP
 
     if (error_code != error_e::no_error) {
-        auto error = create_error_base_payload("", error_code);
+        std::string_view message;
         if (error_code == error_e::invalid_topic) {
-            error["message"] = "Invalid topic";
+            message = "Invalid topic";
             con->set_status(status_code::bad_request);
         } else {
-            error["message"] = "Topic service not available";
+            message = "Topic service not available";
             con->set_status(status_code::service_unavailable);
         }
+        const auto error = create_error_payload("", error_code, message);
         con->set_body(error.dump());
         return;
     }
@@ -326,9 +319,9 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
                 con->second.set_subscription(*topic, true);
                 get_connections_by_topic(*topic).emplace(hdl);
 
-                response = create_result_base_payload(token);
+                response = create_result_payload(token);
             } else {
-                response = create_error_base_payload(token, error_e::invalid_topic);
+                response = create_error_payload(token, error_e::invalid_topic);
             }
 
             send(hdl, response);
@@ -339,18 +332,18 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             auto token = get_token_from_payload(doc);
 
             if (!topic.has_value()) {
-                send(hdl, create_error_base_payload(token, error_e::invalid_topic));
+                send(hdl, create_error_payload(token, error_e::invalid_topic));
                 break;
             }
 
             if (!con->second.has_subscription(*topic)) {
-                send(hdl, create_error_base_payload(token, error_e::not_found));
+                send(hdl, create_error_payload(token, error_e::not_found));
                 break;
             }
 
             con->second.set_subscription(*topic, false);
             get_connections_by_topic(*topic).erase(hdl);
-            send(hdl, create_result_base_payload(token));
+            send(hdl, create_result_payload(token));
         } break;
 
         case action_e::command: {
@@ -358,7 +351,7 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
             auto error_code = handle_user_command(std::move(doc), con->second.id);
 
             if (error_code != error_e::no_error) {
-                send(hdl, create_error_base_payload(token, error_code));
+                send(hdl, create_error_payload(token, error_code));
             }
         } break;
 

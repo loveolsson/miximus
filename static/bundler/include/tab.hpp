@@ -1,16 +1,19 @@
 #pragma once
-#include <string>
+#include <cstddef>
+#include <ostream>
 
-inline auto tab(std::size_t len) { return std::string(len * 4, ' '); }
+struct tab_s
+{
+    std::size_t level;
+};
 
-// #define TAB_0 ""
-// #define TAB_1 "    "
-// #define TAB_2 TAB_1 TAB_1
-// #define TAB_3 TAB_2 TAB_1
-// #define TAB_4 TAB_3 TAB_1
-// #define TAB_5 TAB_4 TAB_1
-// #define TAB_6 TAB_5 TAB_1
-// #define TAB_7 TAB_6 TAB_1
-// #define TAB_8 TAB_7 TAB_1
-// #define TAB_9 TAB_8 TAB_1
-// #define tab(n) TAB_##n
+constexpr tab_s tab(std::size_t level) { return {level}; }
+
+inline std::ostream& operator<<(std::ostream& stream, tab_s indentation)
+{
+    for (std::size_t i = 0; i < indentation.level; ++i) {
+        stream << "    ";
+    }
+
+    return stream;
+}

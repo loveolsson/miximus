@@ -30,7 +30,7 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
         throw std::runtime_error("resolve_connection called on output interface");
     }
 
-    auto connections = state.get_connection_set(name_);
+    const auto& connections = state.get_connection_set(name_);
     res.reserve(connections.size());
 
     for (const auto& con : connections) {
