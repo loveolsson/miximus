@@ -263,7 +263,7 @@ class node_impl : public node_i
             {"text",         "Hello World"                               },
             {"font_name",    std::string(render::get_default_font_name())},
             {"font_variant", "Regular"                                   },
-            {"font_size",    48                                          }
+            {"font_size",    48                                          },
         };
     }
 

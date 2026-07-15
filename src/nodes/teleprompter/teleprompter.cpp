@@ -145,8 +145,8 @@ class node_impl : public node_i
                                                       nodes,
                                                       state,
                                                       {
-                                                          .pos = {0,   0  },
-                                                            .size = {1.0, 1.0}
+                                                          .pos  = {0,   0  },
+                                                          .size = {1.0, 1.0},
         });
 
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
@@ -246,8 +246,8 @@ class node_impl : public node_i
         sx      = std::max(0, sx);
         sy      = std::max(0, sy);
         fb->begin_render({
-            .pos = {px, py},
-              .size = {sx, sy}
+            .pos  = {px, py},
+            .size = {sx, sy},
         });
 
         /**

@@ -513,8 +513,8 @@ class node_impl : public node_i
         gpu::transfer::transfer_i::begin_texture_use(frame->transfer->type(), framebuffer_yuv_->texture());
         framebuffer_yuv_->begin_render(
             {
-                .pos = {0, 0},
-                  .size = draw_dim
+                .pos  = {0, 0},
+                .size = draw_dim,
         },
             gpu::framebuffer_s::load_op_e::clear);
 

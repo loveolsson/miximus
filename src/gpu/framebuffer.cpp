@@ -47,8 +47,8 @@ void framebuffer_s::begin_render(load_op_e load_op) const
     const auto dimensions = texture_->texture_dimensions();
     begin_render(
         {
-            .pos = {0, 0},
-              .size = dimensions
+            .pos  = {0, 0},
+            .size = dimensions,
     },
         load_op);
 }
