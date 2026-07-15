@@ -13,7 +13,8 @@ add_library(nodes
     register_all.cpp
     node_map.hpp
     node_map_fwd.hpp
-    validate_option.hpp
+    option_result.hpp
+    normalize_option.hpp
 )
 
 add_subdirectory(decklink)

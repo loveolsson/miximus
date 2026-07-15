@@ -7,7 +7,6 @@
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
-#include "nodes/validate_option.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json.hpp>
@@ -102,8 +101,8 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
 
     nodes::node_record_s record;
     record.state.options = node->get_default_options();
-    if (const auto e = node->set_options(record.state.options, options); e != error_e::no_error) {
-        return e;
+    if (const auto result = node->set_options(record.state.options, options); result.error != error_e::no_error) {
+        return result.error;
     }
 
     for (auto& adapter : adapters_) {
@@ -157,7 +156,8 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_update_node(std::string_view id, const json& options, int64_t client_id)
+nodes::set_options_result_s
+node_manager_s::handle_update_node(std::string_view id, const json& options, int64_t client_id)
 {
     const std::unique_lock lock(nodes_mutex_);
 
@@ -166,7 +166,7 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
     auto node_it = nodes_.find(id);
     if (node_it == nodes_.end()) {
         _log()->warn("Update node: Id {} not found", id);
-        return error_e::not_found;
+        return {error_e::not_found, false};
     }
 
     _log()->info("Updating node with id {}", id);
@@ -174,17 +174,18 @@ error_e node_manager_s::handle_update_node(std::string_view id, const json& opti
     auto& node  = node_it->second.node;
     auto& state = node_it->second.state;
 
-    if (const auto e = node->set_options(state.options, options); e != error_e::no_error) {
-        return e;
+    const auto result = node->set_options(state.options, options);
+    if (result.error != error_e::no_error) {
+        return result;
     }
 
     for (auto& adapter : adapters_) {
-        adapter->emit_update_node(id, state.options, client_id);
+        adapter->emit_update_node(id, state.options, result.has_corrected_values, client_id);
     }
 
     dirty_nodes_.emplace(id_str);
 
-    return error_e::no_error;
+    return result;
 }
 
 error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t client_id)

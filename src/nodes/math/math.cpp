@@ -2,7 +2,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 
 #include <cstdint>
 #include <glm/common.hpp>
@@ -85,22 +85,23 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "operation") {
-            if (!validate_option<std::string_view>(value)) {
-                return false;
+            const auto result = normalize_option_value<std::string_view>(value);
+            if (result == option_result_e::invalid) {
+                return result;
             }
 
             const auto val = value->get<std::string_view>();
-            return enum_from_string<operation_e>(val).has_value();
+            return enum_from_string<operation_e>(val).has_value() ? result : option_result_e::invalid;
         }
 
         if (name == "a" || name == "b") {
-            return validate_option<T>(value);
+            return normalize_option_value<T>(value);
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return type_; }

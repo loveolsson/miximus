@@ -11,7 +11,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 #include "registry.hpp"
 #include "utils/frame_queue.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
@@ -548,17 +548,17 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "device_name" || name == "display_mode") {
-            return validate_option<std::string_view>(value);
+            return normalize_option_value<std::string_view>(value);
         }
 
         if (name == "enabled") {
-            return validate_option<bool>(value);
+            return normalize_option_value<bool>(value);
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return "decklink_output"; }

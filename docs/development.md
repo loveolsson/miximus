@@ -67,7 +67,9 @@ A complete node generally requires native and web changes.
 2. Store interfaces as members and call `register_interface()` in the constructor.
 3. Implement `type()` with a stable protocol type string.
 4. Implement `get_default_options()` with every persisted option and its canonical default.
-5. Implement `test_option()` using `validate_option<T>()` where possible. Delegate to `node_i::is_valid_common_option()` unless intentionally following an existing exception.
+5. Implement `normalize_option()` using `normalize_option_value<T>()` where possible. Return `ok` for an unchanged
+   valid value, `corrected` after canonicalizing it, and `invalid` for malformed or unsupported input. Common options
+   are normalized centrally by `node_i::set_options()`.
 6. Use `prepare`, `execute`, and `complete` according to the frame lifecycle in [architecture.md](architecture.md).
 7. Add the factory to the group's `register.cpp`.
 8. Add sources to the group's `CMakeLists.txt`.

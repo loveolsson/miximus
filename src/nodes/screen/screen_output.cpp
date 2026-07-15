@@ -9,7 +9,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 #include "utils/frame_queue.hpp"
 
 #define GLFW_INCLUDE_NONE
@@ -200,33 +200,41 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "enabled" || name == "fullscreen") {
-            return validate_option<bool>(value);
+            return normalize_option_value<bool>(value);
         }
 
         if (name == "monitor_name") {
-            return validate_option<std::string_view>(value);
+            return normalize_option_value<std::string_view>(value);
         }
 
         if (name == "position") {
-            if (!validate_option<gpu::vec2_t>(value)) {
-                return false;
+            auto result = normalize_option_value<gpu::vec2_t>(value);
+            if (result == option_result_e::invalid) {
+                return result;
             }
-            *value = glm::round(value->get<gpu::vec2_t>());
-            return true;
+
+            const auto normalized = value->get<gpu::vec2_t>();
+            const auto rounded    = glm::round(normalized);
+            *value                = rounded;
+            return rounded == normalized ? result : option_result_e::corrected;
         }
 
         if (name == "size") {
-            if (!validate_option<gpu::vec2_t>(value, gpu::vec2_t{100, 100})) {
-                return false;
+            auto result = normalize_option_value<gpu::vec2_t>(value, gpu::vec2_t{100, 100});
+            if (result == option_result_e::invalid) {
+                return result;
             }
-            *value = glm::round(value->get<gpu::vec2_t>());
-            return true;
+
+            const auto normalized = value->get<gpu::vec2_t>();
+            const auto rounded    = glm::round(normalized);
+            *value                = rounded;
+            return rounded == normalized ? result : option_result_e::corrected;
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return "screen_output"; }

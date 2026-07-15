@@ -4,7 +4,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 
 #include <glm/glm.hpp>
 #include <memory>
@@ -53,13 +53,13 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "size") {
-            return validate_option<gpu::vec2_t>(value, gpu::vec2_t{256, 256}, gpu::vec2_t{4096, 4096});
+            return normalize_option_value<gpu::vec2_t>(value, gpu::vec2_t{256, 256}, gpu::vec2_t{4096, 4096});
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return "framebuffer"; }

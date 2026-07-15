@@ -3,7 +3,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -36,13 +36,13 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "file_path") {
-            return validate_option<std::string_view>(value);
+            return normalize_option_value<std::string_view>(value);
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return "ffmpeg_player"; }

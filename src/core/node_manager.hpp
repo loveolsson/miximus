@@ -4,6 +4,7 @@
 #include "core/node_status_registry_fwd.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map.hpp"
+#include "nodes/option_result.hpp"
 #include "nodes/register_all.hpp"
 #include "types/error.hpp"
 
@@ -27,7 +28,10 @@ class node_manager_s
         virtual void
         emit_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id) = 0;
         virtual void emit_remove_node(std::string_view id, int64_t client_id)                                       = 0;
-        virtual void emit_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id)        = 0;
+        virtual void emit_update_node(std::string_view      id,
+                                      const nlohmann::json& options,
+                                      bool                  has_corrected_values,
+                                      int64_t               client_id)                                                            = 0;
         virtual void emit_add_connection(const nodes::connection_s& con, int64_t client_id)                         = 0;
         virtual void emit_remove_connection(const nodes::connection_s& con, int64_t client_id)                      = 0;
         virtual void emit_node_status(std::string_view id, const nlohmann::json& status)                            = 0;
@@ -63,7 +67,8 @@ class node_manager_s
     error_e
     handle_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id);
     error_e handle_remove_node(std::string_view id, int64_t client_id);
-    error_e handle_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id);
+    nodes::set_options_result_s
+            handle_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id);
     error_e handle_add_connection(nodes::connection_s con, int64_t client_id);
     error_e handle_remove_connection(const nodes::connection_s& con, int64_t client_id);
 

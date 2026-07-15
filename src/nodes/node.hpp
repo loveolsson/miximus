@@ -1,6 +1,7 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
+#include "nodes/option_result.hpp"
 #include "types/error.hpp"
 
 #include <nlohmann/json_fwd.hpp>
@@ -69,10 +70,10 @@ class node_i
      * GL cleanup is safe from the destructor.
      */
 
-    virtual nlohmann::json get_default_options() const;
-    virtual bool           test_option(std::string_view name, nlohmann::json* value) const = 0;
-    static bool            is_valid_common_option(std::string_view name, nlohmann::json* value);
-    error_e                set_options(nlohmann::json& state, const nlohmann::json& options) const;
+    virtual nlohmann::json  get_default_options() const;
+    virtual option_result_e normalize_option(std::string_view name, nlohmann::json* value) const = 0;
+    static option_result_e  normalize_common_option(std::string_view name, nlohmann::json* value);
+    set_options_result_s    set_options(nlohmann::json& state, const nlohmann::json& options) const;
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     const interface_i*     find_interface(std::string_view name) const;

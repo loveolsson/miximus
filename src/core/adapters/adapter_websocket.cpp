@@ -112,12 +112,12 @@ void websocket_config_s::handle_update_node(const json& msg, int64_t client_id)
         auto  id      = msg.at("id").get<std::string_view>();
         auto& options = msg.at("options");
 
-        auto res = manager_.handle_update_node(id, options, client_id);
+        auto result = manager_.handle_update_node(id, options, client_id);
 
-        if (res == error_e::no_error) {
+        if (result.error == error_e::no_error) {
             server_.send_message_sync(create_result_base_payload(token), client_id);
         } else {
-            server_.send_message_sync(create_error_base_payload(token, res), client_id);
+            server_.send_message_sync(create_error_base_payload(token, result.error), client_id);
         }
 
     } catch (json::exception& e) {
@@ -223,12 +223,16 @@ void websocket_config_s::emit_remove_node(std::string_view id, int64_t client_id
     server_.broadcast_message_sync(payload);
 }
 
-void websocket_config_s::emit_update_node(std::string_view id, const json& options, int64_t client_id)
+void websocket_config_s::emit_update_node(std::string_view id,
+                                          const json&      options,
+                                          bool             has_corrected_values,
+                                          int64_t          client_id)
 {
-    auto payload         = create_command_base_payload(topic_e::update_node);
-    payload["origin_id"] = client_id;
-    payload["id"]        = id;
-    payload["options"]   = options;
+    auto payload                    = create_command_base_payload(topic_e::update_node);
+    payload["origin_id"]            = client_id;
+    payload["id"]                   = id;
+    payload["options"]              = options;
+    payload["has_corrected_values"] = has_corrected_values;
 
     server_.broadcast_message_sync(payload);
 }

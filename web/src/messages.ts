@@ -99,6 +99,8 @@ export interface command_update_node_s extends command_s {
   topic: topic_e.update_node;
   id: string;
   options: options_s;
+  /** Present on server broadcasts; client update commands do not set it. */
+  has_corrected_values?: boolean;
 }
 
 export interface command_remove_node_s extends command_s {

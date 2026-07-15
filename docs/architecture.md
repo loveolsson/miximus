@@ -92,7 +92,10 @@ The node manager validates graph mutations. It:
 
 ## Options and persistence
 
-Each node supplies `get_default_options()` and validates updates in `test_option()`. `node_i::set_options()` starts from defaults, accepts common options or node-specific validated keys, and stores sanitized values. Common options include the display name and editor position.
+Each node supplies `get_default_options()` and normalizes updates in `normalize_option()`. Normalization reports whether
+the value was accepted unchanged, corrected, or invalid. `node_i::set_options()` applies a complete update atomically,
+rejects invalid keys or values, and stores accepted normalized values. Update broadcasts report whether any values were
+corrected. Common options include the display name and editor position.
 
 The persisted settings JSON is owned by `core::configuration_s`. Its JSON load/serialization API is separate from the file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version` plus node IDs, types, per-node schema versions, options, and connections. Runtime status is added only to client snapshots and is not written to disk.
 

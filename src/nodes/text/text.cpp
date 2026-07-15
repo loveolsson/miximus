@@ -10,6 +10,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
+#include "nodes/normalize_option.hpp"
 #include "render/font/font_instance.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
@@ -270,21 +271,15 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
-        if (name == "text") {
-            return value->is_string();
-        }
-        if (name == "font_name") {
-            return value->is_string();
-        }
-        if (name == "font_variant") {
-            return value->is_string();
+        if (name == "text" || name == "font_name" || name == "font_variant") {
+            return normalize_option_value<std::string_view>(value);
         }
         if (name == "font_size") {
-            return value->is_number_integer() && value->get<int>() > 0;
+            return normalize_option_value<int>(value, 1);
         }
-        return node_i::is_valid_common_option(name, value);
+        return option_result_e::invalid;
     }
 };
 

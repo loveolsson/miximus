@@ -8,7 +8,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 
 #include <memory>
 
@@ -92,13 +92,13 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "opacity") {
-            return validate_option<double>(value, 0, 1.0);
+            return normalize_option_value<double>(value, 0, 1.0);
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return "draw_box"; }

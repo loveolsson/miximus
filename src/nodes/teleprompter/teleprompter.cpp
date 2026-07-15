@@ -10,7 +10,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/validate_option.hpp"
+#include "nodes/normalize_option.hpp"
 #include "render/font/font_instance.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
@@ -337,25 +337,25 @@ class node_impl : public node_i
         };
     }
 
-    bool test_option(std::string_view name, nlohmann::json* value) const final
+    option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "file_path") {
-            return validate_option<std::string>(value);
+            return normalize_option_value<std::string>(value);
         }
 
         if (name == "scroll_pos") {
-            return validate_option<double>(value, 0);
+            return normalize_option_value<double>(value, 0);
         }
 
         if (name == "font_size") {
-            return validate_option<int>(value, 10, 100);
+            return normalize_option_value<int>(value, 10, 100);
         }
 
         if (name == "font_name" || name == "font_variant") {
-            return validate_option<std::string>(value);
+            return normalize_option_value<std::string>(value);
         }
 
-        return false;
+        return option_result_e::invalid;
     }
 
     std::string_view type() const final { return "teleprompter"; }
