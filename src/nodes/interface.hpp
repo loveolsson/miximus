@@ -2,7 +2,7 @@
 #include "core/app_state_fwd.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface_type.hpp"
-#include "nodes/node_map.hpp"
+#include "nodes/node_map_fwd.hpp"
 
 #include <boost/container/small_vector.hpp>
 

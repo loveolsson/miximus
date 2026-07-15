@@ -2,6 +2,7 @@
 #include "gpu/texture.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "nodes/node_map.hpp"
 
 #include <glm/glm.hpp>
 #include <memory>

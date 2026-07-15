@@ -24,4 +24,12 @@ PRIVATE
     Boost::headers
 )
 
+if(MIXIMUS_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(app PRIVATE
+        <boost/asio/executor_work_guard.hpp>
+        <boost/asio/io_context.hpp>
+        <nlohmann/json.hpp>
+    )
+endif()
+
 #add_sanitizers(app)

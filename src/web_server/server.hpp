@@ -1,6 +1,6 @@
 #pragma once
 #include "types/topic.hpp"
-#include "utils/asio.hpp"
+#include "utils/asio_fwd.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 

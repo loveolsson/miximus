@@ -11,6 +11,8 @@ void node_i::register_interface(const interface_i* iface) { interfaces_.emplace(
 
 void node_i::init(std::string_view id) { id_ = id; }
 
+nlohmann::json node_i::get_default_options() const { return nlohmann::json::object(); }
+
 bool node_i::is_valid_common_option(std::string_view name, nlohmann::json* value)
 {
     if (name == "node_visual_position") {

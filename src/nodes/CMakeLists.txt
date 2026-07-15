@@ -11,8 +11,9 @@ add_library(nodes
     connection.cpp
     register_all.hpp
     register_all.cpp
-    node_map.hpp    
-    validate_option.hpp    
+    node_map.hpp
+    node_map_fwd.hpp
+    validate_option.hpp
 )
 
 add_subdirectory(decklink)
@@ -39,5 +40,13 @@ PRIVATE
 PUBLIC
     nlohmann_json::nlohmann_json
 )
+
+if(MIXIMUS_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(nodes PRIVATE
+        <boost/asio/executor_work_guard.hpp>
+        <boost/asio/io_context.hpp>
+        <nlohmann/json.hpp>
+    )
+endif()
 
 add_sanitizers(nodes)

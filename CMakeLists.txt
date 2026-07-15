@@ -6,6 +6,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/submodules/sanitizers-cmake/cmake")
 
 option(MIXIMUS_ENABLE_CLANG_TIDY "Run clang-tidy while compiling Miximus targets" OFF)
+option(MIXIMUS_ENABLE_PRECOMPILED_HEADERS "Use precompiled headers for expensive common dependencies" ON)
+
+set(MIXIMUS_USE_PRECOMPILED_HEADERS ${MIXIMUS_ENABLE_PRECOMPILED_HEADERS})
+if(MIXIMUS_ENABLE_PRECOMPILED_HEADERS AND MIXIMUS_ENABLE_CLANG_TIDY)
+    set(MIXIMUS_USE_PRECOMPILED_HEADERS OFF)
+    message(STATUS "Precompiled headers disabled while clang-tidy is enabled")
+endif()
 
 if(MIXIMUS_ENABLE_CLANG_TIDY)
     find_program(MIXIMUS_CLANG_TIDY_EXECUTABLE NAMES clang-tidy REQUIRED)
@@ -15,7 +22,7 @@ endif()
 find_package(Sanitizers REQUIRED)
 find_package(Threads REQUIRED)
 
-set(Boost_USE_STATIC_LIBS ON)
+set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_DEBUG_LIBS ON)
 set(Boost_USE_RELEASE_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS fiber url CONFIG)

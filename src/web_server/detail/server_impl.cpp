@@ -6,6 +6,7 @@
 #include "web_server/payload.hpp"
 #include "web_server/templates.hpp"
 
+#include <boost/asio/post.hpp>
 #include <boost/url/parse.hpp>
 #include <boost/url/url_view.hpp>
 #include <nlohmann/json.hpp>

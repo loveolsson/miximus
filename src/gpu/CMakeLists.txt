@@ -46,4 +46,8 @@ PUBLIC
     dvp
 )
 
+if(MIXIMUS_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(gpu PRIVATE <spdlog/spdlog.h>)
+endif()
+
 add_sanitizers(gpu)

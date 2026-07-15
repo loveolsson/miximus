@@ -2,6 +2,7 @@
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "nodes/node_map.hpp"
 #include "nodes/validate_option.hpp"
 
 extern "C" {

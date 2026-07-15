@@ -10,6 +10,7 @@
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "nodes/node_map.hpp"
 #include "nodes/validate_option.hpp"
 #include "utils/flicks.hpp"
 #include "utils/frame_queue.hpp"

@@ -42,3 +42,11 @@ endmacro()
 
 copy_library_to_binary_dir(static_files)
 copy_library_to_binary_dir(decklink)
+
+if(WIN32)
+    foreach(BOOST_RUNTIME url fiber context filesystem atomic)
+        if(TARGET Boost::${BOOST_RUNTIME})
+            copy_library_to_binary_dir(Boost::${BOOST_RUNTIME})
+        endif()
+    endforeach()
+endif()

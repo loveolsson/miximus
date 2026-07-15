@@ -4,6 +4,7 @@
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "nodes/node.hpp"
+#include "nodes/node_map.hpp"
 
 #include <stdexcept>
 

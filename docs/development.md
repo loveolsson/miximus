@@ -37,6 +37,9 @@ cmake -S . -B build -DMIXIMUS_ENABLE_CLANG_TIDY=ON
 
 The repository-root `.clang-tidy` contains the shared check configuration used by both CMake and supporting IDE
 extensions. CMake also exports `build/compile_commands.json` for clangd and other compilation-database consumers.
+Precompiled headers are enabled by default for targets that make extensive use of expensive third-party headers and
+can be disabled with `-DMIXIMUS_ENABLE_PRECOMPILED_HEADERS=OFF`. They are disabled automatically while clang-tidy is
+enabled because the compiler and clang-tidy may use incompatible PCH formats.
 
 Run:
 

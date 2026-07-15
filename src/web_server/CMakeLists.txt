@@ -32,4 +32,8 @@ PUBLIC
     magic_enum::magic_enum
 ) 
 
+if(MIXIMUS_USE_PRECOMPILED_HEADERS)
+    target_precompile_headers(web_server PRIVATE <nlohmann/json.hpp>)
+endif()
+
 add_sanitizers(web_server)

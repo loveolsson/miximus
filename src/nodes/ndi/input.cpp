@@ -10,6 +10,7 @@
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "nodes/node_map.hpp"
 #include "nodes/validate_option.hpp"
 #include "registry.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
