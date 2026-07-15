@@ -33,22 +33,22 @@ The frame lifecycle currently performs one global `glFinish()` between all node 
 
 ## Host/GPU transfer abstraction
 
-Nodes use the app-owned `texture_upload_service_s` and `texture_download_service_s`; they do not construct `transfer_i` directly. The services select and contain the backend-specific `transfer_i` implementation:
+Nodes use the app-owned `texture_upload_service_s` and `texture_download_service_s`. The services contain an internal `backend_i` implementation selected by the backend factory:
 
 - direction (`cpu_to_gpu` or `gpu_to_cpu`);
-- byte size and host-visible `ptr()`;
-- `perform_copy()`;
-- transfer to/from a texture;
-- `wait_for_copy()`;
-- backend identity through virtual `type()`.
+- byte size and host-visible `data()`;
+- a bound texture and backend-specific registration;
+- transfer to/from that texture;
+- completion waiting;
+- texture ownership transitions when required by DVP.
+
+`backend_i` is not a node-facing API. Upload/download streams provide scheduling, pooling, memory accounting, leases, and publication; the backend only implements one slot's host/GPU movement. Backend selection and lifecycle are kept in `detail/backend_factory`, rather than on the polymorphic interface.
 
 Preferred transfer selection is initialized once in `app_state_s` while the root GL context is current:
 
 1. NVIDIA DVP/GPU Direct for Video when initialization succeeds.
 2. CUDA/OpenGL interop.
 3. Persistent mapped OpenGL PBO fallback.
-
-The basic synchronous backend remains available. Its blocking work runs on a transfer worker, not the render thread.
 
 ### Upload streams
 
@@ -68,15 +68,7 @@ Both services enforce memory budgets and catch allocation failures. Slots are al
 
 ### Texture lifetime hooks
 
-DVP needs textures registered and ownership coordinated between GL/API and DVP. Pair registration over the complete texture lifetime:
-
-```cpp
-transfer_i::register_texture(transfer->type(), texture);
-// use texture and transfer
-transfer_i::unregister_texture(transfer->type(), texture);
-```
-
-Use `begin_texture_use()` and `end_texture_use()` at the established GL/transfer ownership boundaries. These hooks are no-ops for backends that do not need them. Prefer an existing transfer's `type()` to querying global preference again.
+DVP needs textures registered and ownership coordinated between GL/API and DVP. Each backend instance binds one slot texture for its complete lifetime and owns the corresponding registration state. Services call `begin_texture_use()` and `end_texture_use()` at established GL/transfer ownership boundaries; these operations are no-ops for backends that do not require them. DVP handles are per slot rather than stored in a global texture map.
 
 ### CUDA format rule
 
@@ -134,7 +126,8 @@ Worker/callback rules:
 - `src/gpu/texture.hpp/.cpp`
 - `src/gpu/framebuffer.hpp/.cpp`
 - `src/gpu/sync.hpp/.cpp`
-- `src/gpu/transfer/transfer.hpp/.cpp`
+- `src/gpu/transfer/detail/backend.hpp/.cpp`
+- `src/gpu/transfer/detail/backend_factory.hpp/.cpp`
 - `src/gpu/transfer/texture_upload.hpp/.cpp`
 - `src/gpu/transfer/texture_download.hpp/.cpp`
 - `src/gpu/transfer/detail/`

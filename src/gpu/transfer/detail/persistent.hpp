@@ -1,11 +1,11 @@
 #pragma once
+#include "backend.hpp"
 #include "gpu/glad.hpp"
 #include "gpu/sync.hpp"
-#include "gpu/transfer/transfer.hpp"
 
 namespace miximus::gpu::transfer::detail {
 
-class pinned_transfer_s : public transfer_i
+class pinned_transfer_s : public backend_i
 {
     void*                   mapped_ptr_{};
     GLuint                  id_{};
@@ -15,10 +15,8 @@ class pinned_transfer_s : public transfer_i
     pinned_transfer_s(size_t size, direction_e dir);
     ~pinned_transfer_s();
 
-    type_e type() const final { return type_e::persistent; }
-    bool   perform_copy() final;
-    bool   perform_transfer(texture_s*) final;
-    bool   wait_for_copy() final;
+    bool transfer() final;
+    bool wait_for_completion() final;
 
   private:
     void ensure_read_pbo(GLsizeiptr size);

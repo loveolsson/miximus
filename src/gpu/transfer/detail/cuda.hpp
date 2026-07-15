@@ -1,14 +1,14 @@
 #pragma once
 
+#include "backend.hpp"
 #include "gpu/glad.hpp"
-#include "gpu/transfer/transfer.hpp"
 
 #include <cuda_gl_interop.h>
 #include <cuda_runtime_api.h>
 
 namespace miximus::gpu::transfer::detail {
 
-class cuda_transfer_s : public transfer_i
+class cuda_transfer_s : public backend_i
 {
     cudaStream_t          stream_{nullptr};
     cudaEvent_t           completion_{nullptr};
@@ -32,11 +32,8 @@ class cuda_transfer_s : public transfer_i
     cuda_transfer_s(size_t size, direction_e dir);
     ~cuda_transfer_s() override;
 
-    type_e type() const final { return type_e::cuda; }
-
-    bool perform_copy() final { return true; }
-    bool perform_transfer(texture_s* texture) final;
-    bool wait_for_copy() final;
+    bool transfer() final;
+    bool wait_for_completion() final;
 
     static bool initialize_context();
     static void shutdown_context();

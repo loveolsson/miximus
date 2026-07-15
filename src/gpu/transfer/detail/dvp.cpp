@@ -39,9 +39,6 @@ uint32_t dvp_transfer_s::sem_alloc_size_       = sizeof(uint32_t);
 uint32_t dvp_transfer_s::sem_payload_offset_   = 0;
 uint32_t dvp_transfer_s::sem_payload_size_     = sizeof(uint32_t);
 
-std::mutex                                      dvp_transfer_s::texture_map_mutex_;
-std::unordered_map<texture_s*, DVPBufferHandle> dvp_transfer_s::texture_handles_;
-
 // ─── semaphore_s ─────────────────────────────────────────────────────────────
 
 void dvp_transfer_s::semaphore_s::init(uint32_t alloc_size, uint32_t addr_align)
@@ -144,18 +141,6 @@ void dvp_transfer_s::shutdown_context()
     }
 
     if (dvp_supported_) {
-        {
-            const std::scoped_lock lock(texture_map_mutex_);
-            if (!texture_handles_.empty()) {
-                getlog("gpu")->error("DVP shutdown with {} registered texture(s); releasing them",
-                                     texture_handles_.size());
-                while (!texture_handles_.empty()) {
-                    auto entry = texture_handles_.extract(texture_handles_.begin());
-                    DVP_CHECK(dvpFreeBuffer(entry.mapped()));
-                }
-            }
-        }
-
         DVP_CHECK(dvpCloseGLContext());
     }
 
@@ -163,99 +148,76 @@ void dvp_transfer_s::shutdown_context()
     ctx_initialized_ = false;
 }
 
-DVPBufferHandle dvp_transfer_s::lookup_texture(texture_s* texture)
+bool dvp_transfer_s::register_texture_impl(texture_s* texture)
 {
-    const std::scoped_lock lock(texture_map_mutex_);
-    const auto             it = texture_handles_.find(texture);
-    if (it == texture_handles_.end()) {
-        getlog("gpu")->error("DVP: texture {} not registered", static_cast<void*>(texture));
-        return 0;
+    if (texture_handle_ != 0) {
+        return false;
     }
-    return it->second;
-}
-
-bool dvp_transfer_s::register_texture_dvp(texture_s* texture)
-{
-    DVPBufferHandle handle = 0;
-    DVP_CHECK(dvpCreateGPUTextureGL(texture->id(), &handle));
-
-    {
-        const std::scoped_lock lock(texture_map_mutex_);
-        texture_handles_[texture] = handle;
-    }
+    DVP_CHECK(dvpCreateGPUTextureGL(texture->id(), &texture_handle_));
 
     // Initialise ownership to "API/GL has the texture" so the first
-    // dvpMapBufferWaitDVP inside perform_transfer works correctly.
-    dvpMapBufferEndAPI(handle);
+    // dvpMapBufferWaitDVP inside transfer() works correctly.
+    dvpMapBufferEndAPI(texture_handle_);
 
     return true;
 }
 
-bool dvp_transfer_s::unregister_texture_dvp(texture_s* texture)
+bool dvp_transfer_s::unregister_texture_impl(texture_s* /*texture*/)
 {
-    DVPBufferHandle handle = 0;
-    {
-        const std::scoped_lock lock(texture_map_mutex_);
-        const auto             it = texture_handles_.find(texture);
-        if (it == texture_handles_.end()) {
-            return false;
-        }
-        handle = it->second;
-        texture_handles_.erase(it);
+    if (texture_handle_ == 0) {
+        return false;
     }
-
-    DVP_CHECK(dvpFreeBuffer(handle));
+    DVP_CHECK(dvpFreeBuffer(texture_handle_));
+    texture_handle_ = 0;
     return true;
 }
 
-bool dvp_transfer_s::begin_texture_use_dvp(texture_s* texture)
+bool dvp_transfer_s::begin_texture_use_impl(texture_s* /*texture*/)
 {
-    const DVPBufferHandle handle = lookup_texture(texture);
-    if (handle == 0) {
+    if (texture_handle_ == 0) {
         return false;
     }
     // Tell GL it can use the texture: waits for DVP to have signalled EndDVP.
-    dvpMapBufferWaitAPI(handle);
+    dvpMapBufferWaitAPI(texture_handle_);
     return true;
 }
 
-bool dvp_transfer_s::end_texture_use_dvp(texture_s* texture)
+bool dvp_transfer_s::end_texture_use_impl(texture_s* /*texture*/)
 {
-    const DVPBufferHandle handle = lookup_texture(texture);
-    if (handle == 0) {
+    if (texture_handle_ == 0) {
         return false;
     }
     // Signal to DVP that GL is done with the texture.
-    dvpMapBufferEndAPI(handle);
+    dvpMapBufferEndAPI(texture_handle_);
     return true;
 }
 
 // ─── Constructor / Destructor ────────────────────────────────────────────────
 
 dvp_transfer_s::dvp_transfer_s(size_t size, direction_e dir)
-    : transfer_i(size, dir)
+    : backend_i(size, dir)
 {
     assert(dvp_supported_);
 
     // Allocate page-aligned, page-locked system memory.
     // buf_addr_align_ is the DVP requirement; use at least 4096 (page size).
     const size_t alignment = std::max(static_cast<size_t>(buf_addr_align_), static_cast<size_t>(4096));
-    ptr_                   = aligned_alloc(alignment, size_);
+    data_                  = aligned_alloc(alignment, size_);
 
-    if (ptr_ == nullptr) {
+    if (data_ == nullptr) {
         throw std::runtime_error("DVP: failed to allocate aligned sysmem");
     }
 
 #ifdef _WIN32
-    if (!VirtualLock(ptr_, size_)) {
-        free(ptr_);
-        ptr_ = nullptr;
+    if (!VirtualLock(data_, size_)) {
+        free(data_);
+        data_ = nullptr;
         throw std::runtime_error("DVP: VirtualLock failed");
     }
 #else
-    if (mlock(ptr_, size_) != 0) {
-        free(ptr_);
-        ptr_ = nullptr;
+    if (mlock(data_, size_) != 0) {
+        free(data_);
+        data_ = nullptr;
         throw std::runtime_error("DVP: mlock failed — check RLIMIT_MEMLOCK");
     }
 #endif
@@ -268,7 +230,7 @@ dvp_transfer_s::dvp_transfer_s(size_t size, direction_e dir)
     desc.size    = static_cast<uint32_t>(size_);
     desc.format  = DVP_BUFFER;
     desc.type    = DVP_UNSIGNED_BYTE;
-    desc.bufAddr = ptr_;
+    desc.bufAddr = data_;
 
     DVP_CHECK(dvpCreateBuffer(&desc, &sysmem_handle_));
     DVP_CHECK(dvpBindToGLCtx(sysmem_handle_));
@@ -280,6 +242,10 @@ dvp_transfer_s::dvp_transfer_s(size_t size, direction_e dir)
 
 dvp_transfer_s::~dvp_transfer_s()
 {
+    if (texture_handle_ != 0) {
+        DVP_CHECK(dvpFreeBuffer(texture_handle_));
+        texture_handle_ = 0;
+    }
     if (sysmem_handle_ != 0) {
         DVP_CHECK(dvpUnbindFromGLCtx(sysmem_handle_));
         DVP_CHECK(dvpDestroyBuffer(sysmem_handle_));
@@ -289,14 +255,14 @@ dvp_transfer_s::~dvp_transfer_s()
     ext_sync_.destroy();
     gpu_sync_.destroy();
 
-    if (ptr_ != nullptr) {
+    if (data_ != nullptr) {
 #ifdef _WIN32
-        VirtualUnlock(ptr_, size_);
+        VirtualUnlock(data_, size_);
 #else
-        munlock(ptr_, size_);
+        munlock(data_, size_);
 #endif
-        free(ptr_);
-        ptr_ = nullptr;
+        free(data_);
+        data_ = nullptr;
     }
 }
 
@@ -321,45 +287,38 @@ void dvp_transfer_s::perform_dma(DVPBufferHandle src, DVPBufferHandle dst, uint3
     dvpEnd();
 }
 
-// ─── transfer_i interface ────────────────────────────────────────────────────
+// ─── backend_i interface ─────────────────────────────────────────────────────
 
-bool dvp_transfer_s::perform_transfer(texture_s* texture)
+bool dvp_transfer_s::transfer()
 {
-    if (sysmem_handle_ == 0) {
+    if (sysmem_handle_ == 0 || texture_handle_ == 0) {
         return false;
     }
 
-    const DVPBufferHandle tex_handle = lookup_texture(texture);
-    if (tex_handle == 0) {
-        return false;
-    }
-
-    last_texture_handle_ = tex_handle;
-
-    const auto dims = texture->texture_dimensions();
+    const auto dims = texture()->texture_dimensions();
 
     if (direction_ == direction_e::cpu_to_gpu) {
-        // CPU wrote data into ptr_; DMA ptr_ → texture.
+        // CPU wrote data into data_; DMA data_ → texture.
         // endTextureInUse (dvpMapBufferEndAPI) must have been called by the caller
         // before this point so DVP knows GL is done with the texture.
-        perform_dma(sysmem_handle_, tex_handle, static_cast<uint32_t>(dims.y));
+        perform_dma(sysmem_handle_, texture_handle_, static_cast<uint32_t>(dims.y));
     } else {
-        // GPU rendered to texture; DMA texture → ptr_.
+        // GPU rendered to texture; DMA texture → data_.
         // Signal that GL is done writing to the texture, DVP can start reading.
-        dvpMapBufferEndAPI(tex_handle);
-        perform_dma(tex_handle, sysmem_handle_, static_cast<uint32_t>(dims.y));
+        dvpMapBufferEndAPI(texture_handle_);
+        perform_dma(texture_handle_, sysmem_handle_, static_cast<uint32_t>(dims.y));
     }
 
     return true;
 }
 
-bool dvp_transfer_s::wait_for_copy()
+bool dvp_transfer_s::wait_for_completion()
 {
     if (direction_ == direction_e::cpu_to_gpu) {
         // For cpu_to_gpu: insert a GL wait so the GPU won't sample the texture
         // before DVP finishes writing it.  Must be called with GL context current.
-        if (last_texture_handle_ != 0) {
-            dvpMapBufferWaitAPI(last_texture_handle_);
+        if (texture_handle_ != 0) {
+            dvpMapBufferWaitAPI(texture_handle_);
         }
     } else {
         // For gpu_to_cpu: CPU blocks until DVP DMA into sysmem is complete.

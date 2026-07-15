@@ -8,14 +8,14 @@
 namespace miximus::gpu::transfer::detail {
 
 pinned_transfer_s::pinned_transfer_s(size_t size, direction_e dir)
-    : transfer_i(size, dir)
+    : backend_i(size, dir)
 {
     if (direction_ == direction_e::cpu_to_gpu) {
         // Separate CPU allocation for the external writer (e.g. DeckLink) to write into.
-        // The PBO is created lazily on the first perform_copy() when a GL context is available.
-        allocate_ptr();
+        // The PBO is created lazily by the transfer worker, where a GL context is available.
+        allocate_data();
     }
-    // gpu_to_cpu: ptr_ will be set to the PBO mapped address in perform_transfer().
+    // gpu_to_cpu: data_ will be set to the PBO mapped address in transfer().
     // No separate allocation — the PBO IS the destination buffer.
 }
 
@@ -27,16 +27,18 @@ pinned_transfer_s::~pinned_transfer_s()
     }
 
     if (direction_ == direction_e::cpu_to_gpu) {
-        // Only the cpu_to_gpu path has a separately-allocated ptr_.
-        free_ptr();
+        // Only the cpu_to_gpu path has a separately-allocated data_.
+        free_data();
     }
-    // gpu_to_cpu: ptr_ == mapped_ptr_ — freed by glDeleteBuffers above.
+    // gpu_to_cpu: data_ == mapped_ptr_ — freed by glDeleteBuffers above.
 }
 
-bool pinned_transfer_s::perform_copy()
+bool pinned_transfer_s::transfer()
 {
+    const auto id   = texture()->id();
+    const auto dims = texture()->texture_dimensions();
+
     if (direction_ == direction_e::cpu_to_gpu) {
-        // Create the write-mapped PBO on first call (lazy, requires GL context).
         if (mapped_ptr_ == nullptr) {
             const GLbitfield storage_flags =
                 static_cast<GLbitfield>(GL_MAP_PERSISTENT_BIT) | static_cast<GLbitfield>(GL_MAP_WRITE_BIT);
@@ -47,30 +49,19 @@ bool pinned_transfer_s::perform_copy()
             mapped_ptr_ = glMapNamedBufferRange(id_, 0, static_cast<GLsizeiptr>(size_), map_flags);
         }
 
-        std::memcpy(mapped_ptr_, ptr_, size_);
+        std::memcpy(mapped_ptr_, data_, size_);
         glFlushMappedNamedBufferRange(id_, 0, static_cast<GLsizeiptr>(size_));
-        sync_ = std::make_unique<sync_s>();
-    }
-    // gpu_to_cpu: no-op — ptr_ already points to the PBO mapped memory.
-    return true;
-}
-
-bool pinned_transfer_s::perform_transfer(texture_s* texture)
-{
-    const auto id   = texture->id();
-    const auto dims = texture->texture_dimensions();
-
-    if (direction_ == direction_e::cpu_to_gpu) {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, id_);
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, dims.x, dims.y, texture->format(), texture->type(), nullptr);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, dims.x, dims.y, texture()->format(), texture()->type(), nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        sync_ = std::make_unique<sync_s>();
     } else {
         ensure_read_pbo(static_cast<GLsizeiptr>(size_));
 
         glBindBuffer(GL_PIXEL_PACK_BUFFER, id_);
         glBindTexture(GL_TEXTURE_2D, id);
-        glGetTexImage(GL_TEXTURE_2D, 0, texture->format(), texture->type(), nullptr);
+        glGetTexImage(GL_TEXTURE_2D, 0, texture()->format(), texture()->type(), nullptr);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
         glMemoryBarrier(GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);
@@ -80,7 +71,7 @@ bool pinned_transfer_s::perform_transfer(texture_s* texture)
     return true;
 }
 
-bool pinned_transfer_s::wait_for_copy()
+bool pinned_transfer_s::wait_for_completion()
 {
     if (!sync_) {
         return false;
@@ -110,8 +101,8 @@ void pinned_transfer_s::ensure_read_pbo(GLsizeiptr size)
     glNamedBufferStorage(id_, size, nullptr, flags);
     mapped_ptr_ = glMapNamedBufferRange(id_, 0, size, flags);
 
-    // ptr_ IS the PBO mapped memory — no separate allocation for gpu_to_cpu.
-    ptr_ = mapped_ptr_;
+    // data_ IS the PBO mapped memory — no separate allocation for gpu_to_cpu.
+    data_ = mapped_ptr_;
 }
 
 } // namespace miximus::gpu::transfer::detail

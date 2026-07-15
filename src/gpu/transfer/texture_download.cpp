@@ -3,7 +3,7 @@
 #include "gpu/context.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/sync.hpp"
-#include "gpu/transfer/transfer.hpp"
+#include "gpu/transfer/detail/backend_factory.hpp"
 #include "logger/logger.hpp"
 
 #include <algorithm>
@@ -73,13 +73,12 @@ size_t estimate_slot_bytes(const texture_download_desc_s& desc)
 
 struct texture_download_slot_s
 {
-    std::unique_ptr<transfer_i> transfer;
-    std::unique_ptr<texture_s>  texture;
-    std::unique_ptr<sync_s>     render_sync;
-    slot_state_e                state{slot_state_e::free};
-    size_t                      reserved_bytes{};
-    bool                        registered{};
-    uint64_t                    tag{};
+    std::unique_ptr<backend_i> backend;
+    std::unique_ptr<texture_s> texture;
+    std::unique_ptr<sync_s>    render_sync;
+    slot_state_e               state{slot_state_e::free};
+    size_t                     reserved_bytes{};
+    uint64_t                   tag{};
 };
 
 struct texture_download_stream_state_s
@@ -158,12 +157,11 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
             slot.render_sync->gpu_wait();
             slot.render_sync.reset();
         }
-        if (slot.texture && slot.registered) {
-            (void)transfer_i::begin_texture_use(slot.transfer->type(), slot.texture.get());
-            (void)transfer_i::unregister_texture(slot.transfer->type(), slot.texture.get());
+        if (slot.texture && slot.backend) {
+            (void)slot.backend->begin_texture_use();
+            (void)slot.backend->unbind_texture();
         }
-        slot.registered = false;
-        slot.transfer.reset();
+        slot.backend.reset();
         slot.texture.reset();
         memory_usage.fetch_sub(slot.reserved_bytes, std::memory_order_relaxed);
         slot.reserved_bytes = 0;
@@ -183,10 +181,8 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
             auto slot            = std::make_shared<texture_download_slot_s>();
             slot->reserved_bytes = reserved;
             slot->texture        = std::make_unique<texture_s>(stream->desc.dimensions, stream->desc.format);
-            slot->transfer       = transfer_i::create_transfer(
-                transfer_i::get_prefered_type(), stream->desc.byte_size, transfer_i::direction_e::gpu_to_cpu);
-            slot->registered = transfer_i::register_texture(slot->transfer->type(), slot->texture.get());
-            if (!slot->registered) {
+            slot->backend        = create_backend(stream->desc.byte_size, backend_i::direction_e::gpu_to_cpu);
+            if (!slot->backend->bind_texture(slot->texture.get())) {
                 throw std::runtime_error("failed to register download texture with transfer backend");
             }
             context_s::flush();
@@ -223,8 +219,8 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
             slot->render_sync->gpu_wait();
             slot->render_sync.reset();
         }
-        success = slot->transfer->perform_transfer(slot->texture.get()) && success;
-        success = slot->transfer->wait_for_copy() && success;
+        success = slot->backend->transfer() && success;
+        success = slot->backend->wait_for_completion() && success;
 
         const std::scoped_lock lock(stream->mutex);
         if (!success || !stream->active) {
@@ -451,9 +447,9 @@ texture_download_frame_s& texture_download_frame_s::operator=(texture_download_f
     return *this;
 }
 
-void* texture_download_frame_s::ptr() const { return slot_ ? slot_->transfer->ptr() : nullptr; }
+void* texture_download_frame_s::ptr() const { return slot_ ? slot_->backend->data() : nullptr; }
 
-size_t texture_download_frame_s::size() const { return slot_ ? slot_->transfer->size() : 0; }
+size_t texture_download_frame_s::size() const { return slot_ ? slot_->backend->size() : 0; }
 
 uint64_t texture_download_frame_s::tag() const { return slot_ ? slot_->tag : 0; }
 
@@ -504,7 +500,7 @@ std::optional<texture_download_target_s> texture_download_stream_s::try_acquire(
     if (!slot) {
         return std::nullopt;
     }
-    if (!transfer_i::begin_texture_use(slot->transfer->type(), slot->texture.get())) {
+    if (!slot->backend->begin_texture_use()) {
         return_target(state_, slot);
         return std::nullopt;
     }

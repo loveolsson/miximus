@@ -2,7 +2,7 @@
 
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
-#include "gpu/transfer/transfer.hpp"
+#include "gpu/transfer/detail/backend_factory.hpp"
 #include "logger/logger.hpp"
 
 #include <algorithm>
@@ -99,14 +99,13 @@ size_t estimate_slot_bytes(const texture_upload_desc_s& desc)
 
 struct texture_upload_slot_s
 {
-    std::unique_ptr<transfer_i> transfer;
-    std::unique_ptr<texture_s>  texture;
-    slot_state_e                state{slot_state_e::free};
-    size_t                      reserved_bytes{};
-    bool                        gl_owns_texture{};
-    bool                        registered{};
-    bool                        lease_released{true};
-    uint64_t                    version{};
+    std::unique_ptr<backend_i> backend;
+    std::unique_ptr<texture_s> texture;
+    slot_state_e               state{slot_state_e::free};
+    size_t                     reserved_bytes{};
+    bool                       gl_owns_texture{};
+    bool                       lease_released{true};
+    uint64_t                   version{};
 };
 
 struct texture_upload_stream_state_s
@@ -186,15 +185,14 @@ struct texture_upload_service_state_s : std::enable_shared_from_this<texture_upl
 
     void release_slot_resources(texture_upload_slot_s& slot)
     {
-        if (slot.texture && slot.registered) {
+        if (slot.texture && slot.backend) {
             if (slot.gl_owns_texture) {
-                transfer_i::end_texture_use(slot.transfer->type(), slot.texture.get());
+                slot.backend->end_texture_use();
                 slot.gl_owns_texture = false;
             }
-            transfer_i::unregister_texture(slot.transfer->type(), slot.texture.get());
-            slot.registered = false;
+            slot.backend->unbind_texture();
         }
-        slot.transfer.reset();
+        slot.backend.reset();
         slot.texture.reset();
         memory_usage.fetch_sub(slot.reserved_bytes, std::memory_order_relaxed);
         slot.reserved_bytes = 0;
@@ -214,10 +212,8 @@ struct texture_upload_service_state_s : std::enable_shared_from_this<texture_upl
             auto slot            = std::make_shared<texture_upload_slot_s>();
             slot->reserved_bytes = reserved_bytes;
             slot->texture        = std::make_unique<texture_s>(stream->desc.dimensions, stream->desc.format);
-            slot->transfer       = transfer_i::create_transfer(
-                transfer_i::get_prefered_type(), stream->desc.byte_size, transfer_i::direction_e::cpu_to_gpu);
-            slot->registered = transfer_i::register_texture(slot->transfer->type(), slot->texture.get());
-            if (!slot->registered) {
+            slot->backend        = create_backend(stream->desc.byte_size, backend_i::direction_e::cpu_to_gpu);
+            if (!slot->backend->bind_texture(slot->texture.get())) {
                 throw std::runtime_error("failed to register upload texture with transfer backend");
             }
 
@@ -261,12 +257,11 @@ struct texture_upload_service_state_s : std::enable_shared_from_this<texture_upl
 
         bool success = true;
         if (slot->gl_owns_texture) {
-            success               = transfer_i::end_texture_use(slot->transfer->type(), slot->texture.get());
+            success               = slot->backend->end_texture_use();
             slot->gl_owns_texture = false;
         }
-        success               = slot->transfer->perform_copy() && success;
-        success               = slot->transfer->perform_transfer(slot->texture.get()) && success;
-        success               = slot->transfer->wait_for_copy() && success;
+        success               = slot->backend->transfer() && success;
+        success               = slot->backend->wait_for_completion() && success;
         slot->gl_owns_texture = success;
 
         if (success && stream->desc.generate_mip_maps) {
@@ -471,9 +466,9 @@ texture_upload_lease_s& texture_upload_lease_s::operator=(texture_upload_lease_s
     return *this;
 }
 
-void* texture_upload_lease_s::ptr() const { return slot_ ? slot_->transfer->ptr() : nullptr; }
+void* texture_upload_lease_s::ptr() const { return slot_ ? slot_->backend->data() : nullptr; }
 
-size_t texture_upload_lease_s::size() const { return slot_ ? slot_->transfer->size() : 0; }
+size_t texture_upload_lease_s::size() const { return slot_ ? slot_->backend->size() : 0; }
 
 uint64_t texture_upload_lease_s::version() const { return slot_ ? slot_->version : 0; }
 

@@ -1,13 +1,11 @@
 #pragma once
+#include "backend.hpp"
 #include "gpu/glad.hpp"
 #include "gpu/sync.hpp"
-#include "gpu/transfer/transfer.hpp"
 
 #include <DVPAPI.h>
 #include <dvpapi_gl.h>
 #include <memory>
-#include <mutex>
-#include <unordered_map>
 
 namespace miximus::gpu::transfer::detail {
 
@@ -25,10 +23,7 @@ namespace miximus::gpu::transfer::detail {
 //   API  → DVP  : dvpMapBufferEndAPI  (outside begin/end) → dvpMapBufferWaitDVP (inside)
 //   DVP  → API  : dvpMapBufferEndDVP  (inside begin/end)  → dvpMapBufferWaitAPI (outside)
 //
-// The static register_texture / unregister_texture / begin_texture_use /
-// end_texture_use calls match the hooks in transfer_i and the decklink allocator.
-
-class dvp_transfer_s : public transfer_i
+class dvp_transfer_s : public backend_i
 {
     // Per-buffer DVP handles
     DVPBufferHandle sysmem_handle_{0};
@@ -56,8 +51,7 @@ class dvp_transfer_s : public transfer_i
     semaphore_s ext_sync_; // CPU signals → DVP waits
     semaphore_s gpu_sync_; // DVP signals → CPU waits
 
-    // Texture DVP handle used in the last perform_transfer call; needed by wait_for_copy.
-    DVPBufferHandle last_texture_handle_{0};
+    DVPBufferHandle texture_handle_{0};
 
     // Per-GL-context DVP initialization state (shared across all instances).
     static bool     ctx_initialized_;
@@ -69,32 +63,24 @@ class dvp_transfer_s : public transfer_i
     static uint32_t sem_payload_offset_;
     static uint32_t sem_payload_size_;
 
-    // Map from texture_s* → DVPBufferHandle, guarded by a mutex.
-    static std::mutex                                      texture_map_mutex_;
-    static std::unordered_map<texture_s*, DVPBufferHandle> texture_handles_;
-
-    static DVPBufferHandle lookup_texture(texture_s* texture);
-
     void perform_dma(DVPBufferHandle src, DVPBufferHandle dst, uint32_t height);
+
+    bool register_texture_impl(texture_s* texture) final;
+    bool unregister_texture_impl(texture_s* texture) final;
+    bool begin_texture_use_impl(texture_s* texture) final;
+    bool end_texture_use_impl(texture_s* texture) final;
 
   public:
     dvp_transfer_s(size_t size, direction_e dir);
     ~dvp_transfer_s();
 
-    type_e type() const final { return type_e::dvp; }
-    bool   perform_copy() final { return true; } // no-op: ptr_ IS the DMA source/dest
-    bool   perform_transfer(texture_s* texture) final;
-    bool   wait_for_copy() final;
+    bool transfer() final;
+    bool wait_for_completion() final;
 
     // Called once during app initialization with the root GL context current.
     static bool initialize_context();
     // Called during app shutdown with the same root GL context current.
     static void shutdown_context();
-
-    static bool register_texture_dvp(texture_s* texture);
-    static bool unregister_texture_dvp(texture_s* texture);
-    static bool begin_texture_use_dvp(texture_s* texture); // dvpMapBufferWaitAPI
-    static bool end_texture_use_dvp(texture_s* texture);   // dvpMapBufferEndAPI
 };
 
 } // namespace miximus::gpu::transfer::detail

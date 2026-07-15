@@ -2,9 +2,9 @@
 
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
+#include "gpu/transfer/detail/backend_factory.hpp"
 #include "gpu/transfer/texture_download.hpp"
 #include "gpu/transfer/texture_upload.hpp"
-#include "gpu/transfer/transfer.hpp"
 #include "nodes/decklink/registry.hpp"
 #include "nodes/ndi/registry.hpp"
 #include "render/font/font_loader.hpp"
@@ -31,7 +31,7 @@ app_state_s::app_state_s()
     // intentionally part of app startup rather than context construction so a
     // failed optional backend simply selects the persistent-PBO implementation.
     const gpu::context_scope_s context_scope(*ctx_);
-    gpu::transfer::transfer_i::initialize_preferred_type();
+    gpu::transfer::detail::initialize_backends();
     texture_upload_service_   = std::make_unique<gpu::transfer::texture_upload_service_s>(ctx_.get());
     texture_download_service_ = std::make_unique<gpu::transfer::texture_download_service_s>(ctx_.get());
 }
@@ -47,7 +47,7 @@ app_state_s::~app_state_s()
     texture_upload_service_.reset();
     {
         const gpu::context_scope_s context_scope(*ctx_);
-        gpu::transfer::transfer_i::shutdown();
+        gpu::transfer::detail::shutdown_backends();
     }
     ctx_.reset();
     cfg_executor_.stop();

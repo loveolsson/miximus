@@ -1,15 +1,15 @@
 target_sources(gpu 
 PRIVATE
-    transfer.hpp
-    transfer.cpp
+    detail/backend.hpp
+    detail/backend.cpp
+    detail/backend_factory.hpp
+    detail/backend_factory.cpp
     texture_upload_fwd.hpp
     texture_upload.hpp
     texture_upload.cpp
     texture_download_fwd.hpp
     texture_download.hpp
     texture_download.cpp
-    detail/fallback.hpp
-    detail/fallback.cpp
     detail/persistent.hpp
     detail/persistent.cpp
     detail/dvp.hpp

@@ -78,24 +78,24 @@ void cuda_transfer_s::shutdown_context()
 }
 
 cuda_transfer_s::cuda_transfer_s(size_t size, direction_e dir)
-    : transfer_i(size, dir)
+    : backend_i(size, dir)
 {
     if (!supported_ || !check_cuda(cudaSetDevice(device_), "cudaSetDevice during transfer creation")) {
         throw std::runtime_error("CUDA transfer created without an initialized CUDA/OpenGL context");
     }
-    if (!check_cuda(cudaHostAlloc(&ptr_, size_, cudaHostAllocPortable), "cudaHostAlloc")) {
+    if (!check_cuda(cudaHostAlloc(&data_, size_, cudaHostAllocPortable), "cudaHostAlloc")) {
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
     if (!check_cuda(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking), "cudaStreamCreateWithFlags")) {
-        (void)cudaFreeHost(ptr_);
-        ptr_ = nullptr;
+        (void)cudaFreeHost(data_);
+        data_ = nullptr;
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
     if (!check_cuda(cudaEventCreateWithFlags(&completion_, cudaEventDisableTiming), "cudaEventCreateWithFlags")) {
         (void)cudaStreamDestroy(stream_);
-        (void)cudaFreeHost(ptr_);
+        (void)cudaFreeHost(data_);
         stream_ = nullptr;
-        ptr_    = nullptr;
+        data_   = nullptr;
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
 }
@@ -121,8 +121,8 @@ cuda_transfer_s::~cuda_transfer_s()
     if (stream_ != nullptr) {
         (void)cudaStreamDestroy(stream_);
     }
-    if (ptr_ != nullptr) {
-        (void)cudaFreeHost(ptr_);
+    if (data_ != nullptr) {
+        (void)cudaFreeHost(data_);
     }
 }
 
@@ -163,7 +163,7 @@ bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
                               "cudaGraphicsSubResourceGetMappedArray");
     const auto  row_bytes = size_ / static_cast<size_t>(dimensions.y);
     if (success) {
-        success = check_cuda(cudaMemcpy2DFromArrayAsync(ptr_,
+        success = check_cuda(cudaMemcpy2DFromArrayAsync(data_,
                                                         row_bytes,
                                                         array,
                                                         0,
@@ -221,7 +221,7 @@ bool cuda_transfer_s::copy_host_to_buffer()
         success = false;
     }
     if (success) {
-        success = check_cuda(cudaMemcpyAsync(buffer_ptr, ptr_, size_, cudaMemcpyHostToDevice, stream_),
+        success = check_cuda(cudaMemcpyAsync(buffer_ptr, data_, size_, cudaMemcpyHostToDevice, stream_),
                              "cudaMemcpyAsync host to buffer");
     }
 
@@ -248,7 +248,7 @@ bool cuda_transfer_s::copy_buffer_to_host()
         success = false;
     }
     if (success) {
-        success = check_cuda(cudaMemcpyAsync(ptr_, buffer_ptr, size_, cudaMemcpyDeviceToHost, stream_),
+        success = check_cuda(cudaMemcpyAsync(data_, buffer_ptr, size_, cudaMemcpyDeviceToHost, stream_),
                              "cudaMemcpyAsync buffer to host");
     }
 
@@ -259,9 +259,9 @@ bool cuda_transfer_s::copy_buffer_to_host()
     return success;
 }
 
-bool cuda_transfer_s::perform_transfer(texture_s* texture)
+bool cuda_transfer_s::transfer()
 {
-    const auto dimensions = texture->texture_dimensions();
+    const auto dimensions = texture()->texture_dimensions();
 
     if (direction_ == direction_e::cpu_to_gpu) {
         if (!copy_host_to_buffer()) {
@@ -270,27 +270,27 @@ bool cuda_transfer_s::perform_transfer(texture_s* texture)
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer_);
         glTextureSubImage2D(
-            texture->id(), 0, 0, 0, dimensions.x, dimensions.y, texture->format(), texture->type(), nullptr);
+            texture()->id(), 0, 0, 0, dimensions.x, dimensions.y, texture()->format(), texture()->type(), nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         return true;
     }
 
-    if (texture->color_type() == texture_s::format_e::rgba_u8 ||
-        texture->color_type() == texture_s::format_e::uyuv_u10) {
-        return copy_texture_to_host(texture);
+    if (texture()->color_type() == texture_s::format_e::rgba_u8 ||
+        texture()->color_type() == texture_s::format_e::uyuv_u10) {
+        return copy_texture_to_host(texture());
     }
 
     if (!ensure_buffer()) {
         return false;
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
-    glBindTexture(GL_TEXTURE_2D, texture->id());
-    glGetTexImage(GL_TEXTURE_2D, 0, texture->format(), texture->type(), nullptr);
+    glBindTexture(GL_TEXTURE_2D, texture()->id());
+    glGetTexImage(GL_TEXTURE_2D, 0, texture()->format(), texture()->type(), nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     return copy_buffer_to_host();
 }
 
-bool cuda_transfer_s::wait_for_copy()
+bool cuda_transfer_s::wait_for_completion()
 {
     if (!pending_) {
         return false;
