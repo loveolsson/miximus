@@ -6,7 +6,7 @@ namespace miximus::core {
 
 void node_status_registry_s::write(std::string_view node_id, std::string_view key, nlohmann::json value)
 {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     auto& node_state = states_[std::string(node_id)];
 
@@ -14,13 +14,13 @@ void node_status_registry_s::write(std::string_view node_id, std::string_view ke
         return; // unchanged
     }
 
-    node_state[std::string(key)] = value;
+    node_state[std::string(key)] = std::move(value);
     pending_.push_back({std::string(node_id), std::string(key)});
 }
 
 void node_status_registry_s::remove_node(std::string_view node_id)
 {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (const auto it = states_.find(node_id); it != states_.end()) {
         states_.erase(it);
     }
@@ -28,7 +28,7 @@ void node_status_registry_s::remove_node(std::string_view node_id)
 
 std::vector<node_status_registry_s::status_update_s> node_status_registry_s::flush()
 {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     std::vector<status_update_s>                                                             result;
     std::unordered_map<std::string, size_t, utils::transparent_string_hash, std::equal_to<>> update_indices;
@@ -58,7 +58,7 @@ std::vector<node_status_registry_s::status_update_s> node_status_registry_s::flu
 
 nlohmann::json node_status_registry_s::get(std::string_view node_id) const
 {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     if (auto it = states_.find(node_id); it != states_.end()) {
         return it->second;
@@ -69,7 +69,7 @@ nlohmann::json node_status_registry_s::get(std::string_view node_id) const
 
 nlohmann::json node_status_registry_s::get_all() const
 {
-    std::lock_guard lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return states_;
 }
 

@@ -43,7 +43,8 @@ struct frame_info_s
     gpu::vec2i_t                    src_dim{}; // display dimensions (width x height)
     BMDColorspace                   colorspace{bmdColorspaceRec709};
 
-    frame_info_s() = default;
+    frame_info_s()  = default;
+    ~frame_info_s() = default;
 
     frame_info_s(const frame_info_s&)                = delete;
     frame_info_s& operator=(const frame_info_s&)     = delete;
@@ -56,6 +57,8 @@ struct frame_info_s
 // IDeckLinkVideoBufferAllocatorProvider (provides our transfer-backed buffers
 // so DeckLink DMA's directly into our memory instead of its own).
 
+// The DeckLink SDK exposes these two independent COM interfaces on one callback object.
+// NOLINTNEXTLINE(fuchsia-multiple-inheritance)
 class callback_s
     : public IDeckLinkInputCallback
     , public IDeckLinkVideoBufferAllocatorProvider
@@ -239,11 +242,14 @@ class callback_s
                                                       IDeckLinkDisplayMode*            newDisplayMode,
                                                       BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
     {
-        if ((notificationEvents & bmdVideoInputDisplayModeChanged) != 0) {
+        const bool display_mode_changed = (notificationEvents & bmdVideoInputDisplayModeChanged) != 0;
+        const bool colorspace_changed   = (notificationEvents & bmdVideoInputColorspaceChanged) != 0;
+
+        if (display_mode_changed) {
             new_display_mode_      = newDisplayMode->GetDisplayMode();
             frame_field_dominance_ = newDisplayMode->GetFieldDominance();
         }
-        if ((notificationEvents & (bmdVideoInputDisplayModeChanged | bmdVideoInputColorspaceChanged)) != 0) {
+        if (display_mode_changed || colorspace_changed) {
             colorspace_ = get_display_mode_colorspace(newDisplayMode);
         }
         return S_OK;
@@ -295,19 +301,22 @@ class callback_s
 
   private:
     template <typename Fn>
-    void for_each_frame(Fn&& fn)
+    void for_each_frame(Fn fn)
     {
         // Apply fn to all frames in both queues (used for cleanup).
         // We access them by draining into a temp vector and restoring.
         std::vector<frame_info_s>        tmp;
         decltype(frames_free_)::record_s r;
-        while (frames_free_.pop_frame(&r))
+        while (frames_free_.pop_frame(&r)) {
             tmp.push_back(std::move(r.frame));
+        }
         decltype(frames_rendered_)::record_s rr;
-        while (frames_rendered_.pop_frame(&rr))
+        while (frames_rendered_.pop_frame(&rr)) {
             tmp.push_back(std::move(rr.frame));
-        for (auto& f : tmp)
+        }
+        for (auto& f : tmp) {
             fn(f);
+        }
     }
 };
 
@@ -324,7 +333,7 @@ class node_impl : public node_i
     uint64_t                            last_device_version_{std::numeric_limits<uint64_t>::max()};
     BMDColorspace                       colorspace_{bmdColorspaceRec709};
     gpu::color_conversion_s yuv_conversion_{gpu::get_color_transfer_from_yuv(gpu::color_transfer_e::Rec709)};
-    gpu::mat3               gamut_conversion_{1.0f};
+    gpu::mat3               gamut_conversion_{1.0F};
 
     output_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 

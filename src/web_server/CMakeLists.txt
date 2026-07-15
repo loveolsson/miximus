@@ -22,7 +22,7 @@ find_package(nlohmann_json REQUIRED)
 target_link_libraries(web_server 
 PRIVATE
     static_files
-    Boost::system
+    Boost::headers
     Boost::url
     Threads::Threads
     websocketpp::websocketpp

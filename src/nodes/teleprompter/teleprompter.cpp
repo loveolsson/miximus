@@ -261,7 +261,7 @@ class node_impl : public node_i
          */
         for (int i = -2; i < static_cast<int>(render_lines_.size()) - 2; ++i) {
             const int txt_line_index = static_cast<int>(std::floor(scroll_pos)) + i;
-            if (txt_line_index < 0 || txt_line_index >= static_cast<int>(text_.lines.size())) {
+            if (txt_line_index < 0 || static_cast<size_t>(txt_line_index) >= text_.lines.size()) {
                 continue;
             }
 
@@ -360,7 +360,7 @@ class node_impl : public node_i
     std::string_view type() const final { return "teleprompter"; }
 
     static text_s load_file(const std::shared_ptr<render::font_loader_s>& loader,
-                            render::font_variant_s                        font_info,
+                            const render::font_variant_s&                 font_info,
                             const std::filesystem::path&                  path,
                             int                                           font_size,
                             int                                           width)

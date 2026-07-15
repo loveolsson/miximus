@@ -21,7 +21,7 @@ ndi_registry_s::ndi_registry_s()
     create.show_local_sources = true;
 
     finder_ = NDIlib_find_create_v2(&create);
-    if (!finder_) {
+    if (finder_ == nullptr) {
         getlog("ndi")->error("NDIlib_find_create_v2() failed");
         return;
     }

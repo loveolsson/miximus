@@ -37,6 +37,7 @@ struct ndi_frame_s
     utils::flicks                              pts{};
 
     ndi_frame_s()                                  = default;
+    ~ndi_frame_s()                                 = default;
     ndi_frame_s(const ndi_frame_s&)                = delete;
     ndi_frame_s& operator=(const ndi_frame_s&)     = delete;
     ndi_frame_s(ndi_frame_s&&) noexcept            = default;
@@ -68,8 +69,7 @@ class node_impl : public node_i
     input_interface_s<gpu::texture_s*> iface_tex_{"tex"};
 
     static constexpr int  FREE_FRAME_COUNT = 7;
-    static constexpr auto COLOR_METADATA =
-        "<ndi_color_info primaries=\"bt_709\" transfer=\"bt_709\" matrix=\"bt_709\"/>";
+    static constexpr auto COLOR_METADATA = R"(<ndi_color_info primaries="bt_709" transfer="bt_709" matrix="bt_709"/>)";
 
     // Worker thread: no GL context needed.
     // Ordering guarantee: complete() runs after finish() (node_manager contract),

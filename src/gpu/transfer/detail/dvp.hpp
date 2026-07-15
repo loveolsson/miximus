@@ -38,8 +38,8 @@ class dvp_transfer_s : public transfer_i
     //   gpu_sync: signaled by DVP to tell CPU/API the DMA is complete
     struct semaphore_s
     {
-        volatile uint32_t*  mem{nullptr};
-        volatile uint32_t*  mem_unaligned{nullptr};
+        uint32_t*           mem{nullptr};
+        uint32_t*           mem_unaligned{nullptr};
         volatile uint32_t   release_value{0};
         volatile uint32_t   acquire_value{0};
         DVPSyncObjectHandle dvp_handle{0};

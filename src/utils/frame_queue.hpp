@@ -156,7 +156,7 @@ class frame_queue_s
         return res;
     }
 
-    size_t push_frame(T&& t, Pts pts = Pts())
+    size_t push_frame(T t, Pts pts = Pts())
     {
         auto lock = get_lock();
 

@@ -55,7 +55,7 @@ class node_impl : public node_i
         render_state_s()
         {
             for (size_t index = 0; index < frame_slots.size(); ++index) {
-                frames_free.push_frame(std::move(index));
+                frames_free.push_frame(index);
             }
         }
     };
@@ -143,7 +143,7 @@ class node_impl : public node_i
         }
 
         auto  slot_index = record.frame;
-        auto& slot       = render_state_->frame_slots[slot_index];
+        auto& slot       = render_state_->frame_slots.at(slot_index);
 
         if (slot.released) {
             // Queue a GPU-side wait before overwriting a texture that the display
@@ -182,7 +182,7 @@ class node_impl : public node_i
         // A fence consumed from another context must be flushed by its producer.
         gpu::context_s::flush();
 
-        render_state_->frames_rendered.push_frame(std::move(slot_index), app->frame_info.timestamp);
+        render_state_->frames_rendered.push_frame(slot_index, app->frame_info.timestamp);
         render_state_->frame_cv.notify_one();
     }
 
@@ -269,7 +269,7 @@ class node_impl : public node_i
                 }
 
                 auto  slot_index = record.frame;
-                auto& slot       = state->frame_slots[slot_index];
+                auto& slot       = state->frame_slots.at(slot_index);
 
                 if (slot.ready) {
                     slot.ready->gpu_wait();
@@ -289,7 +289,7 @@ class node_impl : public node_i
 
                 slot.released = std::make_unique<gpu::sync_s>();
                 gpu::context_s::flush();
-                state->frames_free.push_frame(std::move(slot_index));
+                state->frames_free.push_frame(slot_index);
             }
 
         } // draw_state destroyed here while the display context is still current.

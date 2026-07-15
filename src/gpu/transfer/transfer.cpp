@@ -74,18 +74,28 @@ bool transfer_i::end_texture_use(type_e type, gpu::texture_s* texture)
 }
 
 namespace {
-transfer_i::type_e g_prefered_type = transfer_i::type_e::persistent;
-bool               g_initialized   = false;
+struct preferred_transfer_state_s
+{
+    transfer_i::type_e type{transfer_i::type_e::persistent};
+    bool               initialized{false};
+};
+
+preferred_transfer_state_s& preferred_transfer_state()
+{
+    static preferred_transfer_state_s state;
+    return state;
+}
 } // namespace
 
-transfer_i::type_e transfer_i::get_prefered_type() { return g_prefered_type; }
+transfer_i::type_e transfer_i::get_prefered_type() { return preferred_transfer_state().type; }
 
 void transfer_i::initialize_preferred_type()
 {
-    if (g_initialized) {
+    auto& state = preferred_transfer_state();
+    if (state.initialized) {
         return;
     }
-    g_initialized = true;
+    state.initialized = true;
 
     const GLubyte*         renderer = glGetString(GL_RENDERER);
     const std::string_view renderer_view(reinterpret_cast<const char*>(renderer));
@@ -96,19 +106,19 @@ void transfer_i::initialize_preferred_type()
     if (has_dvp) {
         if (detail::dvp_transfer_s::initialize_context()) {
             getlog("gpu")->info("Transfer: DVP initialised — using GPU Direct transfers");
-            g_prefered_type = type_e::dvp;
+            state.type = type_e::dvp;
             return;
         }
     }
 
     if (detail::cuda_transfer_s::initialize_context()) {
         getlog("gpu")->info("Transfer: using CUDA/OpenGL interoperability");
-        g_prefered_type = type_e::cuda;
+        state.type = type_e::cuda;
         return;
     }
 
     // TODO(Love): Implement AMD pinned memory path
-    g_prefered_type = type_e::persistent;
+    state.type = type_e::persistent;
 }
 
 void transfer_i::shutdown()
@@ -116,8 +126,9 @@ void transfer_i::shutdown()
     detail::cuda_transfer_s::shutdown_context();
     detail::dvp_transfer_s::shutdown_context();
 
-    g_prefered_type = type_e::persistent;
-    g_initialized   = false;
+    auto& state       = preferred_transfer_state();
+    state.type        = type_e::persistent;
+    state.initialized = false;
 }
 
 std::unique_ptr<transfer_i>

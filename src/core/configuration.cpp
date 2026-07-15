@@ -39,7 +39,7 @@ uint32_t get_schema_version(const json& object, std::string_view description)
     }
 
     const auto version = version_it->get<int64_t>();
-    if (version < 1 || version > std::numeric_limits<uint32_t>::max()) {
+    if (version < 1 || std::cmp_greater(version, std::numeric_limits<uint32_t>::max())) {
         throw std::runtime_error(std::format("{} schema_version {} is invalid", description, version));
     }
 
@@ -52,6 +52,8 @@ struct node_load_info_s
     std::string                              type;
     uint32_t                                 original_version;
 };
+
+using node_load_info_map_t = std::unordered_map<std::string, node_load_info_s>;
 
 const miximus::nodes::node_migration_s&
 get_migration(const node_load_info_s& info, uint32_t version, std::string_view type)
@@ -68,41 +70,18 @@ void require_no_error(error_e error, std::string_view operation, std::string_vie
         throw std::runtime_error(std::format("Failed to {} {}: {}", operation, id, enum_to_string(error)));
     }
 }
-} // namespace
 
-namespace miximus::core {
-
-void configuration_s::load(json config)
+node_load_info_map_t migrate_nodes(json& nodes, const miximus::nodes::node_definition_map_t& definitions)
 {
-    const auto document_version = get_schema_version(config, "Configuration");
-    if (document_version != SCHEMA_VERSION) {
-        throw std::runtime_error(std::format(
-            "Configuration schema version {} is not supported; expected {}", document_version, SCHEMA_VERSION));
-    }
-    config["schema_version"] = SCHEMA_VERSION;
-
-    {
-        const std::unique_lock lock(node_manager_.nodes_mutex_);
-        if (!node_manager_.nodes_.empty() || !node_manager_.connections_.empty()) {
-            throw std::logic_error("Cannot load configuration into a non-empty node manager");
-        }
-    }
-
-    auto& nodes       = config.at("nodes");
-    auto& connections = config.at("connections");
-    if (!nodes.is_array() || !connections.is_array()) {
-        throw std::runtime_error("Configuration nodes and connections must be arrays");
-    }
-
-    std::unordered_map<std::string, node_load_info_s> node_info;
+    node_load_info_map_t node_info;
     node_info.reserve(nodes.size());
 
     for (auto& node : nodes) {
         const auto type = node.at("type").get<std::string_view>();
         const auto id   = node.at("id").get<std::string>();
 
-        const auto definition = node_manager_.node_definitions_.find(type);
-        if (definition == node_manager_.node_definitions_.end()) {
+        const auto definition = definitions.find(type);
+        if (definition == definitions.end()) {
             throw std::runtime_error(std::format("Node {} has unknown type {}", id, type));
         }
 
@@ -117,8 +96,12 @@ void configuration_s::load(json config)
                             current_version));
         }
 
-        const node_load_info_s info{&definition->second, std::string(type), original_version};
-        auto&                  options = node.at("options");
+        const node_load_info_s info{
+            .definition       = &definition->second,
+            .type             = std::string(type),
+            .original_version = original_version,
+        };
+        auto& options = node.at("options");
         for (auto version = original_version; version < current_version; ++version) {
             const auto& migration = get_migration(info, version, type);
             if (migration.migrate_options) {
@@ -132,6 +115,11 @@ void configuration_s::load(json config)
         }
     }
 
+    return node_info;
+}
+
+void migrate_connections(json& connections, const node_load_info_map_t& node_info)
+{
     for (auto& connection : connections) {
         const auto from_node = connection.at("from_node").get<std::string>();
         const auto to_node   = connection.at("to_node").get<std::string>();
@@ -164,6 +152,35 @@ void configuration_s::load(json config)
         connection["from_interface"] = std::move(from_interface);
         connection["to_interface"]   = std::move(to_interface);
     }
+}
+} // namespace
+
+namespace miximus::core {
+
+void configuration_s::load(json config)
+{
+    const auto document_version = get_schema_version(config, "Configuration");
+    if (document_version != SCHEMA_VERSION) {
+        throw std::runtime_error(std::format(
+            "Configuration schema version {} is not supported; expected {}", document_version, SCHEMA_VERSION));
+    }
+    config["schema_version"] = SCHEMA_VERSION;
+
+    {
+        const std::unique_lock lock(node_manager_.nodes_mutex_);
+        if (!node_manager_.nodes_.empty() || !node_manager_.connections_.empty()) {
+            throw std::logic_error("Cannot load configuration into a non-empty node manager");
+        }
+    }
+
+    auto& nodes       = config.at("nodes");
+    auto& connections = config.at("connections");
+    if (!nodes.is_array() || !connections.is_array()) {
+        throw std::runtime_error("Configuration nodes and connections must be arrays");
+    }
+
+    const auto node_info = migrate_nodes(nodes, node_manager_.node_definitions_);
+    migrate_connections(connections, node_info);
 
     for (const auto& node : nodes) {
         const auto type = node.at("type").get<std::string_view>();

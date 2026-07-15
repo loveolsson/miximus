@@ -5,7 +5,10 @@
 #include "logger/logger.hpp"
 
 #include <cassert>
+#include <cstdlib>
+#include <memory>
 #include <stdexcept>
+#include <string_view>
 
 #ifdef _WIN32
 #include <windows.h> // VirtualLock / VirtualUnlock
@@ -14,15 +17,18 @@
 #include <sys/mman.h> // mlock / munlock
 #endif
 
-#define DVP_CHECK(cmd)                                                                                                 \
-    do {                                                                                                               \
-        const DVPStatus dvp_status_ = (cmd);                                                                           \
-        if (dvp_status_ != DVP_STATUS_OK) {                                                                            \
-            getlog("gpu")->error("DVP call failed: " #cmd " status={}", static_cast<int>(dvp_status_));                \
-        }                                                                                                              \
-    } while (0)
-
 namespace miximus::gpu::transfer::detail {
+
+namespace {
+void check_dvp_status(DVPStatus status, std::string_view command)
+{
+    if (status != DVP_STATUS_OK) {
+        getlog("gpu")->error("DVP call failed: {} status={}", command, static_cast<int>(status));
+    }
+}
+} // namespace
+
+#define DVP_CHECK(cmd) check_dvp_status((cmd), #cmd)
 
 // Static members
 bool     dvp_transfer_s::ctx_initialized_      = false;
@@ -41,11 +47,20 @@ std::unordered_map<texture_s*, DVPBufferHandle> dvp_transfer_s::texture_handles_
 
 void dvp_transfer_s::semaphore_s::init(uint32_t alloc_size, uint32_t addr_align)
 {
-    mem_unaligned = static_cast<volatile uint32_t*>(malloc(alloc_size + addr_align - 1));
+    const auto allocation_size = static_cast<size_t>(alloc_size) + addr_align - 1;
+    mem_unaligned              = static_cast<uint32_t*>(std::malloc(allocation_size));
+    if (mem_unaligned == nullptr) {
+        throw std::bad_alloc();
+    }
 
-    uintptr_t val = reinterpret_cast<uintptr_t>(mem_unaligned);
-    val           = (val + addr_align - 1) & ~(static_cast<uintptr_t>(addr_align) - 1);
-    mem           = reinterpret_cast<volatile uint32_t*>(val);
+    void*  aligned = mem_unaligned;
+    size_t space   = allocation_size;
+    if (std::align(addr_align, alloc_size, aligned, space) == nullptr) {
+        std::free(mem_unaligned);
+        mem_unaligned = nullptr;
+        throw std::runtime_error("Unable to align DVP semaphore memory");
+    }
+    mem = static_cast<uint32_t*>(aligned);
 
     mem[0]        = 0;
     release_value = 0;
@@ -53,7 +68,7 @@ void dvp_transfer_s::semaphore_s::init(uint32_t alloc_size, uint32_t addr_align)
 
     DVPSyncObjectDesc desc{};
     desc.externalClientWaitFunc = nullptr;
-    desc.sem                    = const_cast<uint32_t*>(mem);
+    desc.sem                    = mem;
     desc.flags                  = DVP_SYNC_OBJECT_FLAGS_USE_EVENTS;
 
     DVP_CHECK(dvpImportSyncObject(&desc, &dvp_handle));
@@ -66,7 +81,7 @@ void dvp_transfer_s::semaphore_s::destroy()
         dvp_handle = 0;
     }
     if (mem_unaligned != nullptr) {
-        free(const_cast<uint32_t*>(mem_unaligned));
+        std::free(mem_unaligned);
         mem_unaligned = nullptr;
         mem           = nullptr;
     }
@@ -131,15 +146,14 @@ void dvp_transfer_s::shutdown_context()
 
     if (dvp_supported_) {
         {
-            const std::lock_guard lock(texture_map_mutex_);
+            const std::scoped_lock lock(texture_map_mutex_);
             if (!texture_handles_.empty()) {
                 getlog("gpu")->error("DVP shutdown with {} registered texture(s); releasing them",
                                      texture_handles_.size());
-                for (const auto& [texture, handle] : texture_handles_) {
-                    (void)texture;
-                    DVP_CHECK(dvpFreeBuffer(handle));
+                while (!texture_handles_.empty()) {
+                    auto entry = texture_handles_.extract(texture_handles_.begin());
+                    DVP_CHECK(dvpFreeBuffer(entry.mapped()));
                 }
-                texture_handles_.clear();
             }
         }
 
@@ -152,8 +166,8 @@ void dvp_transfer_s::shutdown_context()
 
 DVPBufferHandle dvp_transfer_s::lookup_texture(texture_s* texture)
 {
-    const std::lock_guard lock(texture_map_mutex_);
-    const auto            it = texture_handles_.find(texture);
+    const std::scoped_lock lock(texture_map_mutex_);
+    const auto             it = texture_handles_.find(texture);
     if (it == texture_handles_.end()) {
         getlog("gpu")->error("DVP: texture {} not registered", static_cast<void*>(texture));
         return 0;
@@ -167,7 +181,7 @@ bool dvp_transfer_s::register_texture_dvp(texture_s* texture)
     DVP_CHECK(dvpCreateGPUTextureGL(texture->id(), &handle));
 
     {
-        const std::lock_guard lock(texture_map_mutex_);
+        const std::scoped_lock lock(texture_map_mutex_);
         texture_handles_[texture] = handle;
     }
 
@@ -182,8 +196,8 @@ bool dvp_transfer_s::unregister_texture_dvp(texture_s* texture)
 {
     DVPBufferHandle handle = 0;
     {
-        const std::lock_guard lock(texture_map_mutex_);
-        const auto            it = texture_handles_.find(texture);
+        const std::scoped_lock lock(texture_map_mutex_);
+        const auto             it = texture_handles_.find(texture);
         if (it == texture_handles_.end()) {
             return false;
         }
