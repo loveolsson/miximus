@@ -247,7 +247,7 @@ class node_impl : public node_i
             draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
         }
 
-        framebuffer_->begin_render();
+        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
         upload_texture->bind(0);
         auto shader = draw_state_->get_shader_program();
         shader->set_uniform("offset", gpu::vec2_t{0.0, 0.0});
