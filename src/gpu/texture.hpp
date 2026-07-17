@@ -2,6 +2,8 @@
 #include "glad.hpp"
 #include "types.hpp"
 
+#include <cstddef>
+
 namespace miximus::gpu {
 
 constexpr GLuint MIP_MAP_LEVELS = 4;
@@ -36,13 +38,14 @@ class texture_s
     void operator=(const texture_s&) = delete;
     void operator=(texture_s&&)      = delete;
 
-    void     init();
-    vec2i_t  display_dimensions() { return display_dimensions_; }
-    vec2i_t  texture_dimensions() { return texture_dimensions_; }
-    GLenum   format() { return format_; }
-    GLenum   type() { return type_; }
-    format_e color_type() { return colorspace_; }
-    GLuint   id() { return id_; }
+    void          init();
+    static size_t estimate_storage_byte_size(vec2i_t dimensions, format_e format);
+    vec2i_t       display_dimensions() { return display_dimensions_; }
+    vec2i_t       texture_dimensions() { return texture_dimensions_; }
+    GLenum        format() { return format_; }
+    GLenum        type() { return type_; }
+    format_e      color_type() { return colorspace_; }
+    GLuint        id() { return id_; }
 
     void        bind(GLuint sampler) const;
     static void unbind(GLuint sampler);

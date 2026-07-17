@@ -54,46 +54,12 @@ size_t checked_multiply(size_t lhs, size_t rhs)
     return lhs * rhs;
 }
 
-size_t estimate_texture_bytes(const texture_upload_desc_s& desc)
-{
-    if (desc.dimensions.x <= 0 || desc.dimensions.y <= 0) {
-        throw std::invalid_argument("texture upload dimensions must be positive");
-    }
-
-    size_t bytes_per_pixel = 4;
-    switch (desc.format) {
-        case texture_s::format_e::rgb_f16:
-            bytes_per_pixel = 6;
-            break;
-        case texture_s::format_e::rgba_f16:
-            bytes_per_pixel = 8;
-            break;
-        case texture_s::format_e::rgba_u8:
-        case texture_s::format_e::bgra_u8:
-        case texture_s::format_e::uyuv_u8:
-        case texture_s::format_e::uyuv_u10:
-            bytes_per_pixel = 4;
-            break;
-    }
-
-    auto width = static_cast<size_t>(desc.dimensions.x);
-    if (desc.format == texture_s::format_e::uyuv_u8) {
-        width /= 2;
-    }
-    auto size = checked_multiply(checked_multiply(width, static_cast<size_t>(desc.dimensions.y)), bytes_per_pixel);
-
-    if (desc.generate_mip_maps && desc.format != texture_s::format_e::uyuv_u8 &&
-        desc.format != texture_s::format_e::uyuv_u10) {
-        size = checked_add(size, size / 3);
-    }
-    return size;
-}
-
 size_t estimate_slot_bytes(const texture_upload_desc_s& desc)
 {
     // All current asynchronous backends may own both CPU staging storage and
     // an intermediate GPU/PBO allocation in addition to the destination texture.
-    return checked_add(checked_multiply(desc.byte_size, 2), estimate_texture_bytes(desc));
+    return checked_add(checked_multiply(desc.byte_size, 2),
+                       texture_s::estimate_storage_byte_size(desc.dimensions, desc.format));
 }
 } // namespace
 

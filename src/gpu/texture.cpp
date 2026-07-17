@@ -2,78 +2,132 @@
 
 #include "context.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <stdexcept>
 
 namespace miximus::gpu {
+namespace {
+struct texture_format_info_s
+{
+    GLenum  internal_format;
+    GLenum  external_format;
+    GLenum  external_type;
+    GLint   min_filter;
+    GLint   mag_filter;
+    size_t  storage_bytes_per_texel;
+    int     display_pixels_per_texel;
+    GLsizei mip_map_levels;
+};
+
+texture_format_info_s get_format_info(texture_s::format_e format)
+{
+    switch (format) {
+        case texture_s::format_e::rgb_f16:
+            return {
+                .internal_format          = GL_RGB16,
+                .external_format          = GL_RGB,
+                .external_type            = GL_UNSIGNED_BYTE,
+                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter               = GL_LINEAR,
+                .storage_bytes_per_texel  = 6,
+                .display_pixels_per_texel = 1,
+                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
+            };
+        case texture_s::format_e::rgba_f16:
+            return {
+                .internal_format          = GL_RGBA16,
+                .external_format          = GL_RGBA,
+                .external_type            = GL_UNSIGNED_BYTE,
+                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter               = GL_LINEAR,
+                .storage_bytes_per_texel  = 8,
+                .display_pixels_per_texel = 1,
+                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
+            };
+        case texture_s::format_e::rgba_u8:
+            return {
+                .internal_format          = GL_RGBA8,
+                .external_format          = GL_RGBA,
+                .external_type            = GL_UNSIGNED_BYTE,
+                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter               = GL_LINEAR,
+                .storage_bytes_per_texel  = 4,
+                .display_pixels_per_texel = 1,
+                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
+            };
+        case texture_s::format_e::bgra_u8:
+            return {
+                .internal_format          = GL_RGBA8,
+                .external_format          = GL_BGRA,
+                .external_type            = GL_UNSIGNED_INT_8_8_8_8_REV,
+                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter               = GL_LINEAR,
+                .storage_bytes_per_texel  = 4,
+                .display_pixels_per_texel = 1,
+                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
+            };
+        case texture_s::format_e::uyuv_u8:
+            return {
+                .internal_format          = GL_RGBA8,
+                .external_format          = GL_BGRA,
+                .external_type            = GL_UNSIGNED_INT_8_8_8_8_REV,
+                .min_filter               = GL_NEAREST,
+                .mag_filter               = GL_NEAREST,
+                .storage_bytes_per_texel  = 4,
+                .display_pixels_per_texel = 2,
+                .mip_map_levels           = 1,
+            };
+        case texture_s::format_e::uyuv_u10:
+            return {
+                .internal_format          = GL_RGB10_A2,
+                .external_format          = GL_RGBA,
+                .external_type            = GL_UNSIGNED_INT_2_10_10_10_REV,
+                .min_filter               = GL_NEAREST,
+                .mag_filter               = GL_NEAREST,
+                .storage_bytes_per_texel  = 4,
+                .display_pixels_per_texel = 1,
+                .mip_map_levels           = 1,
+            };
+    }
+    throw std::invalid_argument("Invalid texture format");
+}
+
+size_t checked_add(size_t lhs, size_t rhs)
+{
+    if (rhs > std::numeric_limits<size_t>::max() - lhs) {
+        throw std::overflow_error("texture storage byte size overflow");
+    }
+    return lhs + rhs;
+}
+
+size_t checked_multiply(size_t lhs, size_t rhs)
+{
+    if (lhs != 0 && rhs > std::numeric_limits<size_t>::max() / lhs) {
+        throw std::overflow_error("texture storage byte size overflow");
+    }
+    return lhs * rhs;
+}
+} // namespace
 
 texture_s::texture_s(vec2i_t dimensions, format_e color)
     : display_dimensions_(dimensions)
     , texture_dimensions_(dimensions)
     , colorspace_(color)
 {
-    GLenum  internal_format{};
-    GLsizei mip_map_levels = MIP_MAP_LEVELS;
+    const auto info = get_format_info(color);
+    texture_dimensions_.x /= info.display_pixels_per_texel;
+    format_ = info.external_format;
+    type_   = info.external_type;
 
     glCreateTextures(GL_TEXTURE_2D, 1, &id_);
 
     glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, info.min_filter);
+    glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, info.mag_filter);
 
-    switch (colorspace_) {
-        case format_e::rgb_f16:
-            internal_format = GL_RGB16;
-            format_         = GL_RGB;
-            type_           = GL_UNSIGNED_BYTE;
-            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
-            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            break;
-        case format_e::rgba_f16:
-            internal_format = GL_RGBA16;
-            format_         = GL_RGBA;
-            type_           = GL_UNSIGNED_BYTE;
-            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
-            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            // glTexParameterf(id_, GL_TEXTURE_MAX_ANISOTROPY, 16.f);
-            break;
-        case format_e::rgba_u8:
-            internal_format = GL_RGBA8;
-            format_         = GL_RGBA;
-            type_           = GL_UNSIGNED_BYTE;
-            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
-            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            break;
-        case format_e::bgra_u8:
-            internal_format = GL_RGBA8;
-            format_         = GL_BGRA;
-            type_           = GL_UNSIGNED_INT_8_8_8_8_REV;
-            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
-            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            break;
-        case format_e::uyuv_u8:
-            internal_format = GL_RGBA8;
-            format_         = GL_BGRA;
-            type_           = GL_UNSIGNED_INT_8_8_8_8_REV;
-            texture_dimensions_.x /= 2;
-            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            mip_map_levels = 1;
-            break;
-        case format_e::uyuv_u10:
-            internal_format = GL_RGB10_A2;
-            format_         = GL_RGBA;
-            type_           = GL_UNSIGNED_INT_2_10_10_10_REV;
-            // TODO(Love): figure out the right calculation
-            glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            mip_map_levels = 1;
-            break;
-
-        default:
-            throw std::runtime_error("Invalid texture type");
-            break;
-    }
-
-    glTextureStorage2D(id_, mip_map_levels, internal_format, texture_dimensions_.x, texture_dimensions_.y);
+    glTextureStorage2D(id_, info.mip_map_levels, info.internal_format, texture_dimensions_.x, texture_dimensions_.y);
 }
 
 texture_s::~texture_s()
@@ -88,6 +142,27 @@ void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
 
 void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 
+size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, format_e format)
+{
+    if (dimensions.x <= 0 || dimensions.y <= 0) {
+        throw std::invalid_argument("texture dimensions must be positive");
+    }
+
+    const auto info   = get_format_info(format);
+    auto       width  = static_cast<size_t>(dimensions.x / info.display_pixels_per_texel);
+    auto       height = static_cast<size_t>(dimensions.y);
+    size_t     byte_size{};
+
+    for (GLsizei level = 0; level < info.mip_map_levels; ++level) {
+        const auto texel_count = checked_multiply(width, height);
+        byte_size              = checked_add(byte_size, checked_multiply(texel_count, info.storage_bytes_per_texel));
+        width                  = std::max<size_t>(1, width / 2);
+        height                 = std::max<size_t>(1, height / 2);
+    }
+
+    return byte_size;
+}
+
 void texture_s::upload(const void* data) const
 {
     glTextureSubImage2D(id_, 0, 0, 0, texture_dimensions_.x, texture_dimensions_.y, format_, type_, data);
@@ -95,13 +170,8 @@ void texture_s::upload(const void* data) const
 
 void texture_s::generate_mip_maps() const
 {
-    switch (colorspace_) {
-        case format_e::uyuv_u8:
-            break;
-
-        default:
-            glGenerateTextureMipmap(id_);
-            break;
+    if (get_format_info(colorspace_).mip_map_levels > 1) {
+        glGenerateTextureMipmap(id_);
     }
 }
 

@@ -44,30 +44,17 @@ size_t checked_add(size_t lhs, size_t rhs)
     return lhs + rhs;
 }
 
-size_t checked_multiply(size_t lhs, size_t rhs)
-{
-    if (lhs != 0 && rhs > std::numeric_limits<size_t>::max() / lhs) {
-        throw std::overflow_error("texture download allocation size overflow");
-    }
-    return lhs * rhs;
-}
-
 size_t estimate_slot_bytes(const texture_download_desc_s& desc)
 {
     // Conservatively account for the CPU/PBO transfer allocation and the
-    // render-target texture. Packed YUV formats occupy four bytes per texel.
-    size_t bytes_per_pixel = 4;
-    if (desc.format == texture_s::format_e::rgb_f16) {
-        bytes_per_pixel = 6;
-    } else if (desc.format == texture_s::format_e::rgba_f16) {
-        bytes_per_pixel = 8;
-    }
-    const auto texture_bytes = checked_multiply(
-        checked_multiply(static_cast<size_t>(desc.dimensions.x), static_cast<size_t>(desc.dimensions.y)),
-        bytes_per_pixel);
+    // render-target texture.
+    const auto texture_bytes = texture_s::estimate_storage_byte_size(desc.dimensions, desc.format);
     // CUDA readback owns pinned host storage and an interop PBO. Other
     // backends use no more, so this is a conservative backend-independent cap.
-    return checked_add(checked_multiply(desc.byte_size, 2), texture_bytes);
+    if (desc.byte_size > std::numeric_limits<size_t>::max() / 2) {
+        throw std::overflow_error("texture download allocation size overflow");
+    }
+    return checked_add(desc.byte_size * 2, texture_bytes);
 }
 } // namespace
 
