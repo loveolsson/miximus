@@ -62,10 +62,11 @@ void dvp_transfer_s::semaphore_s::init(uint32_t alloc_size, uint32_t addr_align)
     release_value = 0;
     acquire_value = 0;
 
-    DVPSyncObjectDesc desc{};
-    desc.externalClientWaitFunc = nullptr;
-    desc.sem                    = mem;
-    desc.flags                  = DVP_SYNC_OBJECT_FLAGS_USE_EVENTS;
+    DVPSyncObjectDesc desc{
+        .sem                    = mem,
+        .flags                  = DVP_SYNC_OBJECT_FLAGS_USE_EVENTS,
+        .externalClientWaitFunc = nullptr,
+    };
 
     DVP_CHECK(dvpImportSyncObject(&desc, &dvp_handle));
 }
@@ -223,14 +224,15 @@ dvp_transfer_s::dvp_transfer_s(size_t size, direction_e dir)
 #endif
 
     // Register the sysmem buffer with DVP.
-    DVPSysmemBufferDesc desc{};
-    desc.width   = static_cast<uint32_t>(size_);
-    desc.height  = 1;
-    desc.stride  = static_cast<uint32_t>(size_);
-    desc.size    = static_cast<uint32_t>(size_);
-    desc.format  = DVP_BUFFER;
-    desc.type    = DVP_UNSIGNED_BYTE;
-    desc.bufAddr = data_;
+    DVPSysmemBufferDesc desc{
+        .width   = static_cast<uint32_t>(size_),
+        .height  = 1,
+        .stride  = static_cast<uint32_t>(size_),
+        .size    = static_cast<uint32_t>(size_),
+        .format  = DVP_BUFFER,
+        .type    = DVP_UNSIGNED_BYTE,
+        .bufAddr = data_,
+    };
 
     DVP_CHECK(dvpCreateBuffer(&desc, &sysmem_handle_));
     DVP_CHECK(dvpBindToGLCtx(sysmem_handle_));

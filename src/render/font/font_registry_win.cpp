@@ -103,9 +103,10 @@ static void read_registry_fonts(init_data_s* data)
 
             auto val = wsValueName.substr(0, end_pos);
 
-            font_variant_s v = {};
-            v.index          = i++;
-            v.path           = path + wchar_to_string(wsValueData);
+            font_variant_s v{
+                .index = i++,
+                .path  = path + wchar_to_string(wsValueData),
+            };
 
             data->files.emplace(wchar_to_string(val), std::move(v));
 
