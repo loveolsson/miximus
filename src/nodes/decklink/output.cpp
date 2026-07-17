@@ -13,11 +13,12 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "utils/observed_value.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <algorithm>
 #include <atomic>
-#include <limits>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -199,9 +200,9 @@ class node_impl : public node_i
     std::unique_ptr<gpu::draw_state_s>                        draw_state_yuv_;
     std::unique_ptr<gpu::draw_state_s>                        draw_state_scale_;
     std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
-    std::string                                               display_mode_str_;
+    utils::observed_value_s<std::string>                      display_mode_name_;
     mode_info_s*                                              display_mode_{};
-    uint64_t last_device_version_{std::numeric_limits<uint64_t>::max()};
+    utils::observed_value_s<uint64_t>                         device_version_;
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -268,14 +269,14 @@ class node_impl : public node_i
         // assert(device_);
         stop_playback();
 
-        auto mode_it = display_modes_.find(display_mode_str_);
+        auto mode_it = display_modes_.find(display_mode_name_.value());
         if (mode_it == display_modes_.end()) {
             return;
         }
 
         display_mode_ = &mode_it->second;
 
-        log()->info("Enabling video output with {}", display_mode_str_);
+        log()->info("Enabling video output with {}", display_mode_name_.value());
 
         auto res = device_->EnableVideoOutput(display_mode_->mode, bmdVideoOutputFlagDefault);
         assert(res == S_OK);
@@ -310,8 +311,7 @@ class node_impl : public node_i
 
         // Rebuild device list only when the registry has changed
         const auto current_version = app->decklink_registry()->get_device_list_version();
-        if (current_version != last_device_version_) {
-            last_device_version_ = current_version;
+        if (device_version_.observe(current_version)) {
             sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_output_names()));
         }
 
@@ -324,8 +324,7 @@ class node_impl : public node_i
         auto device = enabled ? app->decklink_registry()->get_output(device_name) : nullptr;
         if (device == device_) {
             // Check if the display_mode setting has changed since last frame
-            if (display_mode_str_ != display_mode) {
-                display_mode_str_ = display_mode;
+            if (display_mode_name_.observe(display_mode)) {
                 restart_playback(app);
             }
         } else {
@@ -380,7 +379,7 @@ class node_impl : public node_i
                 sr->write(id_, "display_modes", nlohmann::json(mode_names));
             }
 
-            display_mode_str_ = display_mode;
+            display_mode_name_.commit(display_mode);
             restart_playback(app);
         }
     }

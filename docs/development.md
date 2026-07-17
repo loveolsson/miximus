@@ -133,6 +133,10 @@ Strict warnings apply to project targets after submodules are configured. Third-
 - Ordered string maps use `std::less<>` for heterogeneous lookup.
 - Unordered string maps use `utils::transparent_string_hash` plus `std::equal_to<>` when lookup by view is useful.
 - C++20 does not have heterogeneous `unordered_map::erase(key)`; find by view and erase the iterator.
+- Use `utils::observed_value_s` for node state that represents the last successfully observed setting, registry version,
+  or derived input. `observe()` compares and commits immediately; use `would_change()` followed by `commit()` when
+  applying the new value can fail. Keep direct compatibility checks when the cached resource already exposes the
+  relevant property.
 - Use `std::format`, not fmt APIs.
 - Use component loggers from `logger/logger.hpp`: `app`, `http`, `gpu`, `nodes`, `decklink`, and `ndi`.
 - Use `error_e` for expected graph/config command failures. Follow existing exception usage for startup and unrecoverable construction failures.

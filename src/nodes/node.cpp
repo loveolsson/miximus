@@ -37,11 +37,17 @@ option_result_e node_i::normalize_common_option(std::string_view name, nlohmann:
 set_options_result_s node_i::set_options(nlohmann::json& state, const nlohmann::json& options) const
 {
     if (!state.is_object()) {
-        return {error_e::internal_error, false};
+        return {
+            .error                = error_e::internal_error,
+            .has_corrected_values = false,
+        };
     }
 
     if (!options.is_object()) {
-        return {error_e::invalid_options, false};
+        return {
+            .error                = error_e::invalid_options,
+            .has_corrected_values = false,
+        };
     }
 
     auto normalized_state     = state;
@@ -57,7 +63,10 @@ set_options_result_s node_i::set_options(nlohmann::json& state, const nlohmann::
         }
 
         if (result == option_result_e::invalid) {
-            return {error_e::invalid_options, false};
+            return {
+                .error                = error_e::invalid_options,
+                .has_corrected_values = false,
+            };
         }
 
         has_corrected_values |= result == option_result_e::corrected;
@@ -65,7 +74,10 @@ set_options_result_s node_i::set_options(nlohmann::json& state, const nlohmann::
     }
 
     state = std::move(normalized_state);
-    return {error_e::no_error, has_corrected_values};
+    return {
+        .error                = error_e::no_error,
+        .has_corrected_values = has_corrected_values,
+    };
 }
 
 } // namespace miximus::nodes

@@ -11,6 +11,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "utils/frame_queue.hpp"
+#include "utils/observed_value.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -25,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace {
 using namespace miximus;
@@ -63,9 +65,13 @@ class node_impl : public node_i
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
-    std::shared_ptr<render_state_s>    render_state_;
-    std::thread                        render_thread_;
-    std::unique_ptr<gpu::draw_state_s> draw_state_;
+    std::shared_ptr<render_state_s>                   render_state_;
+    std::thread                                       render_thread_;
+    std::unique_ptr<gpu::draw_state_s>                draw_state_;
+    utils::observed_value_s<std::vector<std::string>> monitor_names_;
+    utils::observed_value_s<gpu::recti_s>             window_rect_;
+    utils::observed_value_s<bool>                     fullscreen_;
+    utils::observed_value_s<std::string>              monitor_name_;
 
   public:
     explicit node_impl() = default;
@@ -87,7 +93,9 @@ class node_impl : public node_i
                 names.push_back(name);
             }
             auto* sr = app->status_registry();
-            sr->write(id_, "monitors", nlohmann::json(names));
+            if (monitor_names_.observe(names)) {
+                sr->write(id_, "monitors", nlohmann::json(monitor_names_.value()));
+            }
             sr->write(id_, "connected", render_state_ != nullptr);
         }
 
@@ -96,7 +104,8 @@ class node_impl : public node_i
         if (enabled) {
             traits->must_run = true;
 
-            if (!render_state_) {
+            const bool context_created = !render_state_;
+            if (context_created) {
                 render_state_             = std::make_shared<render_state_s>();
                 render_state_->ctx        = gpu::context_s::create_unique_context(true, app->ctx());
                 render_state_->thread_run = true;
@@ -115,10 +124,16 @@ class node_impl : public node_i
             auto fullscreen   = state.get_option<bool>("fullscreen", false);
             auto monitor_name = state.get_option<std::string>("monitor_name");
 
-            if (fullscreen) {
-                render_state_->ctx->set_fullscreen_monitor(monitor_name, rect);
-            } else {
-                render_state_->ctx->set_window_rect(rect);
+            bool window_settings_changed = window_rect_.observe(rect);
+            window_settings_changed |= fullscreen_.observe(fullscreen);
+            window_settings_changed |= monitor_name_.observe(monitor_name);
+
+            if (context_created || window_settings_changed) {
+                if (fullscreen) {
+                    render_state_->ctx->set_fullscreen_monitor(monitor_name, rect);
+                } else {
+                    render_state_->ctx->set_window_rect(rect);
+                }
             }
         } else if (render_state_) {
             stop_thread();
@@ -241,7 +256,7 @@ class node_impl : public node_i
         // Don't block in swap_buffers waiting for the compositor's frame callback.
         // On Wayland the compositor throttles (or stops) delivering frame callbacks
         // for windows it considers hidden, which makes swap_buffers block indefinitely.
-        // Rate limiting is handled by the main thread's 60 fps loop instead.
+        // Rate limiting is handled by the configured main render cadence instead.
         glfwSwapInterval(0);
 
         {

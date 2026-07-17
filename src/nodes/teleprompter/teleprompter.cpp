@@ -15,6 +15,7 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
+#include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
 
 #include <algorithm>
@@ -24,7 +25,6 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -67,15 +67,15 @@ class node_impl : public node_i
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
 
-    gpu::vec2i_t last_framebuffer_size{0, 0};
-    int          font_size_{100};
-    int          line_height_extra_{70};
-    std::string  last_file_path_;
-    std::string  last_font_name_;
-    std::string  last_font_variant_;
-    std::string  last_status_font_name_;
-    uint64_t     last_loaded_font_version_{std::numeric_limits<uint64_t>::max()};
-    uint64_t     last_reported_font_version_{std::numeric_limits<uint64_t>::max()};
+    utils::observed_value_s<gpu::vec2i_t> framebuffer_size_;
+    utils::observed_value_s<int>          font_size_;
+    utils::observed_value_s<std::string>  file_path_;
+    utils::observed_value_s<std::string>  font_name_;
+    utils::observed_value_s<std::string>  font_variant_;
+    utils::observed_value_s<std::string>  status_font_name_;
+    utils::observed_value_s<uint64_t>     loaded_font_version_;
+    utils::observed_value_s<uint64_t>     reported_font_version_;
+    int                                   line_height_extra_{70};
 
   public:
     explicit node_impl() = default;
@@ -100,15 +100,14 @@ class node_impl : public node_i
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
         const auto font_version      = app->font_registry()->get_font_list_version();
-        const bool font_list_changed = font_version != last_reported_font_version_;
+        const bool font_list_changed = reported_font_version_.observe(font_version);
         const auto font_name         = state.get_option<std::string_view>("font_name");
+        const bool font_name_changed = status_font_name_.observe(font_name);
 
         if (font_list_changed) {
-            last_reported_font_version_ = font_version;
             app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_names());
         }
-        if (font_list_changed || font_name != last_status_font_name_) {
-            last_status_font_name_ = font_name;
+        if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
                 id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
         }
@@ -150,13 +149,13 @@ class node_impl : public node_i
         const gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
         const gpu::vec2i_t tx_dim = {fb_dim.x, font_size * 2};
 
-        const auto font_version      = app->font_registry()->get_font_list_version();
-        const bool font_list_changed = font_version != last_loaded_font_version_;
-        const bool font_changed      = font_name != last_font_name_ || font_variant != last_font_variant_;
-        const bool font_size_changed = font_size != font_size_;
+        const auto font_version = app->font_registry()->get_font_list_version();
+        const bool render_settings_changed =
+            file_path_.would_change(file_path) || framebuffer_size_.would_change(fb_dim) ||
+            loaded_font_version_.would_change(font_version) || font_name_.would_change(font_name) ||
+            font_variant_.would_change(font_variant) || font_size_.would_change(font_size);
 
-        if (file_path != last_file_path_ || fb_dim != last_framebuffer_size || font_list_changed || font_changed ||
-            font_size_changed) {
+        if (render_settings_changed) {
             if (text_future_.valid()) {
                 if (text_future_.wait_for(0ms) != ::future_status::ready) {
                     return;
@@ -176,12 +175,12 @@ class node_impl : public node_i
                 line->ready.get();
             }
 
-            last_file_path_           = file_path;
-            last_framebuffer_size     = fb_dim;
-            last_font_name_           = font_name;
-            last_font_variant_        = font_variant;
-            font_size_                = font_size;
-            last_loaded_font_version_ = font_version;
+            file_path_.commit(file_path);
+            framebuffer_size_.commit(fb_dim);
+            loaded_font_version_.commit(font_version);
+            font_name_.commit(font_name);
+            font_variant_.commit(font_variant);
+            font_size_.commit(font_size);
 
             for (auto& rl : render_lines_) {
                 rl->line_no = -1;
@@ -197,8 +196,8 @@ class node_impl : public node_i
                 return;
             }
 
-            auto future =
-                app->thread_pool()->submit(load_file, font_loader_, *font_info, last_file_path_, font_size_, fb_dim.x);
+            auto future = app->thread_pool()->submit(
+                load_file, font_loader_, *font_info, file_path_.value(), font_size_.value(), fb_dim.x);
 
             if (future) {
                 text_future_ = std::move(*future);
@@ -222,7 +221,7 @@ class node_impl : public node_i
         {
             // Resize render line vector, this can not be a simple resize, since
             // we need to wait for the future to finish
-            const int total_line_height       = font_size_ + line_height_extra_;
+            const int total_line_height       = font_size_.value() + line_height_extra_;
             const int visible_lines_plus_four = ((fb_dim.y + total_line_height - 1) / total_line_height) + 4;
 
             while (render_lines_.size() < static_cast<size_t>(visible_lines_plus_four)) {
@@ -235,7 +234,7 @@ class node_impl : public node_i
                     if (rl->ready.wait_for(0ms) != ::future_status::ready) {
                         break;
                     }
-                    (void)rl->ready.get();
+                    rl->ready.get();
                 }
 
                 render_lines_.pop_back();
@@ -326,7 +325,7 @@ class node_impl : public node_i
 
             texture->bind(0);
 
-            const int    line_height_px = font_size_ + line_height_extra_;
+            const int    line_height_px = font_size_.value() + line_height_extra_;
             const double px_height      = 1.0 / fb_dim.y;
 
             const double px_pos = std::floor((txt_line_index - scroll_pos) * line_height_px);
@@ -426,7 +425,7 @@ class node_impl : public node_i
 
         render::surface_s surface(dim, static_cast<render::surface_s::rgba_pixel_t*>(upload.ptr()));
         surface.clear({0, 0, 0, 0});
-        text_.font->render_string(str, &surface, {0, font_size_});
+        text_.font->render_string(str, &surface, {0, font_size_.value()});
         upload.submit();
     }
 };

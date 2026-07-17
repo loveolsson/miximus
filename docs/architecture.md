@@ -4,7 +4,10 @@
 
 Miximus is a native C++20 real-time video application driven by a persisted node graph. Nodes represent sources, generators, GPU transformations, and outputs. The native process owns graph state and validates all mutations. A Vue 3/Baklava client edits a synchronized projection of that graph over WebSocket.
 
-The main loop in `src/main.cpp` targets 60 Hz. It loads settings, starts the embedded web server, runs `core::node_manager_s::tick_one_frame()`, polls GLFW, advances flick timestamps, sleeps to the next frame deadline, and saves the graph during ordered shutdown.
+The main loop currently initializes a 60 Hz cadence. It loads settings, starts the embedded web server, runs
+`core::node_manager_s::tick_one_frame()`, polls GLFW, advances flick timestamps, sleeps to the next frame deadline,
+and saves the graph during ordered shutdown. `app_state_s::frame_info.duration` is the authoritative cadence; nodes
+and workers that publish timing must read it and track changes rather than assuming the current default.
 
 ## Runtime ownership and threads
 

@@ -13,6 +13,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "utils/flicks.hpp"
+#include "utils/observed_value.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
 
 #include <atomic>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace {
 using namespace miximus;
@@ -32,14 +34,20 @@ auto log() { return getlog("ndi"); }
 
 class node_impl : public node_i
 {
-    NDIlib_send_instance_t sender_{nullptr};
-    std::string            sender_name_;
-    int                    frame_rate_n_{60};
-    int                    frame_rate_d_{1};
+    struct frame_rate_s
+    {
+        int numerator{};
+        int denominator{};
+    };
+
+    NDIlib_send_instance_t                 sender_{nullptr};
+    utils::observed_value_s<std::string>   sender_name_;
+    utils::observed_value_s<utils::flicks> frame_duration_;
+    std::atomic<frame_rate_s>              frame_rate_{frame_rate_s{}};
 
     std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
     std::unique_ptr<gpu::draw_state_s>                        draw_state_;
-    gpu::vec2i_t                                              stream_dimensions_{};
+    utils::observed_value_s<gpu::vec2i_t>                     stream_dimensions_;
 
     std::mutex              cv_mutex_;
     std::condition_variable cv_;
@@ -75,6 +83,7 @@ class node_impl : public node_i
             }
 
             const utils::flicks pts(static_cast<utils::flicks::rep>(frame->tag()));
+            const auto          frame_rate = frame_rate_.load(std::memory_order_relaxed);
 
             NDIlib_video_frame_v2_t ndi_frame{};
             const auto              dim    = stream->desc().dimensions;
@@ -83,8 +92,8 @@ class node_impl : public node_i
             ndi_frame.FourCC               = NDIlib_FourCC_video_type_RGBA;
             ndi_frame.line_stride_in_bytes = dim.x * 4;
             ndi_frame.p_data               = static_cast<uint8_t*>(frame->ptr());
-            ndi_frame.frame_rate_N         = frame_rate_n_;
-            ndi_frame.frame_rate_D         = frame_rate_d_;
+            ndi_frame.frame_rate_N         = frame_rate.numerator;
+            ndi_frame.frame_rate_D         = frame_rate.denominator;
             ndi_frame.frame_format_type    = NDIlib_frame_format_type_progressive;
             ndi_frame.timecode             = pts.count() * 10'000'000LL / utils::k_flicks_one_second.count();
             ndi_frame.p_metadata           = COLOR_METADATA;
@@ -104,14 +113,37 @@ class node_impl : public node_i
         inflight.reset();
     }
 
-    void create_sender(const std::string& name, core::app_state_s* app)
+    bool update_frame_rate(utils::flicks duration)
     {
-        const auto dur = app->frame_info.duration.count();
-        const auto sec = utils::k_flicks_one_second.count();
-        const auto g   = std::gcd(static_cast<int>(sec), static_cast<int>(dur));
-        frame_rate_n_  = static_cast<int>(sec) / g;
-        frame_rate_d_  = static_cast<int>(dur) / g;
+        if (!frame_duration_.observe(duration)) {
+            return frame_rate_.load(std::memory_order_relaxed).denominator != 0;
+        }
 
+        if (duration <= utils::flicks::zero()) {
+            frame_rate_.store({}, std::memory_order_relaxed);
+            log()->error("Cannot publish NDI output with a non-positive frame duration");
+            return false;
+        }
+
+        const auto duration_count = duration.count();
+        const auto second_count   = utils::k_flicks_one_second.count();
+        const auto divisor        = std::gcd(second_count, duration_count);
+        const auto numerator      = second_count / divisor;
+        const auto denominator    = duration_count / divisor;
+
+        if (!std::in_range<int>(numerator) || !std::in_range<int>(denominator)) {
+            frame_rate_.store({}, std::memory_order_relaxed);
+            log()->error("Cannot represent the current frame duration as an NDI frame rate");
+            return false;
+        }
+
+        frame_rate_.store({.numerator = static_cast<int>(numerator), .denominator = static_cast<int>(denominator)},
+                          std::memory_order_relaxed);
+        return true;
+    }
+
+    void create_sender(const std::string& name)
+    {
         NDIlib_send_create_t create{};
         create.p_ndi_name  = name.c_str();
         create.clock_video = false; // render loop is the clock
@@ -123,7 +155,7 @@ class node_impl : public node_i
             return;
         }
 
-        sender_name_ = name;
+        sender_name_.commit(name);
         log()->info("NDI sender created: \"{}\"", name);
 
         worker_running_ = true;
@@ -143,12 +175,12 @@ class node_impl : public node_i
             sender_ = nullptr;
         }
 
-        sender_name_.clear();
+        sender_name_.reset();
         {
             const std::scoped_lock lock(cv_mutex_);
             download_stream_.reset();
         }
-        stream_dimensions_ = {};
+        stream_dimensions_.reset();
         draw_state_.reset();
     }
 
@@ -166,12 +198,13 @@ class node_impl : public node_i
     {
         traits->must_run = true;
 
-        auto* sr      = app->status_registry();
-        auto  enabled = state.get_option<bool>("enabled");
+        auto*      sr               = app->status_registry();
+        const auto enabled          = state.get_option<bool>("enabled");
+        const bool frame_rate_valid = update_frame_rate(app->frame_info.duration);
 
         sr->write(id_, "connected", sender_ != nullptr);
 
-        if (!enabled) {
+        if (!enabled || !frame_rate_valid) {
             if (sender_ != nullptr) {
                 free_sender();
             }
@@ -180,11 +213,11 @@ class node_impl : public node_i
 
         const auto source_name  = state.get_option<std::string>("source_name", id_);
         const auto desired_name = source_name.empty() ? id_ : source_name;
-        if (sender_ == nullptr || sender_name_ != desired_name) {
+        if (sender_ == nullptr || sender_name_.would_change(desired_name)) {
             if (sender_ != nullptr) {
                 free_sender();
             }
-            create_sender(desired_name, app);
+            create_sender(desired_name);
         }
     }
 
@@ -211,7 +244,7 @@ class node_impl : public node_i
             download_stream = download_stream_;
         }
 
-        if (!download_stream || stream_dimensions_ != dim) {
+        if (!download_stream || stream_dimensions_.would_change(dim)) {
             auto stream = app->texture_download_service()->create_stream({
                 .dimensions = dim,
                 .format     = gpu::texture_s::format_e::rgba_u8,
@@ -222,8 +255,8 @@ class node_impl : public node_i
                 const std::scoped_lock lock(cv_mutex_);
                 download_stream_ = stream;
             }
-            download_stream    = std::move(stream);
-            stream_dimensions_ = dim;
+            download_stream = std::move(stream);
+            stream_dimensions_.commit(dim);
         }
 
         auto target = download_stream->try_acquire();

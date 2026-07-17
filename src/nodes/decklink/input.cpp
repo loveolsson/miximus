@@ -15,11 +15,12 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "utils/observed_value.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <cstring>
-#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -318,13 +319,13 @@ class node_impl : public node_i
     decklink_ptr<IDeckLinkInput> device_;
     decklink_ptr<callback_s>     callback_;
 
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
-    std::unique_ptr<gpu::draw_state_s>  draw_state_;
-    std::optional<frame_info_s>         work_frame_;
-    uint64_t                            last_device_version_{std::numeric_limits<uint64_t>::max()};
-    BMDColorspace                       colorspace_{bmdColorspaceRec709};
-    gpu::color_conversion_s yuv_conversion_{gpu::get_color_transfer_from_yuv(gpu::color_transfer_e::Rec709)};
-    gpu::mat3               gamut_conversion_{1.0F};
+    std::unique_ptr<gpu::framebuffer_s>    framebuffer_;
+    std::unique_ptr<gpu::draw_state_s>     draw_state_;
+    std::optional<frame_info_s>            work_frame_;
+    utils::observed_value_s<uint64_t>      device_version_;
+    utils::observed_value_s<BMDColorspace> colorspace_;
+    gpu::color_conversion_s                yuv_conversion_{};
+    gpu::mat3                              gamut_conversion_{1.0F};
 
     output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -369,8 +370,7 @@ class node_impl : public node_i
         auto* sr = app->status_registry();
 
         const auto current_version = app->decklink_registry()->get_device_list_version();
-        if (current_version != last_device_version_) {
-            last_device_version_ = current_version;
+        if (device_version_.observe(current_version)) {
             sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_input_names()));
         }
 
@@ -442,9 +442,8 @@ class node_impl : public node_i
         shader->set_uniform("scale", gpu::vec2i_t{1.0, 1.0});
         shader->set_uniform("target_width", src_dim.x);
 
-        if (colorspace_ != work_frame_->colorspace) {
-            colorspace_         = work_frame_->colorspace;
-            const auto transfer = get_color_transfer(colorspace_);
+        if (colorspace_.observe(work_frame_->colorspace)) {
+            const auto transfer = get_color_transfer(colorspace_.value());
             yuv_conversion_     = gpu::get_color_transfer_from_yuv(transfer);
             gamut_conversion_   = gpu::get_gamut_transfer_to_rec709(transfer);
         }

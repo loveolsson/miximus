@@ -6,11 +6,12 @@
 #include "logger/logger.hpp"
 #include "persistent.hpp"
 
+#include <cstdint>
 #include <string_view>
 
 namespace miximus::gpu::transfer::detail {
 namespace {
-enum class backend_type_e
+enum class backend_type_e : std::uint8_t
 {
     persistent,
     cuda,

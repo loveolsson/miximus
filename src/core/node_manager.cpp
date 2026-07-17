@@ -166,7 +166,10 @@ node_manager_s::handle_update_node(std::string_view id, const json& options, int
     auto node_it = nodes_.find(id);
     if (node_it == nodes_.end()) {
         _log()->warn("Update node: Id {} not found", id);
-        return {error_e::not_found, false};
+        return {
+            .error                = error_e::not_found,
+            .has_corrected_values = false,
+        };
     }
 
     _log()->info("Updating node with id {}", id);

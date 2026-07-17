@@ -13,12 +13,13 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "utils/observed_value.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -46,14 +47,14 @@ class node_impl : public node_i
     bool                                                    capture_requested_{};
     std::thread                                             capture_thread_;
 
-    uint64_t    last_source_version_{std::numeric_limits<uint64_t>::max()};
-    std::string connected_source_;
+    utils::observed_value_s<uint64_t>    source_version_;
+    utils::observed_value_s<std::string> connected_source_;
 
     output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void capture_loop(gpu::transfer::texture_upload_service_s* upload_service)
     {
-        gpu::vec2i_t current_dim{};
+        utils::observed_value_s<gpu::vec2i_t> current_dimensions;
         while (true) {
             {
                 std::unique_lock lock(capture_mutex_);
@@ -78,8 +79,7 @@ class node_impl : public node_i
             std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
             {
                 const std::scoped_lock lock(upload_mutex_);
-                if (new_dim != current_dim || !upload_stream_) {
-                    current_dim    = new_dim;
+                if (current_dimensions.observe(new_dim) || !upload_stream_) {
                     upload_stream_ = upload_service->create_stream({
                         .dimensions        = new_dim,
                         .format            = gpu::texture_s::format_e::bgra_u8,
@@ -133,7 +133,7 @@ class node_impl : public node_i
         }
         framebuffer_.reset();
         draw_state_.reset();
-        connected_source_ = {};
+        connected_source_.reset();
     }
 
   public:
@@ -151,8 +151,7 @@ class node_impl : public node_i
         auto* sr = app->status_registry();
 
         const auto current_version = app->ndi_registry()->get_source_list_version();
-        if (current_version != last_source_version_) {
-            last_source_version_ = current_version;
+        if (source_version_.observe(current_version)) {
             sr->write(id_, "source_names", nlohmann::json(app->ndi_registry()->get_source_names()));
         }
 
@@ -168,7 +167,7 @@ class node_impl : public node_i
             return;
         }
 
-        if (source_name != connected_source_) {
+        if (connected_source_.would_change(source_name)) {
             free_receiver();
 
             log()->info("Connecting NDI input to \"{}\"", source_name);
@@ -197,9 +196,9 @@ class node_impl : public node_i
                 return;
             }
 
-            connected_source_ = source_name;
-            capture_running_  = true;
-            capture_thread_   = std::thread(&node_impl::capture_loop, this, app->texture_upload_service());
+            connected_source_.commit(source_name);
+            capture_running_ = true;
+            capture_thread_  = std::thread(&node_impl::capture_loop, this, app->texture_upload_service());
         }
     }
 

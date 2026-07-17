@@ -15,11 +15,11 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
+#include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -38,10 +38,10 @@ class node_impl : public node_i
         std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream;
         gpu::vec2i_t                                            surface_size{};
         bool                                                    needs_update{true};
-        std::string                                             last_text;
-        std::string                                             last_font_name;
-        std::string                                             last_font_variant;
-        int                                                     last_font_size{48};
+        utils::observed_value_s<std::string>                    text;
+        utils::observed_value_s<std::string>                    font_name;
+        utils::observed_value_s<std::string>                    font_variant;
+        utils::observed_value_s<int>                            font_size;
     };
 
     input_interface_s<gpu::vec2_t>          iface_position_in_{*this, "position"};
@@ -53,8 +53,8 @@ class node_impl : public node_i
     std::unique_ptr<text_render_info_s>      text_info_;
     ::mutex                                  font_mtx_;
     std::unique_ptr<render::font_instance_s> font_instance_;
-    uint64_t                                 last_font_version_{std::numeric_limits<uint64_t>::max()};
-    std::string                              last_status_font_name_;
+    utils::observed_value_s<uint64_t>        font_version_;
+    utils::observed_value_s<std::string>     status_font_name_;
 
   public:
     explicit node_impl()
@@ -66,16 +66,15 @@ class node_impl : public node_i
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
     {
         const auto font_version      = app->font_registry()->get_font_list_version();
-        const bool font_list_changed = font_version != last_font_version_;
+        const bool font_list_changed = font_version_.observe(font_version);
         const auto font_name         = state.get_option<std::string_view>("font_name");
+        const bool font_name_changed = status_font_name_.observe(font_name);
 
         if (font_list_changed) {
-            last_font_version_       = font_version;
             text_info_->needs_update = true;
             app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_names());
         }
-        if (font_list_changed || font_name != last_status_font_name_) {
-            last_status_font_name_ = font_name;
+        if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
                 id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
         }
@@ -92,13 +91,13 @@ class node_impl : public node_i
         auto font_variant = state.get_option<std::string_view>("font_variant");
         auto font_size    = state.get_option<int>("font_size");
 
-        if (text != text_info_->last_text || font_name != text_info_->last_font_name ||
-            font_variant != text_info_->last_font_variant || font_size != text_info_->last_font_size) {
-            text_info_->last_text         = std::string(text);
-            text_info_->last_font_name    = std::string(font_name);
-            text_info_->last_font_variant = std::string(font_variant);
-            text_info_->last_font_size    = font_size;
-            text_info_->needs_update      = true;
+        bool render_settings_changed = text_info_->text.observe(text);
+        render_settings_changed |= text_info_->font_name.observe(font_name);
+        render_settings_changed |= text_info_->font_variant.observe(font_variant);
+        render_settings_changed |= text_info_->font_size.observe(font_size);
+
+        if (render_settings_changed) {
+            text_info_->needs_update = true;
 
             if (text.empty()) {
                 text_info_->upload_stream.reset();
@@ -106,7 +105,7 @@ class node_impl : public node_i
             }
         }
 
-        if (text_info_->needs_update && !text_info_->last_text.empty()) {
+        if (text_info_->needs_update && !text_info_->text.value().empty()) {
             render_text(app, state);
         }
     }
@@ -120,13 +119,13 @@ class node_impl : public node_i
             std::optional<render::font_variant_s> font_info;
 
             spdlog::get("app")->info("Text rendering: '{}' with font '{}' size {}",
-                                     text_info_->last_text,
-                                     text_info_->last_font_name,
-                                     text_info_->last_font_size);
+                                     text_info_->text.value(),
+                                     text_info_->font_name.value(),
+                                     text_info_->font_size.value());
 
-            if (!text_info_->last_font_name.empty()) {
-                font_info =
-                    app->font_registry()->find_font_variant(text_info_->last_font_name, text_info_->last_font_variant);
+            if (!text_info_->font_name.value().empty()) {
+                font_info = app->font_registry()->find_font_variant(text_info_->font_name.value(),
+                                                                    text_info_->font_variant.value());
             }
 
             if (!font_info) {
@@ -152,22 +151,22 @@ class node_impl : public node_i
             }
 
             // Set the font size
-            font_instance_->set_size(text_info_->last_font_size);
+            font_instance_->set_size(text_info_->font_size.value());
         }
 
         // Convert text to UTF-32
-        auto utf32_text = utils::utf8_to_utf32(text_info_->last_text);
+        auto utf32_text = utils::utf8_to_utf32(text_info_->text.value());
 
         // Calculate text dimensions
         auto text_dim = font_instance_->flow_line(utf32_text, INT_MAX);
 
         // Create surface with generous padding to ensure no character cutoff
         // Use font size as height reference and add extra width padding
-        const int padding = std::max(40, text_info_->last_font_size / 2);
+        const int padding = std::max(40, text_info_->font_size.value() / 2);
 
         const gpu::vec2i_t surface_size{static_cast<int>(text_dim.pixels_advanced) +
                                             (padding * 2), // More generous padding
-                                        text_info_->last_font_size + (padding * 2)};
+                                        text_info_->font_size.value() + (padding * 2)};
 
         if (!text_info_->upload_stream || text_info_->surface_size != surface_size) {
             text_info_->surface_size = surface_size;
@@ -190,7 +189,7 @@ class node_impl : public node_i
         surface.clear({0, 0, 0, 0});
 
         // Position text with adequate padding from the top-left
-        const gpu::vec2i_t text_position{padding, text_info_->last_font_size + (padding / 2)};
+        const gpu::vec2i_t text_position{padding, text_info_->font_size.value() + (padding / 2)};
 
         // Render text in white
         font_instance_->render_string(utf32_text, &surface, text_position);
@@ -204,17 +203,17 @@ class node_impl : public node_i
         auto fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
-        if (fb == nullptr || text_info_->last_text.empty()) {
+        if (fb == nullptr || !text_info_->text.has_value() || text_info_->text.value().empty()) {
             if (fb == nullptr) {
                 spdlog::get("app")->debug("Text node: No framebuffer input");
             }
-            if (text_info_->last_text.empty()) {
+            if (!text_info_->text.has_value() || text_info_->text.value().empty()) {
                 spdlog::get("app")->debug("Text node: No text to render");
             }
             return;
         }
 
-        spdlog::get("app")->debug("Text node executing with text: '{}'", text_info_->last_text);
+        spdlog::get("app")->debug("Text node executing with text: '{}'", text_info_->text.value());
 
         // Update text if needed
         if (text_info_->needs_update) {
