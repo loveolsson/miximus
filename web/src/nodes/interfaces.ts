@@ -58,15 +58,27 @@ export class StatusDropdownInterface extends NodeInterface<string> {
   }
 }
 
-/**
- * Read-only status indicator (connected dot + active_format).
- * Uses the same nodeData pattern as StatusDropdownInterface.
- */
+export type NodeStatusFormat = "busy" | "integer" | "locked" | "temperature";
+
+export interface NodeStatusField {
+  readonly key: string;
+  readonly label: string;
+  readonly format?: NodeStatusFormat;
+}
+
+export interface NodeStatusSection {
+  readonly title: string;
+  readonly fields: readonly NodeStatusField[];
+}
+
+/** Read-only status indicator with an explicitly declared detail layout. */
 export class NodeStatusInterface extends NodeInterface<null> {
   readonly nodeData: NodeData;
+  readonly sections: readonly NodeStatusSection[];
 
-  constructor() {
+  constructor(sections: readonly NodeStatusSection[]) {
     super("Status", null);
+    this.sections = sections;
     this.nodeData = reactive({ node_id: "" });
     this.setComponent(markRaw(NodeStatusComponent));
     this.setPort(false);
