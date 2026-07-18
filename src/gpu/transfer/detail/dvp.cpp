@@ -9,9 +9,7 @@
 #include <stdexcept>
 #include <string_view>
 
-#ifdef _WIN32
-#include <windows.h> // VirtualLock / VirtualUnlock
-#else
+#ifndef _WIN32
 #include <GL/glx.h>   // glXGetCurrentContext — detect EGL vs GLX before touching DVP
 #include <sys/mman.h> // mlock / munlock
 #endif

@@ -1,8 +1,7 @@
+#ifdef _WIN32
+
 #include "platform_compat.hpp"
 
-// platform_compat.hpp imports decklink_inc.hpp first, preserving the required
-// IUnknown/DeckLink include order and the project's WIN32_LEAN_AND_MEAN setup.
-#include <Windows.h>
 #include <cstddef>
 #include <limits>
 
@@ -93,3 +92,5 @@ std::string get_display_mode_name(IDeckLinkDisplayMode* mode)
 }
 
 } // namespace miximus::nodes::decklink::detail
+
+#endif // _WIN32

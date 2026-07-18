@@ -1,3 +1,5 @@
+#ifndef _WIN32
+
 #include "font_registry.hpp"
 #include "logger/logger.hpp"
 
@@ -65,3 +67,5 @@ font_registry_s::font_map_t font_registry_s::scan_fonts()
 }
 
 } // namespace miximus::render
+
+#endif // _WIN32

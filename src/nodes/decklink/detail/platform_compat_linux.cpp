@@ -1,3 +1,5 @@
+#if !defined(_WIN32) && !defined(__APPLE__)
+
 #include "platform_compat.hpp"
 
 #include <cstdlib>
@@ -56,3 +58,5 @@ std::string get_display_mode_name(IDeckLinkDisplayMode* mode)
 }
 
 } // namespace miximus::nodes::decklink::detail
+
+#endif // !defined(_WIN32) && !defined(__APPLE__)

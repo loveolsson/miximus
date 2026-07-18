@@ -1,3 +1,5 @@
+#ifdef __APPLE__
+
 #include "platform_compat.hpp"
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -63,3 +65,5 @@ std::string get_display_mode_name(IDeckLinkDisplayMode* mode)
 }
 
 } // namespace miximus::nodes::decklink::detail
+
+#endif // __APPLE__
