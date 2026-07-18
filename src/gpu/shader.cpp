@@ -92,18 +92,21 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTES, &count);
     log->debug("Active Attributes: {}", count);
 
+    GLint attribute_name_length = 0;
+    glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTE_MAX_LENGTH, &attribute_name_length);
+    std::vector<GLchar> attribute_name(static_cast<size_t>(attribute_name_length));
+
     for (GLuint i = 0; std::cmp_less(i, count); i++) {
-        std::array<GLchar, 32> name{};
-        GLint                  size{};
-        GLenum                 type{};
+        GLint  size{};
+        GLenum type{};
 
-        glGetActiveAttrib(program_, i, name.size(), nullptr, &size, &type, name.data());
-        log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, name.data());
+        glGetActiveAttrib(program_, i, attribute_name_length, nullptr, &size, &type, attribute_name.data());
+        log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, attribute_name.data());
 
-        const GLint loc = glGetAttribLocation(program_, name.data());
+        const GLint loc = glGetAttribLocation(program_, attribute_name.data());
         if (loc != -1) {
             attributes_.emplace_back(attribute_s{
-                .name = name.data(),
+                .name = attribute_name.data(),
                 .loc  = loc,
                 .type = type,
                 .size = size,
@@ -114,18 +117,21 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     glGetProgramiv(program_, GL_ACTIVE_UNIFORMS, &count);
     log->debug("Active Uniforms: {}", count);
 
+    GLint uniform_name_length = 0;
+    glGetProgramiv(program_, GL_ACTIVE_UNIFORM_MAX_LENGTH, &uniform_name_length);
+    std::vector<GLchar> uniform_name(static_cast<size_t>(uniform_name_length));
+
     for (GLuint i = 0; std::cmp_less(i, count); i++) {
-        std::array<GLchar, 32> name{};
-        GLint                  size{};
-        GLenum                 type{};
+        GLint  size{};
+        GLenum type{};
 
-        glGetActiveUniform(program_, i, name.size(), nullptr, &size, &type, name.data());
+        glGetActiveUniform(program_, i, uniform_name_length, nullptr, &size, &type, uniform_name.data());
 
-        log->debug(" -- Uniform {} Type: {} Name: \"{}\"", i, type, name.data());
+        log->debug(" -- Uniform {} Type: {} Name: \"{}\"", i, type, uniform_name.data());
 
-        const GLint loc = glGetUniformLocation(program_, name.data());
+        const GLint loc = glGetUniformLocation(program_, uniform_name.data());
         if (loc != -1) {
-            uniforms_.emplace(name.data(),
+            uniforms_.emplace(uniform_name.data(),
                               uniform_s{
                                   .loc  = loc,
                                   .type = type,
