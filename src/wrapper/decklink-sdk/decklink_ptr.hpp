@@ -184,8 +184,8 @@ decklink_ptr<U> decklink_ptr<T>::query() const
 template <decklink_com_object T>
 void decklink_ptr<T>::release()
 {
-    if (m_ptr)
-        m_ptr->Release();
+    if (auto* ptr = std::exchange(m_ptr, nullptr); ptr != nullptr)
+        ptr->Release();
 }
 
 template <decklink_com_object T, decklink_com_object U>
@@ -206,7 +206,7 @@ decklink_ptr<T> query_decklink_interface(U* source)
 template <decklink_com_object T, class... Args>
 decklink_ptr<T> make_decklink_ptr(Args&&... args)
 {
-    return decklink_ptr(new T(args...), false);
+    return decklink_ptr(new T(std::forward<Args>(args)...), false);
 }
 
 } // namespace miximus::nodes::decklink

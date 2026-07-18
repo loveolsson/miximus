@@ -4,14 +4,13 @@
 #include "logger/logger.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
-#include <chrono>
+#include <atomic>
+#include <exception>
 #include <format>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -48,6 +47,7 @@ std::string decklink_registry_s::get_display_mode_name(IDeckLinkDisplayMode* mod
 class discovery_callback : public IDeckLinkDeviceNotificationCallback
 {
     decklink_registry_s* registry_;
+    std::atomic_ulong    ref_count_{1};
 
   public:
     explicit discovery_callback(decklink_registry_s* registry)
@@ -57,8 +57,39 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
     HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final
     {
-        auto log = getlog("decklink");
+        if (deckLinkDevice == nullptr) {
+            return E_INVALIDARG;
+        }
 
+        try {
+            return device_arrived(deckLinkDevice);
+        } catch (const std::exception& error) {
+            getlog("decklink")->error("DeckLink device arrival callback failed: {}", error.what());
+        } catch (...) {
+            getlog("decklink")->error("DeckLink device arrival callback failed");
+        }
+        return E_FAIL;
+    }
+
+    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final
+    {
+        if (deckLinkDevice == nullptr) {
+            return E_INVALIDARG;
+        }
+
+        try {
+            return device_removed(deckLinkDevice);
+        } catch (const std::exception& error) {
+            getlog("decklink")->error("DeckLink device removal callback failed: {}", error.what());
+        } catch (...) {
+            getlog("decklink")->error("DeckLink device removal callback failed");
+        }
+        return E_FAIL;
+    }
+
+  private:
+    HRESULT device_arrived(IDeckLink* deckLinkDevice)
+    {
         decklink_ptr device(deckLinkDevice);
 
         auto       name       = get_decklink_name(device);
@@ -80,6 +111,8 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
             }
         }
 
+        auto log = getlog("decklink");
+
         if (has_input) {
             log->info("Discovered DeckLink input: \"{}\"", name);
         }
@@ -91,67 +124,97 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         return S_OK;
     }
 
-    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final
+    HRESULT device_removed(IDeckLink* deckLinkDevice)
     {
-        const std::unique_lock lock(registry_->device_mutex_);
+        std::string                   name;
+        decklink_ptr<IDeckLinkInput>  removed_input;
+        decklink_ptr<IDeckLinkOutput> removed_output;
+        {
+            const std::unique_lock lock(registry_->device_mutex_);
 
-        auto it = registry_->names_.find(deckLinkDevice);
-        if (it == registry_->names_.end()) {
-            return S_OK;
+            auto it = registry_->names_.find(deckLinkDevice);
+            if (it == registry_->names_.end()) {
+                return S_OK;
+            }
+
+            name = std::move(it->second);
+            if (auto input = registry_->inputs_.find(name); input != registry_->inputs_.end()) {
+                removed_input = std::move(input->second);
+                registry_->inputs_.erase(input);
+            }
+            if (auto output = registry_->outputs_.find(name); output != registry_->outputs_.end()) {
+                removed_output = std::move(output->second);
+                registry_->outputs_.erase(output);
+            }
+            registry_->names_.erase(it);
         }
 
-        auto& name = it->second;
-        registry_->inputs_.erase(name);
-        registry_->outputs_.erase(name);
-        registry_->names_.erase(it);
         ++registry_->device_list_version_;
+        getlog("decklink")->info("DeckLink device removed: \"{}\"", name);
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*iid*/, LPVOID* /*ppv*/) final { return E_NOTIMPL; }
-    ULONG                     AddRef() final { return 1; }
-    ULONG                     Release() final { return 1; }
+  public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    {
+        if (ppv == nullptr) {
+            return E_POINTER;
+        }
+        *ppv = nullptr;
+
+        if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkDeviceNotificationCallback>(iid)) {
+            *ppv = static_cast<IDeckLinkDeviceNotificationCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+
+    ULONG AddRef() final { return ++ref_count_; }
+    ULONG Release() final
+    {
+        const auto count = --ref_count_;
+        if (count == 0) {
+            delete this;
+        }
+        return count;
+    }
 };
 
 decklink_registry_s::decklink_registry_s()
     : discovery_(detail::create_device_discovery())
-    , callback_(std::make_unique<discovery_callback>(this))
+    , callback_(new discovery_callback(this), false)
 {
-    const std::unique_lock lock(device_mutex_);
-
     if (discovery_) {
         getlog("decklink")->debug("Installing DeckLink discovery");
-        discovery_->InstallDeviceNotifications(callback_.get());
+        notifications_installed_ = discovery_->InstallDeviceNotifications(callback_.get()) == S_OK;
+        if (!notifications_installed_) {
+            getlog("decklink")->error("Failed to install DeckLink device notifications");
+        }
     }
 }
 
 decklink_registry_s::~decklink_registry_s()
 {
+    uninstall();
+    const std::unique_lock lock(device_mutex_);
+    names_.clear();
     inputs_.clear();
     outputs_.clear();
 }
 
 void decklink_registry_s::uninstall()
 {
-    const std::shared_lock lock(device_mutex_);
-
-    if (!discovery_) {
+    if (!discovery_ || !notifications_installed_) {
         return;
     }
 
     getlog("decklink")->debug("Uninstalling DeckLink discovery");
-
-    std::promise<void> done;
-    auto               future = done.get_future();
-
-    std::thread([this, p = std::move(done)]() mutable {
-        discovery_->UninstallDeviceNotifications();
-        p.set_value();
-    }).detach();
-
-    if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
-        getlog("decklink")->warn("DeckLink uninstall timed out — kernel module may need rebuilding (dkms autoinstall)");
+    const auto result = discovery_->UninstallDeviceNotifications();
+    if (result != S_OK) {
+        getlog("decklink")->warn("Failed to uninstall DeckLink device notifications: {:#x}", result);
     }
+    notifications_installed_ = false;
 }
 
 decklink_ptr<IDeckLinkInput> decklink_registry_s::get_input(std::string_view name)

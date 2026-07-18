@@ -1,6 +1,6 @@
 #pragma once
 #include "gpu/transfer/texture_upload.hpp"
-#include "wrapper/decklink-sdk/decklink_inc.hpp"
+#include "platform_compat.hpp"
 
 #include <atomic>
 #include <deque>
@@ -37,6 +37,9 @@ class video_buffer_s : public IDeckLinkVideoBuffer
 
     HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) override
     {
+        if (buffer == nullptr) {
+            return E_POINTER;
+        }
         if (!upload_) {
             *buffer = nullptr;
             return E_FAIL;
@@ -47,6 +50,9 @@ class video_buffer_s : public IDeckLinkVideoBuffer
 
     HRESULT STDMETHODCALLTYPE GetSize(uint64_t* size) override
     {
+        if (size == nullptr) {
+            return E_POINTER;
+        }
         *size = buffer_size();
         return upload_ ? S_OK : E_FAIL;
     }
@@ -54,9 +60,18 @@ class video_buffer_s : public IDeckLinkVideoBuffer
     HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags /*flags*/) override { return S_OK; }
     HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) override { return S_OK; }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*iid*/, LPVOID* ppv) override
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
+        if (ppv == nullptr) {
+            return E_POINTER;
+        }
         *ppv = nullptr;
+
+        if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkVideoBuffer>(iid)) {
+            *ppv = static_cast<IDeckLinkVideoBuffer*>(this);
+            AddRef();
+            return S_OK;
+        }
         return E_NOINTERFACE;
     }
 
@@ -74,6 +89,7 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     buffer_map_t                                            allocated_buffers_;
     buffer_queue_t                                          free_buffers_;
+    bool                                                    shutting_down_{};
     std::atomic_ulong                                       ref_count_{1};
 
     static inline std::atomic_size_t allocations_g{0};
@@ -87,9 +103,18 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) override;
     void                      return_buffer(video_buffer_s* buffer);
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID /*iid*/, LPVOID* ppv) override
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
+        if (ppv == nullptr) {
+            return E_POINTER;
+        }
         *ppv = nullptr;
+
+        if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkVideoBufferAllocator>(iid)) {
+            *ppv = static_cast<IDeckLinkVideoBufferAllocator*>(this);
+            AddRef();
+            return S_OK;
+        }
         return E_NOINTERFACE;
     }
 

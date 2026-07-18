@@ -12,6 +12,7 @@ struct IDeckLink;
 struct IDeckLinkInput;
 struct IDeckLinkOutput;
 struct IDeckLinkDiscovery;
+struct IDeckLinkDeviceNotificationCallback;
 struct IDeckLinkVideoConversion;
 struct IDeckLinkDisplayMode;
 
@@ -21,8 +22,9 @@ class discovery_callback;
 
 class decklink_registry_s
 {
-    decklink_ptr<IDeckLinkDiscovery>    discovery_;
-    std::unique_ptr<discovery_callback> callback_;
+    decklink_ptr<IDeckLinkDiscovery>                  discovery_;
+    decklink_ptr<IDeckLinkDeviceNotificationCallback> callback_;
+    bool                                              notifications_installed_{};
 
     std::shared_mutex                                                 device_mutex_;
     std::map<IDeckLink*, std::string>                                 names_;

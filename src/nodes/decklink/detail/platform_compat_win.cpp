@@ -3,6 +3,7 @@
 // platform_compat.hpp imports decklink_inc.hpp first, preserving the required
 // IUnknown/DeckLink include order and the project's WIN32_LEAN_AND_MEAN setup.
 #include <Windows.h>
+#include <cstddef>
 #include <limits>
 
 namespace miximus::nodes::decklink::detail {
@@ -52,6 +53,19 @@ decklink_ptr<IDeckLinkVideoConversion> create_video_conversion()
                                            decklink_iid<IDeckLinkVideoConversion>(),
                                            reinterpret_cast<void**>(&conversion));
     return SUCCEEDED(result) ? decklink_ptr(conversion, false) : decklink_ptr<IDeckLinkVideoConversion>{};
+}
+
+bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
+{
+    if (lhs.Data1 != rhs.Data1 || lhs.Data2 != rhs.Data2 || lhs.Data3 != rhs.Data3) {
+        return false;
+    }
+    for (std::size_t i = 0; i < 8; ++i) {
+        if (lhs.Data4[i] != rhs.Data4[i]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string get_device_display_name(IDeckLink* device)

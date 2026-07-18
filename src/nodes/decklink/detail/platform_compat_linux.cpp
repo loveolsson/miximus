@@ -23,6 +23,14 @@ decklink_ptr<IDeckLinkVideoConversion> create_video_conversion()
     return decklink_ptr(CreateVideoConversionInstance(), false);
 }
 
+bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
+{
+    return lhs.byte0 == rhs.byte0 && lhs.byte1 == rhs.byte1 && lhs.byte2 == rhs.byte2 && lhs.byte3 == rhs.byte3 &&
+           lhs.byte4 == rhs.byte4 && lhs.byte5 == rhs.byte5 && lhs.byte6 == rhs.byte6 && lhs.byte7 == rhs.byte7 &&
+           lhs.byte8 == rhs.byte8 && lhs.byte9 == rhs.byte9 && lhs.byte10 == rhs.byte10 && lhs.byte11 == rhs.byte11 &&
+           lhs.byte12 == rhs.byte12 && lhs.byte13 == rhs.byte13 && lhs.byte14 == rhs.byte14 && lhs.byte15 == rhs.byte15;
+}
+
 std::string get_device_display_name(IDeckLink* device)
 {
     const char* raw_name = nullptr;
