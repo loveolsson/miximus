@@ -4,6 +4,8 @@ PRIVATE
     register.cpp
     detail/allocator.hpp
     detail/allocator.cpp
+    detail/device_monitor.hpp
+    detail/device_monitor.cpp
     detail/platform_compat.hpp
     input.cpp
     output.cpp

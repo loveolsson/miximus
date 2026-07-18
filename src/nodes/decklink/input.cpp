@@ -20,6 +20,7 @@
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -36,6 +37,29 @@ using namespace miximus::nodes;
 using namespace miximus::nodes::decklink;
 using namespace miximus::nodes::decklink::detail;
 auto log() { return getlog("decklink"); }
+
+template <typename T>
+nlohmann::json status_value(const std::optional<T>& value)
+{
+    return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
+}
+
+void write_device_status(core::node_status_registry_s::writer_s& writer, const device_status_s& status)
+{
+    writer.write("signal_locked", status_value(status.input_signal_locked));
+    writer.write("ancillary_signal_locked", status_value(status.ancillary_signal_locked));
+    writer.write("capture_busy", status_value(status.capture_busy));
+    writer.write("pcie_link_width", status_value(status.pcie_link_width));
+    writer.write("pcie_link_speed", status_value(status.pcie_link_speed));
+    writer.write("temperature_c", status_value(status.temperature_c));
+    writer.write("active_format", status_value(status.current_input_mode));
+    writer.write("detected_format", status_value(status.detected_input_mode));
+    writer.write("detected_colorspace", status_value(status.detected_colorspace));
+    writer.write("detected_dynamic_range", status_value(status.detected_dynamic_range));
+    writer.write("detected_field_dominance", status_value(status.detected_field_dominance));
+    writer.write("detected_sdi_link_configuration", status_value(status.detected_sdi_link_configuration));
+    writer.write("input_pixel_format", status_value(status.current_input_pixel_format));
+}
 
 // Metadata for a UYUV texture uploaded by the shared transfer worker.
 struct frame_info_s
@@ -67,6 +91,7 @@ class callback_s
     };
 
     gpu::transfer::texture_upload_service_s*                upload_service_;
+    decklink_ptr<IDeckLinkInput>                            device_;
     decklink_ptr<allocator_s>                               allocator_;
     std::mutex                                              upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
@@ -76,6 +101,16 @@ class callback_s
     std::atomic<BMDColorspace>  colorspace_{bmdColorspaceRec709};
     std::atomic_bool            stopping_{false};
     std::atomic_bool            failed_{false};
+
+    std::atomic_uint64_t                  frames_received_{0};
+    std::atomic_uint64_t                  frames_missing_{0};
+    std::atomic_uint64_t                  no_input_source_frames_{0};
+    std::atomic_uint64_t                  upload_slot_drops_{0};
+    std::atomic_uint32_t                  available_video_frames_{0};
+    std::chrono::steady_clock::time_point next_queue_poll_;
+    BMDTimeValue                          last_stream_time_{};
+    bool                                  has_stream_time_{};
+    std::atomic_bool                      reset_stream_time_;
 
     BMDColorspace get_frame_colorspace(IDeckLinkVideoInputFrame* frame) const
     {
@@ -117,8 +152,18 @@ class callback_s
     }
 
   public:
-    explicit callback_s(gpu::transfer::texture_upload_service_s* upload_service)
+    struct metrics_s
+    {
+        uint64_t frames_received{};
+        uint64_t frames_missing{};
+        uint64_t no_input_source_frames{};
+        uint64_t upload_slot_drops{};
+        uint32_t available_video_frames{};
+    };
+
+    callback_s(gpu::transfer::texture_upload_service_s* upload_service, decklink_ptr<IDeckLinkInput> device)
         : upload_service_(upload_service)
+        , device_(std::move(device))
         , allocator_(make_decklink_ptr<allocator_s>())
     {
     }
@@ -215,6 +260,37 @@ class callback_s
             return S_OK;
         }
 
+        ++frames_received_;
+        if ((videoFrame->GetFlags() & bmdFrameHasNoInputSource) != 0) {
+            ++no_input_source_frames_;
+        }
+
+        constexpr BMDTimeScale metric_time_scale = 1'000'000;
+        BMDTimeValue           stream_time{};
+        BMDTimeValue           frame_duration{};
+        if (reset_stream_time_.exchange(false)) {
+            has_stream_time_ = false;
+        }
+        if (videoFrame->GetStreamTime(&stream_time, &frame_duration, metric_time_scale) == S_OK && frame_duration > 0) {
+            if (has_stream_time_ && stream_time > last_stream_time_ + frame_duration) {
+                const auto missing = ((stream_time - last_stream_time_) / frame_duration) - 1;
+                if (missing < 100) {
+                    frames_missing_.fetch_add(static_cast<uint64_t>(missing));
+                }
+            }
+            last_stream_time_ = stream_time;
+            has_stream_time_  = true;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= next_queue_poll_) {
+            uint32_t available{};
+            if (device_->GetAvailableVideoFrameCount(&available) == S_OK) {
+                available_video_frames_ = available;
+            }
+            next_queue_poll_ = now + std::chrono::seconds(1);
+        }
+
         const auto         row_bytes = static_cast<size_t>(videoFrame->GetRowBytes());
         const gpu::vec2i_t src_dim{videoFrame->GetWidth(), videoFrame->GetHeight()};
         const auto         frame_size = row_bytes * static_cast<size_t>(src_dim.y);
@@ -238,6 +314,7 @@ class callback_s
         }
 
         if (version == 0) {
+            ++upload_slot_drops_;
             log()->warn("VideoInputFrameArrived dropped frame: no upload slot");
             return S_OK;
         }
@@ -253,6 +330,7 @@ class callback_s
         }
         if (custom_buffer) {
             if (!allocator_->submit_upload(video_buffer.get())) {
+                ++upload_slot_drops_;
                 const std::scoped_lock lock(upload_mutex_);
                 upload_metadata_.erase(version);
             }
@@ -278,7 +356,8 @@ class callback_s
         const bool colorspace_changed   = (notificationEvents & bmdVideoInputColorspaceChanged) != 0;
 
         if (display_mode_changed) {
-            new_display_mode_ = newDisplayMode->GetDisplayMode();
+            new_display_mode_  = newDisplayMode->GetDisplayMode();
+            reset_stream_time_ = true;
         }
         if (display_mode_changed || colorspace_changed) {
             colorspace_ = get_display_mode_colorspace(newDisplayMode);
@@ -328,6 +407,17 @@ class callback_s
 
     BMDDisplayMode get_new_display_mode() { return new_display_mode_.exchange(bmdModeUnknown); }
 
+    metrics_s metrics() const
+    {
+        return {
+            .frames_received        = frames_received_.load(),
+            .frames_missing         = frames_missing_.load(),
+            .no_input_source_frames = no_input_source_frames_.load(),
+            .upload_slot_drops      = upload_slot_drops_.load(),
+            .available_video_frames = available_video_frames_.load(),
+        };
+    }
+
     void begin_shutdown() { stopping_ = true; }
     bool failed() const { return failed_.load(); }
 
@@ -371,13 +461,15 @@ class node_impl : public node_i
     decklink_ptr<IDeckLinkInput> device_;
     decklink_ptr<callback_s>     callback_;
 
-    std::unique_ptr<gpu::framebuffer_s>    framebuffer_;
-    std::unique_ptr<gpu::draw_state_s>     draw_state_;
-    std::optional<frame_info_s>            work_frame_;
-    utils::observed_value_s<uint64_t>      device_version_;
-    utils::observed_value_s<BMDColorspace> colorspace_;
-    gpu::color_conversion_s                yuv_conversion_{};
-    gpu::mat3                              gamut_conversion_{1.0F};
+    std::unique_ptr<gpu::framebuffer_s>                       framebuffer_;
+    std::unique_ptr<gpu::draw_state_s>                        draw_state_;
+    std::optional<frame_info_s>                               work_frame_;
+    utils::observed_value_s<uint64_t>                         device_version_;
+    utils::observed_value_s<BMDColorspace>                    colorspace_;
+    utils::observed_value_s<std::pair<std::string, uint64_t>> device_status_version_;
+    std::chrono::steady_clock::time_point                     next_metrics_status_;
+    gpu::color_conversion_s                                   yuv_conversion_{};
+    gpu::mat3                                                 gamut_conversion_{1.0F};
 
     output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -407,6 +499,103 @@ class node_impl : public node_i
         work_frame_.reset();
     }
 
+    void publish_device_status(core::app_state_s* app, std::string_view device_name)
+    {
+        const auto device_status = app->decklink_registry()->get_device_status(device_name);
+        const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
+        if (device_status_version_.observe(status_key)) {
+            auto writer = app->status_registry()->write_node(id_);
+            write_device_status(writer, device_status ? *device_status : device_status_s{});
+        }
+    }
+
+    void publish_metrics(core::node_status_registry_s* status_registry)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (!callback_ || now < next_metrics_status_) {
+            return;
+        }
+
+        const auto metrics = callback_->metrics();
+        auto       writer  = status_registry->write_node(id_);
+        writer.write("frames_received", metrics.frames_received);
+        writer.write("frames_missing", metrics.frames_missing);
+        writer.write("no_input_source_frames", metrics.no_input_source_frames);
+        writer.write("upload_slot_drops", metrics.upload_slot_drops);
+        writer.write("available_video_frames", metrics.available_video_frames);
+        next_metrics_status_ = now + std::chrono::seconds(1);
+    }
+
+    bool prepare_active_capture(core::app_state_s* app, core::node_status_registry_s* status_registry)
+    {
+        if (!device_ || !callback_) {
+            return true;
+        }
+        if (callback_->failed()) {
+            log()->error("DeckLink input callback failed; restarting the device");
+            free_device();
+            status_registry->write(id_, "connected", false);
+            return false;
+        }
+
+        const auto pts   = app->frame_info.timestamp;
+        const auto flush = pts - app->frame_info.duration * 2;
+        work_frame_      = callback_->get_rendered_frame(pts, flush);
+
+        const auto new_mode = callback_->get_new_display_mode();
+        if (new_mode == bmdModeUnknown) {
+            return true;
+        }
+
+        const auto stopped = device_->StopStreams();
+        const auto enabled = device_->EnableVideoInputWithAllocatorProvider(
+            new_mode, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection, callback_.get());
+        const auto started = enabled == S_OK ? device_->StartStreams() : E_FAIL;
+        if (stopped == S_OK && enabled == S_OK && started == S_OK) {
+            return true;
+        }
+
+        log()->error("Failed to restart DeckLink input after a format change");
+        free_device();
+        status_registry->write(id_, "connected", false);
+        return false;
+    }
+
+    bool start_capture(core::app_state_s* app, decklink_ptr<IDeckLinkInput> device, std::string_view device_name)
+    {
+        log()->info("Setting up DeckLink input {}", device_name);
+        auto callback = make_decklink_ptr<callback_s>(app->texture_upload_service(), device);
+
+        decklink_ptr<IDeckLinkDisplayModeIterator> mode_iterator;
+        decklink_ptr<IDeckLinkDisplayMode>         initial_mode;
+        const auto iterator_result = device->GetDisplayModeIterator(mode_iterator.releaseAndGetAddressOf());
+        const auto mode_result     = iterator_result == S_OK && mode_iterator
+                                         ? mode_iterator->Next(initial_mode.releaseAndGetAddressOf())
+                                         : E_FAIL;
+        const auto callback_result = mode_result == S_OK && initial_mode ? device->SetCallback(callback.get()) : E_FAIL;
+        const auto enable_result =
+            callback_result == S_OK ? device->EnableVideoInputWithAllocatorProvider(initial_mode->GetDisplayMode(),
+                                                                                    bmdFormat10BitYUV,
+                                                                                    bmdVideoInputEnableFormatDetection,
+                                                                                    callback.get())
+                                    : E_FAIL;
+        const auto start_result = enable_result == S_OK ? device->StartStreams() : E_FAIL;
+
+        if (start_result != S_OK) {
+            callback->begin_shutdown();
+            (void)device->StopStreams();
+            (void)device->SetCallback(nullptr);
+            (void)device->DisableVideoInput();
+            log()->error("Failed to start DeckLink input {}", device_name);
+            return false;
+        }
+
+        device_   = std::move(device);
+        callback_ = std::move(callback);
+        devices_in_use().emplace(device_.get());
+        return true;
+    }
+
   public:
     explicit node_impl() = default;
 
@@ -431,35 +620,15 @@ class node_impl : public node_i
             sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_input_names()));
         }
 
-        if (device_ && callback_) {
-            if (callback_->failed()) {
-                log()->error("DeckLink input callback failed; restarting the device");
-                free_device();
-                sr->write(id_, "connected", false);
-                return;
-            }
-
-            auto pts    = app->frame_info.timestamp;
-            auto flush  = pts - app->frame_info.duration * 2;
-            work_frame_ = callback_->get_rendered_frame(pts, flush);
-
-            auto new_mode = callback_->get_new_display_mode();
-            if (new_mode != bmdModeUnknown) {
-                const auto stopped = device_->StopStreams();
-                const auto enabled = device_->EnableVideoInputWithAllocatorProvider(
-                    new_mode, bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection, callback_.get());
-                const auto started = enabled == S_OK ? device_->StartStreams() : E_FAIL;
-                if (stopped != S_OK || enabled != S_OK || started != S_OK) {
-                    log()->error("Failed to restart DeckLink input after a format change");
-                    free_device();
-                    sr->write(id_, "connected", false);
-                    return;
-                }
-            }
+        if (!prepare_active_capture(app, sr)) {
+            return;
         }
 
         auto device_name = state.get_option<std::string>("device_name");
         auto enabled     = state.get_option<bool>("enabled");
+
+        publish_device_status(app, device_name);
+        publish_metrics(sr);
 
         auto device = enabled ? app->decklink_registry()->get_input(device_name) : nullptr;
         if (device != device_) {
@@ -472,39 +641,10 @@ class node_impl : public node_i
                 return;
             }
 
-            log()->info("Setting up DeckLink input {}", device_name);
-            auto callback = make_decklink_ptr<callback_s>(app->texture_upload_service());
-
-            decklink_ptr<IDeckLinkDisplayModeIterator> mode_iterator;
-            decklink_ptr<IDeckLinkDisplayMode>         initial_mode;
-            const auto iterator_result = device->GetDisplayModeIterator(mode_iterator.releaseAndGetAddressOf());
-            const auto mode_result     = iterator_result == S_OK && mode_iterator
-                                             ? mode_iterator->Next(initial_mode.releaseAndGetAddressOf())
-                                             : E_FAIL;
-            const auto callback_result =
-                mode_result == S_OK && initial_mode ? device->SetCallback(callback.get()) : E_FAIL;
-            const auto enable_result =
-                callback_result == S_OK
-                    ? device->EnableVideoInputWithAllocatorProvider(initial_mode->GetDisplayMode(),
-                                                                    bmdFormat10BitYUV,
-                                                                    bmdVideoInputEnableFormatDetection,
-                                                                    callback.get())
-                    : E_FAIL;
-            const auto start_result = enable_result == S_OK ? device->StartStreams() : E_FAIL;
-
-            if (start_result != S_OK) {
-                callback->begin_shutdown();
-                (void)device->StopStreams();
-                (void)device->SetCallback(nullptr);
-                (void)device->DisableVideoInput();
-                log()->error("Failed to start DeckLink input {}", device_name);
+            if (!start_capture(app, std::move(device), device_name)) {
                 sr->write(id_, "connected", false);
                 return;
             }
-
-            device_   = std::move(device);
-            callback_ = std::move(callback);
-            devices_in_use().emplace(device_.get());
         }
 
         sr->write(id_, "connected", device_ != nullptr);

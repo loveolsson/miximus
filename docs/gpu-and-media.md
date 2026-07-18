@@ -90,6 +90,12 @@ DeckLink output renders packed 10-bit YUV into a download target. The transfer w
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
 
+The registry also owns one status monitor per physical device. DeckLink `bmdStatusChanged` notifications update an
+owned plain-data snapshot, while a single registry worker polls non-notifiable hardware statistics such as temperature.
+Nodes copy snapshots by device name and publish them only when the snapshot version changes. Stream-specific queue
+depth and frame outcome counters remain on the input/output callbacks and are throttled to status once per second.
+No status or statistics SDK query runs on the render thread.
+
 All application-provided DeckLink callbacks and buffers are complete `IUnknown` implementations: `QueryInterface` must return only matching interfaces, reference counts are atomic, and exceptions must be caught before crossing an SDK callback boundary. Input shutdown stops capture and unregisters the callback before releasing the node's references. Output shutdown calls `StopScheduledPlayback` and retains the callback and device until `ScheduledPlaybackHasStopped`; normal render ticks poll this state instead of waiting on the render thread. A bounded timeout handles devices that disappear without delivering the final callback.
 
 SDK 16 buffer access uses `IDeckLinkVideoBuffer`: query it, call `StartAccess`, retrieve bytes, and call `EndAccess`. Linux SDK `REFIID` values do not provide normal C++ equality; follow the existing `QueryInterface` comparisons and COM pointer wrapper.

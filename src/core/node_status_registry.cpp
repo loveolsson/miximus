@@ -4,18 +4,41 @@
 
 namespace miximus::core {
 
-void node_status_registry_s::write(std::string_view node_id, std::string_view key, nlohmann::json value)
+node_status_registry_s::writer_s::writer_s(node_status_registry_s*      registry,
+                                           std::unique_lock<std::mutex> lock,
+                                           const std::string*           node_id,
+                                           nlohmann::json*              state)
+    : registry_(registry)
+    , lock_(std::move(lock))
+    , node_id_(node_id)
+    , state_(state)
 {
-    std::scoped_lock lock(mutex_);
+}
 
-    auto& node_state = states_[std::string(node_id)];
-
-    if (auto it = node_state.find(key); it != node_state.end() && *it == value) {
-        return; // unchanged
+void node_status_registry_s::writer_s::write(std::string_view key, nlohmann::json value)
+{
+    if (auto it = state_->find(key); it != state_->end() && *it == value) {
+        return;
     }
 
-    node_state[std::string(key)] = std::move(value);
-    pending_.push_back({std::string(node_id), std::string(key)});
+    (*state_)[std::string(key)] = value;
+    if (pending_ == nullptr) {
+        pending_ = &registry_->pending_.try_emplace(*node_id_, nlohmann::json::object()).first->second;
+    }
+    (*pending_)[std::string(key)] = std::move(value);
+}
+
+void node_status_registry_s::write(std::string_view node_id, std::string_view key, nlohmann::json value)
+{
+    auto writer = write_node(node_id);
+    writer.write(key, std::move(value));
+}
+
+node_status_registry_s::writer_s node_status_registry_s::write_node(std::string_view node_id)
+{
+    std::unique_lock lock(mutex_);
+    auto [it, _] = states_.try_emplace(std::string(node_id), nlohmann::json::object());
+    return {this, std::move(lock), &it->first, &it->second};
 }
 
 void node_status_registry_s::remove_node(std::string_view node_id)
@@ -24,32 +47,19 @@ void node_status_registry_s::remove_node(std::string_view node_id)
     if (const auto it = states_.find(node_id); it != states_.end()) {
         states_.erase(it);
     }
+    if (const auto it = pending_.find(node_id); it != pending_.end()) {
+        pending_.erase(it);
+    }
 }
 
 std::vector<node_status_registry_s::status_update_s> node_status_registry_s::flush()
 {
     std::scoped_lock lock(mutex_);
 
-    std::vector<status_update_s>                                                             result;
-    std::unordered_map<std::string, size_t, utils::transparent_string_hash, std::equal_to<>> update_indices;
-
-    for (const auto& entry : pending_) {
-        const auto node = states_.find(entry.node_id);
-        if (node == states_.end()) {
-            continue;
-        }
-
-        const auto value = node->second.find(entry.key);
-        if (value == node->second.end()) {
-            continue;
-        }
-
-        const auto [index, inserted] = update_indices.try_emplace(entry.node_id, result.size());
-        if (inserted) {
-            result.push_back({entry.node_id, nlohmann::json::object()});
-        }
-
-        result[index->second].status[entry.key] = *value;
+    std::vector<status_update_s> result;
+    result.reserve(pending_.size());
+    for (auto& [node_id, status] : pending_) {
+        result.push_back({node_id, std::move(status)});
     }
 
     pending_.clear();

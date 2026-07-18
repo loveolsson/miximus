@@ -1,20 +1,26 @@
 #include "registry.hpp"
 
+#include "detail/device_monitor.hpp"
 #include "detail/platform_compat.hpp"
 #include "logger/logger.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <exception>
 #include <format>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 namespace miximus::nodes::decklink {
+
+using namespace std::chrono_literals;
 
 namespace {
 std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
@@ -95,12 +101,14 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         auto       name       = get_decklink_name(device);
         auto       input      = device.query<IDeckLinkInput>();
         auto       output     = device.query<IDeckLinkOutput>();
+        auto       monitor    = std::make_shared<detail::device_monitor_s>(device.get());
         const bool has_input  = input != nullptr;
         const bool has_output = output != nullptr;
 
         {
             const std::unique_lock lock(registry_->device_mutex_);
             registry_->names_.insert_or_assign(deckLinkDevice, name);
+            registry_->monitors_.insert_or_assign(name, std::move(monitor));
 
             if (input) {
                 registry_->inputs_.insert_or_assign(name, std::move(input));
@@ -126,9 +134,10 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
     HRESULT device_removed(IDeckLink* deckLinkDevice)
     {
-        std::string                   name;
-        decklink_ptr<IDeckLinkInput>  removed_input;
-        decklink_ptr<IDeckLinkOutput> removed_output;
+        std::string                               name;
+        decklink_ptr<IDeckLinkInput>              removed_input;
+        decklink_ptr<IDeckLinkOutput>             removed_output;
+        std::shared_ptr<detail::device_monitor_s> removed_monitor;
         {
             const std::unique_lock lock(registry_->device_mutex_);
 
@@ -145,6 +154,10 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
             if (auto output = registry_->outputs_.find(name); output != registry_->outputs_.end()) {
                 removed_output = std::move(output->second);
                 registry_->outputs_.erase(output);
+            }
+            if (auto monitor = registry_->monitors_.find(name); monitor != registry_->monitors_.end()) {
+                removed_monitor = std::move(monitor->second);
+                registry_->monitors_.erase(monitor);
             }
             registry_->names_.erase(it);
         }
@@ -192,15 +205,43 @@ decklink_registry_s::decklink_registry_s()
             getlog("decklink")->error("Failed to install DeckLink device notifications");
         }
     }
+
+    statistics_thread_ = std::jthread([this](const std::stop_token& stop_token) {
+        std::mutex                  wait_mutex;
+        std::condition_variable_any wait_condition;
+        std::unique_lock            wait_lock(wait_mutex);
+
+        while (!stop_token.stop_requested()) {
+            wait_condition.wait_for(wait_lock, stop_token, 2s, [] { return false; });
+            if (stop_token.stop_requested()) {
+                break;
+            }
+
+            std::vector<std::shared_ptr<detail::device_monitor_s>> monitors;
+            {
+                const std::shared_lock lock(device_mutex_);
+                monitors.reserve(monitors_.size());
+                for (const auto& [_, monitor] : monitors_) {
+                    monitors.push_back(monitor);
+                }
+            }
+            for (const auto& monitor : monitors) {
+                monitor->poll_statistics();
+            }
+        }
+    });
 }
 
 decklink_registry_s::~decklink_registry_s()
 {
     uninstall();
+    statistics_thread_.request_stop();
+    statistics_thread_.join();
     const std::unique_lock lock(device_mutex_);
     names_.clear();
     inputs_.clear();
     outputs_.clear();
+    monitors_.clear();
 }
 
 void decklink_registry_s::uninstall()
@@ -236,6 +277,20 @@ decklink_ptr<IDeckLinkOutput> decklink_registry_s::get_output(std::string_view n
     }
 
     return {};
+}
+
+std::shared_ptr<const device_status_s> decklink_registry_s::get_device_status(std::string_view name)
+{
+    std::shared_ptr<detail::device_monitor_s> monitor;
+    {
+        const std::shared_lock lock(device_mutex_);
+        const auto             it = monitors_.find(name);
+        if (it == monitors_.end()) {
+            return {};
+        }
+        monitor = it->second;
+    }
+    return monitor->status();
 }
 
 std::vector<std::string> decklink_registry_s::get_input_names()

@@ -130,7 +130,11 @@ Nodes publish runtime information with:
 status_registry->write(node_id, key, value);
 ```
 
-Writes are thread-safe and ignored when the stored value is unchanged. At frame end, pending keys are merged into one delta object per node. WebSocket broadcasts contain only those deltas, and `web/src/nodes/status_store.ts` shallow-merges them. Initial config and explicit `node_status` requests return full snapshots.
+Writes are thread-safe and ignored when the stored value is unchanged. Nodes publishing several related values use a
+scoped per-node writer so the registry is locked and the node ID is looked up only once. Changed values are accumulated
+directly into one pending delta object per node, which is moved into the WebSocket broadcast at frame end;
+`web/src/nodes/status_store.ts` shallow-merges it. Initial config and explicit `node_status` requests return full
+snapshots.
 
 Long lists must not be rebuilt every frame. DeckLink, NDI, and font registries expose atomic version counters. Nodes remember the last version and regenerate lists only after a change. Dependent lists also track their selection; for example, changing a font family regenerates `font_variants` without rebuilding `font_names`.
 

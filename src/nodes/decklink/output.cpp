@@ -44,6 +44,24 @@ class node_impl;
 
 auto log() { return getlog("decklink"); }
 
+template <typename T>
+nlohmann::json status_value(const std::optional<T>& value)
+{
+    return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
+}
+
+void write_device_status(core::node_status_registry_s::writer_s& writer, const device_status_s& status)
+{
+    writer.write("reference_locked", status_value(status.reference_signal_locked));
+    writer.write("playback_busy", status_value(status.playback_busy));
+    writer.write("pcie_link_width", status_value(status.pcie_link_width));
+    writer.write("pcie_link_speed", status_value(status.pcie_link_speed));
+    writer.write("temperature_c", status_value(status.temperature_c));
+    writer.write("active_format", status_value(status.current_output_mode));
+    writer.write("output_pixel_format", status_value(status.last_output_pixel_format));
+    writer.write("reference_format", status_value(status.reference_signal_mode));
+}
+
 struct mode_info_s
 {
     BMDDisplayMode          mode;
@@ -75,6 +93,13 @@ class callback_s
     std::condition_variable stop_condition_;
     bool                    playback_stopped_{};
 
+    std::atomic_uint64_t                  frames_completed_{0};
+    std::atomic_uint64_t                  frames_displayed_late_{0};
+    std::atomic_uint64_t                  frames_dropped_{0};
+    std::atomic_uint64_t                  frames_flushed_{0};
+    std::atomic_uint32_t                  buffered_video_frames_{0};
+    std::chrono::steady_clock::time_point next_queue_poll_;
+
     void set_colorspace_metadata(IDeckLinkMutableVideoFrame* frame) const
     {
         auto metadata = query_decklink_interface<IDeckLinkVideoFrameMutableMetadataExtensions>(frame);
@@ -84,6 +109,15 @@ class callback_s
     }
 
   public:
+    struct metrics_s
+    {
+        uint64_t frames_completed{};
+        uint64_t frames_displayed_late{};
+        uint64_t frames_dropped{};
+        uint64_t frames_flushed{};
+        uint32_t buffered_video_frames{};
+    };
+
     callback_s(std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream,
                decklink_ptr<IDeckLinkOutput>                             device,
                mode_info_s                                               mode_info)
@@ -114,8 +148,9 @@ class callback_s
             (void)buffer->EndAccess(bmdBufferAccessWrite);
             return false;
         }
-        constexpr uint16_t uyvy_black = 0x1080;
-        std::fill_n(static_cast<uint16_t*>(data), static_cast<size_t>(mode_info_.dim.x * mode_info_.dim.y), uyvy_black);
+        constexpr uint16_t uyvy_black  = 0x1080;
+        const auto         pixel_count = static_cast<size_t>(mode_info_.dim.x) * static_cast<size_t>(mode_info_.dim.y);
+        std::fill_n(static_cast<uint16_t*>(data), pixel_count, uyvy_black);
         if (buffer->EndAccess(bmdBufferAccessWrite) != S_OK) {
             return false;
         }
@@ -175,7 +210,24 @@ class callback_s
     HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame* /*completedFrame*/,
                                                       BMDOutputFrameCompletionResult result) final
     {
-        if (stopping_.load() || result == bmdOutputFrameFlushed) {
+        switch (result) {
+            case bmdOutputFrameCompleted:
+                ++frames_completed_;
+                break;
+            case bmdOutputFrameDisplayedLate:
+                ++frames_displayed_late_;
+                break;
+            case bmdOutputFrameDropped:
+                ++frames_dropped_;
+                break;
+            case bmdOutputFrameFlushed:
+                ++frames_flushed_;
+                return S_OK;
+            default:
+                break;
+        }
+
+        if (stopping_.load()) {
             return S_OK;
         }
 
@@ -191,35 +243,61 @@ class callback_s
     }
 
   private:
-    HRESULT scheduled_frame_completed(BMDOutputFrameCompletionResult result)
+    void poll_buffered_video_frames()
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now < next_queue_poll_) {
+            return;
+        }
+
+        uint32_t buffered{};
+        if (device_->GetBufferedVideoFrameCount(&buffered) == S_OK) {
+            buffered_video_frames_ = buffered;
+        }
+        next_queue_poll_ = now + std::chrono::seconds(1);
+    }
+
+    void update_last_frame()
     {
         auto frame = download_stream_->try_consume_latest();
-        if (frame) {
-            decklink_ptr<IDeckLinkMutableVideoFrame> dst_frame;
-            const int32_t                            row_bytes = ((mode_info_.dim.x + 47) / 48) * 128;
-
-            if (SUCCEEDED(device_->CreateVideoFrame(mode_info_.dim.x,
-                                                    mode_info_.dim.y,
-                                                    row_bytes,
-                                                    bmdFormat10BitYUV,
-                                                    0,
-                                                    dst_frame.releaseAndGetAddressOf()))) {
-                set_colorspace_metadata(dst_frame.get());
-                auto dst_buffer = dst_frame.query<IDeckLinkVideoBuffer>();
-                if (dst_buffer && dst_buffer->StartAccess(bmdBufferAccessWrite) == S_OK) {
-                    void*      dst_ptr = nullptr;
-                    const auto size    = static_cast<size_t>(row_bytes) * static_cast<size_t>(mode_info_.dim.y);
-                    if (dst_buffer->GetBytes(&dst_ptr) == S_OK && dst_ptr != nullptr && size == frame->size()) {
-                        std::memcpy(dst_ptr, frame->ptr(), size);
-                        if (dst_buffer->EndAccess(bmdBufferAccessWrite) == S_OK) {
-                            last_frame_ = dst_frame.query<IDeckLinkVideoFrame>();
-                        }
-                    } else {
-                        (void)dst_buffer->EndAccess(bmdBufferAccessWrite);
-                    }
-                }
-            }
+        if (!frame) {
+            return;
         }
+
+        decklink_ptr<IDeckLinkMutableVideoFrame> dst_frame;
+        const int32_t                            row_bytes = ((mode_info_.dim.x + 47) / 48) * 128;
+        if (FAILED(device_->CreateVideoFrame(mode_info_.dim.x,
+                                             mode_info_.dim.y,
+                                             row_bytes,
+                                             bmdFormat10BitYUV,
+                                             0,
+                                             dst_frame.releaseAndGetAddressOf()))) {
+            return;
+        }
+
+        set_colorspace_metadata(dst_frame.get());
+        auto dst_buffer = dst_frame.query<IDeckLinkVideoBuffer>();
+        if (!dst_buffer || dst_buffer->StartAccess(bmdBufferAccessWrite) != S_OK) {
+            return;
+        }
+
+        void*      dst_ptr = nullptr;
+        const auto size    = static_cast<size_t>(row_bytes) * static_cast<size_t>(mode_info_.dim.y);
+        if (dst_buffer->GetBytes(&dst_ptr) != S_OK || dst_ptr == nullptr || size != frame->size()) {
+            (void)dst_buffer->EndAccess(bmdBufferAccessWrite);
+            return;
+        }
+
+        std::memcpy(dst_ptr, frame->ptr(), size);
+        if (dst_buffer->EndAccess(bmdBufferAccessWrite) == S_OK) {
+            last_frame_ = dst_frame.query<IDeckLinkVideoFrame>();
+        }
+    }
+
+    HRESULT scheduled_frame_completed(BMDOutputFrameCompletionResult result)
+    {
+        poll_buffered_video_frames();
+        update_last_frame();
 
         if (last_frame_) {
             if (result != bmdOutputFrameCompleted) {
@@ -264,7 +342,17 @@ class callback_s
         std::unique_lock lock(stop_mutex_);
         return stop_condition_.wait_for(lock, timeout, [this] { return playback_stopped_; });
     }
-    bool failed() const { return failed_.load(); }
+    bool      failed() const { return failed_.load(); }
+    metrics_s metrics() const
+    {
+        return {
+            .frames_completed      = frames_completed_.load(),
+            .frames_displayed_late = frames_displayed_late_.load(),
+            .frames_dropped        = frames_dropped_.load(),
+            .frames_flushed        = frames_flushed_.load(),
+            .buffered_video_frames = buffered_video_frames_.load(),
+        };
+    }
 };
 #pragma GCC diagnostic pop
 
@@ -289,6 +377,9 @@ class node_impl : public node_i
     utils::observed_value_s<std::string>                      display_mode_name_;
     mode_info_s*                                              display_mode_{};
     utils::observed_value_s<uint64_t>                         device_version_;
+    utils::observed_value_s<std::pair<std::string, uint64_t>> device_status_version_;
+    std::chrono::steady_clock::time_point                     next_metrics_status_;
+    uint64_t                                                  render_target_drops_{};
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -420,6 +511,86 @@ class node_impl : public node_i
         return false;
     }
 
+    void publish_device_status(core::app_state_s* app, std::string_view device_name)
+    {
+        const auto device_status = app->decklink_registry()->get_device_status(device_name);
+        const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
+        if (device_status_version_.observe(status_key)) {
+            auto writer = app->status_registry()->write_node(id_);
+            write_device_status(writer, device_status ? *device_status : device_status_s{});
+        }
+    }
+
+    void publish_metrics(core::node_status_registry_s* status_registry)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (!callback_ || now < next_metrics_status_) {
+            return;
+        }
+
+        const auto metrics = callback_->metrics();
+        auto       writer  = status_registry->write_node(id_);
+        writer.write("frames_completed", metrics.frames_completed);
+        writer.write("frames_displayed_late", metrics.frames_displayed_late);
+        writer.write("frames_dropped", metrics.frames_dropped);
+        writer.write("frames_flushed", metrics.frames_flushed);
+        writer.write("buffered_video_frames", metrics.buffered_video_frames);
+        writer.write("render_target_drops", render_target_drops_);
+        next_metrics_status_ = now + std::chrono::seconds(1);
+    }
+
+    bool configure_device(core::app_state_s*            app,
+                          decklink_ptr<IDeckLinkOutput> device,
+                          std::string_view              device_name,
+                          std::string_view              display_mode,
+                          core::node_status_registry_s* status_registry)
+    {
+        log()->info("Setting up DeckLink output {}", device_name);
+
+        std::map<std::string, mode_info_s, std::less<>> display_modes;
+        decklink_ptr<IDeckLinkDisplayModeIterator>      mode_iterator;
+        if (device->GetDisplayModeIterator(mode_iterator.releaseAndGetAddressOf()) != S_OK || !mode_iterator) {
+            log()->error("Failed to enumerate display modes for DeckLink output {}", device_name);
+            return false;
+        }
+
+        decklink_ptr<IDeckLinkDisplayMode> sdk_mode;
+        while (mode_iterator->Next(sdk_mode.releaseAndGetAddressOf()) == S_OK) {
+            mode_info_s mode{};
+            mode.mode = sdk_mode->GetDisplayMode();
+            mode.dim  = {sdk_mode->GetWidth(), sdk_mode->GetHeight()};
+            if (sdk_mode->GetFrameRate(&mode.frame_duration, &mode.time_scale) != S_OK) {
+                continue;
+            }
+
+            mode.colorspace       = detail::get_display_mode_colorspace(sdk_mode.get());
+            const auto transfer   = detail::get_color_transfer(mode.colorspace);
+            mode.yuv_conversion   = gpu::get_color_transfer_to_yuv(transfer);
+            mode.gamut_conversion = gpu::get_gamut_transfer_from_rec709(transfer);
+
+            auto name = decklink_registry_s::get_display_mode_name(sdk_mode.get());
+            display_modes.emplace(std::move(name), mode);
+        }
+
+        std::vector<std::string> mode_names;
+        mode_names.reserve(display_modes.size());
+        for (const auto& [name, _] : display_modes) {
+            mode_names.push_back(name);
+        }
+        status_registry->write(id_, "display_modes", nlohmann::json(mode_names));
+
+        device_        = std::move(device);
+        display_modes_ = std::move(display_modes);
+        devices_in_use().emplace(device_.get());
+        display_mode_name_.commit(display_mode);
+        if (start_playback(app, display_mode)) {
+            return true;
+        }
+
+        log()->error("Failed to start DeckLink output {} with {}", device_name, display_mode);
+        return false;
+    }
+
   public:
     explicit node_impl() = default;
 
@@ -453,6 +624,9 @@ class node_impl : public node_i
         auto device_name  = state.get_option<std::string>("device_name");
         auto display_mode = state.get_option<std::string>("display_mode");
         auto enabled      = state.get_option<bool>("enabled");
+
+        publish_device_status(app, device_name);
+        publish_metrics(sr);
 
         if (!poll_pending_stop()) {
             sr->write(id_, "connected", false);
@@ -492,46 +666,7 @@ class node_impl : public node_i
             return;
         }
 
-        log()->info("Setting up DeckLink output {}", device_name);
-
-        std::map<std::string, mode_info_s, std::less<>> display_modes;
-        decklink_ptr<IDeckLinkDisplayModeIterator>      mode_iterator;
-        if (device->GetDisplayModeIterator(mode_iterator.releaseAndGetAddressOf()) != S_OK || !mode_iterator) {
-            log()->error("Failed to enumerate display modes for DeckLink output {}", device_name);
-            return;
-        }
-
-        decklink_ptr<IDeckLinkDisplayMode> sdk_mode;
-        while (mode_iterator->Next(sdk_mode.releaseAndGetAddressOf()) == S_OK) {
-            mode_info_s mode{};
-            mode.mode = sdk_mode->GetDisplayMode();
-            mode.dim  = {sdk_mode->GetWidth(), sdk_mode->GetHeight()};
-            if (sdk_mode->GetFrameRate(&mode.frame_duration, &mode.time_scale) != S_OK) {
-                continue;
-            }
-
-            mode.colorspace       = detail::get_display_mode_colorspace(sdk_mode.get());
-            const auto transfer   = detail::get_color_transfer(mode.colorspace);
-            mode.yuv_conversion   = gpu::get_color_transfer_to_yuv(transfer);
-            mode.gamut_conversion = gpu::get_gamut_transfer_from_rec709(transfer);
-
-            auto name = decklink_registry_s::get_display_mode_name(sdk_mode.get());
-            display_modes.emplace(std::move(name), mode);
-        }
-
-        std::vector<std::string> mode_names;
-        mode_names.reserve(display_modes.size());
-        for (const auto& [name, _] : display_modes) {
-            mode_names.push_back(name);
-        }
-        sr->write(id_, "display_modes", nlohmann::json(mode_names));
-
-        device_        = std::move(device);
-        display_modes_ = std::move(display_modes);
-        in_use.emplace(device_.get());
-        display_mode_name_.commit(display_mode);
-        if (!start_playback(app, display_mode)) {
-            log()->error("Failed to start DeckLink output {} with {}", device_name, display_mode);
+        if (!configure_device(app, std::move(device), device_name, display_mode, sr)) {
             return;
         }
         sr->write(id_, "connected", true);
@@ -550,6 +685,7 @@ class node_impl : public node_i
 
         auto target = download_stream_ ? download_stream_->try_acquire() : std::nullopt;
         if (!target) {
+            ++render_target_drops_;
             return;
         }
 
