@@ -1,15 +1,25 @@
 #pragma once
-#include "decklink_inc.hpp"
+#include "decklink_iid.hpp"
 
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 namespace miximus::nodes::decklink {
 
 template <typename T>
+concept decklink_com_object = std::is_base_of_v<IUnknown, T>;
+
+template <decklink_com_object T>
+class decklink_ptr;
+
+template <decklink_com_object T, decklink_com_object U>
+decklink_ptr<T> query_decklink_interface(U* source);
+
+template <decklink_com_object T>
 class decklink_ptr
 {
-    template <typename U>
+    template <decklink_com_object U>
     friend class decklink_ptr;
 
   public:
@@ -18,9 +28,6 @@ class decklink_ptr
     explicit decklink_ptr(T* ptr, bool take_ownership = true);
     decklink_ptr(const decklink_ptr<T>& other);
     decklink_ptr(decklink_ptr<T>&& other);
-
-    template <typename U>
-    decklink_ptr(REFIID iid, decklink_ptr<U> other);
 
     ~decklink_ptr();
 
@@ -39,6 +46,9 @@ class decklink_ptr
 
     explicit operator bool() const;
 
+    template <decklink_com_object U>
+    decklink_ptr<U> query() const;
+
     auto operator<=>(const decklink_ptr<T>& other) const = default;
 
   private:
@@ -47,19 +57,19 @@ class decklink_ptr
     T* m_ptr;
 };
 
-template <typename T>
+template <decklink_com_object T>
 constexpr decklink_ptr<T>::decklink_ptr()
     : m_ptr(nullptr)
 {
 }
 
-template <typename T>
+template <decklink_com_object T>
 constexpr decklink_ptr<T>::decklink_ptr(std::nullptr_t)
     : m_ptr(nullptr)
 {
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>::decklink_ptr(T* ptr, bool take_ownership)
     : m_ptr(ptr)
 {
@@ -67,7 +77,7 @@ decklink_ptr<T>::decklink_ptr(T* ptr, bool take_ownership)
         m_ptr->AddRef();
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>::decklink_ptr(const decklink_ptr<T>& other)
     : m_ptr(other.m_ptr)
 {
@@ -75,32 +85,20 @@ decklink_ptr<T>::decklink_ptr(const decklink_ptr<T>& other)
         m_ptr->AddRef();
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>::decklink_ptr(decklink_ptr<T>&& other)
     : m_ptr(other.m_ptr)
 {
     other.m_ptr = nullptr;
 }
 
-template <typename T>
-template <typename U>
-decklink_ptr<T>::decklink_ptr(REFIID iid, decklink_ptr<U> other)
-    : m_ptr(nullptr)
-{
-    if (!other.m_ptr)
-        return;
-
-    if (FAILED(other.m_ptr->QueryInterface(iid, reinterpret_cast<void**>(&m_ptr))))
-        m_ptr = nullptr;
-}
-
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>::~decklink_ptr()
 {
     release();
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>& decklink_ptr<T>::operator=(std::nullptr_t)
 {
     release();
@@ -108,7 +106,7 @@ decklink_ptr<T>& decklink_ptr<T>::operator=(std::nullptr_t)
     return *this;
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>& decklink_ptr<T>::operator=(T* ptr)
 {
     if (ptr)
@@ -118,13 +116,13 @@ decklink_ptr<T>& decklink_ptr<T>::operator=(T* ptr)
     return *this;
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>& decklink_ptr<T>::operator=(const decklink_ptr<T>& other)
 {
     return (*this = other.m_ptr);
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>& decklink_ptr<T>::operator=(decklink_ptr<T>&& other)
 {
     release();
@@ -133,57 +131,79 @@ decklink_ptr<T>& decklink_ptr<T>::operator=(decklink_ptr<T>&& other)
     return *this;
 }
 
-template <typename T>
+template <decklink_com_object T>
 T* decklink_ptr<T>::get() const
 {
     return m_ptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
 T** decklink_ptr<T>::releaseAndGetAddressOf()
 {
     release();
     return &m_ptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
 const T* decklink_ptr<T>::operator->() const
 {
     return m_ptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
 T* decklink_ptr<T>::operator->()
 {
     return m_ptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
 const T& decklink_ptr<T>::operator*() const
 {
     return *m_ptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
 T& decklink_ptr<T>::operator*()
 {
     return *m_ptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
 decklink_ptr<T>::operator bool() const
 {
     return m_ptr != nullptr;
 }
 
-template <typename T>
+template <decklink_com_object T>
+template <decklink_com_object U>
+decklink_ptr<U> decklink_ptr<T>::query() const
+{
+    return query_decklink_interface<U>(m_ptr);
+}
+
+template <decklink_com_object T>
 void decklink_ptr<T>::release()
 {
     if (m_ptr)
         m_ptr->Release();
 }
 
-template <class T, class... Args>
+template <decklink_com_object T, decklink_com_object U>
+decklink_ptr<T> query_decklink_interface(U* source)
+{
+    if (source == nullptr) {
+        return {};
+    }
+
+    T* result = nullptr;
+    if (FAILED(source->QueryInterface(decklink_iid<T>(), reinterpret_cast<void**>(&result)))) {
+        return {};
+    }
+
+    return decklink_ptr<T>(result, false);
+}
+
+template <decklink_com_object T, class... Args>
 decklink_ptr<T> make_decklink_ptr(Args&&... args)
 {
     return decklink_ptr(new T(args...), false);

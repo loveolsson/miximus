@@ -2,6 +2,7 @@ set(DECKLINK_SDK_DIR ${CMAKE_SOURCE_DIR}/3rd-party/decklink-sdk)
 
 set(DECKLINK_COMMON_SOURCES 
     decklink_inc.hpp
+    decklink_iid.hpp
     decklink_ptr.hpp
 )
 
@@ -49,6 +50,7 @@ if(WIN32)
 
     target_include_directories(decklink SYSTEM PUBLIC
         ${MIDL_OUTPUT_PATH}
+        ${DECKLINK_OS_DIR}/include
     )
 else()
     if(APPLE)

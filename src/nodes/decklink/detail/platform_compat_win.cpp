@@ -35,8 +35,11 @@ std::string bstr_to_utf8(BSTR value)
 decklink_ptr<IDeckLinkDiscovery> create_device_discovery()
 {
     IDeckLinkDiscovery* discovery = nullptr;
-    const auto          result    = ::CoCreateInstance(
-        CLSID_CDeckLinkDiscovery, nullptr, CLSCTX_ALL, IID_IDeckLinkDiscovery, reinterpret_cast<void**>(&discovery));
+    const auto          result    = ::CoCreateInstance(CLSID_CDeckLinkDiscovery,
+                                           nullptr,
+                                           CLSCTX_ALL,
+                                           decklink_iid<IDeckLinkDiscovery>(),
+                                           reinterpret_cast<void**>(&discovery));
     return SUCCEEDED(result) ? decklink_ptr(discovery, false) : decklink_ptr<IDeckLinkDiscovery>{};
 }
 
@@ -46,7 +49,7 @@ decklink_ptr<IDeckLinkVideoConversion> create_video_conversion()
     const auto                result     = ::CoCreateInstance(CLSID_CDeckLinkVideoConversion,
                                            nullptr,
                                            CLSCTX_ALL,
-                                           IID_IDeckLinkVideoConversion,
+                                           decklink_iid<IDeckLinkVideoConversion>(),
                                            reinterpret_cast<void**>(&conversion));
     return SUCCEEDED(result) ? decklink_ptr(conversion, false) : decklink_ptr<IDeckLinkVideoConversion>{};
 }

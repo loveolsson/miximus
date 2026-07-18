@@ -28,8 +28,8 @@ std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
      * and the order of the devices may change with reboots.
      * To combat this, the persistent ID of the device is appended to the name to serve as a unique and repeatable name.
      */
-    const decklink_ptr<IDeckLinkProfile>     profile(IID_IDeckLinkProfile, device);
-    decklink_ptr<IDeckLinkProfileAttributes> attributes(IID_IDeckLinkProfileAttributes, profile);
+    const auto profile    = device.query<IDeckLinkProfile>();
+    auto       attributes = profile.query<IDeckLinkProfileAttributes>();
     if (attributes) {
         if (FAILED(attributes->GetInt(BMDDeckLinkPersistentID, &id))) {
             id = -1;
@@ -61,11 +61,11 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 
         decklink_ptr device(deckLinkDevice);
 
-        auto                          name = get_decklink_name(device);
-        decklink_ptr<IDeckLinkInput>  input(IID_IDeckLinkInput, device);
-        decklink_ptr<IDeckLinkOutput> output(IID_IDeckLinkOutput, device);
-        const bool                    has_input  = input != nullptr;
-        const bool                    has_output = output != nullptr;
+        auto       name       = get_decklink_name(device);
+        auto       input      = device.query<IDeckLinkInput>();
+        auto       output     = device.query<IDeckLinkOutput>();
+        const bool has_input  = input != nullptr;
+        const bool has_output = output != nullptr;
 
         {
             const std::unique_lock lock(registry_->device_mutex_);

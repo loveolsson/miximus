@@ -63,11 +63,9 @@ class callback_s
 
     void set_colorspace_metadata(IDeckLinkMutableVideoFrame* frame) const
     {
-        IDeckLinkVideoFrameMutableMetadataExtensions* metadata = nullptr;
-        if (frame->QueryInterface(IID_IDeckLinkVideoFrameMutableMetadataExtensions,
-                                  reinterpret_cast<void**>(&metadata)) == S_OK) {
+        auto metadata = query_decklink_interface<IDeckLinkVideoFrameMutableMetadataExtensions>(frame);
+        if (metadata) {
             (void)metadata->SetInt(bmdDeckLinkFrameMetadataColorspace, mode_info_.colorspace);
-            metadata->Release();
         }
     }
 
@@ -84,14 +82,13 @@ class callback_s
         if (SUCCEEDED(device_->CreateVideoFrame(
                 mode_info_.dim.x, mode_info_.dim.y, mode_info.dim.x * 2, bmdFormat8BitYUV, 0, &frame))) {
             set_colorspace_metadata(frame);
-            IDeckLinkVideoBuffer* buffer = nullptr;
-            if (frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&buffer)) == S_OK) {
+            auto buffer = query_decklink_interface<IDeckLinkVideoBuffer>(frame);
+            if (buffer) {
                 buffer->StartAccess(bmdBufferAccessWrite);
                 uint16_t* data = nullptr;
                 buffer->GetBytes(reinterpret_cast<void**>(&data));
                 std::fill(data, data + static_cast<size_t>(mode_info_.dim.x * mode_info_.dim.y), 0x0000);
                 buffer->EndAccess(bmdBufferAccessWrite);
-                buffer->Release();
             }
 
             for (int i = 0; i < 4; i++) {
@@ -144,9 +141,8 @@ class callback_s
             if (SUCCEEDED(device_->CreateVideoFrame(
                     mode_info_.dim.x, mode_info_.dim.y, row_bytes, bmdFormat10BitYUV, 0, &dst_frame))) {
                 set_colorspace_metadata(dst_frame);
-                IDeckLinkVideoBuffer* dst_buffer = nullptr;
-                if (dst_frame->QueryInterface(IID_IDeckLinkVideoBuffer, reinterpret_cast<void**>(&dst_buffer)) ==
-                    S_OK) {
+                auto dst_buffer = query_decklink_interface<IDeckLinkVideoBuffer>(dst_frame);
+                if (dst_buffer) {
                     dst_buffer->StartAccess(bmdBufferAccessWrite);
                     void* dst_ptr = nullptr;
                     dst_buffer->GetBytes(&dst_ptr);
@@ -154,7 +150,6 @@ class callback_s
                     assert(size == frame->size());
                     memcpy(dst_ptr, frame->ptr(), size);
                     dst_buffer->EndAccess(bmdBufferAccessWrite);
-                    dst_buffer->Release();
                 }
 
                 last_frame_ = dst_frame;

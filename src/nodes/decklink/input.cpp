@@ -77,12 +77,10 @@ class callback_s
 
     BMDColorspace get_frame_colorspace(IDeckLinkVideoInputFrame* frame) const
     {
-        IDeckLinkVideoFrameMetadataExtensions* metadata = nullptr;
-        if (frame->QueryInterface(IID_IDeckLinkVideoFrameMetadataExtensions, reinterpret_cast<void**>(&metadata)) ==
-            S_OK) {
+        auto metadata = query_decklink_interface<IDeckLinkVideoFrameMetadataExtensions>(frame);
+        if (metadata) {
             int64_t value = 0;
             if (metadata->GetInt(bmdDeckLinkFrameMetadataColorspace, &value) == S_OK) {
-                metadata->Release();
                 const auto colorspace = static_cast<BMDColorspace>(value);
                 if (colorspace == bmdColorspaceRec601 || colorspace == bmdColorspaceRec709 ||
                     colorspace == bmdColorspaceRec2020) {
@@ -90,7 +88,6 @@ class callback_s
                 }
                 return colorspace_.load();
             }
-            metadata->Release();
         }
 
         return colorspace_.load();
@@ -188,9 +185,8 @@ class callback_s
 
         std::optional<gpu::transfer::texture_upload_lease_s> fallback_upload;
         uint64_t                                             version{};
-        decklink_ptr<IDeckLinkVideoBuffer>                   video_buffer;
-        if (videoFrame->QueryInterface(IID_IDeckLinkVideoBuffer,
-                                       reinterpret_cast<void**>(video_buffer.releaseAndGetAddressOf())) == S_OK) {
+        auto video_buffer = query_decklink_interface<IDeckLinkVideoBuffer>(videoFrame);
+        if (video_buffer) {
             version = allocator_->upload_version(video_buffer.get());
         }
 
