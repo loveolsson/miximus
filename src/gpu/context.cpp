@@ -209,12 +209,29 @@ void context_s::set_fullscreen_monitor(const std::string& name, recti_s rect)
 {
     auto it = monitors_g.find(name);
     if (it != monitors_g.end()) {
-        if (it->second == glfwGetWindowMonitor(window_)) {
+        auto* monitor = it->second;
+        if (monitor == glfwGetWindowMonitor(window_)) {
             return;
         }
 
-        const auto mode = glfwGetVideoMode(it->second);
-        glfwSetWindowMonitor(window_, it->second, 0, 0, mode->width, mode->height, GLFW_DONT_CARE);
+        const auto mode = glfwGetVideoMode(monitor);
+        if (mode == nullptr) {
+            _log()->error("Unable to query video mode for monitor '{}'", name);
+            glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
+            return;
+        }
+
+        if (glfwGetPlatform() == GLFW_PLATFORM_X11) {
+            // Mutter under XWayland may choose the output containing the window
+            // instead of honoring _NET_WM_FULLSCREEN_MONITORS. Move the window
+            // onto the requested output before asking the WM to fullscreen it.
+            int monitor_x{};
+            int monitor_y{};
+            glfwGetMonitorPos(monitor, &monitor_x, &monitor_y);
+            glfwSetWindowMonitor(window_, nullptr, monitor_x, monitor_y, mode->width, mode->height, GLFW_DONT_CARE);
+        }
+
+        glfwSetWindowMonitor(window_, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
 
     } else {
         glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
