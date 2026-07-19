@@ -28,7 +28,22 @@ add_library(gpu
     textured_quad.hpp
     textured_quad.cpp
     color_transfer.hpp
+    detail/monitor_platform.hpp
 )
+
+if(WIN32)
+    target_sources(gpu PRIVATE detail/monitor_platform_win.cpp)
+elseif(APPLE)
+    target_sources(gpu PRIVATE detail/monitor_platform_mac.cpp)
+    find_library(COLORSYNC_FRAMEWORK ColorSync REQUIRED)
+    find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
+    find_library(COREGRAPHICS_FRAMEWORK CoreGraphics REQUIRED)
+    target_link_libraries(gpu PRIVATE ${COLORSYNC_FRAMEWORK} ${COREFOUNDATION_FRAMEWORK} ${COREGRAPHICS_FRAMEWORK})
+else()
+    target_sources(gpu PRIVATE detail/monitor_platform_linux.cpp)
+    find_package(X11 REQUIRED COMPONENTS Xrandr)
+    target_link_libraries(gpu PRIVATE X11::Xrandr)
+endif()
 
 add_subdirectory(transfer)
 
@@ -41,6 +56,7 @@ PRIVATE
     glfw
     logger
     stb
+    miximus_types
     $<$<PLATFORM_ID:Linux>:GL>   # provides glXGetCurrentContext for DVP EGL detection
 PUBLIC
     glad_gl

@@ -65,13 +65,13 @@ class node_impl : public node_i
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
-    std::shared_ptr<render_state_s>                   render_state_;
-    std::thread                                       render_thread_;
-    std::unique_ptr<gpu::textured_quad_s>             textured_quad_;
-    utils::observed_value_s<std::vector<std::string>> monitor_names_;
-    utils::observed_value_s<gpu::recti_s>             window_rect_;
-    utils::observed_value_s<bool>                     fullscreen_;
-    utils::observed_value_s<std::string>              monitor_name_;
+    std::shared_ptr<render_state_s>       render_state_;
+    std::thread                           render_thread_;
+    std::unique_ptr<gpu::textured_quad_s> textured_quad_;
+    utils::observed_value_s<uint64_t>     monitor_version_;
+    utils::observed_value_s<gpu::recti_s> window_rect_;
+    utils::observed_value_s<bool>         fullscreen_;
+    utils::observed_value_s<std::string>  monitor_id_;
 
   public:
     explicit node_impl() = default;
@@ -85,19 +85,13 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
     {
-        // Publish available monitors so the UI dropdown can populate.
-        {
-            std::vector<std::string> names;
-            names.reserve(gpu::context_s::monitors_g.size());
-            for (const auto& [name, _] : gpu::context_s::monitors_g) {
-                names.push_back(name);
-            }
-            auto* sr = app->status_registry();
-            if (monitor_names_.observe(names)) {
-                sr->write(id_, "monitors", nlohmann::json(monitor_names_.value()));
-            }
-            sr->write(id_, "connected", render_state_ != nullptr);
+        const auto monitor_version = gpu::context_s::get_monitor_list_version();
+        if (monitor_version_.observe(monitor_version)) {
+            app->status_registry()->write(id_, "monitors", gpu::context_s::get_monitors());
         }
+
+        auto* sr = app->status_registry();
+        sr->write(id_, "connected", render_state_ != nullptr);
 
         auto enabled = state.get_option<bool>("enabled", false);
 
@@ -117,17 +111,17 @@ class node_impl : public node_i
             const auto position = state.get_option<gpu::vec2_t>("position", {0, 0});
             const auto size     = state.get_option<gpu::vec2_t>("size", {100, 100});
 
-            const auto rect         = gpu::round_to_integer({.pos = position, .size = size});
-            auto       fullscreen   = state.get_option<bool>("fullscreen", false);
-            auto       monitor_name = state.get_option<std::string>("monitor_name");
+            const auto rect       = gpu::round_to_integer({.pos = position, .size = size});
+            auto       fullscreen = state.get_option<bool>("fullscreen", false);
+            auto       monitor_id = state.get_option<std::string>("monitor_id");
 
             bool window_settings_changed = window_rect_.observe(rect);
             window_settings_changed |= fullscreen_.observe(fullscreen);
-            window_settings_changed |= monitor_name_.observe(monitor_name);
+            window_settings_changed |= monitor_id_.observe(monitor_id);
 
             if (context_created || window_settings_changed) {
                 if (fullscreen) {
-                    render_state_->ctx->set_fullscreen_monitor(monitor_name, rect);
+                    render_state_->ctx->set_fullscreen_monitor(monitor_id, rect);
                 } else {
                     render_state_->ctx->set_window_rect(rect);
                 }
@@ -191,6 +185,7 @@ class node_impl : public node_i
             {"name",       "Screen output"      },
             {"enabled",    true                 },
             {"fullscreen", false                },
+            {"monitor_id", ""                   },
             {"position",   gpu::vec2_t{0, 0}    },
             {"size",       gpu::vec2_t{100, 100}},
         };
@@ -202,7 +197,7 @@ class node_impl : public node_i
             return normalize_option_value<bool>(value);
         }
 
-        if (name == "monitor_name") {
+        if (name == "monitor_id") {
             return normalize_option_value<std::string_view>(value);
         }
 

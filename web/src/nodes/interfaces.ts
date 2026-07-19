@@ -58,6 +58,11 @@ export class StatusDropdownInterface extends NodeInterface<string> {
   }
 }
 
+export interface SettingsOption {
+  readonly id: string;
+  readonly label: string;
+}
+
 export type NodeStatusFormat = "busy" | "integer" | "locked" | "temperature";
 
 export interface NodeStatusField {

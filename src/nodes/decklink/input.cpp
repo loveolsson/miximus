@@ -623,7 +623,7 @@ class node_impl : public node_i
 
         const auto current_version = app->decklink_registry()->get_device_list_version();
         if (device_version_.observe(current_version)) {
-            sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_input_names()));
+            sr->write(id_, "device_names", app->decklink_registry()->get_input_options());
         }
 
         if (!prepare_active_capture(app, sr)) {

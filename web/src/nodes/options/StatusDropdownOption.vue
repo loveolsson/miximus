@@ -9,8 +9,8 @@
           {{ localValue }} (unavailable)
         </option>
         <option v-if="!localValue" value="" disabled>— select —</option>
-        <option v-for="item in availableList" :key="item" :value="item">
-          {{ item }}
+        <option v-for="item in availableList" :key="item.id" :value="item.id">
+          {{ item.label }}
         </option>
       </select>
     </div>
@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
-import type { StatusDropdownInterface } from "../interfaces";
+import type { SettingsOption, StatusDropdownInterface } from "../interfaces";
 import { get_node_status } from "../status_store";
 
 const props = defineProps<{
@@ -35,13 +35,24 @@ const emit = defineEmits<{
 
 const localValue = ref(props.modelValue);
 
-const availableList = computed((): string[] => {
+const availableList = computed((): SettingsOption[] => {
   const status = get_node_status(props.intf.nodeData.node_id);
   const list = status[props.intf.list_key];
-  return Array.isArray(list) ? (list as string[]) : [];
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list.filter(
+    (item): item is SettingsOption =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as Record<string, unknown>).id === "string" &&
+      typeof (item as Record<string, unknown>).label === "string",
+  );
 });
 
-const listContainsCurrent = computed(() => availableList.value.includes(localValue.value));
+const listContainsCurrent = computed(() =>
+  availableList.value.some((item) => item.id === localValue.value),
+);
 
 // Accept server value only while user hasn't deviated from it.
 watch(

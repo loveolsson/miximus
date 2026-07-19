@@ -100,10 +100,10 @@ void ndi_registry_s::discovery_loop()
     }
 }
 
-std::vector<std::string> ndi_registry_s::get_source_names() const
+std::vector<settings_option_s> ndi_registry_s::get_source_options() const
 {
     const std::shared_lock lock(source_mutex_);
-    return source_names_;
+    return make_settings_options_with_matching_labels(source_names_);
 }
 
 std::unique_ptr<ndi_registry_s> ndi_registry_s::create_ndi_registry() { return std::make_unique<ndi_registry_s>(); }

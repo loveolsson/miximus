@@ -105,11 +105,11 @@ class node_impl : public node_i
         const bool font_name_changed = status_font_name_.observe(font_name);
 
         if (font_list_changed) {
-            app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_names());
+            app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_options());
         }
         if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
-                id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
+                id_, "font_variants", app->font_registry()->get_font_variant_options(font_name));
         }
 
         if (!textured_quad_) {

@@ -1,4 +1,5 @@
 #pragma once
+#include "types/settings_option.hpp"
 
 #include <atomic>
 #include <memory>
@@ -34,7 +35,7 @@ class ndi_registry_s
 
     uint64_t get_source_list_version() const { return source_list_version_.load(std::memory_order_relaxed); }
 
-    std::vector<std::string> get_source_names() const;
+    std::vector<settings_option_s> get_source_options() const;
 
     static std::unique_ptr<ndi_registry_s> create_ndi_registry();
 };

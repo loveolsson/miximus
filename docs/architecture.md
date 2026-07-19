@@ -138,7 +138,9 @@ snapshots.
 
 Long lists must not be rebuilt every frame. DeckLink, NDI, and font registries expose atomic version counters. Nodes remember the last version and regenerate lists only after a change. Dependent lists also track their selection; for example, changing a font family regenerates `font_variants` without rebuilding `font_names`.
 
-Use `StatusDropdownInterface` for a web option populated from a status list. Its list key must exactly match the native status key.
+Use `StatusDropdownInterface` for a web option populated from a status list. Its list key must exactly match the native
+status key. Lists contain ordered `{id, label}` objects: persisted options and client updates use the stable `id`, while
+the dropdown presents the human-readable `label`.
 
 ## Key implementation files
 

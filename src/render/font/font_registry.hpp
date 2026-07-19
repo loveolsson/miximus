@@ -1,5 +1,6 @@
 #pragma once
 #include "font_info.hpp"
+#include "types/settings_option.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -41,10 +42,12 @@ class font_registry_s
 
     uint64_t get_font_list_version() const { return font_list_version_.load(std::memory_order_relaxed); }
 
-    std::optional<font_info_s>    find_font(std::string_view name) const;
-    std::optional<font_variant_s> find_font_variant(std::string_view name, std::string_view variant) const;
-    std::vector<std::string>      get_font_names() const;
-    std::vector<std::string>      get_font_variant_names(std::string_view name) const;
+    std::optional<font_info_s>     find_font(std::string_view name) const;
+    std::optional<font_variant_s>  find_font_variant(std::string_view name, std::string_view variant) const;
+    std::vector<std::string>       get_font_names() const;
+    std::vector<std::string>       get_font_variant_names(std::string_view name) const;
+    std::vector<settings_option_s> get_font_options() const;
+    std::vector<settings_option_s> get_font_variant_options(std::string_view name) const;
 
     static std::unique_ptr<font_registry_s> create_font_registry();
 };

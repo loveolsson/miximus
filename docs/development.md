@@ -85,7 +85,8 @@ Node registration also owns persisted schema evolution. Version 1 is implicit fo
 3. Register new node types in `web/src/nodes/types.ts`.
 4. For a new connection type, update native `interface_type_e`, native conversions, web `interface_types.ts`, and the connection color map.
 5. Use focus-tracking option components for editable values that must not be overwritten while typing.
-6. Use `StatusDropdownInterface` for server-discovered lists and publish the exact status key natively.
+6. Use `StatusDropdownInterface` for server-discovered lists and publish the exact status key natively. Publish entries
+   as `settings_option_s` values: `id` is the stable persisted value and `label` is presentation text.
 7. Use `NumericInterface` for numeric controls and set its precision, step, and optional bounds according to the domain rather than the JSON/C++ storage type.
 
 The native server remains authoritative; do not solve validation only in the browser.

@@ -1,9 +1,14 @@
 #pragma once
 #include "shader.hpp"
 #include "types.hpp"
+#include "types/settings_option.hpp"
 
+#include <atomic>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 struct GLFWwindow;
@@ -19,12 +24,21 @@ class context_s
 
     using shader_map_t = std::map<shader_program_s::name_e, std::unique_ptr<shader_program_s>>;
 
-    static inline thread_local std::vector<GLFWwindow*> current_stack_;
+    struct monitor_record_s
+    {
+        std::string  label;
+        GLFWmonitor* handle{};
+    };
+
+    static inline thread_local std::vector<GLFWwindow*>                current_stack_;
+    static inline std::atomic<uint64_t>                                monitor_list_version_{0};
+    static inline std::map<std::string, monitor_record_s, std::less<>> monitors_;
 
     GLFWwindow*  window_{};
     shader_map_t shaders_;
     void         make_current();
     static void  rewind_current();
+    static void  monitor_config_callback(GLFWmonitor* monitor, int event);
 
   public:
     context_s(bool visible, context_s* parent);
@@ -34,24 +48,24 @@ class context_s
     recti_s get_window_rect();
 
     void set_window_rect(recti_s rect);
-    void set_fullscreen_monitor(const std::string& name, recti_s rect);
+    void set_fullscreen_monitor(std::string_view monitor_id, recti_s rect);
 
     static bool has_current();
     static bool require_current();
 
     void swap_buffers();
 
-    static void finish();
-    static void flush();
-    static void poll();
-    static void terminate();
-    static bool has_extension(const char* ext);
+    static void                           finish();
+    static void                           flush();
+    static void                           poll();
+    static void                           terminate();
+    static bool                           has_extension(const char* ext);
+    static uint64_t                       get_monitor_list_version();
+    static std::vector<settings_option_s> get_monitors();
 
     shader_program_s* get_shader(shader_program_s::name_e name);
 
     static std::unique_ptr<context_s> create_unique_context(bool visible = false, context_s* parent = nullptr);
-
-    static inline std::map<std::string, GLFWmonitor*, std::less<>> monitors_g;
 };
 
 class context_scope_s

@@ -1,4 +1,5 @@
 #pragma once
+#include "types/settings_option.hpp"
 #include "wrapper/decklink-sdk/decklink_ptr.hpp"
 
 #include <atomic>
@@ -78,8 +79,8 @@ class decklink_registry_s
 
     uint64_t get_device_list_version() { return device_list_version_.load(std::memory_order_relaxed); }
 
-    std::vector<std::string> get_input_names();
-    std::vector<std::string> get_output_names();
+    std::vector<settings_option_s> get_input_options();
+    std::vector<settings_option_s> get_output_options();
 
     static std::string                            get_display_mode_name(IDeckLinkDisplayMode* mode);
     static decklink_ptr<IDeckLinkVideoConversion> get_converter();

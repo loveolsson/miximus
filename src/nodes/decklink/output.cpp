@@ -14,6 +14,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "types/settings_option.hpp"
 #include "utils/observed_value.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
@@ -582,7 +583,7 @@ class node_impl : public node_i
         for (const auto& [name, _] : display_modes) {
             mode_names.push_back(name);
         }
-        status_registry->write(id_, "display_modes", nlohmann::json(mode_names));
+        status_registry->write(id_, "display_modes", make_settings_options_with_matching_labels(mode_names));
 
         device_        = std::move(device);
         display_modes_ = std::move(display_modes);
@@ -623,7 +624,7 @@ class node_impl : public node_i
         // Rebuild device list only when the registry has changed
         const auto current_version = app->decklink_registry()->get_device_list_version();
         if (device_version_.observe(current_version)) {
-            sr->write(id_, "device_names", nlohmann::json(app->decklink_registry()->get_output_names()));
+            sr->write(id_, "device_names", app->decklink_registry()->get_output_options());
         }
 
         auto device_name  = state.get_option<std::string>("device_name");

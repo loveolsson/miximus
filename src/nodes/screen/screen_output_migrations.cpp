@@ -15,14 +15,21 @@ void migrate_v1_to_v2(nlohmann::json& options)
     options.erase("sizey");
 }
 
+void migrate_v2_to_v3(nlohmann::json& options)
+{
+    options["monitor_id"] = options.value("monitor_name", "");
+    options.erase("monitor_name");
+}
+
 } // namespace
 
 namespace miximus::nodes::screen {
 
 std::vector<node_migration_s> screen_output_migrations()
 {
-    std::vector<node_migration_s> migrations(1);
-    migrations.front().migrate_options = migrate_v1_to_v2;
+    std::vector<node_migration_s> migrations(2);
+    migrations[0].migrate_options = migrate_v1_to_v2;
+    migrations[1].migrate_options = migrate_v2_to_v3;
     return migrations;
 }
 

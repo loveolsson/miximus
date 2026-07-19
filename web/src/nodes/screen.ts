@@ -28,7 +28,7 @@ export const ScreenOutputNode = defineNode({
     status: () => new NodeStatusInterface(screenStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
     fullscreen: () => new CheckboxInterface("Fullscreen", false).setPort(false),
-    monitor_name: () => new StatusDropdownInterface("Monitor", "monitors"),
+    monitor_id: () => new StatusDropdownInterface("Monitor", "monitors"),
     position: () => new Vec2Interface("Position", [0, 0], pixelPositionOptions).setPort(false),
     size: () => new Vec2Interface("Size", [100, 100], pixelSizeOptions).setPort(false),
   },

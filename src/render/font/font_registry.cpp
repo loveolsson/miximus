@@ -93,6 +93,35 @@ std::vector<std::string> font_registry_s::get_font_variant_names(std::string_vie
     return res;
 }
 
+std::vector<settings_option_s> font_registry_s::get_font_options() const
+{
+    const std::shared_lock         lock(font_mutex_);
+    std::vector<settings_option_s> options;
+    options.reserve(fonts_.size());
+
+    for (const auto& [name, _] : fonts_) {
+        options.push_back({.id = name, .label = name});
+    }
+
+    return options;
+}
+
+std::vector<settings_option_s> font_registry_s::get_font_variant_options(std::string_view name) const
+{
+    const std::shared_lock         lock(font_mutex_);
+    std::vector<settings_option_s> options;
+
+    if (const auto font = fonts_.find(name); font != fonts_.end()) {
+        options.reserve(font->second.variants.size());
+
+        for (const auto& [variant, _] : font->second.variants) {
+            options.push_back({.id = variant, .label = variant});
+        }
+    }
+
+    return options;
+}
+
 std::unique_ptr<font_registry_s> font_registry_s::create_font_registry() { return std::make_unique<font_registry_s>(); }
 
 } // namespace miximus::render

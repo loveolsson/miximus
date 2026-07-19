@@ -1,6 +1,7 @@
 #include "context.hpp"
 
 #include "context_logging.hpp"
+#include "detail/monitor_platform.hpp"
 #include "glad.hpp"
 #include "logger/logger.hpp"
 #include "shader.hpp"
@@ -12,6 +13,7 @@
 #include <GLFW/glfw3.h>
 #include <frozen/map.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <format>
@@ -30,20 +32,6 @@ constexpr int DEFAULT_CTX_WIDTH  = 640;
 constexpr int DEFAULT_CTX_HEIGHT = 480;
 
 const auto _log = [] { return getlog("gpu"); };
-
-void monitor_config_callback(GLFWmonitor* monitor, int event)
-{
-    using namespace miximus::gpu;
-    const auto name = glfwGetMonitorName(monitor);
-
-    if (event == GLFW_CONNECTED) {
-        context_s::monitors_g.emplace(name, monitor);
-        _log()->info("Monitor connected: {}", name);
-    } else {
-        context_s::monitors_g.erase(name);
-        _log()->info("Monitor disconnected: {}", name);
-    }
-}
 
 GLFWimage load_image(std::string_view filename)
 {
@@ -74,9 +62,45 @@ GLFWimage load_image(std::string_view filename)
 
 namespace miximus::gpu {
 
+void context_s::monitor_config_callback(GLFWmonitor* monitor, int event)
+{
+    bool changed = false;
+    if (event == GLFW_CONNECTED) {
+        const auto* raw_label = glfwGetMonitorName(monitor);
+        const auto  id        = detail::get_monitor_id(monitor);
+        const auto  label     = raw_label != nullptr ? std::string(raw_label) : id;
+        changed               = monitors_.emplace(id, monitor_record_s{.label = label, .handle = monitor}).second;
+        _log()->info("Monitor connected: {} ({})", label, id);
+    } else {
+        const auto it =
+            std::ranges::find_if(monitors_, [monitor](const auto& entry) { return entry.second.handle == monitor; });
+        if (it != monitors_.end()) {
+            _log()->info("Monitor disconnected: {} ({})", it->second.label, it->first);
+            monitors_.erase(it);
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        monitor_list_version_.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
 context_scope_s::context_scope_s(context_s& context) { context.make_current(); }
 
 context_scope_s::~context_scope_s() { context_s::rewind_current(); }
+
+uint64_t context_s::get_monitor_list_version() { return monitor_list_version_.load(std::memory_order_relaxed); }
+
+std::vector<settings_option_s> context_s::get_monitors()
+{
+    std::vector<settings_option_s> monitors;
+    monitors.reserve(monitors_.size());
+    for (const auto& [id, monitor] : monitors_) {
+        monitors.push_back({.id = id, .label = monitor.label});
+    }
+    return monitors;
+}
 
 context_s::context_s(bool visible, context_s* parent)
 {
@@ -98,7 +122,7 @@ context_s::context_s(bool visible, context_s* parent)
         }
 
         glfwSetErrorCallback(glfw_error_callback);
-        glfwSetMonitorCallback(monitor_config_callback);
+        glfwSetMonitorCallback(context_s::monitor_config_callback);
 
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, GL_VERSION_MAJOR);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, GL_VERSION_MINOR);
@@ -112,13 +136,16 @@ context_s::context_s(bool visible, context_s* parent)
         int  count    = 0;
         auto monitors = glfwGetMonitors(&count);
         for (int i = 0; i < count; ++i) {
-            auto       monitor = monitors[i];
-            const auto name    = glfwGetMonitorName(monitor);
+            auto*       monitor   = monitors[i];
+            const auto* raw_label = glfwGetMonitorName(monitor);
+            const auto  id        = detail::get_monitor_id(monitor);
+            const auto  label     = raw_label != nullptr ? std::string(raw_label) : id;
 
-            _log()->info("Found monitor: {}", name);
+            _log()->info("Found monitor: {} ({})", label, id);
 
-            monitors_g.emplace(name, monitor);
+            monitors_.emplace(id, monitor_record_s{.label = label, .handle = monitor});
         }
+        monitor_list_version_.fetch_add(1, std::memory_order_relaxed);
     });
 
     const int visible_flag = visible ? GLFW_TRUE : GLFW_FALSE;
@@ -205,18 +232,24 @@ void context_s::set_window_rect(recti_s rect)
     glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
 }
 
-void context_s::set_fullscreen_monitor(const std::string& name, recti_s rect)
+void context_s::set_fullscreen_monitor(std::string_view monitor_id, recti_s rect)
 {
-    auto it = monitors_g.find(name);
-    if (it != monitors_g.end()) {
-        auto* monitor = it->second;
+    auto it = monitors_.find(monitor_id);
+    if (it == monitors_.end()) {
+        // Compatibility for settings saved before monitor IDs and labels were separated.
+        it = std::ranges::find_if(monitors_,
+                                  [monitor_id](const auto& entry) { return entry.second.label == monitor_id; });
+    }
+
+    if (it != monitors_.end()) {
+        auto* monitor = it->second.handle;
         if (monitor == glfwGetWindowMonitor(window_)) {
             return;
         }
 
         const auto mode = glfwGetVideoMode(monitor);
         if (mode == nullptr) {
-            _log()->error("Unable to query video mode for monitor '{}'", name);
+            _log()->error("Unable to query video mode for monitor '{}'", monitor_id);
             glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
             return;
         }

@@ -293,32 +293,32 @@ std::shared_ptr<const device_status_s> decklink_registry_s::get_device_status(st
     return monitor->status();
 }
 
-std::vector<std::string> decklink_registry_s::get_input_names()
+std::vector<settings_option_s> decklink_registry_s::get_input_options()
 {
     const std::shared_lock lock(device_mutex_);
 
-    std::vector<std::string> res;
-    res.reserve(inputs_.size());
+    std::vector<settings_option_s> options;
+    options.reserve(inputs_.size());
 
     for (const auto& [name, _] : inputs_) {
-        res.push_back(name);
+        options.push_back({.id = name, .label = name});
     }
 
-    return res;
+    return options;
 }
 
-std::vector<std::string> decklink_registry_s::get_output_names()
+std::vector<settings_option_s> decklink_registry_s::get_output_options()
 {
     const std::shared_lock lock(device_mutex_);
 
-    std::vector<std::string> res;
-    res.reserve(outputs_.size());
+    std::vector<settings_option_s> options;
+    options.reserve(outputs_.size());
 
     for (const auto& [name, _] : outputs_) {
-        res.push_back(name);
+        options.push_back({.id = name, .label = name});
     }
 
-    return res;
+    return options;
 }
 
 decklink_ptr<IDeckLinkVideoConversion> decklink_registry_s::get_converter()

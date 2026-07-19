@@ -7,6 +7,7 @@ target_link_libraries(render
 PRIVATE
     logger
     gpu
+    miximus_types
 )
 
 add_sanitizers(render)

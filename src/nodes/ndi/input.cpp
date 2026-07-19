@@ -157,7 +157,7 @@ class node_impl : public node_i
 
         const auto current_version = app->ndi_registry()->get_source_list_version();
         if (source_version_.observe(current_version)) {
-            sr->write(id_, "source_names", nlohmann::json(app->ndi_registry()->get_source_names()));
+            sr->write(id_, "source_names", app->ndi_registry()->get_source_options());
         }
 
         sr->write(id_, "connected", framesync_ != nullptr);
