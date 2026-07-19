@@ -4,6 +4,7 @@
 #include "gpu/framebuffer.hpp"
 #include "gpu/sync.hpp"
 #include "gpu/transfer/detail/backend_factory.hpp"
+#include "gpu/transfer/detail/requirements.hpp"
 #include "logger/logger.hpp"
 
 #include <algorithm>
@@ -48,13 +49,14 @@ size_t estimate_slot_bytes(const texture_download_desc_s& desc)
 {
     // Conservatively account for the CPU/PBO transfer allocation and the
     // render-target texture.
-    const auto texture_bytes = texture_s::estimate_storage_byte_size(desc.dimensions, desc.format);
+    const auto texture_bytes =
+        texture_s::estimate_storage_byte_size(desc.requirements.dimensions, desc.requirements.format);
     // CUDA readback owns pinned host storage and an interop PBO. Other
     // backends use no more, so this is a conservative backend-independent cap.
-    if (desc.byte_size > std::numeric_limits<size_t>::max() / 2) {
+    if (desc.requirements.byte_size > std::numeric_limits<size_t>::max() / 2) {
         throw std::overflow_error("texture download allocation size overflow");
     }
-    return checked_add(desc.byte_size * 2, texture_bytes);
+    return checked_add(desc.requirements.byte_size * 2, texture_bytes);
 }
 } // namespace
 
@@ -167,11 +169,19 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
 
             auto slot            = std::make_shared<texture_download_slot_s>();
             slot->reserved_bytes = reserved;
-            slot->texture        = std::make_unique<texture_s>(stream->desc.dimensions, stream->desc.format);
-            slot->backend        = create_backend(stream->desc.byte_size, backend_i::direction_e::gpu_to_cpu);
-            if (!slot->backend->bind_texture(slot->texture.get())) {
-                throw std::runtime_error("failed to register download texture with transfer backend");
-            }
+            slot->texture =
+                std::make_unique<texture_s>(stream->desc.requirements.dimensions, stream->desc.requirements.format);
+            auto backend =
+                create_backend(stream->desc.requirements, backend_i::direction_e::gpu_to_cpu, slot->texture.get());
+            slot->backend = std::move(backend.backend);
+
+            const auto actual_reserved =
+                checked_add(backend.allocation_bytes,
+                            texture_s::estimate_storage_byte_size(stream->desc.requirements.dimensions,
+                                                                  stream->desc.requirements.format));
+            memory_usage.fetch_sub(reserved - actual_reserved, std::memory_order_relaxed);
+            reserved             = actual_reserved;
+            slot->reserved_bytes = actual_reserved;
             context_s::flush();
 
             const std::scoped_lock lock(stream->mutex);
@@ -538,9 +548,10 @@ texture_download_service_s::~texture_download_service_s()
 
 std::shared_ptr<texture_download_stream_s> texture_download_service_s::create_stream(texture_download_desc_s desc)
 {
-    if (desc.dimensions.x <= 0 || desc.dimensions.y <= 0 || desc.byte_size == 0 || desc.max_slots == 0) {
+    if (desc.max_slots == 0 || desc.requirements.host_access != host_access_e::read_only) {
         throw std::invalid_argument("invalid texture download stream description");
     }
+    detail::normalize_requirements(desc.requirements);
     auto stream     = std::make_shared<detail::texture_download_stream_state_s>();
     stream->service = state_;
     stream->desc    = desc;

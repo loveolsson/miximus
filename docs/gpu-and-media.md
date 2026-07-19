@@ -55,11 +55,27 @@ Nodes use the app-owned `texture_upload_service_s` and `texture_download_service
 
 `backend_i` is not a node-facing API. Upload/download streams provide scheduling, pooling, memory accounting, leases, and publication; the backend only implements one slot's host/GPU movement. Backend selection and lifecycle are kept in `detail/backend_factory`, rather than on the polymorphic interface.
 
-Preferred transfer selection is initialized once in `app_state_s` while the root GL context is current:
+Transfer capabilities are initialized once in `app_state_s` while the root GL context is current. DVP and CUDA are
+initialized independently; the backend factory then selects a path for each stream from its direction, pixel format,
+row stride, host access pattern, and alignment requirements:
 
-1. NVIDIA DVP/GPU Direct for Video when initialization succeeds.
-2. CUDA/OpenGL interop.
-3. Persistent mapped OpenGL PBO fallback.
+1. NVIDIA DVP/GPU Direct for Video when the layout is supported and the texture registers successfully.
+2. A CUDA image copy for formats whose host representation is proven identical to OpenGL storage.
+3. A CUDA/OpenGL pixel buffer when OpenGL format conversion is required.
+4. A persistent mapped OpenGL PBO fallback.
+
+CUDA has no general query for arbitrary OpenGL format interoperability. General CUDA/GL support is detected during
+initialization, while direct-image support combines the project-owned texture format description with registration of
+the actual texture. Registration failure falls back without failing the stream. The format description is authoritative
+for internal/external GL format, host and storage byte sizes, packed pixels, and direct-copy compatibility.
+
+Upload and download descriptions contain `texture_transfer_requirements_s`. Always describe the real row stride and
+host access pattern. Full-overwrite producers may receive write-combined CUDA host memory; CPU rendering that reads and
+modifies existing pixels must request `host_access_e::read_write`.
+
+The persistent fallback exposes its mapped unpack PBO directly as the upload lease's writable memory. Producers copy
+into that mapping, and the upload worker flushes it before updating the texture; do not add a separate CPU staging
+allocation in front of the PBO. Download slots likewise expose their mapped pack PBO after readback completes.
 
 ### Upload streams
 

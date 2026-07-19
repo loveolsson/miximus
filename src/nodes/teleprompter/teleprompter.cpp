@@ -261,14 +261,19 @@ class node_impl : public node_i
             auto& rl = render_lines_[txt_line_index % render_lines_.size()];
 
             if (rl->line_no != txt_line_index && !rl->ready.valid()) {
-                if (!rl->upload_stream || rl->upload_stream->desc().dimensions != tx_dim) {
+                if (!rl->upload_stream || rl->upload_stream->desc().requirements.dimensions != tx_dim) {
                     const auto byte_size = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(tx_dim.x) *
                                            static_cast<size_t>(tx_dim.y);
+                    const gpu::transfer::texture_transfer_requirements_s requirements{
+                        .dimensions  = tx_dim,
+                        .format      = gpu::texture_s::format_e::rgba_f16,
+                        .row_stride  = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(tx_dim.x),
+                        .byte_size   = byte_size,
+                        .host_access = gpu::transfer::host_access_e::read_write,
+                    };
                     rl->upload_stream = app->texture_upload_service()->create_stream({
-                        .dimensions = tx_dim,
-                        .format     = gpu::texture_s::format_e::rgba_f16,
-                        .byte_size  = byte_size,
-                        .max_slots  = 2,
+                        .requirements = requirements,
+                        .max_slots    = 2,
                     });
                 }
 

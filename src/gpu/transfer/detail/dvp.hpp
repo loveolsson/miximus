@@ -2,6 +2,7 @@
 #include "backend.hpp"
 #include "gpu/glad.hpp"
 #include "gpu/sync.hpp"
+#include "gpu/transfer/texture_transfer.hpp"
 
 #include <DVPAPI.h>
 #include <dvpapi_gl.h>
@@ -63,7 +64,7 @@ class dvp_transfer_s : public backend_i
     static uint32_t sem_payload_offset_;
     static uint32_t sem_payload_size_;
 
-    void perform_dma(DVPBufferHandle src, DVPBufferHandle dst, uint32_t height);
+    bool perform_dma(DVPBufferHandle src, DVPBufferHandle dst, uint32_t height);
 
     bool register_texture_impl(texture_s* texture) final;
     bool unregister_texture_impl(texture_s* texture) final;
@@ -71,7 +72,7 @@ class dvp_transfer_s : public backend_i
     bool end_texture_use_impl(texture_s* texture) final;
 
   public:
-    dvp_transfer_s(size_t size, direction_e dir);
+    dvp_transfer_s(const texture_transfer_requirements_s& requirements, direction_e dir);
     ~dvp_transfer_s();
 
     bool transfer() final;
@@ -81,6 +82,7 @@ class dvp_transfer_s : public backend_i
     static bool initialize_context();
     // Called during app shutdown with the same root GL context current.
     static void shutdown_context();
+    static bool supports(const texture_transfer_requirements_s& requirements);
 };
 
 } // namespace miximus::gpu::transfer::detail

@@ -77,13 +77,23 @@ void cuda_transfer_s::shutdown_context()
     device_      = 0;
 }
 
-cuda_transfer_s::cuda_transfer_s(size_t size, direction_e dir)
-    : backend_i(size, dir)
+cuda_transfer_s::cuda_transfer_s(const texture_transfer_requirements_s& requirements,
+                                 direction_e                            dir,
+                                 bool                                   direct_image)
+    : backend_i(requirements.byte_size, dir)
+    , row_stride_(requirements.row_stride)
+    , row_length_(static_cast<GLint>(requirements.row_stride /
+                                     texture_s::format_info(requirements.format).host_bytes_per_texel))
+    , direct_image_(direct_image)
 {
     if (!supported_ || !check_cuda(cudaSetDevice(device_), "cudaSetDevice during transfer creation")) {
         throw std::runtime_error("CUDA transfer created without an initialized CUDA/OpenGL context");
     }
-    if (!check_cuda(cudaHostAlloc(&data_, size_, cudaHostAllocPortable), "cudaHostAlloc")) {
+    auto host_flags = cudaHostAllocPortable;
+    if (dir == direction_e::cpu_to_gpu && requirements.host_access == host_access_e::overwrite) {
+        host_flags |= cudaHostAllocWriteCombined;
+    }
+    if (!check_cuda(cudaHostAlloc(&data_, size_, host_flags), "cudaHostAlloc")) {
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
     if (!check_cuda(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking), "cudaStreamCreateWithFlags")) {
@@ -141,8 +151,9 @@ bool cuda_transfer_s::ensure_texture_resource(texture_s* texture)
     if (!check_cuda(cudaSetDevice(device_), "cudaSetDevice during image registration")) {
         return false;
     }
-    if (!check_cuda(cudaGraphicsGLRegisterImage(
-                        &texture_resource_, texture->id(), GL_TEXTURE_2D, cudaGraphicsRegisterFlagsReadOnly),
+    const unsigned int flags = direction_ == direction_e::cpu_to_gpu ? cudaGraphicsRegisterFlagsWriteDiscard
+                                                                     : cudaGraphicsRegisterFlagsReadOnly;
+    if (!check_cuda(cudaGraphicsGLRegisterImage(&texture_resource_, texture->id(), GL_TEXTURE_2D, flags),
                     "cudaGraphicsGLRegisterImage")) {
         return false;
     }
@@ -150,21 +161,73 @@ bool cuda_transfer_s::ensure_texture_resource(texture_s* texture)
     return true;
 }
 
-bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
+bool cuda_transfer_s::register_texture_impl(texture_s* texture)
+{
+    return !direct_image_ || ensure_texture_resource(texture);
+}
+
+bool cuda_transfer_s::unregister_texture_impl(texture_s* /*texture*/)
+{
+    if (texture_resource_ == nullptr) {
+        return true;
+    }
+    const bool success =
+        check_cuda(cudaGraphicsUnregisterResource(texture_resource_), "cudaGraphicsUnregisterResource image");
+    texture_resource_   = nullptr;
+    registered_texture_ = 0;
+    return success;
+}
+
+bool cuda_transfer_s::copy_host_to_texture(texture_s* texture)
 {
     const auto dimensions = texture->texture_dimensions();
-    if (dimensions.y <= 0 || size_ % static_cast<size_t>(dimensions.y) != 0 || !ensure_texture_resource(texture) ||
+    const auto format     = texture_s::format_info(texture->color_type());
+    const auto row_bytes  = static_cast<size_t>(dimensions.x) * format.storage_bytes_per_texel;
+    if (row_stride_ < row_bytes || !ensure_texture_resource(texture) ||
         !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
         return false;
     }
 
     cudaArray_t array{};
-    bool        success   = check_cuda(cudaGraphicsSubResourceGetMappedArray(&array, texture_resource_, 0, 0),
+    bool        success = check_cuda(cudaGraphicsSubResourceGetMappedArray(&array, texture_resource_, 0, 0),
                               "cudaGraphicsSubResourceGetMappedArray");
-    const auto  row_bytes = size_ / static_cast<size_t>(dimensions.y);
+    if (success) {
+        success = check_cuda(cudaMemcpy2DToArrayAsync(array,
+                                                      0,
+                                                      0,
+                                                      data_,
+                                                      row_stride_,
+                                                      row_bytes,
+                                                      static_cast<size_t>(dimensions.y),
+                                                      cudaMemcpyHostToDevice,
+                                                      stream_),
+                             "cudaMemcpy2DToArrayAsync host to texture");
+    }
+
+    success =
+        check_cuda(cudaGraphicsUnmapResources(1, &texture_resource_, stream_), "cudaGraphicsUnmapResources image") &&
+        success;
+    success  = check_cuda(cudaEventRecord(completion_, stream_), "cudaEventRecord") && success;
+    pending_ = success;
+    return success;
+}
+
+bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
+{
+    const auto dimensions = texture->texture_dimensions();
+    const auto format     = texture_s::format_info(texture->color_type());
+    const auto row_bytes  = static_cast<size_t>(dimensions.x) * format.storage_bytes_per_texel;
+    if (dimensions.y <= 0 || row_stride_ < row_bytes || !ensure_texture_resource(texture) ||
+        !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
+        return false;
+    }
+
+    cudaArray_t array{};
+    bool        success = check_cuda(cudaGraphicsSubResourceGetMappedArray(&array, texture_resource_, 0, 0),
+                              "cudaGraphicsSubResourceGetMappedArray");
     if (success) {
         success = check_cuda(cudaMemcpy2DFromArrayAsync(data_,
-                                                        row_bytes,
+                                                        row_stride_,
                                                         array,
                                                         0,
                                                         0,
@@ -264,29 +327,47 @@ bool cuda_transfer_s::transfer()
     const auto dimensions = texture()->texture_dimensions();
 
     if (direction_ == direction_e::cpu_to_gpu) {
+        if (direct_image_) {
+            return copy_host_to_texture(texture());
+        }
         if (!copy_host_to_buffer()) {
             return false;
         }
 
+        GLint previous_row_length{};
+        GLint previous_alignment{};
+        glGetIntegerv(GL_UNPACK_ROW_LENGTH, &previous_row_length);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_alignment);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length_);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer_);
         glTextureSubImage2D(
             texture()->id(), 0, 0, 0, dimensions.x, dimensions.y, texture()->format(), texture()->type(), nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, previous_row_length);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, previous_alignment);
         return true;
     }
 
-    if (texture()->color_type() == texture_s::format_e::rgba_u8 ||
-        texture()->color_type() == texture_s::format_e::uyuv_u10) {
+    if (direct_image_) {
         return copy_texture_to_host(texture());
     }
 
     if (!ensure_buffer()) {
         return false;
     }
+    GLint previous_row_length{};
+    GLint previous_alignment{};
+    glGetIntegerv(GL_PACK_ROW_LENGTH, &previous_row_length);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previous_alignment);
+    glPixelStorei(GL_PACK_ROW_LENGTH, row_length_);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
     glBindTexture(GL_TEXTURE_2D, texture()->id());
     glGetTexImage(GL_TEXTURE_2D, 0, texture()->format(), texture()->type(), nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    glPixelStorei(GL_PACK_ROW_LENGTH, previous_row_length);
+    glPixelStorei(GL_PACK_ALIGNMENT, previous_alignment);
     return copy_buffer_to_host();
 }
 

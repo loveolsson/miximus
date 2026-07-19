@@ -4,6 +4,9 @@ PRIVATE
     detail/backend.cpp
     detail/backend_factory.hpp
     detail/backend_factory.cpp
+    detail/requirements.hpp
+    detail/requirements.cpp
+    texture_transfer.hpp
     texture_upload_fwd.hpp
     texture_upload.hpp
     texture_upload.cpp

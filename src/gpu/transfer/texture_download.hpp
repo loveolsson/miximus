@@ -2,6 +2,7 @@
 #include "gpu/framebuffer_fwd.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_download_fwd.hpp"
+#include "gpu/transfer/texture_transfer.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,10 +22,8 @@ struct texture_download_stream_state_s;
 
 struct texture_download_desc_s
 {
-    vec2i_t             dimensions{};
-    texture_s::format_e format{texture_s::format_e::bgra_u8};
-    size_t              byte_size{};
-    size_t              max_slots{4};
+    texture_transfer_requirements_s requirements{.host_access = host_access_e::read_only};
+    size_t                          max_slots{4};
 };
 
 class texture_download_target_s

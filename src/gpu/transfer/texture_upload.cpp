@@ -3,6 +3,7 @@
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
 #include "gpu/transfer/detail/backend_factory.hpp"
+#include "gpu/transfer/detail/requirements.hpp"
 #include "logger/logger.hpp"
 
 #include <algorithm>
@@ -58,8 +59,8 @@ size_t estimate_slot_bytes(const texture_upload_desc_s& desc)
 {
     // All current asynchronous backends may own both CPU staging storage and
     // an intermediate GPU/PBO allocation in addition to the destination texture.
-    return checked_add(checked_multiply(desc.byte_size, 2),
-                       texture_s::estimate_storage_byte_size(desc.dimensions, desc.format));
+    return checked_add(checked_multiply(desc.requirements.byte_size, 2),
+                       texture_s::estimate_storage_byte_size(desc.requirements.dimensions, desc.requirements.format));
 }
 } // namespace
 
@@ -177,11 +178,19 @@ struct texture_upload_service_state_s : std::enable_shared_from_this<texture_upl
 
             auto slot            = std::make_shared<texture_upload_slot_s>();
             slot->reserved_bytes = reserved_bytes;
-            slot->texture        = std::make_unique<texture_s>(stream->desc.dimensions, stream->desc.format);
-            slot->backend        = create_backend(stream->desc.byte_size, backend_i::direction_e::cpu_to_gpu);
-            if (!slot->backend->bind_texture(slot->texture.get())) {
-                throw std::runtime_error("failed to register upload texture with transfer backend");
-            }
+            slot->texture =
+                std::make_unique<texture_s>(stream->desc.requirements.dimensions, stream->desc.requirements.format);
+            auto backend =
+                create_backend(stream->desc.requirements, backend_i::direction_e::cpu_to_gpu, slot->texture.get());
+            slot->backend = std::move(backend.backend);
+
+            const auto actual_reserved =
+                checked_add(backend.allocation_bytes,
+                            texture_s::estimate_storage_byte_size(stream->desc.requirements.dimensions,
+                                                                  stream->desc.requirements.format));
+            memory_usage.fetch_sub(reserved_bytes - actual_reserved, std::memory_order_relaxed);
+            reserved_bytes       = actual_reserved;
+            slot->reserved_bytes = actual_reserved;
 
             const std::scoped_lock lock(stream->mutex);
             --stream->pending_allocations;
@@ -610,9 +619,10 @@ texture_upload_service_s::~texture_upload_service_s()
 
 std::shared_ptr<texture_upload_stream_s> texture_upload_service_s::create_stream(texture_upload_desc_s desc)
 {
-    if (desc.dimensions.x <= 0 || desc.dimensions.y <= 0 || desc.byte_size == 0 || desc.max_slots == 0) {
+    if (desc.max_slots == 0 || desc.requirements.host_access == host_access_e::read_only) {
         throw std::invalid_argument("invalid texture upload stream description");
     }
+    detail::normalize_requirements(desc.requirements);
     auto stream     = std::make_shared<detail::texture_upload_stream_state_s>();
     stream->service = state_;
     stream->desc    = desc;

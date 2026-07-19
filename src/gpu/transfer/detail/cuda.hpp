@@ -2,6 +2,7 @@
 
 #include "backend.hpp"
 #include "gpu/glad.hpp"
+#include "gpu/transfer/texture_transfer.hpp"
 
 #include <cuda_gl_interop.h>
 #include <cuda_runtime_api.h>
@@ -16,6 +17,9 @@ class cuda_transfer_s : public backend_i
     cudaGraphicsResource* buffer_resource_{nullptr};
     cudaGraphicsResource* texture_resource_{nullptr};
     GLuint                registered_texture_{};
+    size_t                row_stride_{};
+    GLint                 row_length_{};
+    bool                  direct_image_{};
     bool                  pending_{false};
 
     static bool initialized_;
@@ -25,11 +29,15 @@ class cuda_transfer_s : public backend_i
     bool ensure_buffer();
     bool copy_host_to_buffer();
     bool copy_buffer_to_host();
+    bool copy_host_to_texture(texture_s* texture);
     bool copy_texture_to_host(texture_s* texture);
     bool ensure_texture_resource(texture_s* texture);
 
+    bool register_texture_impl(texture_s* texture) final;
+    bool unregister_texture_impl(texture_s* texture) final;
+
   public:
-    cuda_transfer_s(size_t size, direction_e dir);
+    cuda_transfer_s(const texture_transfer_requirements_s& requirements, direction_e dir, bool direct_image);
     ~cuda_transfer_s() override;
 
     bool transfer() final;

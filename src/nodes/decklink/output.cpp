@@ -477,15 +477,20 @@ class node_impl : public node_i
         }
 
         try {
-            const int    row_pixels      = ((mode->dim.x + 47) / 48) * 32;
-            const size_t frame_size      = static_cast<size_t>(row_pixels) * static_cast<size_t>(mode->dim.y) * 4;
-            auto         download_stream = app->texture_download_service()->create_stream({
-                        .dimensions = {row_pixels, mode->dim.y},
-                        .format     = gpu::texture_s::format_e::uyuv_u10,
-                        .byte_size  = frame_size,
-                        .max_slots  = 7,
+            const int    row_pixels = ((mode->dim.x + 47) / 48) * 32;
+            const size_t frame_size = static_cast<size_t>(row_pixels) * static_cast<size_t>(mode->dim.y) * 4;
+            const gpu::transfer::texture_transfer_requirements_s requirements{
+                .dimensions  = {row_pixels, mode->dim.y},
+                .format      = gpu::texture_s::format_e::uyuv_u10,
+                .row_stride  = static_cast<size_t>(row_pixels) * 4,
+                .byte_size   = frame_size,
+                .host_access = gpu::transfer::host_access_e::read_only,
+            };
+            auto download_stream = app->texture_download_service()->create_stream({
+                .requirements = requirements,
+                .max_slots    = 7,
             });
-            auto         callback        = make_decklink_ptr<callback_s>(download_stream, device_, *mode);
+            auto callback        = make_decklink_ptr<callback_s>(download_stream, device_, *mode);
 
             if (device_->SetScheduledFrameCompletionCallback(callback.get()) != S_OK || !callback->initialize() ||
                 device_->StartScheduledPlayback(0, mode->time_scale, 1.0) != S_OK) {

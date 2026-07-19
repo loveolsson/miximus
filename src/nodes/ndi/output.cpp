@@ -86,7 +86,7 @@ class node_impl : public node_i
             const auto          frame_rate = frame_rate_.load(std::memory_order_relaxed);
 
             NDIlib_video_frame_v2_t ndi_frame{};
-            const auto              dim    = stream->desc().dimensions;
+            const auto              dim    = stream->desc().requirements.dimensions;
             ndi_frame.xres                 = dim.x;
             ndi_frame.yres                 = dim.y;
             ndi_frame.FourCC               = NDIlib_FourCC_video_type_RGBA;
@@ -245,11 +245,16 @@ class node_impl : public node_i
         }
 
         if (!download_stream || stream_dimensions_.would_change(dim)) {
+            const gpu::transfer::texture_transfer_requirements_s requirements{
+                .dimensions  = dim,
+                .format      = gpu::texture_s::format_e::rgba_u8,
+                .row_stride  = static_cast<size_t>(dim.x) * 4,
+                .byte_size   = static_cast<size_t>(dim.x) * static_cast<size_t>(dim.y) * 4,
+                .host_access = gpu::transfer::host_access_e::read_only,
+            };
             auto stream = app->texture_download_service()->create_stream({
-                .dimensions = dim,
-                .format     = gpu::texture_s::format_e::rgba_u8,
-                .byte_size  = static_cast<size_t>(dim.x) * static_cast<size_t>(dim.y) * 4,
-                .max_slots  = 7,
+                .requirements = requirements,
+                .max_slots    = 7,
             });
             {
                 const std::scoped_lock lock(cv_mutex_);

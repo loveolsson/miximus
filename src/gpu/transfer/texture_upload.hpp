@@ -1,5 +1,6 @@
 #pragma once
 #include "gpu/texture.hpp"
+#include "gpu/transfer/texture_transfer.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 
 #include <chrono>
@@ -21,11 +22,9 @@ struct texture_upload_stream_state_s;
 
 struct texture_upload_desc_s
 {
-    vec2i_t             dimensions{};
-    texture_s::format_e format{texture_s::format_e::bgra_u8};
-    size_t              byte_size{};
-    size_t              max_slots{3};
-    bool                generate_mip_maps{true};
+    texture_transfer_requirements_s requirements;
+    size_t                          max_slots{3};
+    bool                            generate_mip_maps{true};
 };
 
 class texture_upload_lease_s

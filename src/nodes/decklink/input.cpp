@@ -206,10 +206,16 @@ class callback_s
         }
 
         try {
-            auto stream = upload_service_->create_stream({
+            const gpu::transfer::texture_transfer_requirements_s requirements{
                 .dimensions        = {static_cast<int>(rowBytes / 4), static_cast<int>(height)},
                 .format            = gpu::texture_s::format_e::uyuv_u10,
+                .row_stride        = static_cast<size_t>(rowBytes),
                 .byte_size         = bufferSize,
+                .address_alignment = 64,
+                .host_access       = gpu::transfer::host_access_e::overwrite,
+            };
+            auto stream = upload_service_->create_stream({
+                .requirements      = requirements,
                 .max_slots         = 6,
                 .generate_mip_maps = false,
             });

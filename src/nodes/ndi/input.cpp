@@ -80,10 +80,15 @@ class node_impl : public node_i
             {
                 const std::scoped_lock lock(upload_mutex_);
                 if (current_dimensions.observe(new_dim) || !upload_stream_) {
+                    const gpu::transfer::texture_transfer_requirements_s requirements{
+                        .dimensions  = new_dim,
+                        .format      = gpu::texture_s::format_e::bgra_u8,
+                        .row_stride  = static_cast<size_t>(bytes_per_row),
+                        .byte_size   = frame_size,
+                        .host_access = gpu::transfer::host_access_e::overwrite,
+                    };
                     upload_stream_ = upload_service->create_stream({
-                        .dimensions        = new_dim,
-                        .format            = gpu::texture_s::format_e::bgra_u8,
-                        .byte_size         = frame_size,
+                        .requirements      = requirements,
                         .max_slots         = 4,
                         .generate_mip_maps = false,
                     });
