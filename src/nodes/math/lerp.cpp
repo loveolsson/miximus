@@ -1,4 +1,4 @@
-#include "gpu/types.hpp"
+#include "gpu/geometry.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -20,10 +20,7 @@ inline T lerp(const T& a, const T& b, double t)
 template <>
 inline gpu::rect_s lerp<gpu::rect_s>(const gpu::rect_s& a, const gpu::rect_s& b, double t)
 {
-    gpu::rect_s res;
-    res.pos  = lerp(a.pos, b.pos, t);
-    res.size = lerp(a.size, b.size, t);
-    return res;
+    return gpu::interpolate(a, b, t);
 }
 
 template <typename T>

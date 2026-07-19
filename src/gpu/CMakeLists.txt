@@ -22,8 +22,11 @@ add_library(gpu
     texture.cpp
     types.hpp
     types.cpp
+    geometry.hpp
     draw_state.hpp
     draw_state.cpp
+    textured_quad.hpp
+    textured_quad.cpp
     color_transfer.hpp
 )
 

@@ -1,9 +1,10 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
+#include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
@@ -48,7 +49,7 @@ class node_impl : public node_i
     input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
-    std::unique_ptr<gpu::draw_state_s>       draw_state_;
+    std::unique_ptr<gpu::textured_quad_s>    textured_quad_;
     std::shared_ptr<render::font_loader_s>   font_loader_;
     std::unique_ptr<text_render_info_s>      text_info_;
     ::mutex                                  font_mtx_;
@@ -79,11 +80,9 @@ class node_impl : public node_i
                 id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
         }
 
-        if (!draw_state_) {
-            draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_) {
+            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
         // Check if text or font settings have changed
@@ -229,9 +228,6 @@ class node_impl : public node_i
 
         auto position = iface_position_in_.resolve_value(app, nodes, state, {0.0, 0.0});
 
-        auto shader = draw_state_->get_shader_program();
-        shader->set_uniform("opacity", 1.0);
-
         fb->begin_render();
 
         // Calculate the scale to render text at its natural pixel size
@@ -239,17 +235,9 @@ class node_impl : public node_i
         const gpu::vec2i_t fb_dim       = fb->texture()->texture_dimensions();
         const auto         surface_size = text_info_->surface_size;
 
-        const gpu::vec2_t scale{static_cast<float>(surface_size.x) / static_cast<float>(fb_dim.x),
-                                static_cast<float>(surface_size.y) / static_cast<float>(fb_dim.y)};
+        const auto scale = gpu::pixels_to_normalized(gpu::vec2_t(surface_size), fb_dim);
 
-        shader->set_uniform("scale", scale);
-
-        texture->bind(0);
-
-        shader->set_uniform("offset", position);
-        draw_state_->draw();
-
-        gpu::texture_s::unbind(0);
+        textured_quad_->draw(texture, {.pos = position, .size = scale});
         gpu::framebuffer_s::end_render();
     }
 

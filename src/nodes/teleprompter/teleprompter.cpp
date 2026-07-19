@@ -1,9 +1,10 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
+#include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
@@ -18,7 +19,6 @@
 #include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -60,14 +60,14 @@ class node_impl : public node_i
     input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
-    std::unique_ptr<gpu::draw_state_s>        draw_state_;
+    std::unique_ptr<gpu::textured_quad_s>     textured_quad_;
     ::mutex                                   font_mtx_;
     std::shared_ptr<render::font_loader_s>    font_loader_ = std::make_shared<render::font_loader_s>();
     ::future<text_s>                          text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
 
-    utils::observed_value_s<gpu::vec2i_t> framebuffer_size_;
+    utils::observed_value_s<gpu::vec2i_t> render_dimensions_;
     utils::observed_value_s<int>          font_size_;
     utils::observed_value_s<std::string>  file_path_;
     utils::observed_value_s<std::string>  font_name_;
@@ -112,11 +112,9 @@ class node_impl : public node_i
                 id_, "font_variants", app->font_registry()->get_font_variant_names(font_name));
         }
 
-        if (!draw_state_) {
-            draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_) {
+            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
     }
 
@@ -146,12 +144,17 @@ class node_impl : public node_i
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
         scroll_pos      = iface_scroll_pos_in_.resolve_value(app, nodes, state, scroll_pos);
 
-        const gpu::vec2i_t fb_dim = fb->texture()->texture_dimensions();
-        const gpu::vec2i_t tx_dim = {fb_dim.x, font_size * 2};
+        const gpu::vec2i_t fb_dim   = fb->texture()->texture_dimensions();
+        const gpu::recti_s viewport = gpu::normalized_to_pixel_rect(draw_rect, fb_dim);
+        if (viewport.size.x <= 0 || viewport.size.y <= 0) {
+            return;
+        }
+
+        const gpu::vec2i_t tx_dim = {viewport.size.x, font_size * 2};
 
         const auto font_version = app->font_registry()->get_font_list_version();
         const bool render_settings_changed =
-            file_path_.would_change(file_path) || framebuffer_size_.would_change(fb_dim) ||
+            file_path_.would_change(file_path) || render_dimensions_.would_change(viewport.size) ||
             loaded_font_version_.would_change(font_version) || font_name_.would_change(font_name) ||
             font_variant_.would_change(font_variant) || font_size_.would_change(font_size);
 
@@ -176,7 +179,7 @@ class node_impl : public node_i
             }
 
             file_path_.commit(file_path);
-            framebuffer_size_.commit(fb_dim);
+            render_dimensions_.commit(viewport.size);
             loaded_font_version_.commit(font_version);
             font_name_.commit(font_name);
             font_variant_.commit(font_variant);
@@ -197,7 +200,7 @@ class node_impl : public node_i
             }
 
             auto future = app->thread_pool()->submit(
-                load_file, font_loader_, *font_info, file_path_.value(), font_size_.value(), fb_dim.x);
+                load_file, font_loader_, *font_info, file_path_.value(), font_size_.value(), viewport.size.x);
 
             if (future) {
                 text_future_ = std::move(*future);
@@ -222,7 +225,7 @@ class node_impl : public node_i
             // Resize render line vector, this can not be a simple resize, since
             // we need to wait for the future to finish
             const int total_line_height       = font_size_.value() + line_height_extra_;
-            const int visible_lines_plus_four = ((fb_dim.y + total_line_height - 1) / total_line_height) + 4;
+            const int visible_lines_plus_four = ((viewport.size.y + total_line_height - 1) / total_line_height) + 4;
 
             while (render_lines_.size() < static_cast<size_t>(visible_lines_plus_four)) {
                 render_lines_.emplace_back(std::make_unique<line_info_s>());
@@ -241,20 +244,9 @@ class node_impl : public node_i
             }
         }
 
-        auto shader = draw_state_->get_shader_program();
-        shader->set_uniform("scale", gpu::vec2_t{1, static_cast<double>(tx_dim.y) / fb_dim.y});
-        shader->set_uniform("opacity", 1.0);
-
-        auto px = static_cast<int>(std::round(draw_rect.pos.x * fb_dim.x));
-        auto py = static_cast<int>(std::round(draw_rect.pos.y * fb_dim.y));
-        auto sx = static_cast<int>(std::round(draw_rect.size.x * fb_dim.x));
-        auto sy = static_cast<int>(std::round(draw_rect.size.y * fb_dim.y));
-        sx      = std::max(0, sx);
-        sy      = std::max(0, sy);
-        fb->begin_render({
-            .pos  = {px, py},
-            .size = {sx, sy},
-        });
+        fb->begin_render(viewport);
+        auto       batch = textured_quad_->begin_batch();
+        const auto scale = gpu::pixels_to_normalized(gpu::vec2_t(tx_dim), viewport.size);
 
         /**
          * Iterate over render lines, starting 2 lines over visible area, ending 2 lines below
@@ -323,20 +315,12 @@ class node_impl : public node_i
                 continue;
             }
 
-            texture->bind(0);
-
             const int    line_height_px = font_size_.value() + line_height_extra_;
-            const double px_height      = 1.0 / fb_dim.y;
+            const double px_pos         = std::floor((txt_line_index - scroll_pos) * line_height_px);
+            const auto   pos            = gpu::pixels_to_normalized({0, px_pos}, viewport.size);
 
-            const double px_pos = std::floor((txt_line_index - scroll_pos) * line_height_px);
-
-            const gpu::vec2_t pos = {0, px_height * px_pos};
-
-            shader->set_uniform("offset", pos);
-            draw_state_->draw();
+            batch.draw(texture, {.pos = pos, .size = scale});
         }
-
-        gpu::texture_s::unbind(0);
         gpu::framebuffer_s::end_render();
     }
 

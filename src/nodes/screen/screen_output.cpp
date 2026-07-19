@@ -1,11 +1,12 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
+#include "gpu/geometry.hpp"
 #include "gpu/shader.hpp"
 #include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -21,7 +22,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
-#include <glm/common.hpp>
 #include <memory>
 #include <string>
 #include <thread>
@@ -67,7 +67,7 @@ class node_impl : public node_i
 
     std::shared_ptr<render_state_s>                   render_state_;
     std::thread                                       render_thread_;
-    std::unique_ptr<gpu::draw_state_s>                draw_state_;
+    std::unique_ptr<gpu::textured_quad_s>             textured_quad_;
     utils::observed_value_s<std::vector<std::string>> monitor_names_;
     utils::observed_value_s<gpu::recti_s>             window_rect_;
     utils::observed_value_s<bool>                     fullscreen_;
@@ -117,12 +117,9 @@ class node_impl : public node_i
             const auto position = state.get_option<gpu::vec2_t>("position", {0, 0});
             const auto size     = state.get_option<gpu::vec2_t>("size", {100, 100});
 
-            gpu::recti_s rect{
-                .pos  = gpu::vec2i_t(glm::round(position)),
-                .size = gpu::vec2i_t(glm::round(size)),
-            };
-            auto fullscreen   = state.get_option<bool>("fullscreen", false);
-            auto monitor_name = state.get_option<std::string>("monitor_name");
+            const auto rect         = gpu::round_to_integer({.pos = position, .size = size});
+            auto       fullscreen   = state.get_option<bool>("fullscreen", false);
+            auto       monitor_name = state.get_option<std::string>("monitor_name");
 
             bool window_settings_changed = window_rect_.observe(rect);
             window_settings_changed |= fullscreen_.observe(fullscreen);
@@ -168,21 +165,12 @@ class node_impl : public node_i
         slot.target->begin_render(gpu::framebuffer_s::load_op_e::clear);
 
         if (texture != nullptr) {
-            if (!draw_state_) {
-                draw_state_ = std::make_unique<gpu::draw_state_s>();
-                auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-                draw_state_->set_shader_program(shader);
-                draw_state_->set_vertex_data(gpu::full_screen_quad_verts);
+            if (!textured_quad_) {
+                auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+                textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader, gpu::textured_quad_s::uv_e::regular);
             }
 
-            auto shader = draw_state_->get_shader_program();
-            shader->set_uniform("offset", gpu::vec2_t{0, 0});
-            shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
-            shader->set_uniform("opacity", 1.0);
-
-            texture->bind(0);
-            draw_state_->draw();
-            gpu::texture_s::unbind(0);
+            textured_quad_->draw(texture);
         }
 
         gpu::framebuffer_s::end_render();
@@ -225,7 +213,7 @@ class node_impl : public node_i
             }
 
             const auto normalized = value->get<gpu::vec2_t>();
-            const auto rounded    = glm::round(normalized);
+            const auto rounded    = gpu::vec2_t(gpu::round_to_integer(normalized));
             *value                = rounded;
             return rounded == normalized ? result : option_result_e::corrected;
         }
@@ -237,7 +225,7 @@ class node_impl : public node_i
             }
 
             const auto normalized = value->get<gpu::vec2_t>();
-            const auto rounded    = glm::round(normalized);
+            const auto rounded    = gpu::vec2_t(gpu::round_to_integer(normalized));
             *value                = rounded;
             return rounded == normalized ? result : option_result_e::corrected;
         }
@@ -260,13 +248,8 @@ class node_impl : public node_i
         glfwSwapInterval(0);
 
         {
-            gpu::draw_state_s draw_state;
-            auto              shader = state->ctx->get_shader(gpu::shader_program_s::name_e::basic);
-            draw_state.set_shader_program(shader);
-            draw_state.set_vertex_data(gpu::full_screen_quad_verts);
-            shader->set_uniform("offset", gpu::vec2_t{0, 1.0});
-            shader->set_uniform("scale", gpu::vec2_t{1.0, -1.0});
-            shader->set_uniform("opacity", 1.0);
+            auto                 shader = state->ctx->get_shader(gpu::shader_program_s::name_e::basic);
+            gpu::textured_quad_s textured_quad(shader, gpu::textured_quad_s::uv_e::regular);
 
             while (true) {
                 {
@@ -298,9 +281,11 @@ class node_impl : public node_i
                 glClearColor(0, 0, 0, 0);
                 glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
 
-                slot.target->texture()->bind(0);
-                draw_state.draw();
-                gpu::texture_s::unbind(0);
+                textured_quad.draw(slot.target->texture(),
+                                   {
+                                       .pos = {0,   1.0 },
+                                         .size = {1.0, -1.0}
+                });
 
                 state->ctx->swap_buffers();
 

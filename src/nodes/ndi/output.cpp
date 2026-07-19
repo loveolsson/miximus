@@ -1,10 +1,10 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/shader.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_download.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
@@ -46,7 +46,7 @@ class node_impl : public node_i
     std::atomic<frame_rate_s>              frame_rate_{frame_rate_s{}};
 
     std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
-    std::unique_ptr<gpu::draw_state_s>                        draw_state_;
+    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
     utils::observed_value_s<gpu::vec2i_t>                     stream_dimensions_;
 
     std::mutex              cv_mutex_;
@@ -181,7 +181,7 @@ class node_impl : public node_i
             download_stream_.reset();
         }
         stream_dimensions_.reset();
-        draw_state_.reset();
+        textured_quad_.reset();
     }
 
   public:
@@ -266,24 +266,13 @@ class node_impl : public node_i
 
         // Render into an RGBA staging texture with a vertical flip so the raw
         // download has the top-to-bottom row order expected by NDI.
-        if (!draw_state_) {
-            draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_) {
+            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
+            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
         target->framebuffer()->begin_render(gpu::framebuffer_s::load_op_e::clear);
-
-        auto shader = draw_state_->get_shader_program();
-        shader->set_uniform("offset", gpu::vec2_t{0.0, 0.0});
-        shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
-        shader->set_uniform("opacity", 1.0);
-
-        texture->bind(0);
-        draw_state_->draw();
-        gpu::texture_s::unbind(0);
-
+        textured_quad_->draw(texture);
         gpu::framebuffer_s::end_render();
 
         target->set_tag(static_cast<uint64_t>(app->frame_info.pts.count()));

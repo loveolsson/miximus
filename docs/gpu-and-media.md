@@ -23,6 +23,17 @@ On Linux, GLFW is forced to X11 to obtain a GLX context. DVP requires GLX and ma
 
 `gpu::framebuffer_s` owns a render target texture. Framebuffer values represent mutable ordered rendering and therefore have stricter graph fan-out rules than texture values.
 
+`gpu::textured_quad_s` owns the standard textured-quad draw state. It sets the common rectangle and opacity uniforms,
+binds and unbinds sampler zero, and submits the quad. Use a scoped batch for repeated draws so texture cleanup happens
+once after the batch. Conversion paths may set their additional shader uniforms through the wrapper's shader accessor.
+Nodes should not repeat the underlying texture-binding and quad-submission sequence.
+
+Shared rectangle and scaling calculations live in `gpu/geometry.hpp`. Use its contain/cover operations for
+aspect-preserving placement and pass texture display dimensions rather than storage dimensions. It also owns conversion
+between pixel vectors and normalized draw coordinates, and from normalized node rectangles to pixel viewports; keep
+this coordinate math out of individual nodes. Common rectangle interpolation and integer rounding belong there as
+well.
+
 `gpu::sync_s` wraps a GL fence:
 
 - `gpu_wait()` inserts a GPU-side wait;
@@ -133,6 +144,8 @@ Worker/callback rules:
 - `src/gpu/context.hpp/.cpp`
 - `src/gpu/texture.hpp/.cpp`
 - `src/gpu/framebuffer.hpp/.cpp`
+- `src/gpu/geometry.hpp`
+- `src/gpu/textured_quad.hpp/.cpp`
 - `src/gpu/sync.hpp/.cpp`
 - `src/gpu/transfer/detail/backend.hpp/.cpp`
 - `src/gpu/transfer/detail/backend_factory.hpp/.cpp`

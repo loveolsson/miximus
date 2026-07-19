@@ -4,9 +4,9 @@
 #include "detail/platform_compat.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_download.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
@@ -371,8 +371,8 @@ class node_impl : public node_i
     std::map<std::string, mode_info_s, std::less<>> display_modes_;
 
     std::unique_ptr<gpu::framebuffer_s>                       framebuffer_scale_;
-    std::unique_ptr<gpu::draw_state_s>                        draw_state_yuv_;
-    std::unique_ptr<gpu::draw_state_s>                        draw_state_scale_;
+    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_yuv_;
+    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_scale_;
     std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
     utils::observed_value_s<std::string>                      display_mode_name_;
     mode_info_s*                                              display_mode_{};
@@ -689,18 +689,14 @@ class node_impl : public node_i
             return;
         }
 
-        if (!draw_state_scale_) {
-            draw_state_scale_ = std::make_unique<gpu::draw_state_s>();
-            auto shader       = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            draw_state_scale_->set_shader_program(shader);
-            draw_state_scale_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_scale_) {
+            auto shader          = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            textured_quad_scale_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
-        if (!draw_state_yuv_) {
-            draw_state_yuv_ = std::make_unique<gpu::draw_state_s>();
-            auto shader     = app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv);
-            draw_state_yuv_->set_shader_program(shader);
-            draw_state_yuv_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_yuv_) {
+            auto shader        = app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv);
+            textured_quad_yuv_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
         const auto dim = display_mode_->dim;
@@ -712,16 +708,8 @@ class node_impl : public node_i
         }
 
         {
-            auto shader = draw_state_scale_->get_shader_program();
-            shader->set_uniform("offset", gpu::vec2_t(0, 0));
-            shader->set_uniform("scale", gpu::vec2_t(1, 1));
-            shader->set_uniform("opacity", 1.0);
-
             framebuffer_scale_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-
-            texture->bind(0);
-            draw_state_scale_->draw();
-            gpu::texture_s::unbind(0);
+            textured_quad_scale_->draw(texture);
             gpu::framebuffer_s::end_render();
         }
 
@@ -732,18 +720,14 @@ class node_impl : public node_i
         },
             gpu::framebuffer_s::load_op_e::clear);
 
-        auto shader = draw_state_yuv_->get_shader_program();
-        shader->set_uniform("offset", {0, 0});
-        shader->set_uniform("scale", {1.0, 1.0});
+        auto shader = textured_quad_yuv_->shader();
         shader->set_uniform("target_width", draw_dim.x);
 
         shader->set_uniform("transfer", display_mode_->yuv_conversion.matrix);
         shader->set_uniform("transfer_offset", display_mode_->yuv_conversion.offset);
         shader->set_uniform("gamut_transfer", display_mode_->gamut_conversion);
 
-        framebuffer_scale_->texture()->bind(0);
-        draw_state_yuv_->draw();
-        gpu::texture_s::unbind(0);
+        textured_quad_yuv_->draw(framebuffer_scale_->texture());
 
         gpu::framebuffer_s::end_render();
 

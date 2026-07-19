@@ -1,10 +1,10 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/shader.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
@@ -40,7 +40,7 @@ class node_impl : public node_i
     std::mutex                                              upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     std::unique_ptr<gpu::framebuffer_s>                     framebuffer_; // rgb_f16 linearized output
-    std::unique_ptr<gpu::draw_state_s>                      draw_state_;
+    std::unique_ptr<gpu::textured_quad_s>                   textured_quad_;
     std::atomic<bool>                                       capture_running_;
     std::mutex                                              capture_mutex_;
     std::condition_variable                                 capture_cv_;
@@ -132,7 +132,7 @@ class node_impl : public node_i
             upload_stream_.reset();
         }
         framebuffer_.reset();
-        draw_state_.reset();
+        textured_quad_.reset();
         connected_source_.reset();
     }
 
@@ -239,20 +239,13 @@ class node_impl : public node_i
         }
 
         // Linearize from Rec.709 gamma into rgb_f16 framebuffer
-        if (!draw_state_) {
-            draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::strip_gamma);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_) {
+            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::strip_gamma);
+            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
         framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        upload_texture->bind(0);
-        auto shader = draw_state_->get_shader_program();
-        shader->set_uniform("offset", gpu::vec2_t{0.0, 0.0});
-        shader->set_uniform("scale", gpu::vec2_t{1.0, 1.0});
-        draw_state_->draw();
-        gpu::texture_s::unbind(0);
+        textured_quad_->draw(upload_texture);
         gpu::framebuffer_s::end_render();
 
         auto* out_tex = framebuffer_->texture();

@@ -1,9 +1,9 @@
 #include "core/app_state.hpp"
 #include "glm/common.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -24,7 +24,7 @@ class node_impl : public node_i
     input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
-    std::unique_ptr<gpu::draw_state_s> draw_state_;
+    std::unique_ptr<gpu::textured_quad_s> textured_quad_;
 
   public:
     explicit node_impl() = default;
@@ -58,21 +58,12 @@ class node_impl : public node_i
 
         fb->begin_render();
 
-        if (!draw_state_) {
-            draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_) {
+            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
+            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
-        auto shader = draw_state_->get_shader_program();
-        shader->set_uniform("offset", draw_rect.pos);
-        shader->set_uniform("scale", draw_rect.size);
-        shader->set_uniform("opacity", opacity);
-
-        texture->bind(0);
-        draw_state_->draw();
-        gpu::texture_s::unbind(0);
+        textured_quad_->draw(texture, draw_rect, opacity);
 
         gpu::framebuffer_s::end_render();
     }

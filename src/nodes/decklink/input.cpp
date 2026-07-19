@@ -5,9 +5,9 @@
 #include "detail/platform_compat.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
-#include "gpu/draw_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
@@ -462,7 +462,7 @@ class node_impl : public node_i
     decklink_ptr<callback_s>     callback_;
 
     std::unique_ptr<gpu::framebuffer_s>                       framebuffer_;
-    std::unique_ptr<gpu::draw_state_s>                        draw_state_;
+    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
     std::optional<frame_info_s>                               work_frame_;
     utils::observed_value_s<uint64_t>                         device_version_;
     utils::observed_value_s<BMDColorspace>                    colorspace_;
@@ -657,11 +657,9 @@ class node_impl : public node_i
             return;
         }
 
-        if (!draw_state_) {
-            draw_state_ = std::make_unique<gpu::draw_state_s>();
-            auto shader = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
-            draw_state_->set_shader_program(shader);
-            draw_state_->set_vertex_data(gpu::full_screen_quad_verts_flip_uv);
+        if (!textured_quad_) {
+            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
+            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
         const auto src_dim = work_frame_->src_dim;
@@ -670,9 +668,7 @@ class node_impl : public node_i
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::format_e::rgb_f16);
         }
 
-        auto shader = draw_state_->get_shader_program();
-        shader->set_uniform("offset", gpu::vec2i_t{0, 0});
-        shader->set_uniform("scale", gpu::vec2i_t{1.0, 1.0});
+        auto shader = textured_quad_->shader();
         shader->set_uniform("target_width", src_dim.x);
 
         if (colorspace_.observe(work_frame_->colorspace)) {
@@ -686,9 +682,7 @@ class node_impl : public node_i
         shader->set_uniform("gamut_transfer", gamut_conversion_);
 
         framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        work_frame_->texture->bind(0);
-        draw_state_->draw();
-        gpu::texture_s::unbind(0);
+        textured_quad_->draw(work_frame_->texture);
         gpu::framebuffer_s::end_render();
 
         auto fb_tex = framebuffer_->texture();
