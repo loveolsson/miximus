@@ -1,23 +1,21 @@
 #include "surface.hpp"
 
-#include "static_files/files.hpp"
-#include "stb_image.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <format>
 #include <glm/glm.hpp>
-#include <limits>
-#include <map>
-#include <memory>
-#include <mutex>
 #include <optional>
 #include <stdexcept>
-#include <string>
-#include <vector>
 
 namespace miximus::render {
+
+#ifdef _MSC_VER
+#define MIXIMUS_SURFACE_FORCE_INLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+#define MIXIMUS_SURFACE_FORCE_INLINE inline __attribute__((always_inline))
+#else
+#define MIXIMUS_SURFACE_FORCE_INLINE inline
+#endif
 
 surface_s::surface_s(gpu::vec2i_t dim, rgba_pixel_t* ptr)
     : dimensions_(dim)
@@ -69,78 +67,6 @@ struct clipped_rect_s
     gpu::vec2i_t end;
 };
 
-struct asset_s
-{
-    gpu::vec2i_t                         dimensions;
-    std::vector<surface_s::rgba_pixel_t> pixels;
-};
-
-struct stbi_deleter_s
-{
-    void operator()(stbi_uc* pixels) const { stbi_image_free(pixels); }
-};
-
-uint8_t rec709_to_linear(uint8_t value)
-{
-    const double encoded = static_cast<double>(value) / 255.0;
-    const double linear  = encoded < 0.081 ? encoded / 4.5 : std::pow((encoded + 0.099) / 1.099, 1.0 / 0.45);
-    return static_cast<uint8_t>(std::lround(std::clamp(linear, 0.0, 1.0) * 255.0));
-}
-
-std::shared_ptr<const asset_s> load_asset(std::string_view resource_path)
-{
-    static std::mutex                                                         mutex;
-    static std::map<std::string, std::shared_ptr<const asset_s>, std::less<>> assets;
-
-    const std::scoped_lock lock(mutex);
-    if (const auto existing = assets.find(resource_path); existing != assets.end()) {
-        return existing->second;
-    }
-
-    const auto file_data = static_files::get_resource_files().get_file_or_throw(resource_path).unzip();
-    if (file_data.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
-        throw std::length_error(std::format("Image {} is too large to decode", resource_path));
-    }
-
-    gpu::vec2i_t                                   dimensions;
-    int                                            source_channels{};
-    const std::unique_ptr<stbi_uc, stbi_deleter_s> decoded(
-        stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(file_data.data()),
-                              static_cast<int>(file_data.size()),
-                              &dimensions.x,
-                              &dimensions.y,
-                              &source_channels,
-                              4));
-    if (!decoded) {
-        throw std::runtime_error(std::format("Failed to load image {}", resource_path));
-    }
-    constexpr size_t channel_count = 4;
-    if (dimensions.x <= 0 || dimensions.y <= 0 ||
-        static_cast<size_t>(dimensions.x) > std::numeric_limits<size_t>::max() / static_cast<size_t>(dimensions.y) ||
-        (static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y)) >
-            std::numeric_limits<size_t>::max() / channel_count) {
-        throw std::length_error(std::format("Image {} has invalid dimensions", resource_path));
-    }
-
-    const auto pixel_count = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y);
-    auto       asset       = std::make_shared<asset_s>(asset_s{
-                    .dimensions = dimensions,
-                    .pixels     = std::vector<surface_s::rgba_pixel_t>(pixel_count),
-    });
-    for (size_t i = 0; i < pixel_count; ++i) {
-        const size_t offset = i * channel_count;
-        asset->pixels[i]    = {
-            rec709_to_linear(decoded.get()[offset]),
-            rec709_to_linear(decoded.get()[offset + 1]),
-            rec709_to_linear(decoded.get()[offset + 2]),
-            decoded.get()[offset + 3],
-        };
-    }
-
-    const auto result = assets.emplace(std::string(resource_path), std::move(asset));
-    return result.first->second;
-}
-
 gpu::recti_s make_rect(gpu::vec2i_t position, gpu::vec2i_t size) { return {.pos = position, .size = size}; }
 
 std::optional<clipped_rect_s> clip_rect(gpu::recti_s rect, gpu::vec2i_t dimensions)
@@ -178,6 +104,21 @@ void raster_operation(surface_s::rgba_pixel_t* dst_ptr, gpu::vec2i_t dst_dim, gp
         }
         row += dst_dim.x;
     }
+}
+
+template <typename CoverageOp, typename PixelOp>
+void coverage_operation(surface_s::rgba_pixel_t* dst_ptr,
+                        gpu::vec2i_t             dst_dim,
+                        gpu::recti_s             bounds,
+                        CoverageOp               coverage_op,
+                        PixelOp                  pixel_op)
+{
+    raster_operation(dst_ptr, dst_dim, bounds, [coverage_op, pixel_op](auto position, auto* pixel) {
+        const double coverage = coverage_op(position);
+        if (coverage > 0.0) {
+            pixel_op(coverage, pixel);
+        }
+    });
 }
 
 template <typename SrcT, typename Op>
@@ -241,7 +182,7 @@ surface_s::rgba_pixel_t interpolate(const surface_s::rgba_pixel_t& from,
     return {value / denominator};
 }
 
-void source_over_pixel(const surface_s::rgba_pixel_t& source, surface_s::rgba_pixel_t* destination)
+void composite_source_over(const surface_s::rgba_pixel_t& source, surface_s::rgba_pixel_t* destination)
 {
     constexpr int channel_max       = 255;
     const int     source_alpha      = source.a;
@@ -262,6 +203,44 @@ void source_over_pixel(const surface_s::rgba_pixel_t& source, surface_s::rgba_pi
     destination->a =
         static_cast<uint8_t>(source_alpha + (((destination_alpha * inverse) + (channel_max / 2)) / channel_max));
 }
+
+struct replace_coverage_s
+{
+    surface_s::rgba_pixel_t color;
+
+    MIXIMUS_SURFACE_FORCE_INLINE void operator()(double coverage, surface_s::rgba_pixel_t* destination) const
+    {
+        if (coverage >= 1.0) {
+            *destination = color;
+            return;
+        }
+
+        const auto mix_channel = [coverage](uint8_t from, uint8_t to) {
+            return static_cast<uint8_t>(std::lround(from + ((static_cast<int>(to) - from) * coverage)));
+        };
+        destination->r = mix_channel(destination->r, color.r);
+        destination->g = mix_channel(destination->g, color.g);
+        destination->b = mix_channel(destination->b, color.b);
+        destination->a = mix_channel(destination->a, color.a);
+    }
+};
+
+struct source_over_coverage_s
+{
+    surface_s::rgba_pixel_t color;
+
+    void operator()(double coverage, surface_s::rgba_pixel_t* destination) const
+    {
+        if (coverage >= 1.0) {
+            composite_source_over(color, destination);
+            return;
+        }
+
+        auto covered_source = color;
+        covered_source.a    = static_cast<uint8_t>(std::lround(color.a * coverage));
+        composite_source_over(covered_source, destination);
+    }
+};
 
 bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to)
 {
@@ -312,7 +291,115 @@ bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to)
     };
     return true;
 }
+
+double normalized_ellipse_distance_squared(double x, double y, double radius_x, double radius_y)
+{
+    return ((x * x) / (radius_x * radius_x)) + ((y * y) / (radius_y * radius_y));
+}
+
+struct ellipse_coverage_s
+{
+    double center_x;
+    double center_y;
+    double radius_x;
+    double radius_y;
+
+    ellipse_coverage_s(double center_x, double center_y, double radius_x, double radius_y)
+        : center_x(center_x)
+        , center_y(center_y)
+        , radius_x(radius_x)
+        , radius_y(radius_y)
+    {
+    }
+
+    explicit ellipse_coverage_s(gpu::recti_s bounds)
+        : ellipse_coverage_s(bounds.pos.x + (bounds.size.x / 2.0),
+                             bounds.pos.y + (bounds.size.y / 2.0),
+                             bounds.size.x / 2.0,
+                             bounds.size.y / 2.0)
+    {
+    }
+
+    ellipse_coverage_s inset(double amount) const { return {center_x, center_y, radius_x - amount, radius_y - amount}; }
+
+    MIXIMUS_SURFACE_FORCE_INLINE double operator()(gpu::vec2i_t position) const
+    {
+        const double x = position.x + 0.5 - center_x;
+        const double y = position.y + 0.5 - center_y;
+
+        const double inner_radius_x = radius_x - 0.5;
+        const double inner_radius_y = radius_y - 0.5;
+        if (inner_radius_x > 0.0 && inner_radius_y > 0.0 &&
+            normalized_ellipse_distance_squared(x, y, inner_radius_x, inner_radius_y) <= 1.0) {
+            return 1.0;
+        }
+        if (normalized_ellipse_distance_squared(x, y, radius_x + 0.5, radius_y + 0.5) >= 1.0) {
+            return 0.0;
+        }
+
+        const double implicit_value = normalized_ellipse_distance_squared(x, y, radius_x, radius_y) - 1.0;
+        const double gradient_x     = (2.0 * x) / (radius_x * radius_x);
+        const double gradient_y     = (2.0 * y) / (radius_y * radius_y);
+        const double gradient       = std::hypot(gradient_x, gradient_y);
+        if (gradient == 0.0) {
+            return 1.0;
+        }
+        return std::clamp(0.5 - (implicit_value / gradient), 0.0, 1.0);
+    }
+};
+
+struct pill_coverage_s
+{
+    gpu::recti_s bounds;
+
+    MIXIMUS_SURFACE_FORCE_INLINE double operator()(gpu::vec2i_t position) const
+    {
+        const double pixel_x = position.x + 0.5;
+        const double pixel_y = position.y + 0.5;
+
+        double radius{};
+        double delta_x{};
+        double delta_y{};
+        if (bounds.size.x >= bounds.size.y) {
+            radius                 = bounds.size.y / 2.0;
+            const double center_y  = bounds.pos.y + radius;
+            const double cap_begin = bounds.pos.x + radius;
+            const double cap_end   = bounds.pos.x + bounds.size.x - radius;
+            delta_x                = pixel_x - std::clamp(pixel_x, cap_begin, cap_end);
+            delta_y                = pixel_y - center_y;
+        } else {
+            radius                 = bounds.size.x / 2.0;
+            const double center_x  = bounds.pos.x + radius;
+            const double cap_begin = bounds.pos.y + radius;
+            const double cap_end   = bounds.pos.y + bounds.size.y - radius;
+            delta_x                = pixel_x - center_x;
+            delta_y                = pixel_y - std::clamp(pixel_y, cap_begin, cap_end);
+        }
+
+        const double distance_squared = (delta_x * delta_x) + (delta_y * delta_y);
+        const double inner_radius     = radius - 0.5;
+        if (inner_radius > 0.0 && distance_squared <= inner_radius * inner_radius) {
+            return 1.0;
+        }
+        const double outer_radius = radius + 0.5;
+        if (distance_squared >= outer_radius * outer_radius) {
+            return 0.0;
+        }
+        return std::clamp(outer_radius - std::sqrt(distance_squared), 0.0, 1.0);
+    }
+};
+
+template <typename OuterCoverage, typename InnerCoverage>
+struct difference_coverage_s
+{
+    OuterCoverage outer;
+    InnerCoverage inner;
+
+    double operator()(gpu::vec2i_t position) const { return std::clamp(outer(position) - inner(position), 0.0, 1.0); }
+};
 } // namespace
+
+#undef MIXIMUS_SURFACE_FORCE_INLINE
 
 void surface_s::copy(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
@@ -356,13 +443,16 @@ void surface_s::alpha_blend(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, s
 
 void surface_s::source_over(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
-    copy_operation(src_ptr, src_dim, src_pitch, ptr(), dimensions_, pos, source_over_pixel);
+    copy_operation(src_ptr, src_dim, src_pitch, ptr(), dimensions_, pos, [](const auto& source, auto* destination) {
+        composite_source_over(source, destination);
+    });
 }
 
 void surface_s::source_over(gpu::recti_s rect, const rgba_pixel_t& color)
 {
-    raster_operation(
-        ptr(), dimensions_, rect, [&color](gpu::vec2i_t, auto* destination) { source_over_pixel(color, destination); });
+    raster_operation(ptr(), dimensions_, rect, [&color](gpu::vec2i_t, auto* destination) {
+        composite_source_over(color, destination);
+    });
 }
 
 void surface_s::source_over_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color)
@@ -371,31 +461,7 @@ void surface_s::source_over_ellipse(gpu::recti_s bounds, const rgba_pixel_t& col
         return;
     }
 
-    const double radius_x = bounds.size.x / 2.0;
-    const double radius_y = bounds.size.y / 2.0;
-    const double center_x = bounds.pos.x + radius_x;
-    const double center_y = bounds.pos.y + radius_y;
-    raster_operation(ptr(), dimensions_, bounds, [&](gpu::vec2i_t pos, auto* destination) {
-        const double x = (pos.x + 0.5 - center_x) / radius_x;
-        const double y = (pos.y + 0.5 - center_y) / radius_y;
-        if ((x * x) + (y * y) <= 1.0) {
-            source_over_pixel(color, destination);
-        }
-    });
-}
-
-gpu::vec2i_t surface_s::asset_dimensions(std::string_view resource_path)
-{
-    return load_asset(resource_path)->dimensions;
-}
-
-void surface_s::draw_asset(std::string_view resource_path, gpu::vec2i_t position)
-{
-    const auto asset = load_asset(resource_path);
-    source_over(asset->pixels.data(),
-                asset->dimensions,
-                sizeof(rgba_pixel_t) * static_cast<size_t>(asset->dimensions.x),
-                position);
+    coverage_operation(ptr(), dimensions_, bounds, ellipse_coverage_s{bounds}, source_over_coverage_s{color});
 }
 
 void surface_s::fill(gpu::recti_s rect, const rgba_pixel_t& color)
@@ -462,17 +528,7 @@ void surface_s::fill_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color)
         return;
     }
 
-    const double radius_x = bounds.size.x / 2.0;
-    const double radius_y = bounds.size.y / 2.0;
-    const double center_x = bounds.pos.x + radius_x;
-    const double center_y = bounds.pos.y + radius_y;
-    raster_operation(ptr(), dimensions_, bounds, [&](gpu::vec2i_t pos, auto* dst) {
-        const double x = (pos.x + 0.5 - center_x) / radius_x;
-        const double y = (pos.y + 0.5 - center_y) / radius_y;
-        if ((x * x) + (y * y) <= 1.0) {
-            *dst = color;
-        }
-    });
+    coverage_operation(ptr(), dimensions_, bounds, ellipse_coverage_s{bounds}, replace_coverage_s{color});
 }
 
 void surface_s::draw_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color, int thickness)
@@ -481,25 +537,18 @@ void surface_s::draw_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color, int
         return;
     }
 
-    const double radius_x       = bounds.size.x / 2.0;
-    const double radius_y       = bounds.size.y / 2.0;
-    const double inner_radius_x = std::max(0.0, radius_x - thickness);
-    const double inner_radius_y = std::max(0.0, radius_y - thickness);
-    const double center_x       = bounds.pos.x + radius_x;
-    const double center_y       = bounds.pos.y + radius_y;
+    const int minimum_size = std::min(bounds.size.x, bounds.size.y);
+    if (thickness >= (minimum_size / 2) + (minimum_size % 2)) {
+        fill_ellipse(bounds, color);
+        return;
+    }
 
-    raster_operation(ptr(), dimensions_, bounds, [&](gpu::vec2i_t pos, auto* dst) {
-        const double px    = pos.x + 0.5 - center_x;
-        const double py    = pos.y + 0.5 - center_y;
-        const double outer = ((px * px) / (radius_x * radius_x)) + ((py * py) / (radius_y * radius_y));
-        const double inner =
-            inner_radius_x > 0.0 && inner_radius_y > 0.0
-                ? ((px * px) / (inner_radius_x * inner_radius_x)) + ((py * py) / (inner_radius_y * inner_radius_y))
-                : std::numeric_limits<double>::infinity();
-        if (outer <= 1.0 && inner >= 1.0) {
-            *dst = color;
-        }
-    });
+    const auto outer = ellipse_coverage_s{bounds};
+    coverage_operation(ptr(),
+                       dimensions_,
+                       bounds,
+                       difference_coverage_s{.outer = outer, .inner = outer.inset(thickness)},
+                       replace_coverage_s{color});
 }
 
 void surface_s::fill_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t& color)
@@ -516,6 +565,41 @@ void surface_s::draw_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t&
         return;
     }
     draw_ellipse(make_rect(center - gpu::vec2i_t{radius}, gpu::vec2i_t{radius * 2}), color, thickness);
+}
+
+void surface_s::fill_pill(gpu::recti_s bounds, const rgba_pixel_t& color)
+{
+    if (bounds.size.x <= 0 || bounds.size.y <= 0) {
+        return;
+    }
+
+    coverage_operation(ptr(), dimensions_, bounds, pill_coverage_s{bounds}, replace_coverage_s{color});
+}
+
+void surface_s::draw_pill(gpu::recti_s bounds, const rgba_pixel_t& color, int thickness)
+{
+    if (thickness <= 0 || bounds.size.x <= 0 || bounds.size.y <= 0) {
+        return;
+    }
+
+    const int minimum_size = std::min(bounds.size.x, bounds.size.y);
+    if (thickness >= (minimum_size / 2) + (minimum_size % 2)) {
+        fill_pill(bounds, color);
+        return;
+    }
+
+    const gpu::recti_s inner_bounds{
+        .pos  = bounds.pos + gpu::vec2i_t{thickness},
+        .size = bounds.size - gpu::vec2i_t{thickness * 2},
+    };
+    coverage_operation(ptr(),
+                       dimensions_,
+                       bounds,
+                       difference_coverage_s{
+                           .outer = pill_coverage_s{bounds},
+                           .inner = pill_coverage_s{inner_bounds},
+                       },
+                       replace_coverage_s{color});
 }
 
 void surface_s::horizontal_gradient(gpu::recti_s rect, const rgba_pixel_t& left, const rgba_pixel_t& right)

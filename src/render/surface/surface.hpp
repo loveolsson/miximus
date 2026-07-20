@@ -51,6 +51,8 @@ class surface_s
     void draw_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color, int thickness = 1);
     void fill_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t& color);
     void draw_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t& color, int thickness = 1);
+    void fill_pill(gpu::recti_s bounds, const rgba_pixel_t& color);
+    void draw_pill(gpu::recti_s bounds, const rgba_pixel_t& color, int thickness = 1);
 
     void horizontal_gradient(gpu::recti_s rect, const rgba_pixel_t& left, const rgba_pixel_t& right);
     void vertical_gradient(gpu::recti_s rect, const rgba_pixel_t& top, const rgba_pixel_t& bottom);
