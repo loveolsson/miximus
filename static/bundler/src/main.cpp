@@ -51,10 +51,10 @@ int bundle(const std::filesystem::path& src,
         target << "namespace " << nspace << " {" << '\n' << '\n';
     }
 
-    // Create the declaration of the map containing the uncompressed files
+    // Create the sorted file metadata array and its uniform bundle view.
     map << "const file_map_s& " << mapname << "()" << '\n';
     map << "{" << '\n';
-    map << tab(1) << "static const file_map_s files({" << '\n';
+    map << tab(1) << "static constexpr std::array<file_record_s, " << files.size() << "> records = {" << '\n';
 
     // Accumulate a bundle-level hash from each file's ETag
     boost::uuids::detail::sha1 bundle_sha1;
@@ -113,17 +113,12 @@ int bundle(const std::filesystem::path& src,
 
         target << "};" << '\n' << '\n';
 
-        // Add an entry to the map that decompresses the file into the map
-        map << tab(2) << "{ " << comment << '\n';
-        map << tab(3) << "\"" << unix_name << "\"," << '\n';
-        map << tab(3) << "{" << '\n';
-        map << tab(4) << ".gzipped = " << arr_name << "," << '\n';
-        map << tab(4) << ".size = " << file_data.size() << "," << '\n';
-        map << tab(4) << ".filename = \"" << unix_name << "\"," << '\n';
-        map << tab(4) << ".filename_lowercase = \"" << boost::to_lower_copy(unix_name) << "\"," << '\n';
-        map << tab(4) << ".mime = \"" << get_mime(filename) << "\"," << '\n';
-        map << tab(4) << ".etag = \"" << sha_hex << "\"," << '\n';
-        map << tab(3) << "}," << '\n';
+        map << tab(2) << "file_record_s{ " << comment << '\n';
+        map << tab(3) << ".filename = \"" << unix_name << "\"," << '\n';
+        map << tab(3) << ".gzipped = " << arr_name << "," << '\n';
+        map << tab(3) << ".size = " << file_data.size() << "," << '\n';
+        map << tab(3) << ".mime = \"" << get_mime(filename) << "\"," << '\n';
+        map << tab(3) << ".etag = \"" << sha_hex << "\"," << '\n';
         map << tab(2) << "}," << '\n';
     }
 
@@ -136,7 +131,8 @@ int bundle(const std::filesystem::path& src,
         bundle_hash += std::format("{:02x}", byte);
     }
 
-    map << tab(1) << "}, \"" << bundle_hash << "\");" << '\n' << '\n';
+    map << tab(1) << "};" << '\n';
+    map << tab(1) << "static constexpr file_map_s files(records, \"" << bundle_hash << "\");" << '\n' << '\n';
     map << tab(1) << "return files;" << '\n';
     map << "};" << '\n';
 

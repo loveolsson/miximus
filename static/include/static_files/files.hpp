@@ -4,7 +4,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 #ifdef _WIN32
 #ifdef LIBRARY_EXPORTS
@@ -21,10 +20,9 @@
 namespace miximus::static_files {
 struct file_record_s
 {
+    std::string_view         filename;
     std::span<const uint8_t> gzipped;
     size_t                   size;
-    std::string_view         filename;
-    std::string_view         filename_lowercase;
     std::string_view         mime;
     std::string_view         etag;
     LIBRARY_API std::string unzip() const;
@@ -32,13 +30,11 @@ struct file_record_s
 
 struct file_map_s
 {
-    using map_t = std::unordered_map<std::string_view, file_record_s>;
+    const std::span<const file_record_s> files;
+    const std::string_view               bundle_hash;
 
-    const map_t            files;
-    const std::string_view bundle_hash;
-
-    explicit file_map_s(map_t&& o, std::string_view hash)
-        : files(std::move(o))
+    constexpr explicit file_map_s(std::span<const file_record_s> records, std::string_view hash) noexcept
+        : files(records)
         , bundle_hash(hash)
     {
     }

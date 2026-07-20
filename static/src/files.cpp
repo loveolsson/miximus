@@ -7,7 +7,9 @@
 
 #include <gzip/decompress.hpp>
 
+#include <algorithm>
 #include <format>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 
@@ -27,8 +29,9 @@ std::string file_record_s::unzip() const
 
 const file_record_s* file_map_s::get_file(std::string_view filename) const noexcept
 {
-    if (const auto it = files.find(filename); it != files.end()) {
-        return &it->second;
+    const auto it = std::ranges::lower_bound(files, filename, {}, &file_record_s::filename);
+    if (it != files.end() && it->filename == filename) {
+        return &*it;
     }
 
     return nullptr;
