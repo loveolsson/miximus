@@ -118,7 +118,7 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
 
     if (accept_encoding_has_gzip(con->get_request_header("Accept-Encoding"))) {
         con->replace_header("Content-Encoding", "gzip");
-        con->set_body(std::string(file_it->gzipped));
+        con->set_body(std::string(reinterpret_cast<const char*>(file_it->gzipped.data()), file_it->gzipped.size()));
     } else {
         con->set_body(file_it->unzip());
     }

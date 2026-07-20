@@ -212,7 +212,7 @@ void draw_zone_plate(surface_s* surface)
 
     const double scale_x = 2.0 / dimensions.x;
     const double scale_y = 2.0 / dimensions.y;
-    auto*        pixels  = surface->ptr();
+    const auto   pixels  = surface->pixels();
     for (int y = 0; y < dimensions.y; ++y) {
         const double ny = ((y + 0.5) * scale_y) - 1.0;
         for (int x = 0; x < dimensions.x; ++x) {

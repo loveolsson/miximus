@@ -32,7 +32,7 @@ class video_buffer_s : public IDeckLinkVideoBuffer
     void     clear_upload() { upload_.reset(); }
     uint64_t upload_version() const { return upload_ ? upload_->version() : 0; }
     void     submit_upload() { upload_->submit(); }
-    uint32_t buffer_size() const { return upload_ ? static_cast<uint32_t>(upload_->size()) : 0; }
+    uint32_t buffer_size() const { return upload_ ? static_cast<uint32_t>(upload_->bytes().size()) : 0; }
     void     reset_ref_count() { ref_count_ = 1; }
 
     HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) override
@@ -44,7 +44,7 @@ class video_buffer_s : public IDeckLinkVideoBuffer
             *buffer = nullptr;
             return E_FAIL;
         }
-        *buffer = upload_->ptr();
+        *buffer = upload_->bytes().data();
         return S_OK;
     }
 

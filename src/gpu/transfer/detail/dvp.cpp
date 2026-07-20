@@ -395,14 +395,14 @@ bool dvp_transfer_s::transfer()
         // endTextureInUse (dvpMapBufferEndAPI) must have been called by the caller
         // before this point so DVP knows GL is done with the texture.
         return perform_dma(sysmem_handle_, texture_handle_, static_cast<uint32_t>(dims.y));
-    } else {
-        // GPU rendered to texture; DMA texture → data_.
-        // Signal that GL is done writing to the texture, DVP can start reading.
-        if (!check_dvp_status(dvpMapBufferEndAPI(texture_handle_), "dvpMapBufferEndAPI")) {
-            return false;
-        }
-        return perform_dma(texture_handle_, sysmem_handle_, static_cast<uint32_t>(dims.y));
     }
+
+    // GPU rendered to texture; DMA texture → data_.
+    // Signal that GL is done writing to the texture, DVP can start reading.
+    if (!check_dvp_status(dvpMapBufferEndAPI(texture_handle_), "dvpMapBufferEndAPI")) {
+        return false;
+    }
+    return perform_dma(texture_handle_, sysmem_handle_, static_cast<uint32_t>(dims.y));
 }
 
 bool dvp_transfer_s::wait_for_completion()

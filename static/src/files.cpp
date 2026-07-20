@@ -15,7 +15,7 @@ namespace miximus::static_files {
 
 std::string file_record_s::unzip() const
 {
-    auto data = gzip::decompress(gzipped.data(), gzipped.size());
+    auto data = gzip::decompress(reinterpret_cast<const char*>(gzipped.data()), gzipped.size());
 
     if (data.size() != size) {
         throw std::runtime_error(

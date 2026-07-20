@@ -3,8 +3,8 @@
 #include "vertex_array.hpp"
 #include "vertex_buffer.hpp"
 
-#include <array>
-#include <vector>
+#include <ranges>
+#include <span>
 
 namespace miximus::gpu {
 class draw_state_s
@@ -22,30 +22,14 @@ class draw_state_s
     void operator=(const draw_state_s&) = delete;
     void operator=(draw_state_s&&)      = delete;
 
-    template <typename T, size_t N>
-    void set_vertex_data(const T (&arr)[N])
+    template <std::ranges::contiguous_range Range>
+        requires std::ranges::sized_range<Range>
+    void set_vertex_data(const Range& vertices)
     {
-        vertex_buffer_.set_data(arr, sizeof(T), N);
+        using vertex_t = std::ranges::range_value_t<Range>;
+        vertex_buffer_.set_data(std::span{vertices});
         if (shader_ != nullptr) {
-            shader_->set_vertex_type<T>();
-        }
-    }
-
-    template <typename T, size_t N>
-    void set_vertex_data(const std::array<T, N>& arr)
-    {
-        vertex_buffer_.set_data(arr.data(), sizeof(T), N);
-        if (shader_ != nullptr) {
-            shader_->set_vertex_type<T>();
-        }
-    }
-
-    template <typename T>
-    void set_vertex_data(const std::vector<T>& vec)
-    {
-        vertex_buffer_.set_data(vec.data(), sizeof(T), vec.size());
-        if (shader_ != nullptr) {
-            shader_->set_vertex_type<T>();
+            shader_->set_vertex_type<vertex_t>();
         }
     }
 

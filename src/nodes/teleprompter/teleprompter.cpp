@@ -413,7 +413,7 @@ class node_impl : public node_i
         const std::unique_lock line_lock(line->mtx);
         const std::unique_lock font_lock(font_mtx_);
 
-        render::surface_s surface(dim, static_cast<render::surface_s::rgba_pixel_t*>(upload.ptr()));
+        render::surface_s surface(dim, upload.bytes());
         surface.clear({0, 0, 0, 0});
         text_.font->render_string(str, &surface, {0, font_size_.value()});
         upload.submit();

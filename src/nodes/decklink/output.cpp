@@ -284,12 +284,12 @@ class callback_s
 
         void*      dst_ptr = nullptr;
         const auto size    = static_cast<size_t>(row_bytes) * static_cast<size_t>(mode_info_.dim.y);
-        if (dst_buffer->GetBytes(&dst_ptr) != S_OK || dst_ptr == nullptr || size != frame->size()) {
+        if (dst_buffer->GetBytes(&dst_ptr) != S_OK || dst_ptr == nullptr || size != frame->bytes().size()) {
             (void)dst_buffer->EndAccess(bmdBufferAccessWrite);
             return;
         }
 
-        std::memcpy(dst_ptr, frame->ptr(), size);
+        std::memcpy(dst_ptr, frame->bytes().data(), size);
         if (dst_buffer->EndAccess(bmdBufferAccessWrite) == S_OK) {
             last_frame_ = dst_frame.query<IDeckLinkVideoFrame>();
         }

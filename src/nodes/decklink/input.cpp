@@ -142,10 +142,12 @@ class callback_s
             return std::nullopt;
         }
 
-        void*      src_data = nullptr;
-        const bool copied   = video_buffer->GetBytes(&src_data) == S_OK && src_data != nullptr;
+        void*      src_data    = nullptr;
+        const auto destination = upload->bytes();
+        const bool copied =
+            video_buffer->GetBytes(&src_data) == S_OK && src_data != nullptr && frame_size <= destination.size();
         if (copied) {
-            std::memcpy(upload->ptr(), src_data, std::min(frame_size, upload->size()));
+            std::memcpy(destination.data(), src_data, frame_size);
         }
         video_buffer->EndAccess(bmdBufferAccessRead);
         return copied ? std::move(upload) : std::nullopt;

@@ -43,13 +43,27 @@ class decoded_image_s
     decoded_image_s& operator=(decoded_image_s&&)      = default;
     ~decoded_image_s()                                 = default;
 
-    int              width() const { return width_; }
-    int              height() const { return height_; }
-    int              source_channels() const { return source_channels_; }
-    image_channels_e channels() const { return channels_; }
-    size_t           byte_size() const;
-    uint8_t*         data() { return data_.get(); }
-    const uint8_t*   data() const { return data_.get(); }
+    int                width() const { return width_; }
+    int                height() const { return height_; }
+    int                source_channels() const { return source_channels_; }
+    image_channels_e   channels() const { return channels_; }
+    std::span<uint8_t> pixels() noexcept
+    {
+        if (!data_) {
+            return {};
+        }
+        return {data_.get(),
+                static_cast<size_t>(width_) * static_cast<size_t>(height_) * static_cast<size_t>(channels_)};
+    }
+
+    std::span<const uint8_t> pixels() const noexcept
+    {
+        if (!data_) {
+            return {};
+        }
+        return {data_.get(),
+                static_cast<size_t>(width_) * static_cast<size_t>(height_) * static_cast<size_t>(channels_)};
+    }
 };
 
 decoded_image_s decode_image(std::span<const std::byte> encoded, image_channels_e channels);

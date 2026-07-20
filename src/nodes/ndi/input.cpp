@@ -98,14 +98,18 @@ class node_impl : public node_i
 
             auto upload = stream->try_acquire();
             if (upload) {
-                auto* dst = static_cast<uint8_t*>(upload->ptr());
-                auto* src = video_frame.p_data;
+                const auto destination = upload->bytes();
+                auto*      src         = video_frame.p_data;
+                if (destination.size() < frame_size) {
+                    NDIlib_framesync_free_video(framesync_, &video_frame);
+                    continue;
+                }
                 if (video_frame.line_stride_in_bytes == bytes_per_row) {
-                    std::memcpy(dst, src, frame_size);
+                    std::memcpy(destination.data(), src, frame_size);
                 } else {
                     for (int y = 0; y < video_frame.yres; ++y) {
-                        std::memcpy(dst, src, static_cast<size_t>(bytes_per_row));
-                        dst += bytes_per_row;
+                        const auto offset = static_cast<size_t>(y) * static_cast<size_t>(bytes_per_row);
+                        std::memcpy(destination.data() + offset, src, static_cast<size_t>(bytes_per_row));
                         src += video_frame.line_stride_in_bytes;
                     }
                 }

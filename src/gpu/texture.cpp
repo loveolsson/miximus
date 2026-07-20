@@ -177,11 +177,6 @@ size_t texture_s::host_row_byte_size(vec2i_t dimensions, format_e format)
                             info.host_bytes_per_texel);
 }
 
-void texture_s::upload(const void* data) const
-{
-    glTextureSubImage2D(id_, 0, 0, 0, texture_dimensions_.x, texture_dimensions_.y, format_, type_, data);
-}
-
 void texture_s::generate_mip_maps() const
 {
     if (format_info(colorspace_).mip_map_levels > 1) {

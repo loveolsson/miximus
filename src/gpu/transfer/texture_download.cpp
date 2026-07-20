@@ -444,9 +444,13 @@ texture_download_frame_s& texture_download_frame_s::operator=(texture_download_f
     return *this;
 }
 
-void* texture_download_frame_s::ptr() const { return slot_ ? slot_->backend->data() : nullptr; }
-
-size_t texture_download_frame_s::size() const { return slot_ ? slot_->backend->size() : 0; }
+std::span<const std::byte> texture_download_frame_s::bytes() const
+{
+    if (!slot_) {
+        return {};
+    }
+    return {static_cast<const std::byte*>(slot_->backend->data()), slot_->backend->size()};
+}
 
 uint64_t texture_download_frame_s::tag() const { return slot_ ? slot_->tag : 0; }
 

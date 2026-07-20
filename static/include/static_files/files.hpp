@@ -1,4 +1,7 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -18,12 +21,12 @@
 namespace miximus::static_files {
 struct file_record_s
 {
-    std::string_view gzipped;
-    size_t           size;
-    std::string_view filename;
-    std::string_view filename_lowercase;
-    std::string_view mime;
-    std::string_view etag;
+    std::span<const uint8_t> gzipped;
+    size_t                   size;
+    std::string_view         filename;
+    std::string_view         filename_lowercase;
+    std::string_view         mime;
+    std::string_view         etag;
     LIBRARY_API std::string unzip() const;
 };
 

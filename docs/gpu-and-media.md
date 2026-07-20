@@ -79,7 +79,7 @@ allocation in front of the PBO. Download slots likewise expose their mapped pack
 
 ### Upload streams
 
-An upload stream is a bounded, lazily allocated set of backend-owned writable slots. A CPU producer calls `try_acquire()`, writes through the returned lease, then calls `submit()`. The upload worker owns a permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes the texture. The render thread calls `consume_latest()` or `consume_through()`; both are polling operations and retain the previous texture while a newer upload is incomplete.
+An upload stream is a bounded, lazily allocated set of backend-owned writable slots. A CPU producer calls `try_acquire()`, writes through the returned lease's mutable byte span, then calls `submit()`. The upload worker owns a permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes the texture. The render thread calls `consume_latest()` or `consume_through()`; both are polling operations and retain the previous texture while a newer upload is incomplete.
 
 Submitted leases also pin their writable memory until the producer releases the lease. This is important for SDK allocators such as DeckLink, which may retain a buffer after delivering its frame callback.
 
@@ -89,7 +89,7 @@ Use `acquire_for()` only on native SDK threads that are allowed to wait for lazy
 
 A download stream owns bounded render-target/readback slots. The render thread calls `try_acquire()`, renders into the target framebuffer, and calls `submit()`. Submission only inserts and flushes a fence. The download worker waits for rendering and performs the DVP/CUDA/PBO/basic readback on its shared context.
 
-CPU consumers poll `try_consume_latest()`. Its frame lease keeps host memory reserved until an NDI send or DeckLink copy has finished. If no render target is free, the node drops that output frame instead of waiting.
+CPU consumers poll `try_consume_latest()`. Its frame lease exposes a read-only byte span and keeps host memory reserved until an NDI send or DeckLink copy has finished. If no render target is free, the node drops that output frame instead of waiting.
 
 Both services enforce memory budgets and catch allocation failures. Slots are allocated only after a stream is first used, and stream destruction reclaims its resources on the owning GL worker. Per-stream slot limits bound latency and memory growth.
 
@@ -141,7 +141,10 @@ The font registry may refresh from the configuration thread. It uses a shared mu
 
 Do not reintroduce pointer/view results whose lifetime crosses the registry lock.
 
-`render::surface_s` is a non-owning CPU pixel view. Text and teleprompter rendering construct it over an upload lease, so font work never owns GL objects and can run in the fiber pool. Its templated copy/blend helper clips once before pixel loops. Preserve the separation between clipping and pixel operations to avoid per-pixel boundary branches.
+`render::surface_s` is a non-owning CPU pixel span. Text and teleprompter rendering construct it over an upload lease,
+so font work never owns GL objects and can run in the fiber pool. Copy and blend operations accept checked strided image
+views, keeping storage extent, dimensions, and signed row stride together. Their templated helper clips once before pixel
+loops; preserve the separation between clipping and pixel operations to avoid per-pixel boundary branches.
 
 Surface-producing upload streams request `surface_s::DATA_ALIGNMENT`. The transfer factory verifies the exposed host
 pointer for every backend, and `surface_s` uses that contract for compiler alignment hints. New surface producers must

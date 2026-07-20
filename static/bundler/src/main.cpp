@@ -117,8 +117,7 @@ int bundle(const std::filesystem::path& src,
         map << tab(2) << "{ " << comment << '\n';
         map << tab(3) << "\"" << unix_name << "\"," << '\n';
         map << tab(3) << "{" << '\n';
-        map << tab(4) << ".gzipped = {reinterpret_cast<const char*>(" << arr_name << ".data()), " << arr_size << "},"
-            << '\n';
+        map << tab(4) << ".gzipped = " << arr_name << "," << '\n';
         map << tab(4) << ".size = " << file_data.size() << "," << '\n';
         map << tab(4) << ".filename = \"" << unix_name << "\"," << '\n';
         map << tab(4) << ".filename_lowercase = \"" << boost::to_lower_copy(unix_name) << "\"," << '\n';

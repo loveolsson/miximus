@@ -190,7 +190,7 @@ class node_impl : public node_i
             return;
         }
 
-        render::surface_s surface(surface_size, static_cast<render::surface_s::rgba_pixel_t*>(upload->ptr()));
+        render::surface_s surface(surface_size, upload->bytes());
         surface.clear({0, 0, 0, 0});
 
         // Position text with adequate padding from the top-left

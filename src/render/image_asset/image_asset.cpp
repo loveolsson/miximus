@@ -29,10 +29,11 @@ uint8_t rec709_to_linear(uint8_t value)
 
 std::shared_ptr<const image_asset_s> create_image_asset(std::string_view resource_path)
 {
-    const auto encoded     = static_files::get_resource_files().get_file_or_throw(resource_path).unzip();
-    const auto image       = stb::decode_image(std::as_bytes(std::span{encoded}), stb::image_channels_e::rgba);
-    const auto dimensions  = gpu::vec2i_t{image.width(), image.height()};
-    const auto pixel_count = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y);
+    const auto encoded      = static_files::get_resource_files().get_file_or_throw(resource_path).unzip();
+    const auto image        = stb::decode_image(std::as_bytes(std::span{encoded}), stb::image_channels_e::rgba);
+    const auto image_pixels = image.pixels();
+    const auto dimensions   = gpu::vec2i_t{image.width(), image.height()};
+    const auto pixel_count  = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y);
 
     auto asset = std::make_shared<image_asset_s>(image_asset_s{
         .dimensions = dimensions,
@@ -42,10 +43,10 @@ std::shared_ptr<const image_asset_s> create_image_asset(std::string_view resourc
         constexpr size_t channel_count = 4;
         const size_t     offset        = i * channel_count;
         asset->pixels[i]               = {
-            rec709_to_linear(image.data()[offset]),
-            rec709_to_linear(image.data()[offset + 1]),
-            rec709_to_linear(image.data()[offset + 2]),
-            image.data()[offset + 3],
+            rec709_to_linear(image_pixels[offset]),
+            rec709_to_linear(image_pixels[offset + 1]),
+            rec709_to_linear(image_pixels[offset + 2]),
+            image_pixels[offset + 3],
         };
     }
     return asset;
@@ -61,9 +62,7 @@ gpu::vec2i_t image_asset_dimensions(const image_asset_s& asset) { return asset.d
 
 void draw_image_asset(surface_s& surface, const image_asset_s& asset, gpu::vec2i_t position)
 {
-    surface.source_over(asset.pixels.data(),
-                        asset.dimensions,
-                        sizeof(surface_s::rgba_pixel_t) * static_cast<size_t>(asset.dimensions.x),
+    surface.source_over(strided_image_view_s<surface_s::rgba_pixel_t>::packed(asset.pixels, asset.dimensions),
                         position);
 }
 

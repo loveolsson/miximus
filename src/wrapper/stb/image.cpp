@@ -26,11 +26,6 @@ decoded_image_s::decoded_image_s(int                                            
 {
 }
 
-size_t decoded_image_s::byte_size() const
-{
-    return static_cast<size_t>(width_) * static_cast<size_t>(height_) * static_cast<size_t>(channels_);
-}
-
 decoded_image_s decode_image(std::span<const std::byte> encoded, image_channels_e channels)
 {
     if (encoded.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {

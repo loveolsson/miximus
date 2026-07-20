@@ -441,9 +441,13 @@ texture_upload_lease_s& texture_upload_lease_s::operator=(texture_upload_lease_s
     return *this;
 }
 
-void* texture_upload_lease_s::ptr() const { return slot_ ? slot_->backend->data() : nullptr; }
-
-size_t texture_upload_lease_s::size() const { return slot_ ? slot_->backend->size() : 0; }
+std::span<std::byte> texture_upload_lease_s::bytes() const
+{
+    if (!slot_) {
+        return {};
+    }
+    return {static_cast<std::byte*>(slot_->backend->data()), slot_->backend->size()};
+}
 
 uint64_t texture_upload_lease_s::version() const { return slot_ ? slot_->version : 0; }
 

@@ -83,7 +83,8 @@ class node_impl : public node_i
             }
 
             const utils::flicks pts(static_cast<utils::flicks::rep>(frame->tag()));
-            const auto          frame_rate = frame_rate_.load(std::memory_order_relaxed);
+            const auto          frame_rate  = frame_rate_.load(std::memory_order_relaxed);
+            const auto          frame_bytes = frame->bytes();
 
             NDIlib_video_frame_v2_t ndi_frame{};
             const auto              dim    = stream->desc().requirements.dimensions;
@@ -91,7 +92,7 @@ class node_impl : public node_i
             ndi_frame.yres                 = dim.y;
             ndi_frame.FourCC               = NDIlib_FourCC_video_type_RGBA;
             ndi_frame.line_stride_in_bytes = dim.x * 4;
-            ndi_frame.p_data               = static_cast<uint8_t*>(frame->ptr());
+            ndi_frame.p_data               = ndi_sdk::send_buffer(frame_bytes);
             ndi_frame.frame_rate_N         = frame_rate.numerator;
             ndi_frame.frame_rate_D         = frame_rate.denominator;
             ndi_frame.frame_format_type    = NDIlib_frame_format_type_progressive;

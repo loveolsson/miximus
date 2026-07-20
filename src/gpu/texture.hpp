@@ -65,7 +65,6 @@ class texture_s
 
     void        bind(GLuint sampler) const;
     static void unbind(GLuint sampler);
-    void        upload(const void* data) const;
     void        generate_mip_maps() const;
 };
 

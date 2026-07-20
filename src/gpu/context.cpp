@@ -178,7 +178,7 @@ context_s::context_s(bool visible, context_s* parent)
                 return GLFWimage{
                     .width  = logo.width(),
                     .height = logo.height(),
-                    .pixels = logo.data(),
+                    .pixels = logo.pixels().data(),
                 };
             });
 

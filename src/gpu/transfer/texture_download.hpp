@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 
 namespace miximus::gpu {
 class context_s;
@@ -70,10 +71,9 @@ class texture_download_frame_s
     texture_download_frame_s(texture_download_frame_s&&) noexcept;
     texture_download_frame_s& operator=(texture_download_frame_s&&) noexcept;
 
-    void*    ptr() const;
-    size_t   size() const;
-    uint64_t tag() const;
-    explicit operator bool() const { return slot_ != nullptr; }
+    std::span<const std::byte> bytes() const;
+    uint64_t                   tag() const;
+    explicit                   operator bool() const { return slot_ != nullptr; }
 };
 
 class texture_download_stream_s

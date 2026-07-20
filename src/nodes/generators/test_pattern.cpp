@@ -52,7 +52,7 @@ void generate_pattern(gpu::vec2i_t                          dimensions,
                       bool                                  show_logo,
                       gpu::transfer::texture_upload_lease_s upload)
 {
-    render::surface_s surface(dimensions, static_cast<render::surface_s::rgba_pixel_t*>(upload.ptr()));
+    render::surface_s surface(dimensions, upload.bytes());
     render::render_test_pattern(surface, pattern);
     if (show_logo) {
         render::render_test_pattern_logo(surface);

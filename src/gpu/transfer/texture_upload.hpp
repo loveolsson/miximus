@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 
 namespace miximus::gpu {
 class context_s;
@@ -47,11 +48,10 @@ class texture_upload_lease_s
     texture_upload_lease_s(texture_upload_lease_s&&) noexcept;
     texture_upload_lease_s& operator=(texture_upload_lease_s&&) noexcept;
 
-    void*    ptr() const;
-    size_t   size() const;
-    uint64_t version() const;
-    void     submit();
-    explicit operator bool() const { return slot_ != nullptr; }
+    std::span<std::byte> bytes() const;
+    uint64_t             version() const;
+    void                 submit();
+    explicit             operator bool() const { return slot_ != nullptr; }
 };
 
 class texture_upload_stream_s
