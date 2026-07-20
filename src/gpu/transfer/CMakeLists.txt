@@ -6,6 +6,7 @@ PRIVATE
     detail/backend_factory.cpp
     detail/requirements.hpp
     detail/requirements.cpp
+    detail/transfer_worker.hpp
     texture_transfer.hpp
     texture_upload_fwd.hpp
     texture_upload.hpp

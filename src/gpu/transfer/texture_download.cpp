@@ -5,17 +5,14 @@
 #include "gpu/sync.hpp"
 #include "gpu/transfer/detail/backend_factory.hpp"
 #include "gpu/transfer/detail/requirements.hpp"
+#include "gpu/transfer/detail/transfer_worker.hpp"
 #include "logger/logger.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <deque>
-#include <limits>
 #include <mutex>
 #include <stdexcept>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -37,27 +34,6 @@ enum class task_type_e : uint8_t
     destroy_stream,
 };
 
-size_t checked_add(size_t lhs, size_t rhs)
-{
-    if (rhs > std::numeric_limits<size_t>::max() - lhs) {
-        throw std::overflow_error("texture download allocation size overflow");
-    }
-    return lhs + rhs;
-}
-
-size_t estimate_slot_bytes(const texture_download_desc_s& desc)
-{
-    // Conservatively account for the CPU/PBO transfer allocation and the
-    // render-target texture.
-    const auto texture_bytes =
-        texture_s::estimate_storage_byte_size(desc.requirements.dimensions, desc.requirements.format);
-    // CUDA readback owns pinned host storage and an interop PBO. Other
-    // backends use no more, so this is a conservative backend-independent cap.
-    if (desc.requirements.byte_size > std::numeric_limits<size_t>::max() / 2) {
-        throw std::overflow_error("texture download allocation size overflow");
-    }
-    return checked_add(desc.requirements.byte_size * 2, texture_bytes);
-}
 } // namespace
 
 struct texture_download_slot_s
@@ -93,51 +69,11 @@ struct task_s
     std::shared_ptr<texture_download_slot_s>         slot;
 };
 
-struct texture_download_service_state_s : std::enable_shared_from_this<texture_download_service_state_s>
+struct texture_download_service_state_s : transfer_worker_s<texture_download_service_state_s, task_s>
 {
-    std::mutex              queue_mutex;
-    std::condition_variable queue_cv;
-    std::deque<task_s>      tasks;
-    bool                    stopping{};
-
-    std::unique_ptr<context_s> context;
-    std::thread                worker;
-    const size_t               memory_budget;
-    std::atomic_size_t         memory_usage;
-
     texture_download_service_state_s(context_s* parent, size_t budget)
-        : context(context_s::create_unique_context(false, parent))
-        , memory_budget(budget)
+        : transfer_worker_s(parent, budget)
     {
-    }
-
-    void start()
-    {
-        auto self = shared_from_this();
-        worker    = std::thread([self = std::move(self)] { self->run(); });
-    }
-
-    void enqueue(task_s task)
-    {
-        {
-            const std::scoped_lock lock(queue_mutex);
-            if (stopping) {
-                return;
-            }
-            tasks.emplace_back(std::move(task));
-        }
-        queue_cv.notify_one();
-    }
-
-    bool reserve_memory(size_t bytes)
-    {
-        auto current = memory_usage.load(std::memory_order_relaxed);
-        while (bytes <= memory_budget && current <= memory_budget - bytes) {
-            if (memory_usage.compare_exchange_weak(current, current + bytes, std::memory_order_relaxed)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     void release_slot(texture_download_slot_s& slot)
@@ -152,7 +88,7 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
         }
         slot.backend.reset();
         slot.texture.reset();
-        memory_usage.fetch_sub(slot.reserved_bytes, std::memory_order_relaxed);
+        release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
     }
 
@@ -161,7 +97,7 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
         size_t reserved{};
         bool   reserved_memory{};
         try {
-            reserved = estimate_slot_bytes(stream->desc);
+            reserved = estimate_slot_memory_usage(stream->desc.requirements);
             if (!reserve_memory(reserved)) {
                 throw std::bad_alloc();
             }
@@ -175,11 +111,10 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
                 create_backend(stream->desc.requirements, backend_i::direction_e::gpu_to_cpu, slot->texture.get());
             slot->backend = std::move(backend.backend);
 
-            const auto actual_reserved =
-                checked_add(backend.allocation_bytes,
-                            texture_s::estimate_storage_byte_size(stream->desc.requirements.dimensions,
-                                                                  stream->desc.requirements.format));
-            memory_usage.fetch_sub(reserved - actual_reserved, std::memory_order_relaxed);
+            const auto actual_reserved = slot_memory_usage(stream->desc.requirements, backend.allocation_bytes);
+            if (!resize_memory_reservation(reserved, actual_reserved)) {
+                throw std::bad_alloc();
+            }
             reserved             = actual_reserved;
             slot->reserved_bytes = actual_reserved;
             context_s::flush();
@@ -196,7 +131,7 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
             stream->free_slots.emplace_back(std::move(slot));
         } catch (const std::exception& error) {
             if (reserved_memory) {
-                memory_usage.fetch_sub(reserved, std::memory_order_relaxed);
+                release_memory(reserved);
             }
             {
                 const std::scoped_lock lock(stream->mutex);
@@ -254,62 +189,19 @@ struct texture_download_service_state_s : std::enable_shared_from_this<texture_d
         return true;
     }
 
-    void run()
+    bool process_task(task_s& task)
     {
-        const context_scope_s context_scope(*context);
-        std::deque<task_s>    delayed;
-        while (true) {
-            task_s task{};
-            {
-                std::unique_lock lock(queue_mutex);
-                if (tasks.empty() && !stopping) {
-                    if (delayed.empty()) {
-                        queue_cv.wait(lock, [this] { return stopping || !tasks.empty(); });
-                    } else {
-                        queue_cv.wait_for(
-                            lock, std::chrono::milliseconds(1), [this] { return stopping || !tasks.empty(); });
-                    }
-                }
-                if (stopping && tasks.empty() && delayed.empty()) {
-                    break;
-                }
-                if (!tasks.empty()) {
-                    task = std::move(tasks.front());
-                    tasks.pop_front();
-                } else if (!delayed.empty()) {
-                    task = std::move(delayed.front());
-                    delayed.pop_front();
-                } else {
-                    continue;
-                }
-            }
-
-            switch (task.type) {
-                case task_type_e::allocate:
-                    allocate_slot(task.stream);
-                    break;
-                case task_type_e::download:
-                    download_slot(task.stream, task.slot);
-                    break;
-                case task_type_e::destroy_stream:
-                    if (!destroy_stream(task.stream)) {
-                        delayed.emplace_back(std::move(task));
-                    }
-                    break;
-            }
+        switch (task.type) {
+            case task_type_e::allocate:
+                allocate_slot(task.stream);
+                return true;
+            case task_type_e::download:
+                download_slot(task.stream, task.slot);
+                return true;
+            case task_type_e::destroy_stream:
+                return destroy_stream(task.stream);
         }
-    }
-
-    void stop()
-    {
-        {
-            const std::scoped_lock lock(queue_mutex);
-            stopping = true;
-        }
-        queue_cv.notify_one();
-        if (worker.joinable()) {
-            worker.join();
-        }
+        return true;
     }
 };
 } // namespace miximus::gpu::transfer::detail
@@ -562,8 +454,8 @@ std::shared_ptr<texture_download_stream_s> texture_download_service_s::create_st
     return std::shared_ptr<texture_download_stream_s>(new texture_download_stream_s(std::move(stream)));
 }
 
-size_t texture_download_service_s::memory_usage() const { return state_->memory_usage.load(std::memory_order_relaxed); }
+size_t texture_download_service_s::memory_usage() const { return state_->memory_usage(); }
 
-size_t texture_download_service_s::memory_budget() const { return state_->memory_budget; }
+size_t texture_download_service_s::memory_budget() const { return state_->memory_budget(); }
 
 } // namespace miximus::gpu::transfer

@@ -5,6 +5,23 @@
 #include <stdexcept>
 
 namespace miximus::gpu::transfer::detail {
+namespace {
+size_t checked_add(size_t lhs, size_t rhs)
+{
+    if (rhs > std::numeric_limits<size_t>::max() - lhs) {
+        throw std::overflow_error("texture transfer allocation size overflow");
+    }
+    return lhs + rhs;
+}
+
+size_t checked_multiply(size_t lhs, size_t rhs)
+{
+    if (lhs != 0 && rhs > std::numeric_limits<size_t>::max() / lhs) {
+        throw std::overflow_error("texture transfer allocation size overflow");
+    }
+    return lhs * rhs;
+}
+} // namespace
 
 void normalize_requirements(texture_transfer_requirements_s& requirements)
 {
@@ -36,6 +53,20 @@ void normalize_requirements(texture_transfer_requirements_s& requirements)
     if (!std::has_single_bit(requirements.address_alignment)) {
         throw std::invalid_argument("texture transfer address alignment must be a power of two");
     }
+}
+
+size_t estimate_slot_memory_usage(const texture_transfer_requirements_s& requirements)
+{
+    // CUDA may own both pinned host storage and an interop PBO. Other
+    // asynchronous backends use no more, so this is a conservative cap.
+    return checked_add(checked_multiply(requirements.byte_size, 2),
+                       texture_s::estimate_storage_byte_size(requirements.dimensions, requirements.format));
+}
+
+size_t slot_memory_usage(const texture_transfer_requirements_s& requirements, size_t backend_allocation_bytes)
+{
+    return checked_add(backend_allocation_bytes,
+                       texture_s::estimate_storage_byte_size(requirements.dimensions, requirements.format));
 }
 
 } // namespace miximus::gpu::transfer::detail
