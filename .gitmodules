@@ -1,15 +1,9 @@
 [submodule "submodules/glad"]
 	path = submodules/glad
 	url = https://github.com/Dav1dde/glad.git
-[submodule "submodules/gzip-hpp"]
-	path = submodules/gzip-hpp
-	url = https://github.com/mapbox/gzip-hpp.git
 [submodule "submodules/stb"]
 	path = submodules/stb
 	url = https://github.com/nothings/stb.git
-[submodule "submodules/frozen"]
-	path = submodules/frozen
-	url = https://github.com/serge-sans-paille/frozen.git
 [submodule "submodules/sanitizers-cmake"]
 	path = submodules/sanitizers-cmake
 	url = https://github.com/arsenm/sanitizers-cmake.git

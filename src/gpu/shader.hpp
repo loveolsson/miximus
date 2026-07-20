@@ -3,6 +3,7 @@
 #include "gpu/vertex.hpp"
 #include "utils/transparent_string_hash.hpp"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -74,9 +75,9 @@ inline void shader_program_s::set_vertex_type()
     for (GLuint i = 0; i < attributes_.size(); ++i) {
         const auto& attr = attributes_[i];
 
-        auto it = info.find(attr.name);
+        const auto it = std::ranges::find(info, attr.name, &vertex_attr_info_s::name);
         if (it != info.end()) {
-            const vertex_attr& v = it->second;
+            const vertex_attr& v = it->attr;
 
             glEnableVertexAttribArray(attr.loc);
             glVertexAttribPointer(attr.loc, v.size, v.type, v.norm, sizeof(T), reinterpret_cast<void*>(v.offset));

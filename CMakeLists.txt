@@ -28,7 +28,6 @@ set(Boost_USE_RELEASE_LIBS ON)
 find_package(Boost REQUIRED COMPONENTS fiber url CONFIG)
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/frozen/include
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/fiberpool/include
 )
 

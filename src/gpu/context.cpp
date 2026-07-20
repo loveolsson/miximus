@@ -11,7 +11,6 @@
 #define GLFW_INCLUDE_NONE
 
 #include <GLFW/glfw3.h>
-#include <frozen/map.h>
 
 #include <algorithm>
 #include <array>
@@ -327,17 +326,29 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
         return it->second.get();
     }
 
-    constexpr auto shaderInfo = frozen::make_map<name_e, std::pair<std::string_view, std::string_view>>({
-        {name_e::basic,       {"shaders/basic.vs.glsl", "shaders/basic.fs.glsl"}      },
-        {name_e::yuv_to_rgb,  {"shaders/basic.vs.glsl", "shaders/from_yuv.fs.glsl"}   },
-        {name_e::rgb_to_yuv,  {"shaders/basic.vs.glsl", "shaders/to_yuv.fs.glsl"}     },
-        {name_e::apply_gamma, {"shaders/basic.vs.glsl", "shaders/apply_gamma.fs.glsl"}},
-        {name_e::strip_gamma, {"shaders/basic.vs.glsl", "shaders/strip_gamma.fs.glsl"}},
-    });
+    constexpr std::string_view vertex_shader = "shaders/basic.vs.glsl";
+    std::string_view           fragment_shader;
+    switch (name) {
+        case name_e::basic:
+            fragment_shader = "shaders/basic.fs.glsl";
+            break;
+        case name_e::yuv_to_rgb:
+            fragment_shader = "shaders/from_yuv.fs.glsl";
+            break;
+        case name_e::rgb_to_yuv:
+            fragment_shader = "shaders/to_yuv.fs.glsl";
+            break;
+        case name_e::apply_gamma:
+            fragment_shader = "shaders/apply_gamma.fs.glsl";
+            break;
+        case name_e::strip_gamma:
+            fragment_shader = "shaders/strip_gamma.fs.glsl";
+            break;
+        default:
+            throw std::invalid_argument("Unknown shader program");
+    }
 
-    const auto& info = shaderInfo.at(name);
-
-    auto [it, _] = shaders_.emplace(name, std::make_unique<shader_program_s>(info.first, info.second));
+    auto [it, _] = shaders_.emplace(name, std::make_unique<shader_program_s>(vertex_shader, fragment_shader));
 
     return it->second.get();
 }

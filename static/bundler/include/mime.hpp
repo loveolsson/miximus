@@ -1,15 +1,21 @@
 #pragma once
 #include <boost/algorithm/string.hpp>
-#include <frozen/map.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <string_view>
 
 static std::string_view get_mime(const std::filesystem::path& name)
 {
+    struct mime_type_s
+    {
+        std::string_view extension;
+        std::string_view mime;
+    };
+
     // Stripped version of NGINX default types, with charset for applicable types
-    constexpr auto mime_types = frozen::make_map<std::string_view, std::string_view>({
+    constexpr auto mime_types = std::to_array<mime_type_s>({
         {".html",    "text/html;charset=UTF-8"                 },
         {".htm",     "text/html;charset=UTF-8"                 },
         {".shtml",   "text/html;charset=UTF-8"                 },
@@ -100,9 +106,9 @@ static std::string_view get_mime(const std::filesystem::path& name)
     auto ext = name.extension().string();
     boost::to_lower(ext);
 
-    const auto it = mime_types.find(ext);
+    const auto it = std::ranges::find(mime_types, std::string_view{ext}, &mime_type_s::extension);
     if (it != mime_types.end()) {
-        return it->second;
+        return it->mime;
     }
 
     return "application/octet-stream";

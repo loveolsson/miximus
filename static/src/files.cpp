@@ -5,24 +5,57 @@
 
 #include "static_files/files.hpp"
 
-#include <gzip/decompress.hpp>
-
+#ifndef ZLIB_CONST
+#define ZLIB_CONST
+#endif
 #include <algorithm>
 #include <format>
+#include <limits>
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <zlib.h>
 
 namespace miximus::static_files {
 
 std::string file_record_s::unzip() const
 {
-    auto data = gzip::decompress(reinterpret_cast<const char*>(gzipped.data()), gzipped.size());
-
-    if (data.size() != size) {
-        throw std::runtime_error(
-            std::format("Unzipped file \"{}\" has size {} instead of expected size {}", filename, data.size(), size));
+    if (gzipped.size() > std::numeric_limits<uInt>::max() || size >= std::numeric_limits<uInt>::max()) {
+        throw std::length_error(std::format("Bundled file \"{}\" is too large for zlib", filename));
     }
+
+    // Keep one spare output byte so zlib can consume and validate the trailer
+    // even when the expected output size is exact or zero.
+    std::string data(size + 1, '\0');
+
+    z_stream stream{};
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+    const int init_result = inflateInit2(&stream, MAX_WBITS + 16);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+    if (init_result != Z_OK) {
+        throw std::runtime_error(std::format("Failed to initialize zlib for \"{}\"", filename));
+    }
+
+    stream.next_in   = reinterpret_cast<const Bytef*>(gzipped.data());
+    stream.avail_in  = static_cast<uInt>(gzipped.size());
+    stream.next_out  = reinterpret_cast<Bytef*>(data.data());
+    stream.avail_out = static_cast<uInt>(data.size());
+
+    const int  inflate_result = inflate(&stream, Z_FINISH);
+    const auto output_size    = static_cast<size_t>(stream.total_out);
+    const auto remaining      = stream.avail_in;
+    const int  end_result     = inflateEnd(&stream);
+
+    if (inflate_result != Z_STREAM_END || end_result != Z_OK || remaining != 0 || output_size != size) {
+        throw std::runtime_error(std::format("Failed to unzip file \"{}\" (zlib error {})", filename, inflate_result));
+    }
+
+    data.resize(size);
 
     return data;
 }

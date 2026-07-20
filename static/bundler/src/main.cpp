@@ -4,8 +4,10 @@
 #include "tab.hpp"
 
 #include <boost/uuid/detail/sha1.hpp>
-#include <gzip/compress.hpp>
 
+#ifndef ZLIB_CONST
+#define ZLIB_CONST
+#endif
 #include <algorithm>
 #include <array>
 #include <exception>
@@ -15,14 +17,91 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <zlib.h>
 
 constexpr size_t BYTES_PER_LINE = 18;
 
 namespace {
+class deflate_scope_s
+{
+    z_stream* stream_;
+
+  public:
+    explicit deflate_scope_s(z_stream* stream)
+        : stream_(stream)
+    {
+    }
+
+    ~deflate_scope_s()
+    {
+        if (stream_ != nullptr) {
+            deflateEnd(stream_);
+        }
+    }
+
+    deflate_scope_s(const deflate_scope_s&)            = delete;
+    deflate_scope_s(deflate_scope_s&&)                 = delete;
+    deflate_scope_s& operator=(const deflate_scope_s&) = delete;
+    deflate_scope_s& operator=(deflate_scope_s&&)      = delete;
+
+    int close()
+    {
+        const int result = deflateEnd(stream_);
+        stream_          = nullptr;
+        return result;
+    }
+};
+
+std::string compress_gzip(std::string_view data)
+{
+    if (data.size() > std::numeric_limits<uInt>::max()) {
+        throw std::length_error("File is too large for zlib");
+    }
+
+    z_stream stream{};
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+    const int init_result =
+        deflateInit2(&stream, Z_BEST_COMPRESSION, Z_DEFLATED, MAX_WBITS + 16, 8, Z_DEFAULT_STRATEGY);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+    if (init_result != Z_OK) {
+        throw std::runtime_error("Failed to initialize zlib");
+    }
+    deflate_scope_s deflate_scope(&stream);
+
+    const auto output_capacity = deflateBound(&stream, static_cast<uLong>(data.size()));
+    if (output_capacity > std::numeric_limits<uInt>::max()) {
+        throw std::length_error("Compressed file is too large for zlib");
+    }
+
+    std::string output(static_cast<size_t>(output_capacity), '\0');
+    stream.next_in   = reinterpret_cast<const Bytef*>(data.data());
+    stream.avail_in  = static_cast<uInt>(data.size());
+    stream.next_out  = reinterpret_cast<Bytef*>(output.data());
+    stream.avail_out = static_cast<uInt>(output.size());
+
+    const int         deflate_result = deflate(&stream, Z_FINISH);
+    const auto        output_size    = static_cast<size_t>(stream.total_out);
+    const std::string error_message  = stream.msg != nullptr ? stream.msg : "failed to finish gzip stream";
+    const int         end_result     = deflate_scope.close();
+
+    if (deflate_result != Z_STREAM_END || end_result != Z_OK) {
+        throw std::runtime_error(std::format("Failed to compress file: {}", error_message));
+    }
+
+    output.resize(output_size);
+    return output;
+}
+
 int bundle(const std::filesystem::path& src,
            const std::filesystem::path& dst,
            std::string_view             nspace,
@@ -78,7 +157,7 @@ int bundle(const std::filesystem::path& src,
         std::string file_data((str_itr(file)), str_itr());
 
         // Compress the buffer
-        const auto compressed = gzip::compress(file_data.data(), file_data.size(), Z_BEST_COMPRESSION);
+        const auto compressed = compress_gzip(file_data);
         const auto arr_size   = compressed.size();
 
         // SHA-1 of uncompressed data, used as ETag

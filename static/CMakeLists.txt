@@ -80,7 +80,6 @@ add_library(static_files SHARED
 )
 
 target_include_directories(static_files PUBLIC include)
-target_include_directories(static_files PRIVATE ${CMAKE_SOURCE_DIR}/submodules/gzip-hpp/include)
 
 set_target_properties(static_files PROPERTIES
   CXX_VISIBILITY_PRESET hidden
