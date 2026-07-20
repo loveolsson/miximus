@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <glm/vec4.hpp>
 #include <memory>
-#include <string_view>
 
 namespace miximus::render {
 
@@ -39,8 +38,6 @@ class surface_s
     void source_over(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos);
     void source_over(gpu::recti_s rect, const rgba_pixel_t& color);
     void source_over_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color);
-    static gpu::vec2i_t asset_dimensions(std::string_view resource_path);
-    void                draw_asset(std::string_view resource_path, gpu::vec2i_t position);
 
     void clear(const rgba_pixel_t& color);
     void fill(gpu::recti_s rect, const rgba_pixel_t& color);

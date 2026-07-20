@@ -6,9 +6,9 @@
 #include "logger/logger.hpp"
 #include "shader.hpp"
 #include "static_files/files.hpp"
+#include "wrapper/stb/image.hpp"
 
 #define GLFW_INCLUDE_NONE
-#include "stb_image.h"
 
 #include <GLFW/glfw3.h>
 #include <frozen/map.h>
@@ -19,6 +19,7 @@
 #include <format>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -33,29 +34,16 @@ constexpr int DEFAULT_CTX_HEIGHT = 480;
 
 const auto _log = [] { return getlog("gpu"); };
 
-GLFWimage load_image(std::string_view filename)
+stb::decoded_image_s load_image(std::string_view filename)
 {
     const auto file_data = static_files::get_resource_files().get_file_or_throw(filename).unzip();
+    auto       image     = stb::decode_image(std::as_bytes(std::span{file_data}), stb::image_channels_e::rgba);
 
-    GLFWimage img    = {};
-    int       res_ch = 0;
-    img.pixels       = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(file_data.data()),
-                                       static_cast<int>(file_data.size()),
-                                       &img.width,
-                                       &img.height,
-                                       &res_ch,
-                                       4);
-
-    if (img.pixels == nullptr) {
-        throw std::runtime_error(std::format("Failed to load logo {}", filename));
-    }
-
-    if (res_ch != 4) {
-        stbi_image_free(img.pixels);
+    if (image.source_channels() != 4) {
         throw std::runtime_error(std::format("Logo {} is not RGBA", filename));
     }
 
-    return img;
+    return image;
 }
 
 } // namespace
@@ -180,17 +168,21 @@ context_s::context_s(bool visible, context_s* parent)
         // glfwSetWindowIcon is not supported on Wayland (GLFW_FEATURE_UNAVAILABLE).
         // On Wayland the taskbar icon is provided by the .desktop file instead.
         if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) {
-            const auto logos = std::array{
+            auto logos = std::array{
                 load_image("images/miximus_32x32.png"),
                 load_image("images/miximus_64x64.png"),
                 load_image("images/miximus_128x128.png"),
             };
+            std::array<GLFWimage, 3> glfw_logos{};
+            std::ranges::transform(logos, glfw_logos.begin(), [](auto& logo) {
+                return GLFWimage{
+                    .width  = logo.width(),
+                    .height = logo.height(),
+                    .pixels = logo.data(),
+                };
+            });
 
-            glfwSetWindowIcon(window_, logos.size(), logos.data());
-
-            for (const auto& logo : logos) {
-                stbi_image_free(logo.pixels);
-            }
+            glfwSetWindowIcon(window_, static_cast<int>(glfw_logos.size()), glfw_logos.data());
         }
     }
 

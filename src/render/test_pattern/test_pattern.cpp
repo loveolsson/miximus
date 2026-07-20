@@ -1,6 +1,7 @@
 #include "test_pattern.hpp"
 
 #include "gpu/types.hpp"
+#include "render/image_asset/image_asset.hpp"
 #include "render/surface/surface.hpp"
 
 #include <algorithm>
@@ -271,7 +272,8 @@ void render_test_pattern_logo(surface_s& surface)
 {
     const auto maximum_size = surface.dimensions() / 5;
     for (const auto resource_path : LOGO_PATHS) {
-        const auto logo_dimensions = surface_s::asset_dimensions(resource_path);
+        const auto logo            = load_image_asset(resource_path);
+        const auto logo_dimensions = image_asset_dimensions(*logo);
         if (logo_dimensions.x > maximum_size.x || logo_dimensions.y > maximum_size.y) {
             continue;
         }
@@ -285,7 +287,7 @@ void render_test_pattern_logo(surface_s& surface)
         const gpu::vec2i_t circle_dimensions{circle_diameter};
         const auto         circle_position = logo_position - ((circle_dimensions - logo_dimensions) / 2);
         surface.source_over_ellipse(make_rect(circle_position, circle_dimensions), LOGO_BORDER);
-        surface.draw_asset(resource_path, logo_position);
+        draw_image_asset(surface, *logo, logo_position);
         return;
     }
 }

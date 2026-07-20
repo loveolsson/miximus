@@ -1,6 +1,7 @@
 add_library(render)
 
 add_subdirectory(font)
+add_subdirectory(image_asset)
 add_subdirectory(surface)
 add_subdirectory(test_pattern)
 

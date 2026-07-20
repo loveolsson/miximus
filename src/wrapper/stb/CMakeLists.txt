@@ -1,10 +1,11 @@
 add_library(stb
-    stb_impl.cpp
+    image.cpp
+    image.hpp
 )
 
 target_compile_options(stb PRIVATE -w)
 
 target_include_directories(stb SYSTEM
-PUBLIC
+PRIVATE
     ${CMAKE_SOURCE_DIR}/submodules/stb
 )
