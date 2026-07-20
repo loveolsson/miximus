@@ -37,6 +37,7 @@ export const enum type_e {
   teleprompter = "teleprompter",
   text = "text",
   sinus_source = "sinus_source",
+  circle_source = "circle_source",
   draw_box = "draw_box",
   infinite_multiviewer = "infinite_multiviewer",
 }

@@ -3,4 +3,5 @@ PRIVATE
     register.hpp
     register.cpp
     sinus_source.cpp
+    circle_source.cpp
 )

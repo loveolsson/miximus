@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <memory>
+#include <numbers>
 
 namespace {
 using namespace miximus;
@@ -23,9 +24,11 @@ class node_impl : public node_i
         auto size   = state.get_option<double>("size");
         auto center = state.get_option<double>("center");
         auto speed  = state.get_option<double>("speed");
+        auto phase  = state.get_option<double>("phase");
 
-        const double s   = utils::to_seconds(app->frame_info.pts);
-        const double res = (std::sin(s * speed) * size) + center;
+        const double s             = utils::to_seconds(app->frame_info.pts);
+        const double phase_radians = phase * std::numbers::pi_v<double> / 180.0;
+        const double res           = (std::sin((s * speed) + phase_radians) * size) + center;
 
         iface_res_.set_value(res);
     }
@@ -37,12 +40,13 @@ class node_impl : public node_i
             {"size",   1             },
             {"center", 0             },
             {"speed",  0.1           },
+            {"phase",  0             },
         };
     }
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
-        if (name == "size" || name == "center" || name == "speed") {
+        if (name == "size" || name == "center" || name == "speed" || name == "phase") {
             return normalize_option_value<double>(value);
         }
 

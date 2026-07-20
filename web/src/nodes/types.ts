@@ -6,7 +6,7 @@ import { t_texture, t_framebuffer, t_f64, t_vec2, t_rect } from "./interface_typ
 import { F64MathNode, Vec2MathNode, F64LerpNode, Vec2LerpNode, RectLerpNode } from "./math";
 import { Vec2Node, RectNode, FrameBufferNode, FramebufferToTextureNode } from "./utils";
 import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
-import { SinusSourceNode } from "./debug";
+import { CircleSourceNode, SinusSourceNode } from "./debug";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
 import { NdiInputNode, NdiOutputNode } from "./ndi";
@@ -25,7 +25,8 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(FramebufferToTextureNode, { category: "Utils" });
   editor.registerNodeType(DrawBoxNode, { category: "Composite" });
   editor.registerNodeType(InfiniteMultiviewerNode, { category: "Composite" });
-  editor.registerNodeType(SinusSourceNode, { category: "Debug" });
+  editor.registerNodeType(SinusSourceNode, { category: "Generators" });
+  editor.registerNodeType(CircleSourceNode, { category: "Generators" });
   editor.registerNodeType(ScreenOutputNode, { category: "Output" });
   editor.registerNodeType(DeckLinkInputNode, { category: "Input" });
   editor.registerNodeType(DeckLinkOutputNode, { category: "Output" });
