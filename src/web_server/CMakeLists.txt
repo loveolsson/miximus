@@ -5,7 +5,10 @@ add_library(web_server
     payload_create.hpp
     payload_parse.hpp
     detail/server_impl.cpp
+    detail/server_api.cpp
+    detail/server_http.cpp
     detail/server_impl.hpp
+    detail/server_websocket.cpp
     detail/headers.cpp
     detail/headers.hpp
     detail/html.hpp

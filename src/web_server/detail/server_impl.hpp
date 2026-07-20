@@ -1,16 +1,20 @@
 #pragma once
-#include "static_files/files.hpp"
 #include "types/error.hpp"
+#include "utils/lookup.hpp"
 #include "web_server/detail/custom-config.hpp"
 #include "web_server/server.hpp"
 #include "websocket_connection.hpp"
 
 #include <websocketpp/common/asio.hpp>
 
+#include <array>
+#include <cstdint>
 #include <future>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <string_view>
 
 namespace miximus::web_server::detail {
@@ -28,6 +32,7 @@ class web_server_impl : public server_s
     void terminate_and_log(const con_hdl_t& hdl, const std::string& msg);
 
     void on_http(const con_hdl_t& hdl);
+    void serve_static_file(const server_t::connection_ptr& con, std::string_view path);
     void handle_api_request(const server_t::connection_ptr& con, const std::string& method, std::string_view api_path);
     void handle_api_v1_get_config(const server_t::connection_ptr& con) const;
     void handle_api_v1_post_control(const server_t::connection_ptr& con);
@@ -65,10 +70,10 @@ class web_server_impl : public server_s
     web_server_impl();
     ~web_server_impl() = default;
 
-    virtual void subscribe(topic_e topic, const callback_t& callback) override;
-    virtual void set_config_getters(const config_getters_t& getters) override;
-    virtual void start(uint16_t port, boost::asio::io_context* service) override;
-    void         stop() final;
+    void subscribe(topic_e topic, const callback_t& callback) final;
+    void set_config_getters(const config_getters_t& getters) final;
+    void start(uint16_t port, boost::asio::io_context* service) final;
+    void stop() final;
 
     void send_message(const nlohmann::json& msg, int64_t connection_id) final;
     void send_message_sync(const nlohmann::json& msg, int64_t connection_id) final;
