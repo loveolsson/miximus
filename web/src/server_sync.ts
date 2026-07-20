@@ -1,146 +1,134 @@
-/**
- * server_sync.ts — bridges BaklavaJS v2 graph events ↔ server WebSocket.
- *
- * Sentinel pattern:
- *   Server-initiated changes add the node/interface to a Set before mutating,
- *   and the event subscriber checks that Set to avoid echoing the change back.
- */
+/** Bridges BaklavaJS graph events with the authoritative server graph. */
 
 import { watch } from "vue";
 import type { IBaklavaViewModel } from "@baklavajs/renderer-vue";
-import type { AbstractNode, NodeInterface, Graph } from "@baklavajs/core";
+import type { AbstractNode, Graph, NodeInterface } from "@baklavajs/core";
 
 import { ws_wrapper } from "./websocket";
 import {
   action_e,
   topic_e,
   type_e,
+  type command_add_connection_s,
   type command_add_node_s,
+  type command_remove_connection_s,
   type command_remove_node_s,
   type command_update_node_s,
-  type command_add_connection_s,
-  type command_remove_connection_s,
   type connection_s,
   type options_s,
   type position_t,
 } from "./messages";
 import {
-  find_node,
-  find_interface,
-  find_node_and_key_for_interface,
   find_connection,
+  find_interface,
+  find_node,
+  find_node_and_key_for_interface,
 } from "./helpers";
 import { has_node_data } from "./nodes/interfaces";
 
 const POSITION_DEBOUNCE_MS = 250;
+const CONNECTION_MUTATION_KEY = Symbol("connection_mutation");
+
+type mutation_kind_t =
+  | "add_node"
+  | "remove_node"
+  | "set_value"
+  | "set_position"
+  | "set_title"
+  | "add_connection"
+  | "remove_connection";
+
+/**
+ * Baklava emits graph and interface changes synchronously. Track mutations
+ * applied from the server so their corresponding event handlers do not echo
+ * them back. Counts make nested mutations safe, and finally prevents a thrown
+ * Baklava callback from leaving suppression enabled.
+ */
+class server_mutation_guard_s {
+  private readonly active = new Map<mutation_kind_t, Map<unknown, number>>();
+
+  public contains(kind: mutation_kind_t, key: unknown): boolean {
+    return (this.active.get(kind)?.get(key) ?? 0) !== 0;
+  }
+
+  public run<T>(kind: mutation_kind_t, key: unknown, mutate: () => T): T {
+    const mutations = this.active.get(kind) ?? new Map<unknown, number>();
+    mutations.set(key, (mutations.get(key) ?? 0) + 1);
+    this.active.set(kind, mutations);
+
+    try {
+      return mutate();
+    } finally {
+      const remaining = (mutations.get(key) ?? 1) - 1;
+      if (remaining === 0) {
+        mutations.delete(key);
+        if (mutations.size === 0) this.active.delete(kind);
+      } else {
+        mutations.set(key, remaining);
+      }
+    }
+  }
+}
+
+function connection_payload(
+  graph: Graph,
+  from: NodeInterface,
+  to: NodeInterface,
+): connection_s | undefined {
+  const fromResult = find_node_and_key_for_interface(graph, from);
+  const toResult = find_node_and_key_for_interface(graph, to);
+  if (!fromResult || !toResult) return undefined;
+
+  return {
+    from_node: fromResult[0].id,
+    from_interface: fromResult[1],
+    to_node: toResult[0].id,
+    to_interface: toResult[1],
+  };
+}
+
+function assign_node_id(node: AbstractNode): void {
+  for (const intf of Object.values(node.inputs)) {
+    if (has_node_data(intf)) intf.nodeData.node_id = node.id;
+  }
+}
 
 export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
   const graph: Graph = baklava.editor.graph;
-  const token = Symbol("server_sync");
-
-  // ---- sentinel sets ----
-  // NOTE: graph.addNode() replaces the original node with its Vue reactive
-  // proxy before emitting the addNode event, so object identity cannot be
-  // used. Use the node ID (string) instead.
-  const serverAddedNodeIds = new Set<string>();
-  const serverRemovedNodeIds = new Set<string>();
-  const serverValueIntfs = new Set<NodeInterface>();
-  const serverPositionIds = new Set<string>();
-  const serverTitleIds = new Set<string>();
-  let _addingServerConn = false;
-  let _removingServerConn = false;
-
-  // ---- cleanup tracking ----
+  const eventToken = Symbol("server_sync");
+  const serverMutations = new server_mutation_guard_s();
   const positionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const nodeCleanups = new Map<string, () => void>();
 
-  // ==========================================================================
-  // Graph-level events
-  // ==========================================================================
+  function clearPositionTimer(nodeId: string): void {
+    const timer = positionTimers.get(nodeId);
+    if (timer !== undefined) clearTimeout(timer);
+    positionTimers.delete(nodeId);
+  }
 
-  graph.events.addNode.subscribe(token, (node) => {
-    const isServer = serverAddedNodeIds.has(node.id);
-    serverAddedNodeIds.delete(node.id);
-    _subscribeNode(node);
-    if (!isServer) {
-      setTimeout(() => _sendAddNode(node), 0);
-    }
-  });
-
-  graph.events.removeNode.subscribe(token, (node) => {
-    const isServer = serverRemovedNodeIds.has(node.id);
-    serverRemovedNodeIds.delete(node.id);
-    nodeCleanups.get(node.id)?.();
-    nodeCleanups.delete(node.id);
-    if (!isServer) {
-      ws.send<command_remove_node_s>({
-        action: action_e.command,
-        topic: topic_e.remove_node,
-        id: node.id,
-      });
-    }
-  });
-
-  graph.events.addConnection.subscribe(token, (connection) => {
-    if (_addingServerConn) return;
-    const fromResult = find_node_and_key_for_interface(graph, connection.from);
-    const toResult = find_node_and_key_for_interface(graph, connection.to);
-    if (!fromResult || !toResult) return;
-    ws.send<command_add_connection_s>(
-      {
-        action: action_e.command,
-        topic: topic_e.add_connection,
-        connection: {
-          from_node: fromResult[0].id,
-          from_interface: fromResult[1],
-          to_node: toResult[0].id,
-          to_interface: toResult[1],
-        },
-      },
-      (response) => {
-        if (response.action === action_e.error) {
-          // Server rejected the connection — roll back the local add.
-          // Use find_connection to obtain the concrete Connection instance
-          // (the event emits IConnection; removeConnection requires Connection).
-          const existing = find_connection(graph, connection.from, connection.to);
-          if (existing) {
-            _removingServerConn = true;
-            graph.removeConnection(existing);
-            _removingServerConn = false;
-          }
-        }
-      },
+  function debouncePosition(nodeId: string, position: position_t): void {
+    clearPositionTimer(nodeId);
+    positionTimers.set(
+      nodeId,
+      setTimeout(() => {
+        positionTimers.delete(nodeId);
+        ws.send<command_update_node_s>({
+          action: action_e.command,
+          topic: topic_e.update_node,
+          id: nodeId,
+          options: { node_visual_position: position },
+        });
+      }, POSITION_DEBOUNCE_MS),
     );
-  });
+  }
 
-  graph.events.removeConnection.subscribe(token, (connection) => {
-    if (_removingServerConn) return;
-    const fromResult = find_node_and_key_for_interface(graph, connection.from);
-    const toResult = find_node_and_key_for_interface(graph, connection.to);
-    if (!fromResult || !toResult) return;
-    ws.send<command_remove_connection_s>({
-      action: action_e.command,
-      topic: topic_e.remove_connection,
-      connection: {
-        from_node: fromResult[0].id,
-        from_interface: fromResult[1],
-        to_node: toResult[0].id,
-        to_interface: toResult[1],
-      },
-    });
-  });
-
-  // ==========================================================================
-  // Per-node subscriptions
-  // ==========================================================================
-
-  function _subscribeNode(node: AbstractNode): void {
+  function subscribeNode(node: AbstractNode): void {
     const nodeToken = Symbol(node.id);
-    const stoppers: Array<() => void> = [];
+    const stopWatching: Array<() => void> = [];
 
     for (const [key, intf] of Object.entries(node.inputs)) {
       intf.events.setValue.subscribe(nodeToken, (value) => {
-        if (serverValueIntfs.has(intf)) return;
+        if (serverMutations.contains("set_value", intf)) return;
         ws.send<command_update_node_s>({
           action: action_e.command,
           topic: topic_e.update_node,
@@ -150,25 +138,22 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
       });
     }
 
-    // Position — flush:'sync' so sentinel delete is immediate.
-    stoppers.push(
+    stopWatching.push(
       watch(
         () => node.position,
-        (pos) => {
-          if (!pos) return;
-          if (serverPositionIds.has(node.id)) return;
-          _debouncePosition(node.id, [pos.x, pos.y]);
+        (position) => {
+          if (!position || serverMutations.contains("set_position", node.id)) return;
+          debouncePosition(node.id, [position.x, position.y]);
         },
         { deep: true, flush: "sync" },
       ),
     );
 
-    // Title
-    stoppers.push(
+    stopWatching.push(
       watch(
         () => node.title,
         (title) => {
-          if (serverTitleIds.has(node.id)) return;
+          if (serverMutations.contains("set_title", node.id)) return;
           ws.send<command_update_node_s>({
             action: action_e.command,
             topic: topic_e.update_node,
@@ -184,32 +169,18 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
       for (const intf of Object.values(node.inputs)) {
         intf.events.setValue.unsubscribe(nodeToken);
       }
-      stoppers.forEach((s) => s());
-      const timer = positionTimers.get(node.id);
-      if (timer !== undefined) clearTimeout(timer);
-      positionTimers.delete(node.id);
+      for (const stop of stopWatching) stop();
+      clearPositionTimer(node.id);
     });
   }
 
-  function _debouncePosition(nodeId: string, pos: position_t): void {
-    const existing = positionTimers.get(nodeId);
-    if (existing !== undefined) clearTimeout(existing);
-    positionTimers.set(
-      nodeId,
-      setTimeout(() => {
-        positionTimers.delete(nodeId);
-        ws.send<command_update_node_s>({
-          action: action_e.command,
-          topic: topic_e.update_node,
-          id: nodeId,
-          options: { node_visual_position: pos },
-        });
-      }, POSITION_DEBOUNCE_MS),
-    );
+  function removeNodeSubscriptions(nodeId: string): void {
+    nodeCleanups.get(nodeId)?.();
+    nodeCleanups.delete(nodeId);
   }
 
-  function _sendAddNode(node: AbstractNode): void {
-    const pos = node.position;
+  function sendAddNode(node: AbstractNode): void {
+    const position = node.position;
     ws.send<command_add_node_s>(
       {
         action: action_e.command,
@@ -217,106 +188,153 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
         node: {
           type: node.type as type_e,
           id: node.id,
-          options: { node_visual_position: pos ? [pos.x, pos.y] : [0, 0] },
+          options: { node_visual_position: position ? [position.x, position.y] : [0, 0] },
         },
       },
       (response) => {
-        if (response.action === action_e.error) {
-          serverRemovedNodeIds.add(node.id);
-          graph.removeNode(node);
-        }
+        if (response.action !== action_e.error) return;
+        serverMutations.run("remove_node", node.id, () => graph.removeNode(node));
       },
     );
   }
 
-  // ==========================================================================
-  // Handlers for server-initiated changes
-  // ==========================================================================
+  // Client-originated graph changes.
+  graph.events.addNode.subscribe(eventToken, (node) => {
+    subscribeNode(node);
+    if (!serverMutations.contains("add_node", node.id)) {
+      // Baklava finishes wrapping a new node in its reactive proxy before this
+      // event. Defer the command until that local add has fully unwound.
+      setTimeout(() => sendAddNode(node), 0);
+    }
+  });
 
+  graph.events.removeNode.subscribe(eventToken, (node) => {
+    removeNodeSubscriptions(node.id);
+    if (!serverMutations.contains("remove_node", node.id)) {
+      ws.send<command_remove_node_s>({
+        action: action_e.command,
+        topic: topic_e.remove_node,
+        id: node.id,
+      });
+    }
+  });
+
+  graph.events.addConnection.subscribe(eventToken, (connection) => {
+    if (serverMutations.contains("add_connection", CONNECTION_MUTATION_KEY)) return;
+    const payload = connection_payload(graph, connection.from, connection.to);
+    if (!payload) return;
+
+    ws.send<command_add_connection_s>(
+      {
+        action: action_e.command,
+        topic: topic_e.add_connection,
+        connection: payload,
+      },
+      (response) => {
+        if (response.action !== action_e.error) return;
+        const existing = find_connection(graph, connection.from, connection.to);
+        if (!existing) return;
+        serverMutations.run("remove_connection", CONNECTION_MUTATION_KEY, () =>
+          graph.removeConnection(existing),
+        );
+      },
+    );
+  });
+
+  graph.events.removeConnection.subscribe(eventToken, (connection) => {
+    if (serverMutations.contains("remove_connection", CONNECTION_MUTATION_KEY)) return;
+    const payload = connection_payload(graph, connection.from, connection.to);
+    if (!payload) return;
+
+    ws.send<command_remove_connection_s>({
+      action: action_e.command,
+      topic: topic_e.remove_connection,
+      connection: payload,
+    });
+  });
+
+  // Server-originated graph changes.
   function handle_server_add_node(type: string, id: string): void {
     const info = baklava.editor.nodeTypes.get(type);
     if (!info) {
       console.warn(`[server_sync] Unknown node type: ${type}`);
       return;
     }
+
     const node = new info.type();
     node.id = id;
-    for (const intf of Object.values(node.inputs)) {
-      if (has_node_data(intf)) intf.nodeData.node_id = id;
-    }
-    serverAddedNodeIds.add(id);
-    graph.addNode(node);
+    assign_node_id(node);
+    serverMutations.run("add_node", id, () => graph.addNode(node));
   }
 
   function handle_server_remove_node(id: string): void {
     const node = find_node(graph, id);
     if (!node) return;
-    serverRemovedNodeIds.add(id);
-    graph.removeNode(node);
+    serverMutations.run("remove_node", id, () => graph.removeNode(node));
   }
 
   function handle_server_update_node(id: string, options: options_s): void {
     const node = find_node(graph, id);
     if (!node) return;
+
     for (const [key, value] of Object.entries(options)) {
       if (key === "node_visual_position" && Array.isArray(value)) {
-        const [px, py] = value as [number, number];
-        serverPositionIds.add(id);
-        node.position = { x: px, y: py };
-        serverPositionIds.delete(id);
-      } else if (key === "name" && typeof value === "string") {
-        serverTitleIds.add(id);
-        node.title = value;
-        serverTitleIds.delete(id);
-      } else {
-        const intf = node.inputs[key];
-        if (intf) {
-          serverValueIntfs.add(intf);
+        const [x, y] = value as [number, number];
+        clearPositionTimer(id);
+        serverMutations.run("set_position", id, () => {
+          node.position = { x, y };
+        });
+        continue;
+      }
+
+      if (key === "name" && typeof value === "string") {
+        serverMutations.run("set_title", id, () => {
+          node.title = value;
+        });
+        continue;
+      }
+
+      const intf = node.inputs[key];
+      if (intf) {
+        serverMutations.run("set_value", intf, () => {
           intf.value = value as typeof intf.value;
-          serverValueIntfs.delete(intf);
-        }
+        });
       }
     }
   }
 
-  function handle_server_add_connection(con: connection_s): void {
-    const fromIntf = find_interface(graph, con.from_node, con.from_interface);
-    const toIntf = find_interface(graph, con.to_node, con.to_interface);
-    if (!fromIntf || !toIntf) return;
-    _addingServerConn = true;
-    graph.addConnection(fromIntf, toIntf);
-    _addingServerConn = false;
+  function handle_server_add_connection(connection: connection_s): void {
+    const from = find_interface(graph, connection.from_node, connection.from_interface);
+    const to = find_interface(graph, connection.to_node, connection.to_interface);
+    if (!from || !to) return;
+    serverMutations.run("add_connection", CONNECTION_MUTATION_KEY, () =>
+      graph.addConnection(from, to),
+    );
   }
 
-  function handle_server_remove_connection(con: connection_s): void {
-    const fromIntf = find_interface(graph, con.from_node, con.from_interface);
-    const toIntf = find_interface(graph, con.to_node, con.to_interface);
-    if (!fromIntf || !toIntf) return;
-    const connection = find_connection(graph, fromIntf, toIntf);
-    if (!connection) return;
-    _removingServerConn = true;
-    graph.removeConnection(connection);
-    _removingServerConn = false;
+  function handle_server_remove_connection(connection: connection_s): void {
+    const from = find_interface(graph, connection.from_node, connection.from_interface);
+    const to = find_interface(graph, connection.to_node, connection.to_interface);
+    if (!from || !to) return;
+
+    const existing = find_connection(graph, from, to);
+    if (!existing) return;
+    serverMutations.run("remove_connection", CONNECTION_MUTATION_KEY, () =>
+      graph.removeConnection(existing),
+    );
   }
 
-  /** Called after a node_status update to push node_id into status-aware interfaces. */
+  /** Push the node ID into interfaces that consume node status. */
   function handle_server_init_node_status(id: string): void {
     const node = find_node(graph, id);
-    if (!node) return;
-    for (const intf of Object.values(node.inputs)) {
-      if (has_node_data(intf)) intf.nodeData.node_id = id;
-    }
+    if (node) assign_node_id(node);
   }
 
-  // ==========================================================================
-  // Cleanup
-  // ==========================================================================
-
   function destroy(): void {
-    graph.events.addNode.unsubscribe(token);
-    graph.events.removeNode.unsubscribe(token);
-    graph.events.addConnection.unsubscribe(token);
-    graph.events.removeConnection.unsubscribe(token);
+    graph.events.addNode.unsubscribe(eventToken);
+    graph.events.removeNode.unsubscribe(eventToken);
+    graph.events.addConnection.unsubscribe(eventToken);
+    graph.events.removeConnection.unsubscribe(eventToken);
     for (const cleanup of nodeCleanups.values()) cleanup();
     nodeCleanups.clear();
   }
