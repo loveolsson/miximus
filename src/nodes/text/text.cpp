@@ -172,11 +172,12 @@ class node_impl : public node_i
             const auto byte_size     = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(surface_size.x) *
                                    static_cast<size_t>(surface_size.y);
             const gpu::transfer::texture_transfer_requirements_s requirements{
-                .dimensions  = surface_size,
-                .format      = gpu::texture_s::format_e::rgba_f16,
-                .row_stride  = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(surface_size.x),
-                .byte_size   = byte_size,
-                .host_access = gpu::transfer::host_access_e::read_write,
+                .dimensions        = surface_size,
+                .format            = gpu::texture_s::format_e::rgba_f16,
+                .row_stride        = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(surface_size.x),
+                .byte_size         = byte_size,
+                .address_alignment = render::surface_s::DATA_ALIGNMENT,
+                .host_access       = gpu::transfer::host_access_e::read_write,
             };
             text_info_->upload_stream = app->texture_upload_service()->create_stream({
                 .requirements = requirements,

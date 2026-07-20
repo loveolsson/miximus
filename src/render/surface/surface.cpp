@@ -29,6 +29,9 @@ surface_s::surface_s(gpu::vec2i_t dim, rgba_pixel_t* ptr)
     if (ptr_ == nullptr) {
         throw std::invalid_argument("surface pointer must not be null");
     }
+    if (reinterpret_cast<std::uintptr_t>(ptr_) % DATA_ALIGNMENT != 0) {
+        throw std::invalid_argument("surface pointer does not meet the required alignment");
+    }
 }
 
 bool surface_s::contains(gpu::vec2i_t position) const
@@ -240,14 +243,24 @@ surface_s::rgba_pixel_t interpolate(const surface_s::rgba_pixel_t& from,
 
 void source_over_pixel(const surface_s::rgba_pixel_t& source, surface_s::rgba_pixel_t* destination)
 {
-    constexpr int channel_max     = 255;
-    const int     source_alpha    = source.a;
-    const int     inverse         = channel_max - source_alpha;
-    const auto    source_rgb      = glm::ivec3(source) * source_alpha;
-    const auto    destination_rgb = glm::ivec3(*destination) * inverse;
-    const auto    output_rgb      = (source_rgb + destination_rgb + (channel_max / 2)) / channel_max;
-    const int     output_alpha    = source_alpha + ((destination->a * inverse + (channel_max / 2)) / channel_max);
-    *destination                  = {output_rgb.r, output_rgb.g, output_rgb.b, output_alpha};
+    constexpr int channel_max       = 255;
+    const int     source_alpha      = source.a;
+    const int     inverse           = channel_max - source_alpha;
+    const int     destination_red   = destination->r;
+    const int     destination_green = destination->g;
+    const int     destination_blue  = destination->b;
+    const int     destination_alpha = destination->a;
+
+    const auto blend_channel = [source_alpha, inverse](int source_channel, int destination_channel) {
+        return static_cast<uint8_t>(
+            ((source_channel * source_alpha) + (destination_channel * inverse) + (channel_max / 2)) / channel_max);
+    };
+
+    destination->r = blend_channel(source.r, destination_red);
+    destination->g = blend_channel(source.g, destination_green);
+    destination->b = blend_channel(source.b, destination_blue);
+    destination->a =
+        static_cast<uint8_t>(source_alpha + (((destination_alpha * inverse) + (channel_max / 2)) / channel_max));
 }
 
 bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to)
@@ -316,11 +329,16 @@ void surface_s::copy(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t s
 void surface_s::alpha_blend(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
     auto op = [](const auto& src, auto dst) {
-        glm::ivec4 tmp(*dst);
-        tmp -= src.a;
-        tmp  = glm::max(tmp, glm::ivec4{});
-        *dst = tmp;
-        *dst += src;
+        const int destination_red   = dst->r;
+        const int destination_green = dst->g;
+        const int destination_blue  = dst->b;
+        const int destination_alpha = dst->a;
+        const int source_alpha      = src.a;
+
+        dst->r = static_cast<uint8_t>(std::max(destination_red - source_alpha, 0) + src.r);
+        dst->g = static_cast<uint8_t>(std::max(destination_green - source_alpha, 0) + src.g);
+        dst->b = static_cast<uint8_t>(std::max(destination_blue - source_alpha, 0) + src.b);
+        dst->a = static_cast<uint8_t>(std::max(destination_alpha - source_alpha, 0) + source_alpha);
     };
     copy_operation(src_ptr, src_dim, src_pitch, ptr(), dimensions_, pos, op);
 }
@@ -328,11 +346,10 @@ void surface_s::alpha_blend(const rgba_pixel_t* src_ptr, gpu::vec2i_t src_dim, s
 void surface_s::alpha_blend(const mono_pixel_t* src_ptr, gpu::vec2i_t src_dim, size_t src_pitch, gpu::vec2i_t pos)
 {
     auto op = [](const auto& src, auto dst) {
-        glm::ivec4 tmp(*dst);
-        tmp -= src;
-        tmp  = glm::max(tmp, glm::ivec4{});
-        *dst = tmp;
-        *dst += src;
+        dst->r = std::max(dst->r, src);
+        dst->g = std::max(dst->g, src);
+        dst->b = std::max(dst->b, src);
+        dst->a = std::max(dst->a, src);
     };
     copy_operation(src_ptr, src_dim, src_pitch, ptr(), dimensions_, pos, op);
 }

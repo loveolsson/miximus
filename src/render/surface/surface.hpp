@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <glm/vec4.hpp>
+#include <memory>
 #include <string_view>
 
 namespace miximus::render {
@@ -14,6 +15,8 @@ class surface_s
     using rgba_pixel_t = glm::vec<4, uint8_t>;
     using mono_pixel_t = uint8_t;
 
+    static constexpr size_t DATA_ALIGNMENT = 32;
+
   private:
     const gpu::vec2i_t dimensions_;
     rgba_pixel_t*      ptr_;
@@ -22,8 +25,8 @@ class surface_s
     surface_s(gpu::vec2i_t dim, rgba_pixel_t* ptr);
 
     auto                dimensions() const { return dimensions_; }
-    rgba_pixel_t*       ptr() { return ptr_; }
-    const rgba_pixel_t* ptr() const { return ptr_; }
+    rgba_pixel_t*       ptr() { return std::assume_aligned<DATA_ALIGNMENT>(ptr_); }
+    const rgba_pixel_t* ptr() const { return std::assume_aligned<DATA_ALIGNMENT>(ptr_); }
 
     [[nodiscard]] bool  contains(gpu::vec2i_t position) const;
     rgba_pixel_t&       pixel(gpu::vec2i_t position);

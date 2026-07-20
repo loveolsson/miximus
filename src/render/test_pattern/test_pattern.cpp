@@ -16,8 +16,10 @@ namespace miximus::render {
 namespace {
 using pixel_t = surface_s::rgba_pixel_t;
 
-constexpr pixel_t    BLACK{0, 0, 0, 255};
-constexpr pixel_t    WHITE{255, 255, 255, 255};
+constexpr pixel_t BLACK{0, 0, 0, 255};
+constexpr pixel_t WHITE{255, 255, 255, 255};
+// Logo border #2C86B0 converted from its Rec.709-encoded PNG value to linear surface bytes.
+constexpr pixel_t    LOGO_BORDER{11, 73, 122, 191};
 constexpr std::array LOGO_PATHS{
     std::string_view{"images/miximus_128x128.png"},
     std::string_view{"images/miximus_64x64.png"},
@@ -282,7 +284,7 @@ void render_test_pattern_logo(surface_s& surface)
 
         const gpu::vec2i_t circle_dimensions{circle_diameter};
         const auto         circle_position = logo_position - ((circle_dimensions - logo_dimensions) / 2);
-        surface.source_over_ellipse(make_rect(circle_position, circle_dimensions), {0, 0, 0, 191});
+        surface.source_over_ellipse(make_rect(circle_position, circle_dimensions), LOGO_BORDER);
         surface.draw_asset(resource_path, logo_position);
         return;
     }

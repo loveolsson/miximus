@@ -143,6 +143,10 @@ Do not reintroduce pointer/view results whose lifetime crosses the registry lock
 
 `render::surface_s` is a non-owning CPU pixel view. Text and teleprompter rendering construct it over an upload lease, so font work never owns GL objects and can run in the fiber pool. Its templated copy/blend helper clips once before pixel loops. Preserve the separation between clipping and pixel operations to avoid per-pixel boundary branches.
 
+Surface-producing upload streams request `surface_s::DATA_ALIGNMENT`. The transfer factory verifies the exposed host
+pointer for every backend, and `surface_s` uses that contract for compiler alignment hints. New surface producers must
+carry the same requirement into their upload-stream description.
+
 ## Real-time queues and workers
 
 `utils::frame_queue_s<T>` is the standard mutex-protected FIFO containing a frame and flick timestamp. Real-time paths commonly maintain free, pending, and in-flight slots. When no free slot exists, dropping a frame is generally preferable to blocking the render thread.
