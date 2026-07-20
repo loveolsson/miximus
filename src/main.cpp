@@ -36,11 +36,13 @@ void signal_handler(int /*signal*/) { get_signal_status() = 1; }
 
 void start_shutdown_watchdog()
 {
+#if !defined(MIXIMUS_SANITIZED_BUILD)
     std::thread([] {
         std::this_thread::sleep_for(std::chrono::seconds(5));
         std::cerr << "Shutdown timed out, forcing exit\n";
         std::_Exit(1);
     }).detach();
+#endif
 }
 
 } // namespace

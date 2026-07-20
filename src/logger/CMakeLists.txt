@@ -5,7 +5,9 @@ add_library(logger
 
 find_package(spdlog REQUIRED)
 
-target_link_libraries(logger 
+target_link_libraries(logger
 PUBLIC
 spdlog::spdlog_header_only
-) 
+)
+
+add_sanitizers(logger)

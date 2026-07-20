@@ -32,4 +32,4 @@ if(MIXIMUS_USE_PRECOMPILED_HEADERS)
     )
 endif()
 
-#add_sanitizers(app)
+add_sanitizers(app)

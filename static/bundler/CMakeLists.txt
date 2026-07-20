@@ -13,3 +13,5 @@ target_link_libraries(bundler
     ZLIB::ZLIB
     Boost::headers
 )
+
+add_sanitizers(bundler)

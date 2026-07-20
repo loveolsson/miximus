@@ -33,6 +33,10 @@ PRIVATE
 
 add_sanitizers(miximus)
 
+if(SANITIZE_ADDRESS OR SANITIZE_MEMORY OR SANITIZE_THREAD OR SANITIZE_UNDEFINED)
+    target_compile_definitions(miximus PRIVATE MIXIMUS_SANITIZED_BUILD)
+endif()
+
 macro(copy_library_to_binary_dir NAME)
 add_custom_command(TARGET miximus POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
