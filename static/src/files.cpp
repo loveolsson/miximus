@@ -20,13 +20,12 @@ namespace miximus::static_files {
 
 std::string file_record_s::unzip() const
 {
-    if (gzipped.size() > std::numeric_limits<uInt>::max() || size >= std::numeric_limits<uInt>::max()) {
+    if (gzipped.size() > std::numeric_limits<uInt>::max() || size > std::numeric_limits<uInt>::max()) {
         throw std::length_error(std::format("Bundled file \"{}\" is too large for zlib", filename));
     }
 
-    // Keep one spare output byte so zlib can consume and validate the trailer
-    // even when the expected output size is exact or zero.
-    std::string data(size + 1, '\0');
+    std::string data(size, '\0');
+    Bytef       empty_output{};
 
     z_stream stream{};
 #if defined(__GNUC__) || defined(__clang__)
@@ -43,8 +42,8 @@ std::string file_record_s::unzip() const
 
     stream.next_in   = reinterpret_cast<const Bytef*>(gzipped.data());
     stream.avail_in  = static_cast<uInt>(gzipped.size());
-    stream.next_out  = reinterpret_cast<Bytef*>(data.data());
-    stream.avail_out = static_cast<uInt>(data.size());
+    stream.next_out  = data.empty() ? &empty_output : reinterpret_cast<Bytef*>(data.data());
+    stream.avail_out = data.empty() ? 1 : static_cast<uInt>(data.size());
 
     const int  inflate_result = inflate(&stream, Z_FINISH);
     const auto output_size    = static_cast<size_t>(stream.total_out);
@@ -54,8 +53,6 @@ std::string file_record_s::unzip() const
     if (inflate_result != Z_STREAM_END || end_result != Z_OK || remaining != 0 || output_size != size) {
         throw std::runtime_error(std::format("Failed to unzip file \"{}\" (zlib error {})", filename, inflate_result));
     }
-
-    data.resize(size);
 
     return data;
 }
