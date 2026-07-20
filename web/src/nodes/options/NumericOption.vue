@@ -6,7 +6,16 @@
       </svg>
     </div>
 
-    <div v-if="!editing" class="__content" @click="beginEdit">
+    <div
+      v-if="!editing"
+      v-node-option-tab
+      class="__content"
+      role="spinbutton"
+      :aria-label="intf.name"
+      :aria-valuenow="intf.value"
+      @click="beginEdit"
+      @focus="beginEdit"
+    >
       <div class="__label" :title="intf.name">{{ intf.name }}</div>
       <div class="__value">{{ displayValue }}</div>
     </div>
@@ -14,6 +23,7 @@
       <input
         ref="inputElement"
         v-model="editValue"
+        v-node-option-tab
         type="number"
         :step="intf.step"
         :min="intf.min"
@@ -38,6 +48,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
 import type { NumberInterface } from "@baklavajs/renderer-vue";
+import { vNodeOptionTab } from "./node_option_tab";
 
 type NumericInterface = NumberInterface & {
   precision: number;
@@ -76,6 +87,9 @@ function setValue(value: number): boolean {
 const displayValue = computed(() => format(props.intf.value));
 
 async function beginEdit() {
+  if (editing.value) {
+    return;
+  }
   invalid.value = false;
   editValue.value = format(props.intf.value);
   editing.value = true;

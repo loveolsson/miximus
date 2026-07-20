@@ -1,9 +1,8 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
-import { SelectInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_f64, t_vec2, t_rect } from "./interface_types";
 import { type_e } from "@/messages";
-import { NumericInterface } from "./interfaces";
+import { DropdownInterface, NumericInterface } from "./interfaces";
 
 const scalarOptions = { precision: 2, step: 0.1 } as const;
 const factorOptions = { precision: 2, step: 0.05, min: 0, max: 1 } as const;
@@ -14,8 +13,7 @@ export const F64MathNode = defineNode({
   inputs: {
     a: () => new NumericInterface("A", 0, scalarOptions).use(setType, t_f64),
     b: () => new NumericInterface("B", 0, scalarOptions).use(setType, t_f64),
-    operation: () =>
-      new SelectInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]).setPort(false),
+    operation: () => new DropdownInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]),
   },
   outputs: {
     res: () => new NodeInterface<number>("Result", 0).use(setType, t_f64),
@@ -28,8 +26,7 @@ export const Vec2MathNode = defineNode({
   inputs: {
     a: () => new NodeInterface<[number, number]>("A", [0, 0]).use(setType, t_vec2),
     b: () => new NodeInterface<[number, number]>("B", [0, 0]).use(setType, t_vec2),
-    operation: () =>
-      new SelectInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]).setPort(false),
+    operation: () => new DropdownInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]),
   },
   outputs: {
     res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),

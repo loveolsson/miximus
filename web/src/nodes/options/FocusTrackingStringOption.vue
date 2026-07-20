@@ -6,6 +6,7 @@
     <div class="__content">
       <input
         v-model="localValue"
+        v-node-option-tab
         type="text"
         class="dark-input"
         @focus="onFocus"
@@ -20,6 +21,7 @@
 import { ref, watch } from "vue";
 import type { NodeInterface } from "@baklavajs/core";
 import type { AbstractNode } from "@baklavajs/core";
+import { vNodeOptionTab } from "./node_option_tab";
 
 const props = defineProps<{
   modelValue: string;

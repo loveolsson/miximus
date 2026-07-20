@@ -4,7 +4,7 @@
       <div class="__label text-truncate">{{ intf.name }}</div>
     </div>
     <div class="__content">
-      <select v-model="localValue" class="status-select" @change="onUserChange">
+      <select v-model="localValue" v-node-option-tab class="status-select" @change="onUserChange">
         <option v-if="localValue && !listContainsCurrent" :value="localValue" class="stale-entry">
           {{ localValue }} (unavailable)
         </option>
@@ -22,6 +22,7 @@ import { ref, computed, watch } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
 import type { SettingsOption, StatusDropdownInterface } from "../interfaces";
 import { get_node_status } from "../status_store";
+import { vNodeOptionTab } from "./node_option_tab";
 
 const props = defineProps<{
   modelValue: string;

@@ -8,6 +8,7 @@ export { NumericInterface, type NumericOptions } from "./numeric";
 import FocusTrackingStringComponent from "./options/FocusTrackingStringOption.vue";
 import Vec2Component from "./options/Vec2Option.vue";
 import StatusDropdownComponent from "./options/StatusDropdownOption.vue";
+import DropdownComponent from "./options/DropdownOption.vue";
 import NodeStatusComponent from "./options/NodeStatusIndicator.vue";
 import FontRegistryRefreshComponent from "./options/FontRegistryRefreshOption.vue";
 
@@ -54,6 +55,18 @@ export class StatusDropdownInterface extends NodeInterface<string> {
     this.list_key = listKey;
     this.nodeData = reactive({ node_id: "" });
     this.setComponent(markRaw(StatusDropdownComponent));
+    this.setPort(false);
+  }
+}
+
+/** Dropdown with a fixed list of values declared by the node definition. */
+export class DropdownInterface extends NodeInterface<string> {
+  readonly items: readonly string[];
+
+  constructor(name: string, defaultValue: string, items: readonly string[]) {
+    super(name, defaultValue);
+    this.items = items;
+    this.setComponent(markRaw(DropdownComponent));
     this.setPort(false);
   }
 }

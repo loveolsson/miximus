@@ -1,9 +1,14 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
-import { CheckboxInterface, TextInputInterface } from "@baklavajs/renderer-vue";
+import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture } from "./interface_types";
 import { type_e } from "@/messages";
-import { StatusDropdownInterface, NodeStatusInterface, type NodeStatusSection } from "./interfaces";
+import {
+  FocusTrackingStringInterface,
+  StatusDropdownInterface,
+  NodeStatusInterface,
+  type NodeStatusSection,
+} from "./interfaces";
 
 const ndiStatus: readonly NodeStatusSection[] = [
   {
@@ -32,7 +37,7 @@ export const NdiOutputNode = defineNode({
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
     status: () => new NodeStatusInterface(ndiStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
-    source_name: () => new TextInputInterface("Sender Name", "").setPort(false),
+    source_name: () => new FocusTrackingStringInterface("Sender Name", ""),
   },
   outputs: {},
 });
