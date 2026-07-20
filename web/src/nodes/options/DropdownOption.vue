@@ -5,8 +5,8 @@
     </div>
     <div class="__content">
       <select v-model="localValue" v-node-option-tab class="dark-select">
-        <option v-for="item in intf.items" :key="item" :value="item">
-          {{ item }}
+        <option v-for="item in intf.items" :key="item.id" :value="item.id">
+          {{ item.label }}
         </option>
       </select>
     </div>

@@ -4,6 +4,7 @@
 #include "nodes/debug/register.hpp"
 #include "nodes/decklink/register.hpp"
 #include "nodes/ffmpeg/register.hpp"
+#include "nodes/generators/register.hpp"
 #include "nodes/math/register.hpp"
 #include "nodes/ndi/register.hpp"
 #include "nodes/screen/register.hpp"
@@ -25,6 +26,7 @@ void register_all_nodes(node_definition_map_t* map)
     text::register_nodes(map);
     composite::register_nodes(map);
     debug::register_nodes(map);
+    generators::register_nodes(map);
 }
 
 } // namespace miximus::nodes

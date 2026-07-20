@@ -7,6 +7,7 @@ import { F64MathNode, Vec2MathNode, F64LerpNode, Vec2LerpNode, RectLerpNode } fr
 import { Vec2Node, RectNode, FrameBufferNode, FramebufferToTextureNode } from "./utils";
 import { DrawBoxNode, InfiniteMultiviewerNode } from "./composite";
 import { CircleSourceNode, SinusSourceNode } from "./debug";
+import { TestPatternNode } from "./generators";
 import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
 import { NdiInputNode, NdiOutputNode } from "./ndi";
@@ -27,6 +28,7 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(InfiniteMultiviewerNode, { category: "Composite" });
   editor.registerNodeType(SinusSourceNode, { category: "Generators" });
   editor.registerNodeType(CircleSourceNode, { category: "Generators" });
+  editor.registerNodeType(TestPatternNode, { category: "Generators" });
   editor.registerNodeType(ScreenOutputNode, { category: "Output" });
   editor.registerNodeType(DeckLinkInputNode, { category: "Input" });
   editor.registerNodeType(DeckLinkOutputNode, { category: "Output" });

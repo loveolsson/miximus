@@ -61,11 +61,11 @@ export class StatusDropdownInterface extends NodeInterface<string> {
 
 /** Dropdown with a fixed list of values declared by the node definition. */
 export class DropdownInterface extends NodeInterface<string> {
-  readonly items: readonly string[];
+  readonly items: readonly SettingsOption[];
 
-  constructor(name: string, defaultValue: string, items: readonly string[]) {
+  constructor(name: string, defaultValue: string, items: readonly (string | SettingsOption)[]) {
     super(name, defaultValue);
-    this.items = items;
+    this.items = items.map((item) => (typeof item === "string" ? { id: item, label: item } : item));
     this.setComponent(markRaw(DropdownComponent));
     this.setPort(false);
   }

@@ -26,6 +26,7 @@ add_subdirectory(utils)
 add_subdirectory(teleprompter)
 add_subdirectory(text)
 add_subdirectory(debug)
+add_subdirectory(generators)
 add_subdirectory(composite)
 
 find_package(nlohmann_json REQUIRED)

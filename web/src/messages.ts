@@ -38,6 +38,7 @@ export const enum type_e {
   text = "text",
   sinus_source = "sinus_source",
   circle_source = "circle_source",
+  test_pattern = "test_pattern",
   draw_box = "draw_box",
   infinite_multiviewer = "infinite_multiviewer",
 }
