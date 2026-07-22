@@ -22,6 +22,8 @@ constexpr std::array<std::string_view, 8> INPUT_NAMES{"a", "b", "c", "d", "e", "
 template <typename T, size_t SlotCount>
 class node_impl : public node_i
 {
+    static_assert(SlotCount <= INPUT_NAMES.size());
+
     input_interface_s<double>                                  active_{*this, "active"};
     std::array<std::optional<input_interface_s<T>>, SlotCount> inputs_;
     output_interface_s<T>                                      output_;
@@ -43,8 +45,7 @@ class node_impl : public node_i
     {
         const int    active_option = state.get_option<int>("active", 1);
         const double active_value  = active_.resolve_value(app, nodes, state, static_cast<double>(active_option));
-        const double finite_value  = std::isfinite(active_value) ? active_value : static_cast<double>(active_option);
-        const double clamped_value = std::clamp(std::floor(finite_value), 1.0, static_cast<double>(SlotCount));
+        const double clamped_value = std::clamp(std::floor(active_value), 1.0, static_cast<double>(SlotCount));
         const int    active        = static_cast<int>(clamped_value);
         const auto   index         = static_cast<size_t>(active - 1);
         const auto&  input         = inputs_.at(index);

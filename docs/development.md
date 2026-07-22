@@ -175,6 +175,9 @@ Strict warnings apply to project targets after submodules are configured. Third-
 - For templated node families, pass stable protocol type strings, default display names, and any varying interface names
   explicitly from each concrete factory. Do not infer protocol metadata from the C++ value type through template traits;
   the same value type may back multiple independently versioned node types.
+- Numeric options reject non-finite values during normalization. Numeric output interfaces also replace a non-finite
+  publication with the type's valid default, so downstream nodes may assume finite graph inputs. Nodes must still guard
+  domain errors such as division by zero at the operation that could produce them.
 - Ordered string maps use `std::less<>` for heterogeneous lookup.
 - Unordered string maps use `utils::transparent_string_hash` plus `std::equal_to<>` when lookup by view is useful.
 - C++20 does not have heterogeneous `unordered_map::erase(key)`; find by view and erase the iterator.

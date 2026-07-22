@@ -10,7 +10,6 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 
-#include <cmath>
 #include <cstdint>
 #include <memory>
 
@@ -46,7 +45,7 @@ class node_impl : public node_i
 
         const auto t_option = state.get_option<double>("t");
         const auto t_value  = iface_t_.resolve_value(app, nodes, state, t_option);
-        const auto t        = glm::clamp(std::isfinite(t_value) ? t_value : t_option, 0.0, 1.0);
+        const auto t        = glm::clamp(t_value, 0.0, 1.0);
 
         gpu::texture_s* a{};
         gpu::texture_s* b{};

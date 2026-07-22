@@ -4,6 +4,7 @@
 #include "nodes/interface_type.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
+#include "utils/is_finite.hpp"
 
 #include <boost/container/small_vector.hpp>
 
@@ -134,7 +135,7 @@ class output_interface_s : public interface_i
     ~output_interface_s() = default;
 
     T    get_value() const { return value_; }
-    void set_value(const T& value) { value_ = value; }
+    void set_value(const T& value) { value_ = utils::is_finite(value) ? value : T{}; }
 };
 
 } // namespace miximus::nodes

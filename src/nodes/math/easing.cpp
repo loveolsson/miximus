@@ -132,7 +132,7 @@ class node_impl : public node_i
     {
         const auto option = state.get_option<double>("t");
         const auto input  = iface_t_.resolve_value(app, nodes, state, option);
-        const auto value  = glm::clamp(std::isfinite(input) ? input : option, 0.0, 1.0);
+        const auto value  = glm::clamp(input, 0.0, 1.0);
         const auto easing = state.get_enum_option("easing", easing_e::linear);
 
         iface_res_.set_value(ease(value, easing));
