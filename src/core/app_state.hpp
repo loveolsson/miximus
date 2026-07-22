@@ -1,4 +1,6 @@
 #pragma once
+#include "core/application_settings_fwd.hpp"
+#include "core/frame_context.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
 #include "gpu/transfer/texture_download_fwd.hpp"
@@ -6,6 +8,7 @@
 #include "nodes/decklink/registry_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
+#include "types/frame_rate.hpp"
 #include "utils/asio.hpp"
 #include "utils/flicks.hpp"
 
@@ -38,6 +41,11 @@ class app_state_s
     std::unique_ptr<render::font_registry_s>                   font_registry_;
     std::unique_ptr<node_status_registry_s>                    status_registry_;
 
+    frame_rate_s    frame_rate_{DEFAULT_FRAME_RATE};
+    frame_context_s frame_context_{};
+    uint64_t        next_frame_number_{};
+    uint64_t        epoch_{};
+
   public:
     app_state_s();
     ~app_state_s();
@@ -51,6 +59,11 @@ class app_state_s
     auto font_registry() { return font_registry_.get(); }
     auto thread_pool() { return thread_pool_.get(); }
     auto status_registry() { return status_registry_.get(); }
+
+    void begin_frame(const application_settings_snapshot_s& settings);
+
+    frame_rate_s           frame_rate() const { return frame_rate_; }
+    const frame_context_s& frame_context() const { return frame_context_; }
 
     struct
     {

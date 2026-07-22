@@ -1,6 +1,8 @@
 add_library(miximus_types
     action.hpp
     error.hpp
+    frame_rate.hpp
+    frame_rate.cpp
     topic.hpp
     settings_option.hpp
     settings_option.cpp

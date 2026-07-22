@@ -85,6 +85,11 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
     const std::unique_lock lock(nodes_mutex_);
     _log()->info("Creating {} node with id {}", type, id);
 
+    if (id == APPLICATION_SETTINGS_ID) {
+        _log()->warn("Node id {} is reserved for application settings", id);
+        return error_e::duplicate_id;
+    }
+
     const std::string id_str(id);
 
     if (nodes_.contains(id)) {
@@ -125,6 +130,10 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
 {
     const std::unique_lock lock(nodes_mutex_);
 
+    if (id == APPLICATION_SETTINGS_ID) {
+        return error_e::invalid_type;
+    }
+
     _log()->info("Removing node with id {}", id);
 
     auto node_it = nodes_.find(id);
@@ -160,6 +169,17 @@ nodes::set_options_result_s
 node_manager_s::handle_update_node(std::string_view id, const json& options, int64_t client_id)
 {
     const std::unique_lock lock(nodes_mutex_);
+
+    if (id == APPLICATION_SETTINGS_ID) {
+        const auto result = application_settings_.set_options(options);
+        if (result.error == error_e::no_error) {
+            for (auto& adapter : adapters_) {
+                adapter->emit_update_node(
+                    APPLICATION_SETTINGS_ID, application_settings_.options(), result.has_corrected_values, client_id);
+            }
+        }
+        return result;
+    }
 
     const std::string id_str(id);
 
@@ -337,6 +357,12 @@ nlohmann::json node_manager_s::get_node_status(std::string_view id) const
     return status_registry_->get(id);
 }
 
+nlohmann::json node_manager_s::get_application_settings()
+{
+    const std::unique_lock lock(nodes_mutex_);
+    return application_settings_.options();
+}
+
 void node_manager_s::add_adapter(std::unique_ptr<adapter_i>&& adapter)
 {
     const std::unique_lock lock(nodes_mutex_);
@@ -355,6 +381,8 @@ void node_manager_s::tick_one_frame(app_state_s* app)
 {
     status_registry_ = app->status_registry();
 
+    application_settings_snapshot_s application_settings;
+
     {
         const gpu::context_scope_s context_scope(*app->ctx());
 
@@ -367,6 +395,7 @@ void node_manager_s::tick_one_frame(app_state_s* app)
              *      making resource management a lot simpler
              */
             std::unique_lock lock(nodes_mutex_);
+            application_settings = application_settings_.sync_render_snapshot();
             if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
                 for (const auto& id : removed_nodes_) {
                     nodes_copy_.erase(id);
@@ -384,6 +413,17 @@ void node_manager_s::tick_one_frame(app_state_s* app)
             } else {
                 lock.unlock();
             }
+        }
+
+        app->begin_frame(application_settings);
+
+        {
+            auto        writer        = app->status_registry()->write_node(APPLICATION_SETTINGS_ID);
+            const auto& frame_context = app->frame_context();
+            writer.write("frame_rate", app->frame_rate());
+            writer.write("frame_duration_flicks", frame_context.duration.count());
+            writer.write("epoch", frame_context.epoch);
+            writer.write("settings_revision", frame_context.settings_revision);
         }
 
         app->frame_info.executed_nodes.clear();

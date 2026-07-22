@@ -85,8 +85,11 @@ under a debugger or another environment that uses `ptrace`; leave leak detection
 Run:
 
 ```bash
-./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json]
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds]
 ```
+
+The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the
+given positive number of seconds and is useful for repeatable runtime and sanitizer checks.
 
 Build the web client directly when working on it:
 

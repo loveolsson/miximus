@@ -10,7 +10,7 @@ namespace miximus::core {
 
 class configuration_s
 {
-    static constexpr uint32_t SCHEMA_VERSION = 1;
+    static constexpr uint32_t SCHEMA_VERSION = 2;
 
     node_manager_s& node_manager_;
 

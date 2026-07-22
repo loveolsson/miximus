@@ -4,9 +4,11 @@
 #include "core/node_manager.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
+#include "utils/process_id.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
+#include <charconv>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -15,6 +17,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -52,8 +55,9 @@ int main(int argc, char* argv[])
     (void)std::signal(SIGINT, signal_handler);
     (void)std::signal(SIGTERM, signal_handler);
 
-    auto log_level     = spdlog::level::info;
-    auto settings_path = path(argv[0]).parent_path() / "settings.json";
+    auto                                         log_level     = spdlog::level::info;
+    auto                                         settings_path = path(argv[0]).parent_path() / "settings.json";
+    std::optional<std::chrono::duration<double>> stop_after;
 
     {
         const std::vector<std::string_view> arguments(argv + 1, argv + argc);
@@ -65,11 +69,22 @@ int main(int argc, char* argv[])
                 log_level = spdlog::level::trace;
             } else if (arguments[i] == "--settings" && i + 1 < arguments.size()) {
                 settings_path = arguments[++i];
+            } else if (arguments[i] == "--stop-after" && i + 1 < arguments.size()) {
+                double     seconds{};
+                const auto value           = arguments[++i];
+                const auto [end, error]    = std::from_chars(value.data(), value.data() + value.size(), seconds);
+                const bool parsed_entirely = error == std::errc{} && end == value.data() + value.size();
+                if (!parsed_entirely || seconds <= 0.0) {
+                    std::cerr << "--stop-after requires a positive number of seconds\n";
+                    return EXIT_FAILURE;
+                }
+                stop_after = std::chrono::duration<double>{seconds};
             }
         }
     }
 
     logger::init_loggers(log_level);
+    getlog("app")->info("Process ID: {}", utils::process_id());
     utils::set_max_thread_priority();
 
     try {
@@ -96,9 +111,15 @@ int main(int argc, char* argv[])
 
             app.frame_info.timestamp = utils::flicks_now();
             app.frame_info.pts       = utils::flicks{0};
-            app.frame_info.duration  = utils::k_flicks_one_second / 60;
 
-            while (get_signal_status() == 0) {
+            std::optional<std::chrono::steady_clock::time_point> stop_time;
+            if (stop_after.has_value()) {
+                stop_time = std::chrono::steady_clock::now() +
+                            std::chrono::duration_cast<std::chrono::steady_clock::duration>(*stop_after);
+            }
+
+            while (get_signal_status() == 0 &&
+                   (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
                 // getlog("app")->info("Frame no {}", frame_no++);
 
                 node_manager.tick_one_frame(&app);
@@ -118,6 +139,10 @@ int main(int argc, char* argv[])
                 if (app.frame_info.timestamp > now) {
                     std::this_thread::sleep_for(app.frame_info.timestamp - now);
                 }
+            }
+
+            if (stop_time.has_value() && get_signal_status() == 0) {
+                getlog("app")->info("Stopping after requested runtime");
             }
 
             getlog("app")->info("Exiting...");

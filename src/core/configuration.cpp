@@ -160,9 +160,14 @@ namespace miximus::core {
 void configuration_s::load(json config)
 {
     const auto document_version = get_schema_version(config, "Configuration");
-    if (document_version != SCHEMA_VERSION) {
+    if (document_version > SCHEMA_VERSION) {
         throw std::runtime_error(std::format(
-            "Configuration schema version {} is not supported; expected {}", document_version, SCHEMA_VERSION));
+            "Configuration schema version {} is not supported; latest is {}", document_version, SCHEMA_VERSION));
+    }
+    if (document_version == 1) {
+        config["application_settings"] = node_manager_.application_settings_.options();
+    } else if (document_version != SCHEMA_VERSION) {
+        throw std::runtime_error(std::format("Configuration schema version {} has no migration", document_version));
     }
     config["schema_version"] = SCHEMA_VERSION;
 
@@ -178,6 +183,11 @@ void configuration_s::load(json config)
     if (!nodes.is_array() || !connections.is_array()) {
         throw std::runtime_error("Configuration nodes and connections must be arrays");
     }
+
+    require_no_error(
+        node_manager_.handle_update_node(APPLICATION_SETTINGS_ID, config.at("application_settings"), -1).error,
+        "load application settings",
+        APPLICATION_SETTINGS_ID);
 
     const auto node_info = migrate_nodes(nodes, node_manager_.node_definitions_);
     migrate_connections(connections, node_info);
@@ -242,9 +252,10 @@ json configuration_s::serialize(bool include_status) const
     }
 
     json result{
-        {"schema_version", SCHEMA_VERSION        },
-        {"nodes",          std::move(nodes)      },
-        {"connections",    std::move(connections)},
+        {"schema_version",       SCHEMA_VERSION                               },
+        {"application_settings", node_manager_.application_settings_.options()},
+        {"nodes",                std::move(nodes)                             },
+        {"connections",          std::move(connections)                       },
     };
 
     if (include_status) {

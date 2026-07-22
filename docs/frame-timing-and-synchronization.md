@@ -571,7 +571,12 @@ the application remains usable and regressions have a narrow source.
 
 ### Stage 1: application settings and timing primitives
 
-**Status:** Pending
+**Status:** Complete
+
+Implemented in the first timing migration. The current loop intentionally remains unchanged apart from consuming the
+configured cadence. Focused tests cover exact integer and 1000/1001 rates, canonicalization, invalid settings, and
+render-snapshot revisions. A real hardware-graph run verified legacy configuration migration, schema-2 persistence,
+the default 60 fps graph, and graceful timed shutdown.
 
 Deliverables:
 

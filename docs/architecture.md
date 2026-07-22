@@ -4,10 +4,12 @@
 
 Miximus is a native C++20 real-time video application driven by a persisted node graph. Nodes represent sources, generators, GPU transformations, and outputs. The native process owns graph state and validates all mutations. A Vue 3/Baklava client edits a synchronized projection of that graph over WebSocket.
 
-The main loop currently initializes a 60 Hz cadence. It loads settings, starts the embedded web server, runs
+The main loop currently defaults to a 60 Hz cadence. It loads settings, starts the embedded web server, runs
 `core::node_manager_s::tick_one_frame()`, polls GLFW, advances flick timestamps, sleeps to the next frame deadline,
-and saves the graph during ordered shutdown. `app_state_s::frame_info.duration` is the authoritative cadence; nodes
-and workers that publish timing must read it and track changes rather than assuming the current default.
+and saves the graph during ordered shutdown. The configured rational frame rate is copied from node-like application
+settings into one immutable `frame_context_s` at the start of each evaluation. `app_state_s::frame_info.duration`
+remains the compatibility cadence for current nodes; nodes and workers that publish timing must read it and track
+changes rather than assuming the default.
 
 The planned transition to a configurable program timeline, source clock recovery, PTS-aware media selection, buffered
 outputs, and frame-atomic graph transactions is documented in
@@ -53,15 +55,16 @@ Node records contain a shared `node_i` instance plus copyable `node_state_s`. St
 The order in `node_manager_s::tick_one_frame()` is an invariant:
 
 1. Make the root GL context current.
-2. Apply dirty and removed records to `nodes_copy_`.
-3. Clear `frame_info.executed_nodes`.
-4. Call `prepare()` on every render-snapshot node and collect nodes setting `traits.must_run`.
-5. Execute those roots. Resolving an input recursively executes its upstream node.
-6. Record executed IDs so each node executes at most once per frame.
-7. Call `gpu::context_s::finish()` after all submitted `execute()` work.
-8. Call `complete()` on every node.
-9. Rewind the root GL context.
-10. Flush and broadcast node-status deltas.
+2. Snapshot application settings and apply dirty and removed records to `nodes_copy_`.
+3. Create the immutable frame context for this evaluation.
+4. Clear `frame_info.executed_nodes`.
+5. Call `prepare()` on every render-snapshot node and collect nodes setting `traits.must_run`.
+6. Execute those roots. Resolving an input recursively executes its upstream node.
+7. Record executed IDs so each node executes at most once per frame.
+8. Call `gpu::context_s::finish()` after all submitted `execute()` work.
+9. Call `complete()` on every node.
+10. Rewind the root GL context.
+11. Flush and broadcast node-status deltas.
 
 ### Node lifecycle responsibilities
 
@@ -106,7 +109,11 @@ the value was accepted unchanged, corrected, or invalid. `node_i::set_options()`
 rejects invalid keys or values, and stores accepted normalized values. Update broadcasts report whether any values were
 corrected. Common options include the display name and editor position.
 
-The persisted settings JSON is owned by `core::configuration_s`. Its JSON load/serialization API is separate from the file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version` plus node IDs, types, per-node schema versions, options, and connections. Runtime status is added only to client snapshots and is not written to disk.
+The persisted settings JSON is owned by `core::configuration_s`. Its JSON load/serialization API is separate from the
+file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version`, an
+`application_settings` object, plus node IDs, types, per-node schema versions, options, and connections. Application
+settings use the reserved `$app` ID for node-like option updates but are not a graph node and cannot be created,
+removed, connected, or traversed. Runtime status is added only to client snapshots and is not written to disk.
 
 Unversioned documents and nodes are the version 1 baseline. When a node schema changes, its registered transitions migrate the options JSON in place. Connections replay the output-interface migrations for their source node and the input-interface migrations for their destination node over the same version range. Migration completes before the existing node and connection construction paths are called; any missing transition or construction error aborts startup.
 
