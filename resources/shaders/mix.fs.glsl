@@ -15,7 +15,7 @@ vec4 sample_contained(sampler2D image, vec2 offset, vec2 scale)
 {
     vec2 uv = (TexCoord - offset) / scale;
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
-        return vec4(0.0, 0.0, 0.0, 1.0);
+        return vec4(0.0);
     }
     return texture(image, uv);
 }
