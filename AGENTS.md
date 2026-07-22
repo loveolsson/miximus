@@ -6,6 +6,7 @@ Miximus is a C++20 real-time, node-based video mixer and compositor. The native 
 
 - [Architecture](docs/architecture.md): runtime ownership, threads, frame lifecycle, graph evaluation, nodes, configuration, WebSocket synchronization, and status deltas.
 - [GPU and media](docs/gpu-and-media.md): OpenGL context rules, textures/framebuffers, DVP/CUDA/PBO transfers, device/font registries, callbacks, queues, and workers.
+- [Frame timing and synchronization](docs/frame-timing-and-synchronization.md): planned program clock, source alignment, PTS-aware frame selection, buffered outputs, and atomic frame-boundary graph changes.
 - [Development](docs/development.md): repository layout, adding native/web nodes, CMake wrappers, dependencies, coding conventions, validation, and shutdown.
 
 More specific `AGENTS.md` files apply inside complex subtrees. Read the nearest applicable file before editing there.

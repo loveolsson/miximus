@@ -9,6 +9,11 @@ The main loop currently initializes a 60 Hz cadence. It loads settings, starts t
 and saves the graph during ordered shutdown. `app_state_s::frame_info.duration` is the authoritative cadence; nodes
 and workers that publish timing must read it and track changes rather than assuming the current default.
 
+The planned transition to a configurable program timeline, source clock recovery, PTS-aware media selection, buffered
+outputs, and frame-atomic graph transactions is documented in
+[frame-timing-and-synchronization.md](frame-timing-and-synchronization.md). That document describes future behavior;
+this document continues to describe the current runtime until each migration stage is implemented.
+
 ## Runtime ownership and threads
 
 `core::app_state_s` owns application-wide services:

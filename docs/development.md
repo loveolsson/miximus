@@ -19,6 +19,8 @@
 Read [architecture.md](architecture.md) before changing graph/config/web synchronization. Read [gpu-and-media.md](gpu-and-media.md) before changing GL, transfers, SDK callbacks, registries, or workers.
 The current render-thread latency audit and outstanding migrations are tracked in
 [render-thread-audit.md](render-thread-audit.md).
+The proposed broadcast timing, clock-recovery, frame-selection, output-buffering, and atomic graph-update architecture
+is tracked in [frame-timing-and-synchronization.md](frame-timing-and-synchronization.md).
 
 ## Building and running
 
