@@ -10,7 +10,9 @@
 
 namespace miximus::nodes::decklink::detail {
 namespace {
-constexpr size_t MAX_ALLOCATIONS = 6;
+constexpr size_t max_allocations        = 6;
+constexpr auto   initial_upload_timeout = std::chrono::seconds(2);
+constexpr auto   upload_timeout         = std::chrono::milliseconds(20);
 } // namespace
 
 ULONG video_buffer_s::Release()
@@ -70,7 +72,7 @@ auto allocator_s::acquire_upload(bool first_access) -> std::optional<gpu::transf
     // Initial backend allocation may queue behind application startup. Once
     // warm, waiting at most one frame bounds capture-thread backpressure while
     // leaving the render thread entirely uninvolved.
-    return stream->acquire_for(first_access ? std::chrono::seconds(2) : std::chrono::milliseconds(20));
+    return stream->acquire_for(first_access ? initial_upload_timeout : upload_timeout);
 }
 
 HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
@@ -81,27 +83,13 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
     *allocatedBuffer = nullptr;
 
     try {
-        buffer_ptr_t reusable;
-        {
-            const std::scoped_lock lock(mutex_);
-            if (shutting_down_ || !upload_stream_) {
-                return E_OUTOFMEMORY;
-            }
-            if (!free_buffers_.empty()) {
-                reusable = std::move(free_buffers_.front());
-                free_buffers_.pop_front();
-            } else if (allocated_buffers_.size() + free_buffers_.size() >= MAX_ALLOCATIONS) {
-                return E_OUTOFMEMORY;
-            }
-        }
-
         const std::scoped_lock lock(mutex_);
-        if (!reusable && !free_buffers_.empty()) {
-            reusable = std::move(free_buffers_.front());
-            free_buffers_.pop_front();
-            reusable->clear_upload();
+        if (shutting_down_ || !upload_stream_) {
+            return E_OUTOFMEMORY;
         }
-        if (reusable) {
+        if (!free_buffers_.empty()) {
+            auto reusable = std::move(free_buffers_.front());
+            free_buffers_.pop_front();
             auto* raw = reusable.get();
             raw->reset_ref_count();
             allocated_buffers_.emplace(raw, std::move(reusable));
@@ -109,11 +97,10 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
             return S_OK;
         }
 
-        if (allocated_buffers_.size() + free_buffers_.size() >= MAX_ALLOCATIONS) {
+        if (allocated_buffers_.size() >= max_allocations) {
             return E_OUTOFMEMORY;
         }
 
-        getlog("decklink")->debug("Allocating upload-backed DeckLink buffer, current count {}", ++allocations_g);
         auto  buffer = std::make_unique<video_buffer_s>(this, buffer_size_);
         auto* raw    = buffer.get();
         allocated_buffers_.emplace(raw, std::move(buffer));
@@ -137,7 +124,6 @@ void allocator_s::return_buffer(video_buffer_s* buffer)
         return;
     }
     if (shutting_down_) {
-        --allocations_g;
         allocated_buffers_.erase(it);
         if (allocated_buffers_.empty()) {
             idle_condition_.notify_all();
@@ -166,11 +152,9 @@ void allocator_s::shutdown_and_wait()
 {
     std::unique_lock lock(mutex_);
     shutting_down_ = true;
-    allocations_g -= free_buffers_.size();
     free_buffers_.clear();
     upload_stream_.reset();
     idle_condition_.wait(lock, [this] { return allocated_buffers_.empty(); });
-    getlog("decklink")->debug("Destroying drained DeckLink buffer pool, current count {}", allocations_g.load());
 }
 
 } // namespace miximus::nodes::decklink::detail

@@ -113,15 +113,22 @@ Transfer shutdown runs from `app_state_s` with the root GL context current, afte
 
 DeckLink input uses an `IDeckLinkVideoBufferAllocatorProvider` and `IDeckLinkVideoBufferAllocator` implementation. SDK capture buffers hold upload leases, allowing DeckLink DMA to write directly into backend-owned host memory. The SDK callback records frame metadata and submits the lease; it performs no GL work. The render node polls completed UYUV textures and retains the stream while sampling one.
 
-DeckLink cycles a fixed set of allocator buffer objects rather than allocating an object for every captured frame. Each
-buffer therefore acquires a fresh one-shot upload lease from `StartAccess(bmdBufferAccessWrite)`. `GetBytes()` exposes
-that lease's host address for the current SDK write cycle, and the frame callback submits it. Keeping one lease for the
-full lifetime of a DeckLink buffer would upload only its first frame and exhaust the transfer slots after the initial
-pool. Completed GPU textures remain owned by the upload stream independently of the DeckLink buffer object.
+DeckLink may retain and reuse allocator buffer objects across captured frames rather than requesting a new object for
+every frame. Each buffer therefore acquires a fresh one-shot upload lease from `StartAccess(bmdBufferAccessWrite)`.
+`GetBytes()` exposes that lease's host address for the current SDK write cycle, and the frame callback submits it.
+Keeping one lease for the full lifetime of a DeckLink buffer would upload only its first frame and exhaust the transfer
+slots after the initial pool. Completed GPU textures remain owned by the upload stream independently of the DeckLink
+buffer object.
+
+The upload stream retains its current completed texture until the render thread consumes a newer completed version;
+publishing the replacement returns the former slot to the stream. If no replacement is ready, the input node keeps
+presenting its already converted framebuffer. There is no fallback frame copy. A format change releases the old upload
+stream before allocating the new one, but the converted framebuffer remains visible until a frame in the new format
+replaces it.
 
 DeckLink wraps application-provided buffers in its input-frame objects. Upload-backed buffers therefore expose a private
 IID, matching the SDK custom-allocator examples, so the callback can recover the original buffer and submit its lease.
-The registry owns a serialized DeckLink input-control worker. Capture start, stop, flush, disable, device removal, and
+The registry owns a serialized DeckLink input-control worker. Capture start, stop, disable, device removal, and
 allocator retirement all run there; the render thread never calls those potentially blocking SDK methods. A format
 callback only records the pending mode and asks the render node to release its current texture. The next render prepare
 acknowledges that release without waiting, after which the control worker stops capture and waits for SDK buffer

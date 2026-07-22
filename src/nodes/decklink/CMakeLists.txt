@@ -6,8 +6,6 @@ PRIVATE
     detail/allocator.cpp
     detail/device_monitor.hpp
     detail/device_monitor.cpp
-    detail/input_control.hpp
-    detail/input_control.cpp
     detail/platform_compat.hpp
     input.cpp
     output.cpp

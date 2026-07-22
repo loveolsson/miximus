@@ -1,9 +1,9 @@
 #include "registry.hpp"
 
 #include "detail/device_monitor.hpp"
-#include "detail/input_control.hpp"
 #include "detail/platform_compat.hpp"
 #include "logger/logger.hpp"
+#include "utils/serial_executor.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
 #include <atomic>
@@ -198,7 +198,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 decklink_registry_s::decklink_registry_s()
     : discovery_(detail::create_device_discovery())
     , callback_(new discovery_callback(this), false)
-    , input_control_(std::make_unique<detail::input_control_s>())
+    , input_control_executor_(std::make_unique<utils::serial_executor_s>())
 {
     if (discovery_) {
         getlog("decklink")->debug("Installing DeckLink discovery");
@@ -237,7 +237,7 @@ decklink_registry_s::decklink_registry_s()
 decklink_registry_s::~decklink_registry_s()
 {
     uninstall();
-    input_control_.reset();
+    input_control_executor_.reset();
     statistics_thread_.request_stop();
     statistics_thread_.join();
     const std::unique_lock lock(device_mutex_);

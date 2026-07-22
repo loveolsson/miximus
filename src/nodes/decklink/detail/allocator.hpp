@@ -101,8 +101,6 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     std::atomic_ulong                                       ref_count_{1};
     uint32_t                                                buffer_size_;
 
-    static inline std::atomic_size_t allocations_g{0};
-
   public:
     explicit allocator_s(uint32_t buffer_size)
         : buffer_size_(buffer_size)
@@ -112,6 +110,7 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
 
     void set_upload_stream(std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream);
     auto acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>;
+    auto buffer_size() const { return buffer_size_; }
 
     HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) override;
     void                      return_buffer(video_buffer_s* buffer);
