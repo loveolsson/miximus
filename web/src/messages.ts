@@ -27,6 +27,7 @@ export const enum type_e {
   lerp_f64 = "lerp_f64",
   lerp_vec2 = "lerp_vec2",
   lerp_rect = "lerp_rect",
+  easing_f64 = "easing_f64",
   screen_output = "screen_output",
   decklink_input = "decklink_input",
   decklink_output = "decklink_output",

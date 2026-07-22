@@ -3,7 +3,14 @@ import { BaklavaInterfaceTypes } from "@baklavajs/interface-types";
 import type { IBaklavaViewModel } from "@baklavajs/renderer-vue";
 import { t_texture, t_framebuffer, t_f64, t_vec2, t_rect } from "./interface_types";
 
-import { F64MathNode, Vec2MathNode, F64LerpNode, Vec2LerpNode, RectLerpNode } from "./math";
+import {
+  F64MathNode,
+  Vec2MathNode,
+  F64LerpNode,
+  Vec2LerpNode,
+  RectLerpNode,
+  F64EasingNode,
+} from "./math";
 import { Vec2Node, RectNode, FrameBufferNode, FramebufferToTextureNode } from "./utils";
 import { DrawBoxNode, InfiniteMultiviewerNode, MixTex2Node } from "./composite";
 import {
@@ -30,6 +37,7 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(F64LerpNode, { category: "Math" });
   editor.registerNodeType(Vec2LerpNode, { category: "Math" });
   editor.registerNodeType(RectLerpNode, { category: "Math" });
+  editor.registerNodeType(F64EasingNode, { category: "Math" });
   editor.registerNodeType(Vec2Node, { category: "Utils" });
   editor.registerNodeType(RectNode, { category: "Utils" });
   editor.registerNodeType(FrameBufferNode, { category: "Utils" });

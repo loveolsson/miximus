@@ -4,4 +4,5 @@ PRIVATE
     register.cpp
     math.cpp
     lerp.cpp
+    easing.cpp
 )

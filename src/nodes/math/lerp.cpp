@@ -50,7 +50,9 @@ class node_impl : public node_i
         auto b = iface_b_.resolve_value(app, nodes, state, b_opt);
         auto t = iface_t_.resolve_value(app, nodes, state, t_opt);
 
-        t = glm::clamp(t, 0.0, 1.0);
+        if (!state.get_option<bool>("allow_overshoot")) {
+            t = glm::clamp(t, 0.0, 1.0);
+        }
 
         T res = lerp(a, b, t);
 
@@ -60,7 +62,8 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", name_},
+            {"name",            name_},
+            {"allow_overshoot", false},
         };
     }
 
@@ -72,6 +75,10 @@ class node_impl : public node_i
 
         if (name == "t") {
             return normalize_option_value<double>(value);
+        }
+
+        if (name == "allow_overshoot") {
+            return normalize_option_value<bool>(value);
         }
 
         return option_result_e::invalid;
