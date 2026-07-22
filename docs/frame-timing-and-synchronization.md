@@ -64,8 +64,8 @@ The current graph frame performs these operations:
 
 1. update the stable render snapshot;
 2. call `prepare()` on every node;
-3. determine demanding sinks and their structurally active upstream closure;
-4. call `submit()` once on every node in that closure;
+3. recursively submit from every demanding sink, following the potentially required input connections;
+4. suppress repeated submission of shared upstream nodes with a submission-specific visited set;
 5. lazily execute the dependencies of every demanding sink;
 6. call `glFinish()` globally;
 7. call `complete()` on every node.
@@ -247,12 +247,19 @@ outside the rendered closure. Input nodes use it to drain or advance bounded sou
 discard obsolete media, retain the current candidates, process asynchronous lifecycle results, and keep their source
 pipeline ready for an immediate graph switch. It must not wait for device control or a host/GPU transfer.
 
-After all-node preparation, active sinks define an upstream closure. That closure is traversed twice, with once-per-node
-caching in each pass:
+After all-node preparation, active sinks are the roots of two recursive traversals, with a separate once-per-node
+visited set in each pass:
 
 1. submission traversal: select and park the source frame for the current program PTS and initiate or associate any
    transfer or asynchronous work needed by active nodes;
 2. execution traversal: resolve the parked work within the frame budget, execute dependencies, and paint outputs.
+
+Submission works like execution traversal without resolving values. Calling a node's `submit()` marks it visited, and
+the node asks each potentially required `interface_i` to recursively submit its connected producer if that producer has
+not already submitted. The default implementation visits every input interface. Routing nodes may narrow this when an
+option already determines their route. If a selector is connected and therefore unavailable without execution, the node
+submits the selector dependency and conservatively submits every candidate media branch; execution later resolves the
+selector and executes only the branch or branches actually required.
 
 The first traversal is not a replacement for `prepare()`. It creates overlap between active asynchronous work and later
 consumption. Callback-driven input transfers may already be submitted before either traversal; their submission step
@@ -268,9 +275,8 @@ The intended frame order is therefore:
 1. apply the immutable application-settings snapshot and pending option batch at the frame boundary;
 2. update the stable node snapshot;
 3. call `prepare()` on every node;
-4. discover demanding sinks and their active upstream closure;
-5. run the submission traversal over that closure;
-6. run the execution traversal over that closure;
+4. run the recursive submission traversal from every demanding sink;
+5. run the recursive execution traversal from every demanding sink;
 7. retire frame-local GPU use and call `complete()` on every node;
 8. publish aggregated status without blocking.
 
@@ -283,9 +289,10 @@ The manager should first determine which sinks need a frame. Examples include:
 - enabled screen outputs;
 - future encoders, recorders, and explicit preview consumers.
 
-The manager traverses connections upstream without painting and produces the active render closure. Only nodes in this
-closure receive submission and execution, but every node still receives `prepare()` and `complete()`. This replaces the
-current `must_run` boolean with a more explicit sink-demand contract without making input readiness demand-driven.
+The manager starts both traversals from the demanding sinks. Their recursive connection walks produce the submitted and
+executed closures independently. Only nodes reached by a pass receive its lifecycle call, but every node still receives
+`prepare()` and `complete()`. This replaces the current `must_run` boolean with a more explicit sink-demand contract
+without making input readiness demand-driven.
 
 Inputs are always hot. DeckLink capture, NDI sampling, future file playback/decode, queue advancement, and their normal
 transfer pipelines continue even when their texture is not selected by an output this frame. An implementation may
@@ -530,7 +537,7 @@ The scheduler should report:
 
 - program rate, frame number, PTS, epoch, and clock source;
 - render start/end time, render duration, deadline margin, and lateness;
-- prepare, closure-planning, submission, execution, GPU-finish, and completion durations;
+- prepare, traversal setup, submission, execution, GPU-finish, and completion durations;
 - demanding-sink and submitted-closure node counts;
 - skipped frames and sustained-overload state;
 - active settings revision and pending/applied option-batch counts.
@@ -638,16 +645,16 @@ Exit criteria:
 Deliverables:
 
 - Preserve once-per-frame `prepare()` and `complete()` calls for every node.
-- Determine demanding sinks and the active upstream closure after preparation.
+- Determine demanding sinks after preparation.
 - Add a once-per-node submission traversal before the existing execution traversal.
 - Give nodes a small explicit hook for submission; keep the existing execution contract during migration.
 - Replace `must_run` with explicit sink demand and remove or redefine the unused `wait_for_sync` trait.
 - Instrument phase duration and ordering before moving real transfer behavior into the new hook.
 
-The initial closure is deliberately structural: it follows every connected upstream edge from a demanding sink.
-Execution remains lazy and may visit a smaller subset when a node selects among inputs at runtime. Future nodes that
-submit expensive branch-specific work must expose enough routing information to prune unused candidates rather than
-assuming every structurally reachable branch is selected.
+The submission traversal recursively follows the input interfaces that each node may require, using its own visited set
+just as execution does. Execution remains lazy and may visit a smaller subset when a node's choice depends on a connected
+selector that has not executed yet. Routing nodes prune unused candidates whenever their selection is already known from
+frame-boundary option state; otherwise they conservatively submit every possible branch without resolving values.
 
 Exit criteria:
 
@@ -659,7 +666,7 @@ Exit criteria:
 
 ### Stage 4: timed source queues and prepared tickets
 
-**Status:** In progress
+**Status:** Foundation implemented; source integrations in progress
 
 Deliverables:
 
@@ -679,7 +686,7 @@ Exit criteria:
 
 ### Stage 5: DeckLink scheduled output
 
-**Status:** Pending
+**Status:** In progress
 
 Deliverables:
 
@@ -703,7 +710,9 @@ Deliverables:
 
 - Attach stream time, duration, hardware-reference observation, arrival time, format, and source epoch to every submitted
   upload lease.
-- Keep capture and upload submission continuous for every captured frame, regardless of render demand.
+- Keep capture and bounded host-visible reservations continuous regardless of render demand. Advance and discard queued
+  captures from all-node preparation, but start the host/GPU upload only for the exact ticket selected by an active
+  submission traversal.
 - Advance the timed source queue from all-node preparation and select its current ticket during active submission.
 - Preserve custom-buffer reuse, fresh `StartAccess()` leases, last-frame retention, serialized reconfiguration, and
   allocator-drain ordering.
@@ -725,13 +734,14 @@ Deliverables:
 - Tag results with requested program identity and retain NDI timing observations for diagnostics/discontinuities.
 - Make NDI output consume program-PTS results at its configured cadence, explicitly repeat missing frames, and derive
   timecode from the program timeline.
-- Stop NDI output render demand when no receiver is connected without cooling any NDI input.
+- Keep enabled NDI outputs as demanding sinks even when no receiver is connected, so connecting a receiver cannot
+  suddenly change graph workload or timing behavior.
 
 Exit criteria:
 
 - Rate mismatch and injected network/capture delay keep bounded queues and predictable repeat/drop behavior.
 - No NDI capture, copy, send, or transfer wait blocks the render thread.
-- Receiver connect/disconnect changes output demand without affecting input readiness.
+- Receiver connect/disconnect does not change graph demand or input readiness.
 
 ### Stage 8: screen output
 

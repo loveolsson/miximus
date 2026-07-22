@@ -19,6 +19,15 @@ void node_i::register_interface(const interface_i& iface)
 
 void node_i::init(std::string_view id) { id_ = id; }
 
+void node_i::submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state)
+{
+    for (const auto& [_, iface] : interfaces_) {
+        if (iface->direction() == interface_i::dir_e::input) {
+            iface->submit_connections(app, nodes, state);
+        }
+    }
+}
+
 nlohmann::json node_i::get_default_options() const { return nlohmann::json::object(); }
 
 option_result_e node_i::normalize_common_option(std::string_view name, nlohmann::json* value)

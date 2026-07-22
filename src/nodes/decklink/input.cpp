@@ -11,6 +11,7 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
+#include "media/timed_source_queue.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -27,7 +28,6 @@
 #include <cstdint>
 #include <exception>
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -69,6 +69,8 @@ void write_device_status(core::node_status_registry_s::writer_s& writer, const d
 struct frame_info_s
 {
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
+    std::optional<gpu::transfer::texture_upload_lease_s>    upload;
+    uint64_t                                                upload_version{};
     gpu::texture_s*                                         texture{};
     gpu::vec2i_t                                            src_dim{};
     BMDColorspace                                           colorspace{bmdColorspaceRec709};
@@ -100,13 +102,6 @@ class callback_s
   private:
     std::atomic_ulong ref_count_{1};
 
-    struct upload_metadata_s
-    {
-        utils::flicks arrival_time;
-        gpu::vec2i_t  src_dim{};
-        BMDColorspace colorspace{bmdColorspaceRec709};
-    };
-
     gpu::transfer::texture_upload_service_s*                upload_service_;
     utils::serial_executor_s*                               control_executor_;
     decklink_ptr<IDeckLinkInput>                            device_;
@@ -115,12 +110,13 @@ class callback_s
     decklink_ptr<input_video_buffer_allocator_s>            allocator_;
     std::mutex                                              upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
-    std::map<uint64_t, upload_metadata_s>                   upload_metadata_;
+    media::timed_source_queue_s<frame_info_s>               frame_queue_{{.capacity = 4}};
 
     std::atomic<BMDDisplayMode> pending_display_mode_{bmdModeUnknown};
     std::atomic<BMDColorspace>  colorspace_{bmdColorspaceRec709};
     std::atomic_bool            stop_requested_{false};
     std::atomic<phase_e>        phase_{phase_e::starting};
+    std::atomic<phase_e>        terminal_phase_{phase_e::stopped};
     std::atomic<BMDDisplayMode> active_display_mode_{bmdModeUnknown};
     bool                        capture_active_{};
 
@@ -134,6 +130,12 @@ class callback_s
     bool                                  has_stream_time_{};
     std::atomic_bool                      reset_stream_time_;
     std::atomic_bool                      warned_missing_custom_buffer_;
+    std::atomic_uint64_t                  source_epoch_{};
+    std::atomic_uint64_t                  next_sequence_{};
+    bool                                  warned_submit_failure_{};
+    bool                                  warned_wait_failure_{};
+    bool                                  warned_consume_failure_{};
+    bool                                  warned_commit_failure_{};
 
     BMDColorspace get_frame_colorspace(IDeckLinkVideoInputFrame* frame) const
     {
@@ -161,12 +163,14 @@ class callback_s
                 task(*self);
             } catch (const std::exception& error) {
                 log()->error("DeckLink input control task failed: {}", error.what());
+                self->terminal_phase_ = phase_e::failed;
                 self->stop_requested_ = true;
-                self->retire_capture(phase_e::failed);
+                self->phase_          = phase_e::release_requested;
             } catch (...) {
                 log()->error("DeckLink input control task failed");
+                self->terminal_phase_ = phase_e::failed;
                 self->stop_requested_ = true;
-                self->retire_capture(phase_e::failed);
+                self->phase_          = phase_e::release_requested;
             }
         });
         if (!accepted) {
@@ -180,7 +184,6 @@ class callback_s
         decklink_ptr<input_video_buffer_allocator_s> allocator;
         {
             const std::scoped_lock lock(upload_mutex_);
-            upload_metadata_.clear();
             allocator = allocator_;
         }
 
@@ -230,7 +233,9 @@ class callback_s
         active_display_mode_ = mode;
         capture_active_      = true;
         reset_stream_time_   = true;
-        phase_               = phase_e::running;
+        source_epoch_.fetch_add(1);
+        next_sequence_ = 0;
+        phase_         = phase_e::running;
         log()->info("DeckLink input capture running: {}", device_name_);
         return true;
     }
@@ -288,13 +293,15 @@ class callback_s
         } else if (!start_capture()) {
             stop_requested_ = true;
             retire_capture(phase_e::failed);
+        } else if (stop_requested_.load()) {
+            retire_capture(terminal_phase_.load());
         }
     }
 
     void reconfigure_capture_control()
     {
         if (stop_requested_.load()) {
-            retire_capture(phase_e::stopped);
+            retire_capture(terminal_phase_.load());
             return;
         }
 
@@ -313,13 +320,16 @@ class callback_s
     }
 
   public:
+    using frame_ticket_t = media::timed_source_queue_s<frame_info_s>::ticket_t;
+
     struct metrics_s
     {
-        uint64_t frames_received{};
-        uint64_t frames_missing{};
-        uint64_t no_input_source_frames{};
-        uint64_t upload_slot_drops{};
-        uint32_t available_video_frames{};
+        uint64_t                            frames_received{};
+        uint64_t                            frames_missing{};
+        uint64_t                            no_input_source_frames{};
+        uint64_t                            upload_slot_drops{};
+        uint32_t                            available_video_frames{};
+        media::timed_source_queue_metrics_s source_queue;
     };
 
     callback_s(gpu::transfer::texture_upload_service_s*              upload_service,
@@ -406,7 +416,6 @@ class callback_s
                     log()->error("DeckLink requested a new allocator before the previous pool was released");
                     return E_FAIL;
                 }
-                upload_metadata_.clear();
                 upload_stream_ = stream;
                 allocator_     = std::move(allocator);
             }
@@ -438,8 +447,8 @@ class callback_s
             log()->error("DeckLink input frame callback failed");
         }
         if (!stop_requested_.exchange(true)) {
-            phase_ = phase_e::stopping;
-            post_control([](callback_s& self) { self.retire_capture(phase_e::failed); });
+            terminal_phase_ = phase_e::failed;
+            phase_          = phase_e::release_requested;
         }
         return E_FAIL;
     }
@@ -459,6 +468,7 @@ class callback_s
         }
 
         constexpr BMDTimeScale metric_time_scale = 1'000'000;
+        constexpr BMDTimeScale flick_time_scale  = 705'600'000;
         BMDTimeValue           stream_time{};
         BMDTimeValue           frame_duration{};
         if (reset_stream_time_.exchange(false)) {
@@ -475,6 +485,14 @@ class callback_s
             has_stream_time_  = true;
         }
 
+        BMDTimeValue frame_pts_flicks{};
+        BMDTimeValue frame_duration_flicks{};
+        if (videoFrame->GetStreamTime(&frame_pts_flicks, &frame_duration_flicks, flick_time_scale) != S_OK ||
+            frame_duration_flicks <= 0) {
+            ++upload_slot_drops_;
+            return S_OK;
+        }
+
         const auto now = std::chrono::steady_clock::now();
         if (now >= next_queue_poll_) {
             uint32_t available{};
@@ -488,13 +506,15 @@ class callback_s
         auto               video_buffer  = query_decklink_interface<IDeckLinkVideoBuffer>(videoFrame);
         auto               upload_buffer = query_input_video_buffer(video_buffer.get());
 
-        input_video_buffer_allocator_s* allocator{};
+        input_video_buffer_allocator_s*                         allocator{};
+        std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
         {
             const std::scoped_lock lock(upload_mutex_);
             allocator = allocator_.get();
+            stream    = upload_stream_;
         }
 
-        if (!upload_buffer || upload_buffer->allocator() != allocator) {
+        if (!upload_buffer || upload_buffer->allocator() != allocator || !stream) {
             ++upload_slot_drops_;
             if (!upload_buffer && !warned_missing_custom_buffer_.exchange(true)) {
                 log()->warn("DeckLink returned a frame that was not allocated by its active custom allocator");
@@ -502,23 +522,30 @@ class callback_s
             return S_OK;
         }
 
-        const auto version = upload_buffer->upload_version();
-        if (version == 0) {
+        auto upload = upload_buffer->take_upload();
+        if (!upload.has_value()) {
             ++upload_slot_drops_;
             log()->warn("VideoInputFrameArrived dropped frame: no upload slot");
             return S_OK;
         }
+        const auto version = upload->version();
 
-        {
-            const std::scoped_lock lock(upload_mutex_);
-            upload_metadata_.insert_or_assign(version,
-                                              upload_metadata_s{
-                                                  .arrival_time = frame_arrival_time,
-                                                  .src_dim      = src_dim,
-                                                  .colorspace   = get_frame_colorspace(videoFrame),
-                                              });
-        }
-        upload_buffer->submit_upload();
+        const media::media_frame_id_s frame_id{
+            .epoch    = source_epoch_.load(),
+            .sequence = next_sequence_.fetch_add(1),
+            .pts      = utils::flicks{frame_pts_flicks},
+            .duration = utils::flicks{frame_duration_flicks},
+        };
+        frame_queue_.push(frame_queue_.create_frame(frame_id,
+                                                    frame_arrival_time,
+                                                    frame_info_s{
+                                                        .stream         = std::move(stream),
+                                                        .upload         = std::move(upload),
+                                                        .upload_version = version,
+                                                        .texture        = nullptr,
+                                                        .src_dim        = src_dim,
+                                                        .colorspace     = get_frame_colorspace(videoFrame),
+                                                    }));
         return S_OK;
     }
 
@@ -550,46 +577,93 @@ class callback_s
         return S_OK;
     }
 
-    std::optional<frame_info_s> get_rendered_frame(utils::flicks pts, utils::flicks flush)
+    void advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity)
     {
-        const std::scoped_lock lock(upload_mutex_);
-        if (!upload_stream_) {
-            return std::nullopt;
-        }
-
-        const auto latest_ready = upload_stream_->latest_ready_version();
-        auto       selected     = upload_metadata_.end();
-        for (auto it = upload_metadata_.begin(); it != upload_metadata_.end() && it->first <= latest_ready; ++it) {
-            if (it->second.arrival_time <= pts) {
-                selected = it;
-            }
-        }
-        if (selected == upload_metadata_.end()) {
-            std::erase_if(upload_metadata_, [flush](const auto& entry) { return entry.second.arrival_time < flush; });
-            return std::nullopt;
-        }
-
-        const auto version  = selected->first;
-        auto       metadata = selected->second;
-        auto*      texture  = upload_stream_->consume_through(version);
-        if (texture == nullptr || upload_stream_->current_version() != version) {
-            return std::nullopt;
-        }
-
-        for (auto it = upload_metadata_.begin(); it != upload_metadata_.end();) {
-            if (it->first <= version || it->second.arrival_time < flush) {
-                it = upload_metadata_.erase(it);
-            } else {
-                ++it;
-            }
-        }
-        return frame_info_s{
-            .stream     = upload_stream_,
-            .texture    = texture,
-            .src_dim    = metadata.src_dim,
-            .colorspace = metadata.colorspace,
-        };
+        frame_queue_.advance(program_pts, target_time, discontinuity);
     }
+
+    frame_ticket_t select_frame(utils::flicks program_pts) { return frame_queue_.select(program_pts); }
+
+    bool submit_frame(frame_ticket_t* ticket)
+    {
+        if (ticket->selection() == media::prepared_frame_selection_e::repeat) {
+            return true;
+        }
+        if (ticket->selection() != media::prepared_frame_selection_e::new_frame || ticket->frame() == nullptr) {
+            return false;
+        }
+
+        auto& frame = *ticket->frame();
+        auto& info  = frame.value();
+        if (frame.readiness() == media::source_frame_readiness_e::submitted) {
+            return true;
+        }
+        if (!frame.mark_submitted() || !info.upload.has_value() || !info.upload->submit()) {
+            if (!warned_submit_failure_) {
+                log()->warn("DeckLink timed input failed to submit upload version {} (readiness {}, lease {})",
+                            info.upload_version,
+                            static_cast<int>(frame.readiness()),
+                            info.upload.has_value());
+                warned_submit_failure_ = true;
+            }
+            frame_queue_.fail(*ticket);
+            return false;
+        }
+        info.upload.reset();
+        return true;
+    }
+
+    frame_info_s* resolve_frame(frame_ticket_t* ticket)
+    {
+        if (ticket->frame() == nullptr) {
+            return nullptr;
+        }
+
+        auto& frame = *ticket->frame();
+        auto& info  = frame.value();
+        if (ticket->selection() == media::prepared_frame_selection_e::new_frame) {
+            const auto wait_result = info.stream ? info.stream->wait_until_ready(info.upload_version)
+                                                 : gpu::transfer::texture_upload_wait_result_e::stopped;
+            if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
+                if (!warned_wait_failure_) {
+                    log()->warn("DeckLink timed input failed waiting for upload version {} (result {})",
+                                info.upload_version,
+                                static_cast<int>(wait_result));
+                    warned_wait_failure_ = true;
+                }
+                frame_queue_.fail(*ticket);
+                return nullptr;
+            }
+            info.texture = info.stream->consume_through(info.upload_version);
+            if (info.texture == nullptr || info.stream->current_version() != info.upload_version ||
+                !frame.mark_ready()) {
+                if (!warned_consume_failure_) {
+                    log()->warn("DeckLink timed input failed to consume upload version {} (current {}, texture {}, "
+                                "readiness {})",
+                                info.upload_version,
+                                info.stream->current_version(),
+                                info.texture != nullptr,
+                                static_cast<int>(frame.readiness()));
+                    warned_consume_failure_ = true;
+                }
+                frame_queue_.fail(*ticket);
+                return nullptr;
+            }
+        }
+
+        if (!ticket->await() || !frame_queue_.commit(*ticket)) {
+            if (!warned_commit_failure_) {
+                log()->warn("DeckLink timed input failed to commit upload version {} (readiness {})",
+                            info.upload_version,
+                            static_cast<int>(frame.readiness()));
+                warned_commit_failure_ = true;
+            }
+            return nullptr;
+        }
+        return &info;
+    }
+
+    void reset_frames() { frame_queue_.reset(); }
 
     void start_async()
     {
@@ -606,9 +680,15 @@ class callback_s
 
     void stop_async()
     {
-        if (!stop_requested_.exchange(true)) {
-            phase_ = phase_e::stopping;
-            post_control([](callback_s& self) { self.retire_capture(phase_e::stopped); });
+        terminal_phase_ = phase_e::stopped;
+        stop_requested_ = true;
+
+        auto phase = phase_.load();
+        while (phase == phase_e::running || phase == phase_e::release_requested) {
+            if (phase_.compare_exchange_weak(phase, phase_e::stopping)) {
+                post_control([](callback_s& self) { self.retire_capture(phase_e::stopped); });
+                return;
+            }
         }
     }
 
@@ -623,6 +703,7 @@ class callback_s
             .no_input_source_frames = no_input_source_frames_.load(),
             .upload_slot_drops      = upload_slot_drops_.load(),
             .available_video_frames = available_video_frames_.load(),
+            .source_queue           = frame_queue_.metrics(),
         };
     }
 
@@ -667,7 +748,7 @@ class node_impl : public node_i
 
     std::unique_ptr<gpu::framebuffer_s>                       framebuffer_;
     std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
-    std::optional<frame_info_s>                               work_frame_;
+    std::optional<callback_s::frame_ticket_t>                 work_frame_;
     utils::observed_value_s<uint64_t>                         device_version_;
     utils::observed_value_s<std::pair<std::string, bool>>     capture_selection_;
     utils::observed_value_s<BMDColorspace>                    colorspace_;
@@ -683,6 +764,7 @@ class node_impl : public node_i
         work_frame_.reset();
         framebuffer_.reset();
         if (callback_) {
+            callback_->reset_frames();
             callback_->stop_async();
             callback_ = nullptr;
         }
@@ -712,6 +794,13 @@ class node_impl : public node_i
         writer.write("no_input_source_frames", metrics.no_input_source_frames);
         writer.write("upload_slot_drops", metrics.upload_slot_drops);
         writer.write("available_video_frames", metrics.available_video_frames);
+        writer.write("source_queue_pushed", metrics.source_queue.pushed);
+        writer.write("source_queue_overflow_drops", metrics.source_queue.overflow_drops);
+        writer.write("source_queue_selection_drops", metrics.source_queue.selection_drops);
+        writer.write("source_queue_repeated", metrics.source_queue.repeated);
+        writer.write("source_queue_missing", metrics.source_queue.missing);
+        writer.write("source_queue_discontinuities", metrics.source_queue.discontinuities);
+        writer.write("source_queue_transfer_failures", metrics.source_queue.transfer_failures);
         next_metrics_status_ = now + std::chrono::seconds(1);
     }
 
@@ -723,6 +812,7 @@ class node_impl : public node_i
 
         if (callback_->requires_render_release()) {
             work_frame_.reset();
+            callback_->reset_frames();
             callback_->acknowledge_render_release();
         }
 
@@ -742,11 +832,8 @@ class node_impl : public node_i
         }
 
         if (phase == callback_s::phase_e::running) {
-            const auto pts   = app->frame_info.timestamp;
-            const auto flush = pts - app->frame_info.duration * 2;
-            work_frame_      = callback_->get_rendered_frame(pts, flush);
-        } else {
-            work_frame_.reset();
+            const auto& frame = app->frame_context();
+            callback_->advance_frames(frame.pts, frame.target_time, frame.discontinuity);
         }
     }
 
@@ -826,9 +913,23 @@ class node_impl : public node_i
         sr->write(id_, "connected", callback_ && callback_->phase() == callback_s::phase_e::running);
     }
 
+    void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
+    {
+        work_frame_.reset();
+        if (!callback_ || callback_->phase() != callback_s::phase_e::running) {
+            return;
+        }
+
+        work_frame_.emplace(callback_->select_frame(app->frame_context().pts));
+        if (!callback_->submit_frame(&*work_frame_)) {
+            work_frame_.reset();
+        }
+    }
+
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
-        if (!work_frame_ || work_frame_->texture == nullptr) {
+        auto* frame = work_frame_.has_value() && callback_ ? callback_->resolve_frame(&*work_frame_) : nullptr;
+        if (frame == nullptr || frame->texture == nullptr) {
             iface_tex_.set_value(framebuffer_ ? framebuffer_->texture() : nullptr);
             return;
         }
@@ -838,7 +939,7 @@ class node_impl : public node_i
             textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
-        const auto src_dim = work_frame_->src_dim;
+        const auto src_dim = frame->src_dim;
 
         if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != src_dim) {
             framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::format_e::rgb_f16);
@@ -847,7 +948,7 @@ class node_impl : public node_i
         auto shader = textured_quad_->shader();
         shader->set_uniform("target_width", src_dim.x);
 
-        if (colorspace_.observe(work_frame_->colorspace)) {
+        if (colorspace_.observe(frame->colorspace)) {
             const auto transfer = get_color_transfer(colorspace_.value());
             yuv_conversion_     = gpu::get_color_transfer_from_yuv(transfer);
             gamut_conversion_   = gpu::get_gamut_transfer_to_rec709(transfer);
@@ -858,7 +959,7 @@ class node_impl : public node_i
         shader->set_uniform("gamut_transfer", gamut_conversion_);
 
         framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        textured_quad_->draw(work_frame_->texture);
+        textured_quad_->draw(frame->texture);
         gpu::framebuffer_s::end_render();
 
         auto fb_tex = framebuffer_->texture();

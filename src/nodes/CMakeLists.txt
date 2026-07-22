@@ -10,6 +10,7 @@ add_library(nodes
     connection.hpp
     connection.cpp
     frame_execution.hpp
+    frame_execution_fwd.hpp
     frame_execution.cpp
     register_all.hpp
     register_all.cpp

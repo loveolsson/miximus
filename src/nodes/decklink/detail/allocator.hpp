@@ -37,8 +37,10 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
     {
     }
 
-    uint64_t                        upload_version() const { return upload_ ? upload_->version() : 0; }
-    void                            submit_upload() { upload_->submit(); }
+    auto take_upload() -> std::optional<gpu::transfer::texture_upload_lease_s>
+    {
+        return std::exchange(upload_, std::nullopt);
+    }
     input_video_buffer_allocator_s* allocator() const { return allocator_; }
 
     HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) override

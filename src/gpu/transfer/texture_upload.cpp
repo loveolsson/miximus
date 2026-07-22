@@ -341,24 +341,25 @@ std::span<std::byte> texture_upload_lease_s::bytes() const
 
 uint64_t texture_upload_lease_s::version() const { return slot_ ? slot_->version : 0; }
 
-void texture_upload_lease_s::submit()
+bool texture_upload_lease_s::submit()
 {
     if (!stream_ || !slot_ || submitted_) {
-        return;
+        return false;
     }
     auto service = stream_->service.lock();
     if (!service) {
-        return;
+        return false;
     }
     {
         const std::scoped_lock lock(stream_->mutex);
         if (!stream_->active || slot_->state != detail::slot_state_e::cpu_writing) {
-            return;
+            return false;
         }
         slot_->state = detail::slot_state_e::queued;
         submitted_   = true;
     }
     service->enqueue({.type = detail::task_type_e::upload, .stream = stream_, .slot = slot_});
+    return true;
 }
 
 texture_upload_stream_s::texture_upload_stream_s(std::shared_ptr<detail::texture_upload_stream_state_s> state)

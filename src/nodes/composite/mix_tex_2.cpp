@@ -34,6 +34,26 @@ class node_impl : public node_i
     std::unique_ptr<gpu::textured_quad_s> textured_quad_;
 
   public:
+    void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    {
+        iface_fb_in_.submit_connections(app, nodes, state);
+        iface_t_.submit_connections(app, nodes, state);
+
+        if (!iface_t_.connections(state).empty()) {
+            iface_a_.submit_connections(app, nodes, state);
+            iface_b_.submit_connections(app, nodes, state);
+            return;
+        }
+
+        const auto t = state.get_option<double>("t");
+        if (t < 1.0) {
+            iface_a_.submit_connections(app, nodes, state);
+        }
+        if (t > 0.0) {
+            iface_b_.submit_connections(app, nodes, state);
+        }
+    }
+
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         auto* framebuffer = iface_fb_in_.resolve_value(app, nodes, state);

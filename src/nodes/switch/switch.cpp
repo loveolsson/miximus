@@ -30,6 +30,12 @@ class node_impl : public node_i
     std::string_view                                           type_;
     std::string_view                                           name_;
 
+    static size_t active_index(double active)
+    {
+        const double clamped = std::clamp(std::floor(active), 1.0, static_cast<double>(SlotCount));
+        return static_cast<size_t>(clamped - 1.0);
+    }
+
   public:
     node_impl(std::string_view type, std::string_view name, std::string_view output_name)
         : output_(*this, output_name)
@@ -45,9 +51,7 @@ class node_impl : public node_i
     {
         const int    active_option = state.get_option<int>("active", 1);
         const double active_value  = active_.resolve_value(app, nodes, state, static_cast<double>(active_option));
-        const double clamped_value = std::clamp(std::floor(active_value), 1.0, static_cast<double>(SlotCount));
-        const int    active        = static_cast<int>(clamped_value);
-        const auto   index         = static_cast<size_t>(active - 1);
+        const auto   index         = active_index(active_value);
         const auto&  input         = inputs_.at(index);
         if (!input.has_value()) {
             output_.set_value({});
@@ -55,6 +59,24 @@ class node_impl : public node_i
         }
 
         output_.set_value(input->resolve_value(app, nodes, state));
+    }
+
+    void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    {
+        active_.submit_connections(app, nodes, state);
+        if (!active_.connections(state).empty()) {
+            for (const auto& input : inputs_) {
+                if (input.has_value()) {
+                    input->submit_connections(app, nodes, state);
+                }
+            }
+            return;
+        }
+
+        const auto index = active_index(static_cast<double>(state.get_option<int>("active", 1)));
+        if (inputs_.at(index).has_value()) {
+            inputs_.at(index)->submit_connections(app, nodes, state);
+        }
     }
 
     nlohmann::json get_default_options() const final

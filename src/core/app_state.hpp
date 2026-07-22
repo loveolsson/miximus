@@ -7,6 +7,7 @@
 #include "gpu/transfer/texture_download_fwd.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
+#include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
 #include "types/frame_rate.hpp"
@@ -17,9 +18,7 @@
 #include <chrono>
 #include <memory>
 #include <optional>
-#include <string_view>
 #include <thread>
-#include <unordered_set>
 
 namespace miximus::core {
 
@@ -68,11 +67,12 @@ class app_state_s
 
     struct
     {
-        utils::flicks                        timestamp;
-        utils::flicks                        pts;
-        utils::flicks                        duration;
-        bool                                 field_even{};
-        std::unordered_set<std::string_view> executed_nodes;
+        utils::flicks               timestamp;
+        utils::flicks               pts;
+        utils::flicks               duration;
+        bool                        field_even{};
+        nodes::submitted_node_set_t submitted_nodes;
+        nodes::executed_node_set_t  executed_nodes;
     } frame_info;
 };
 

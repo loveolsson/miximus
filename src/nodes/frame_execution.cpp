@@ -1,36 +1,9 @@
 #include "frame_execution.hpp"
 
+#include "core/app_state.hpp"
+#include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-
-#include <unordered_set>
-
-namespace {
-void append_upstream_nodes(miximus::nodes::node_map_t*                           nodes,
-                           std::string_view                                      id,
-                           std::unordered_set<std::string_view>*                 visited,
-                           std::vector<miximus::nodes::frame_execution_entry_s>* active_nodes)
-{
-    if (!visited->emplace(id).second) {
-        return;
-    }
-
-    const auto node = nodes->find(id);
-    if (node == nodes->end()) {
-        return;
-    }
-
-    for (const auto& [_, connections] : node->second.state.con_map) {
-        for (const auto& connection : connections) {
-            if (connection.to_node == id) {
-                append_upstream_nodes(nodes, connection.from_node, visited, active_nodes);
-            }
-        }
-    }
-
-    active_nodes->push_back({id, &node->second});
-}
-} // namespace
 
 namespace miximus::nodes {
 
@@ -53,6 +26,25 @@ void complete_all_nodes(core::app_state_s* app, node_map_t& nodes)
     for (auto& [_, record] : nodes) {
         record.node->complete(app);
     }
+}
+
+bool submit_node_once(core::app_state_s*    app,
+                      const node_map_t&     nodes,
+                      std::string_view      id,
+                      submitted_node_set_t& submitted_nodes)
+{
+    if (!submitted_nodes.emplace(id).second) {
+        return false;
+    }
+
+    const auto node = nodes.find(id);
+    if (node == nodes.end()) {
+        submitted_nodes.erase(id);
+        return false;
+    }
+
+    node->second.node->submit(app, nodes, node->second.state);
+    return true;
 }
 
 bool execute_node_once(core::app_state_s*   app,
@@ -79,27 +71,19 @@ frame_execution_plan_s::frame_execution_plan_s(node_map_t& nodes, std::span<cons
 {
     demanding_nodes_.reserve(demanding_nodes.size());
     demanding_nodes_.assign(demanding_nodes.begin(), demanding_nodes.end());
-    active_nodes_.reserve(nodes.size());
-
-    std::unordered_set<std::string_view> visited;
-    visited.reserve(nodes.size());
-
-    for (const auto id : demanding_nodes_) {
-        append_upstream_nodes(nodes_, id, &visited, &active_nodes_);
-    }
 }
 
 void frame_execution_plan_s::submit(core::app_state_s* app) const
 {
-    for (const auto& [_, record] : active_nodes_) {
-        record->node->submit(app, *nodes_, record->state);
+    for (const auto id : demanding_nodes_) {
+        submit_node_once(app, *nodes_, id, app->frame_info.submitted_nodes);
     }
 }
 
-void frame_execution_plan_s::execute(core::app_state_s* app, executed_node_set_t& executed_nodes) const
+void frame_execution_plan_s::execute(core::app_state_s* app) const
 {
     for (const auto id : demanding_nodes_) {
-        execute_node_once(app, *nodes_, id, executed_nodes);
+        execute_node_once(app, *nodes_, id, app->frame_info.executed_nodes);
     }
 }
 

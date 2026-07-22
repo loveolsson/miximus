@@ -53,7 +53,7 @@ class node_i
      * nodes have prepared and before any demanded node executes. Use this to
      * park frame-local work or initiate asynchronous work; do not wait for it.
      */
-    virtual void submit(core::app_state_s*, const node_map_t&, const node_state_s&) {}
+    virtual void submit(core::app_state_s*, const node_map_t&, const node_state_s&);
 
     /**
      * Called on the main thread with the main GL context current. Invoked lazily

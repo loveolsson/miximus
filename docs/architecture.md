@@ -62,8 +62,9 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 2. Snapshot application settings and apply dirty and removed records to `nodes_copy_`.
 3. Create the immutable frame context for this evaluation.
 4. Call `prepare()` on every render-snapshot node and collect the sinks that demand a frame.
-5. Build the demanded sinks' upstream connection closure.
-6. Call `submit()` once on every node in that closure, upstream first.
+5. Recursively call `submit()` from every demanding sink. Each node follows the input connections it may need through
+   `interface_i`; a dedicated visited set ensures that shared upstream nodes submit only once.
+6. Finish the complete submission traversal before execution begins.
 7. Execute the demanding sinks. Resolving an input recursively executes its upstream node.
 8. Record executed IDs so each node executes at most once per frame.
 9. Call `gpu::context_s::finish()` after all submitted `execute()` work.
@@ -96,6 +97,13 @@ Supported native interface types are:
 - `gpu::framebuffer_s*`
 
 `input_interface_s<T>::resolve_value()` follows its connection and lazily executes the upstream node before reading its output value. `resolve_values()` is used only after increasing the interface's connection limit.
+
+Connection traversal belongs to `interface_i` in both passes. During submission, a node asks the relevant input
+interfaces to submit their connected producers recursively; during execution, typed input resolution executes connected
+producers recursively before reading their values. The two passes use separate visited sets. The default `node_i::submit`
+visits every input interface. Routing nodes override it to narrow the traversal when an option already determines the
+route, or conservatively visit every possible branch when the selector is connected and cannot be resolved without
+execution.
 
 Compatibility and native implicit conversions live in `src/nodes/interface.cpp`. Matching web types and conversions live in `web/src/nodes/interface_types.ts`; keep them consistent.
 

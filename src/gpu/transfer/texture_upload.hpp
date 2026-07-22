@@ -57,7 +57,7 @@ class texture_upload_lease_s
 
     std::span<std::byte> bytes() const;
     uint64_t             version() const;
-    void                 submit();
+    bool                 submit();
     explicit             operator bool() const { return slot_ != nullptr; }
 };
 

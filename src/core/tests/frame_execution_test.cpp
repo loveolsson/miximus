@@ -1,4 +1,5 @@
 #include "nodes/frame_execution.hpp"
+#include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/option_result.hpp"
@@ -16,17 +17,25 @@ using namespace miximus;
 
 class test_node_s final : public nodes::node_i
 {
-    std::string               type_;
-    std::vector<std::string>* events_;
-    bool                      demands_execution_;
+    std::string                  type_;
+    std::vector<std::string>*    events_;
+    bool                         demands_execution_;
+    nodes::submitted_node_set_t* submitted_nodes_;
+
+    nodes::input_interface_s<double> source_{*this, "source"};
+    nodes::input_interface_s<double> input_{*this, "input"};
 
     void record(std::string_view phase) const { events_->emplace_back(std::string(phase) + ":" + type_); }
 
   public:
-    test_node_s(std::string type, std::vector<std::string>* events, bool demands_execution = false)
+    test_node_s(std::string                  type,
+                std::vector<std::string>*    events,
+                bool                         demands_execution = false,
+                nodes::submitted_node_set_t* submitted_nodes   = nullptr)
         : type_(std::move(type))
         , events_(events)
         , demands_execution_(demands_execution)
+        , submitted_nodes_(submitted_nodes)
     {
     }
 
@@ -40,10 +49,19 @@ class test_node_s final : public nodes::node_i
         result->demands_execution = demands_execution_;
     }
 
-    void
-    submit(core::app_state_s* /*app*/, const nodes::node_map_t& /*nodes*/, const nodes::node_state_s& /*state*/) final
+    void submit(core::app_state_s* app, const nodes::node_map_t& nodes, const nodes::node_state_s& state) final
     {
         record("submit");
+        if (submitted_nodes_ == nullptr) {
+            return;
+        }
+
+        for (const auto* iface :
+             {static_cast<const nodes::interface_i*>(&source_), static_cast<const nodes::interface_i*>(&input_)}) {
+            for (const auto& connection : iface->connections(state)) {
+                nodes::submit_node_once(app, nodes, connection.from_node, *submitted_nodes_);
+            }
+        }
     }
 
     void
@@ -60,13 +78,17 @@ class test_node_s final : public nodes::node_i
     }
 };
 
-void add_node(nodes::node_map_t*        nodes,
-              std::string               id,
-              std::vector<std::string>* events,
-              bool                      demands_execution = false)
+void add_node(nodes::node_map_t*           nodes,
+              std::string                  id,
+              std::vector<std::string>*    events,
+              bool                         demands_execution = false,
+              nodes::submitted_node_set_t* submitted_nodes   = nullptr)
 {
     nodes::node_record_s record;
-    record.node = std::make_shared<test_node_s>(id, events, demands_execution);
+    record.node = std::make_shared<test_node_s>(id, events, demands_execution, submitted_nodes);
+    for (const auto& [name, _] : record.node->get_interfaces()) {
+        record.state.con_map.emplace(name, nodes::con_set_t{});
+    }
     nodes->emplace(std::move(id), std::move(record));
 }
 
@@ -88,20 +110,15 @@ size_t count_event(const std::vector<std::string>& events, std::string_view even
     return static_cast<size_t>(std::ranges::count(events, event));
 }
 
-size_t find_active_index(std::span<const nodes::frame_execution_entry_s> entries, std::string_view id)
-{
-    const auto result = std::ranges::find(entries, id, &nodes::frame_execution_entry_s::id);
-    return static_cast<size_t>(std::distance(entries.begin(), result));
-}
-
 TEST(FrameExecution, PreparesAndCompletesEveryNodeButSubmitsOnlyDemandedClosure)
 {
-    std::vector<std::string> events;
-    nodes::node_map_t        graph;
-    add_node(&graph, "source", &events);
-    add_node(&graph, "shared", &events);
-    add_node(&graph, "sink_a", &events, true);
-    add_node(&graph, "sink_b", &events, true);
+    std::vector<std::string>    events;
+    nodes::node_map_t           graph;
+    nodes::submitted_node_set_t submitted_nodes;
+    add_node(&graph, "source", &events, false, &submitted_nodes);
+    add_node(&graph, "shared", &events, false, &submitted_nodes);
+    add_node(&graph, "sink_a", &events, true, &submitted_nodes);
+    add_node(&graph, "sink_b", &events, true, &submitted_nodes);
     add_node(&graph, "inactive", &events);
 
     connect(&graph, "source", "shared", "source");
@@ -114,22 +131,24 @@ TEST(FrameExecution, PreparesAndCompletesEveryNodeButSubmitsOnlyDemandedClosure)
         EXPECT_EQ(count_event(events, std::string("prepare:") + id), 1);
     }
 
-    const nodes::frame_execution_plan_s plan(graph, demanding_nodes);
-    const auto                          active = plan.active_nodes();
-    ASSERT_EQ(active.size(), 4);
-    EXPECT_LT(find_active_index(active, "source"), find_active_index(active, "shared"));
-    EXPECT_LT(find_active_index(active, "shared"), find_active_index(active, "sink_a"));
-    EXPECT_LT(find_active_index(active, "shared"), find_active_index(active, "sink_b"));
-    EXPECT_EQ(find_active_index(active, "inactive"), active.size());
+    for (const auto id : demanding_nodes) {
+        nodes::submit_node_once(nullptr, graph, id, submitted_nodes);
+    }
+    EXPECT_EQ(submitted_nodes.size(), 4);
+    for (const auto id : {"source", "shared", "sink_a", "sink_b"}) {
+        EXPECT_TRUE(submitted_nodes.contains(id));
+    }
+    EXPECT_FALSE(submitted_nodes.contains("inactive"));
 
-    plan.submit(nullptr);
     for (const auto id : {"source", "shared", "sink_a", "sink_b"}) {
         EXPECT_EQ(count_event(events, std::string("submit:") + id), 1);
     }
     EXPECT_EQ(count_event(events, "submit:inactive"), 0);
 
     nodes::executed_node_set_t executed_nodes;
-    plan.execute(nullptr, executed_nodes);
+    for (const auto id : demanding_nodes) {
+        nodes::execute_node_once(nullptr, graph, id, executed_nodes);
+    }
     EXPECT_EQ(count_event(events, "execute:sink_a"), 1);
     EXPECT_EQ(count_event(events, "execute:sink_b"), 1);
 
@@ -158,4 +177,17 @@ TEST(FrameExecution, ExecuteOnceSuppressesSharedAndRepeatedRequests)
     EXPECT_FALSE(nodes::execute_node_once(nullptr, graph, "shared", executed_nodes));
     EXPECT_EQ(count_event(events, "execute:shared"), 1);
 }
+
+TEST(FrameExecution, SubmitOnceSuppressesSharedAndRepeatedRequests)
+{
+    std::vector<std::string> events;
+    nodes::node_map_t        graph;
+    add_node(&graph, "shared", &events);
+
+    nodes::submitted_node_set_t submitted_nodes;
+    EXPECT_TRUE(nodes::submit_node_once(nullptr, graph, "shared", submitted_nodes));
+    EXPECT_FALSE(nodes::submit_node_once(nullptr, graph, "shared", submitted_nodes));
+    EXPECT_EQ(count_event(events, "submit:shared"), 1);
+}
+
 } // namespace

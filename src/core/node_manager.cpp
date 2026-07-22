@@ -437,11 +437,13 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         const nodes::frame_execution_plan_s execution_plan(nodes_copy_, demanding_nodes);
         const auto                          plan_end = utils::flicks_now();
 
+        app->frame_info.submitted_nodes.clear();
+        app->frame_info.submitted_nodes.reserve(nodes_copy_.size());
         execution_plan.submit(app);
         const auto submit_end = utils::flicks_now();
 
         app->frame_info.executed_nodes.clear();
-        execution_plan.execute(app, app->frame_info.executed_nodes);
+        execution_plan.execute(app);
         const auto execute_end = utils::flicks_now();
 
         gpu::context_s::finish();
@@ -463,7 +465,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             writer.write("gpu_finish_duration_us", to_microseconds(finish_end - execute_end));
             writer.write("complete_duration_us", to_microseconds(complete_end - finish_end));
             writer.write("demanding_node_count", demanding_nodes.size());
-            writer.write("active_node_count", execution_plan.active_nodes().size());
+            writer.write("active_node_count", app->frame_info.submitted_nodes.size());
             next_lifecycle_status_ = now + 1s;
         }
     }

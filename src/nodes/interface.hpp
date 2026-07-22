@@ -10,6 +10,7 @@
 
 #include <climits>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 
@@ -36,6 +37,9 @@ class interface_i
 
     bool add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
     void set_max_connection_count(int count) { max_connection_count_ = count; }
+
+    std::span<const connection_s> connections(const node_state_s& state) const;
+    void                          submit_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
 
     dir_e            direction() const { return direction_; }
     interface_type_e type() const { return type_; }

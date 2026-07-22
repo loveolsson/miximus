@@ -30,19 +30,30 @@ bool interface_i::add_connection(con_set_t* connections, const connection_s& con
     return true;
 }
 
+std::span<const connection_s> interface_i::connections(const node_state_s& state) const
+{
+    if (direction() == dir_e::output) {
+        throw std::logic_error("connections called on output interface");
+    }
+    return state.get_connection_set(name_);
+}
+
+void interface_i::submit_connections(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) const
+{
+    for (const auto& connection : connections(state)) {
+        submit_node_once(app, nodes, connection.from_node, app->frame_info.submitted_nodes);
+    }
+}
+
 interface_i::resolved_cons_t
 interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) const
 {
     resolved_cons_t res;
 
-    if (direction() == dir_e::output) {
-        throw std::runtime_error("resolve_connection called on output interface");
-    }
+    const auto connected = connections(state);
+    res.reserve(connected.size());
 
-    const auto& connections = state.get_connection_set(name_);
-    res.reserve(connections.size());
-
-    for (const auto& con : connections) {
+    for (const auto& con : connected) {
         const interface_i* iface = nullptr;
 
         if (auto record = nodes.find(con.from_node); record != nodes.end()) {

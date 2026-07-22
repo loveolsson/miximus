@@ -43,6 +43,13 @@ const decklinkInputStatus: readonly NodeStatusSection[] = [
       { key: "no_input_source_frames", label: "No source", format: "integer" },
       { key: "upload_slot_drops", label: "Upload slot drops", format: "integer" },
       { key: "available_video_frames", label: "Available", format: "integer" },
+      { key: "source_queue_pushed", label: "Timed queue input", format: "integer" },
+      { key: "source_queue_overflow_drops", label: "Queue overflow drops", format: "integer" },
+      { key: "source_queue_selection_drops", label: "Timing drops", format: "integer" },
+      { key: "source_queue_repeated", label: "Timing repeats", format: "integer" },
+      { key: "source_queue_missing", label: "Timing missing", format: "integer" },
+      { key: "source_queue_discontinuities", label: "Discontinuities", format: "integer" },
+      { key: "source_queue_transfer_failures", label: "Transfer failures", format: "integer" },
     ],
   },
 ];
