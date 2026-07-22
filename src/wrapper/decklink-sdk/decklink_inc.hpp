@@ -13,9 +13,9 @@
 #include <windows.h>
 #include <combaseapi.h>
 #include <oleauto.h>
-// unknwn.h (IUnknown/COM) must be included before DeckLinkAPI_i.h.
+// unknwn.h (IUnknown/COM) must be included before the generated DeckLinkAPI.h.
 #include <unknwn.h>
-#include <DeckLinkAPI_i.h>
+#include <DeckLinkAPI.h>
 // clang-format on
 #else
 #include <DeckLinkAPI.h>
