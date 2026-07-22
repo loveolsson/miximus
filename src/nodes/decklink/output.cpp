@@ -3,7 +3,6 @@
 #include "detail/colorspace.hpp"
 #include "detail/device_reservation.hpp"
 #include "detail/output_video_buffer.hpp"
-#include "detail/platform_compat.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
 #include "gpu/framebuffer.hpp"
@@ -20,6 +19,7 @@
 #include "utils/observed_value.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
+#include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -39,6 +39,7 @@
 
 namespace {
 using namespace miximus;
+using namespace miximus::decklink_sdk;
 using namespace miximus::nodes;
 using namespace miximus::nodes::decklink;
 using namespace miximus::nodes::decklink::detail;
@@ -203,7 +204,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             mode.download_dim    = {row_pixels, mode.dim.y};
             mode.row_bytes       = row_pixels * 4;
 
-            auto name = decklink_registry_s::get_display_mode_name(sdk_mode.get());
+            auto name = get_display_mode_name(sdk_mode.get());
             if (name == requested_mode_name_) {
                 selected = mode;
             }

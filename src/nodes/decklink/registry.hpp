@@ -17,8 +17,6 @@ struct IDeckLinkInput;
 struct IDeckLinkOutput;
 struct IDeckLinkDiscovery;
 struct IDeckLinkDeviceNotificationCallback;
-struct IDeckLinkVideoConversion;
-struct IDeckLinkDisplayMode;
 
 namespace miximus::nodes::decklink {
 
@@ -54,18 +52,18 @@ struct device_status_s
 
 class decklink_registry_s
 {
-    decklink_ptr<IDeckLinkDiscovery>                  discovery_;
-    decklink_ptr<IDeckLinkDeviceNotificationCallback> callback_;
-    bool                                              notifications_installed_{};
+    decklink_sdk::decklink_ptr<IDeckLinkDiscovery>                  discovery_;
+    decklink_sdk::decklink_ptr<IDeckLinkDeviceNotificationCallback> callback_;
+    bool                                                            notifications_installed_{};
 
-    std::shared_mutex                                                             device_mutex_;
-    std::map<IDeckLink*, std::string>                                             names_;
-    std::map<std::string, decklink_ptr<IDeckLinkInput>, std::less<>>              inputs_;
-    std::map<std::string, decklink_ptr<IDeckLinkOutput>, std::less<>>             outputs_;
-    std::map<std::string, std::shared_ptr<detail::device_monitor_s>, std::less<>> monitors_;
-    std::atomic<uint64_t>                                                         device_list_version_{0};
-    std::jthread                                                                  statistics_thread_;
-    std::unique_ptr<utils::serial_executor_s>                                     control_executor_;
+    std::shared_mutex                                                               device_mutex_;
+    std::map<IDeckLink*, std::string>                                               names_;
+    std::map<std::string, decklink_sdk::decklink_ptr<IDeckLinkInput>, std::less<>>  inputs_;
+    std::map<std::string, decklink_sdk::decklink_ptr<IDeckLinkOutput>, std::less<>> outputs_;
+    std::map<std::string, std::shared_ptr<detail::device_monitor_s>, std::less<>>   monitors_;
+    std::atomic<uint64_t>                                                           device_list_version_{0};
+    std::jthread                                                                    statistics_thread_;
+    std::unique_ptr<utils::serial_executor_s>                                       control_executor_;
 
     friend class discovery_callback;
 
@@ -75,18 +73,15 @@ class decklink_registry_s
 
     void uninstall();
 
-    decklink_ptr<IDeckLinkInput>           get_input(std::string_view name);
-    decklink_ptr<IDeckLinkOutput>          get_output(std::string_view name);
-    std::shared_ptr<const device_status_s> get_device_status(std::string_view name);
-    utils::serial_executor_s*              control_executor() { return control_executor_.get(); }
+    decklink_sdk::decklink_ptr<IDeckLinkInput>  get_input(std::string_view name);
+    decklink_sdk::decklink_ptr<IDeckLinkOutput> get_output(std::string_view name);
+    std::shared_ptr<const device_status_s>      get_device_status(std::string_view name);
+    utils::serial_executor_s*                   control_executor() { return control_executor_.get(); }
 
     uint64_t get_device_list_version() { return device_list_version_.load(std::memory_order_relaxed); }
 
     std::vector<settings_option_s> get_input_options();
     std::vector<settings_option_s> get_output_options();
-
-    static std::string                            get_display_mode_name(IDeckLinkDisplayMode* mode);
-    static decklink_ptr<IDeckLinkVideoConversion> get_converter();
 
     static std::unique_ptr<decklink_registry_s> create_decklink_registry();
 };

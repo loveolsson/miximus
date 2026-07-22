@@ -10,6 +10,8 @@
 #include <utility>
 
 namespace miximus::nodes::decklink::detail {
+using namespace miximus::decklink_sdk;
+
 namespace {
 constexpr auto initial_upload_timeout = std::chrono::seconds(2);
 constexpr auto upload_timeout         = std::chrono::milliseconds(20);

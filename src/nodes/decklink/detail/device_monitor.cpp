@@ -1,8 +1,8 @@
 #include "device_monitor.hpp"
 
 #include "logger/logger.hpp"
-#include "platform_compat.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
+#include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <array>
 #include <atomic>
@@ -13,6 +13,8 @@
 #include <utility>
 
 namespace miximus::nodes::decklink::detail {
+using namespace miximus::decklink_sdk;
+
 namespace {
 
 std::string fourcc(uint32_t value)

@@ -2,7 +2,7 @@
 #include "decklink_inc.hpp"
 
 #include <DeckLinkAPIVersion.h>
-namespace miximus::nodes::decklink {
+namespace miximus::decklink_sdk {
 
 /**
  * Maps the interface types exposed by DeckLink SDK 16.0 to their matching IIDs.
@@ -99,4 +99,4 @@ MIXIMUS_DECKLINK_IID(IDeckLinkMetalScreenPreviewHelper)
 
 #undef MIXIMUS_DECKLINK_IID
 
-} // namespace miximus::nodes::decklink
+} // namespace miximus::decklink_sdk

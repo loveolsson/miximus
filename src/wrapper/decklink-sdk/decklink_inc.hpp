@@ -1,8 +1,19 @@
 #pragma once
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 // clang-format off
-// unknwn.h (IUnknown/COM) must be included before DeckLinkAPI_i.h
+// Keep all Windows prerequisites behind the DeckLink wrapper. The generated
+// MIDL header currently includes some of these transitively, but the wrapper
+// also uses COM activation, UTF-8 conversion, BSTR ownership, and IID comparison.
+#include <windows.h>
+#include <combaseapi.h>
+#include <oleauto.h>
+// unknwn.h (IUnknown/COM) must be included before DeckLinkAPI_i.h.
 #include <unknwn.h>
 #include <DeckLinkAPI_i.h>
 // clang-format on

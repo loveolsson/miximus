@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace miximus::nodes::decklink {
+namespace miximus::decklink_sdk {
 
 template <typename T>
 concept decklink_com_object = std::is_base_of_v<IUnknown, T>;
@@ -209,4 +209,4 @@ decklink_ptr<T> make_decklink_ptr(Args&&... args)
     return decklink_ptr(new T(std::forward<Args>(args)...), false);
 }
 
-} // namespace miximus::nodes::decklink
+} // namespace miximus::decklink_sdk

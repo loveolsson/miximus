@@ -1,10 +1,10 @@
 #include "registry.hpp"
 
 #include "detail/device_monitor.hpp"
-#include "detail/platform_compat.hpp"
 #include "logger/logger.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
+#include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,13 +20,14 @@
 #include <vector>
 
 namespace miximus::nodes::decklink {
+using namespace miximus::decklink_sdk;
 
 using namespace std::chrono_literals;
 
 namespace {
 std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 {
-    auto    name = detail::get_device_display_name(device.get());
+    auto    name = get_device_display_name(device.get());
     int64_t id   = 0;
 
     /**
@@ -45,11 +46,6 @@ std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
     return std::format("{} [{}]", name, id);
 }
 } // namespace
-
-std::string decklink_registry_s::get_display_mode_name(IDeckLinkDisplayMode* mode)
-{
-    return detail::get_display_mode_name(mode);
-}
 
 class discovery_callback : public IDeckLinkDeviceNotificationCallback
 {
@@ -196,7 +192,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
 };
 
 decklink_registry_s::decklink_registry_s()
-    : discovery_(detail::create_device_discovery())
+    : discovery_(create_device_discovery())
     , callback_(new discovery_callback(this), false)
     , control_executor_(std::make_unique<utils::serial_executor_s>())
 {
@@ -322,11 +318,6 @@ std::vector<settings_option_s> decklink_registry_s::get_output_options()
     }
 
     return options;
-}
-
-decklink_ptr<IDeckLinkVideoConversion> decklink_registry_s::get_converter()
-{
-    return detail::create_video_conversion();
 }
 
 std::unique_ptr<decklink_registry_s> decklink_registry_s::create_decklink_registry()

@@ -1,6 +1,6 @@
 #pragma once
 #include "gpu/transfer/texture_download.hpp"
-#include "platform_compat.hpp"
+#include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -52,7 +52,8 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
         }
         *ppv = nullptr;
 
-        if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkVideoBuffer>(iid)) {
+        if (decklink_sdk::decklink_iid_matches<IUnknown>(iid) ||
+            decklink_sdk::decklink_iid_matches<IDeckLinkVideoBuffer>(iid)) {
             *ppv = static_cast<IDeckLinkVideoBuffer*>(this);
             AddRef();
             return S_OK;

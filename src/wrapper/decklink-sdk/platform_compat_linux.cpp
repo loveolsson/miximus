@@ -4,7 +4,7 @@
 
 #include <cstdlib>
 
-namespace miximus::nodes::decklink::detail {
+namespace miximus::decklink_sdk {
 
 namespace {
 void free_sdk_string(const char* value)
@@ -18,11 +18,6 @@ void free_sdk_string(const char* value)
 decklink_ptr<IDeckLinkDiscovery> create_device_discovery()
 {
     return decklink_ptr(CreateDeckLinkDiscoveryInstance(), false);
-}
-
-decklink_ptr<IDeckLinkVideoConversion> create_video_conversion()
-{
-    return decklink_ptr(CreateVideoConversionInstance(), false);
 }
 
 bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
@@ -79,6 +74,6 @@ std::string get_display_mode_name(IDeckLinkDisplayMode* mode)
     return name;
 }
 
-} // namespace miximus::nodes::decklink::detail
+} // namespace miximus::decklink_sdk
 
 #endif // !defined(_WIN32) && !defined(__APPLE__)

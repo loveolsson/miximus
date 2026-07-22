@@ -1,6 +1,6 @@
 #pragma once
 #include "gpu/transfer/texture_upload.hpp"
-#include "platform_compat.hpp"
+#include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <array>
 #include <atomic>
@@ -73,12 +73,13 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
         }
         *ppv = nullptr;
 
-        if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkVideoBuffer>(iid)) {
+        if (decklink_sdk::decklink_iid_matches<IUnknown>(iid) ||
+            decklink_sdk::decklink_iid_matches<IDeckLinkVideoBuffer>(iid)) {
             *ppv = static_cast<IDeckLinkVideoBuffer*>(this);
             AddRef();
             return S_OK;
         }
-        if (decklink_iid_equal(iid, input_video_buffer_iid())) {
+        if (decklink_sdk::decklink_iid_equal(iid, decklink_sdk::input_video_buffer_iid())) {
             *ppv = this;
             AddRef();
             return S_OK;
@@ -133,7 +134,8 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
         }
         *ppv = nullptr;
 
-        if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkVideoBufferAllocator>(iid)) {
+        if (decklink_sdk::decklink_iid_matches<IUnknown>(iid) ||
+            decklink_sdk::decklink_iid_matches<IDeckLinkVideoBufferAllocator>(iid)) {
             *ppv = static_cast<IDeckLinkVideoBufferAllocator*>(this);
             AddRef();
             return S_OK;
@@ -154,6 +156,6 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
     void shutdown_and_wait();
 };
 
-decklink_ptr<input_video_buffer_s> query_input_video_buffer(IUnknown* source);
+decklink_sdk::decklink_ptr<input_video_buffer_s> query_input_video_buffer(IUnknown* source);
 
 } // namespace miximus::nodes::decklink::detail

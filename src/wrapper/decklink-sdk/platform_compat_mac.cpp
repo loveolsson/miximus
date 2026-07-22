@@ -5,7 +5,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <vector>
 
-namespace miximus::nodes::decklink::detail {
+namespace miximus::decklink_sdk {
 namespace {
 std::string cf_string_to_utf8(CFStringRef value)
 {
@@ -27,11 +27,6 @@ decklink_ptr<IDeckLinkDiscovery> create_device_discovery()
     return decklink_ptr(CreateDeckLinkDiscoveryInstance(), false);
 }
 
-decklink_ptr<IDeckLinkVideoConversion> create_video_conversion()
-{
-    return decklink_ptr(CreateVideoConversionInstance(), false);
-}
-
 bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
 {
     return lhs.byte0 == rhs.byte0 && lhs.byte1 == rhs.byte1 && lhs.byte2 == rhs.byte2 && lhs.byte3 == rhs.byte3 &&
@@ -42,7 +37,24 @@ bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
 
 REFIID input_video_buffer_iid() noexcept
 {
-    return {0x40, 0x05, 0xD9, 0x28, 0xBA, 0x67, 0x46, 0x63, 0xA7, 0xFA, 0xF4, 0x4A, 0xB8, 0x25, 0xC8, 0x09};
+    return {
+        .byte0  = 0x40,
+        .byte1  = 0x05,
+        .byte2  = 0xD9,
+        .byte3  = 0x28,
+        .byte4  = 0xBA,
+        .byte5  = 0x67,
+        .byte6  = 0x46,
+        .byte7  = 0x63,
+        .byte8  = 0xA7,
+        .byte9  = 0xFA,
+        .byte10 = 0xF4,
+        .byte11 = 0x4A,
+        .byte12 = 0xB8,
+        .byte13 = 0x25,
+        .byte14 = 0xC8,
+        .byte15 = 0x09,
+    };
 }
 
 std::string get_device_display_name(IDeckLink* device)
@@ -69,6 +81,6 @@ std::string get_display_mode_name(IDeckLinkDisplayMode* mode)
     return name;
 }
 
-} // namespace miximus::nodes::decklink::detail
+} // namespace miximus::decklink_sdk
 
 #endif // __APPLE__

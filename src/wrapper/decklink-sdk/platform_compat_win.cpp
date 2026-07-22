@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <limits>
 
-namespace miximus::nodes::decklink::detail {
+namespace miximus::decklink_sdk {
 namespace {
 std::string bstr_to_utf8(BSTR value)
 {
@@ -43,29 +43,7 @@ decklink_ptr<IDeckLinkDiscovery> create_device_discovery()
     return SUCCEEDED(result) ? decklink_ptr(discovery, false) : decklink_ptr<IDeckLinkDiscovery>{};
 }
 
-decklink_ptr<IDeckLinkVideoConversion> create_video_conversion()
-{
-    IDeckLinkVideoConversion* conversion = nullptr;
-    const auto                result     = ::CoCreateInstance(CLSID_CDeckLinkVideoConversion,
-                                           nullptr,
-                                           CLSCTX_ALL,
-                                           decklink_iid<IDeckLinkVideoConversion>(),
-                                           reinterpret_cast<void**>(&conversion));
-    return SUCCEEDED(result) ? decklink_ptr(conversion, false) : decklink_ptr<IDeckLinkVideoConversion>{};
-}
-
-bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
-{
-    if (lhs.Data1 != rhs.Data1 || lhs.Data2 != rhs.Data2 || lhs.Data3 != rhs.Data3) {
-        return false;
-    }
-    for (std::size_t i = 0; i < 8; ++i) {
-        if (lhs.Data4[i] != rhs.Data4[i]) {
-            return false;
-        }
-    }
-    return true;
-}
+bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept { return IsEqualIID(lhs, rhs) != FALSE; }
 
 REFIID input_video_buffer_iid() noexcept
 {
@@ -99,6 +77,6 @@ std::string get_display_mode_name(IDeckLinkDisplayMode* mode)
     return name;
 }
 
-} // namespace miximus::nodes::decklink::detail
+} // namespace miximus::decklink_sdk
 
 #endif // _WIN32
