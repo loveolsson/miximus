@@ -22,7 +22,9 @@ The design has four central rules:
 - Skip obsolete program frames without accumulating clock drift.
 - Select an appropriate input frame for each program PTS instead of consuming the most recently completed frame.
 - Adapt independent input clocks using stable clock recovery, hysteresis, and deliberate repeat/drop decisions.
-- Start input transfer work before graph execution without performing frame work for inactive graph branches.
+- Allow callback-driven inputs to transfer arriving media continuously while active, then select only the frame needed
+  by the current program frame. Pull-driven inputs may start work during preparation, but neither model should perform
+  avoidable work for inactive graph branches.
 - Keep decode, blocking SDK work, CPU image processing, and host/GPU transfer waits off the render thread.
 - Support DeckLink, NDI, screen presentation, and future FFmpeg sources through common timing contracts while
   preserving their different native memory and clock models.
@@ -220,7 +222,7 @@ The responsibilities currently in `prepare()` should be divided conceptually:
 
 - configuration/maintenance: observe changed options, schedule device reconfiguration, publish status, and process
   asynchronous lifecycle results;
-- frame preparation: select/reserve input media and initiate work for one frame context;
+- frame preparation: select/reserve input media and initiate or associate asynchronous work with one frame context;
 - execution: resolve dependencies and submit CPU/GPU transformations for the prepared frame;
 - retirement: release per-frame reservations and publish completed work without blocking.
 
@@ -253,6 +255,12 @@ carry the media identity and a readiness state such as:
 - reserved but not submitted;
 - missing;
 - discontinued.
+
+Preparation does not necessarily initiate the transfer. Callback-driven devices such as DeckLink must continuously
+accept frames into a bounded transfer stream while capture is active; by the time a program frame is prepared, an
+appropriate source frame may already be submitted or ready. Preparation selects and reserves that ticket. Pull-driven
+sources such as NDI FrameSync or a decoder may instead use preparation to request the desired frame. Both paths expose
+the same ticket contract to execution and retain its storage until frame retirement.
 
 Execution may enqueue a GPU-side wait when a shared-context transfer has already been issued. It must not perform an
 unbounded CPU wait. If the worker has not submitted the transfer before the remaining render budget expires, the node
@@ -304,8 +312,22 @@ For each captured frame, retain:
 - the upload reservation/version used by the transfer service.
 
 The DeckLink synchronizer maps stream time into the program timeline using hardware-reference observations where
-possible. It selects and parks the frame for the requested program PTS during active preparation, starts or associates
-the upload, and resolves the prepared ticket during execution.
+possible. Capture and upload submission happen asynchronously as frames arrive. Active preparation selects and parks
+the appropriate already-ready or in-flight upload ticket for the requested program PTS; execution resolves that ticket
+without asking the device to capture or re-upload the frame.
+
+The custom allocator is a long-lived capture-session resource, not a per-program-frame allocator. DeckLink may retain
+and reuse an `IDeckLinkVideoBuffer` object across many captured frames. Each `StartAccess(bmdBufferAccessWrite)` begins
+a new SDK write cycle and must acquire a fresh one-shot upload lease; the frame callback records timing metadata and
+submits that lease without a full-frame copy. A completed texture has an independent lifetime and may be retained as
+the input's repeated frame until a newer selected frame replaces it.
+
+Format changes, device removal, and node destruction are asynchronous session transitions. The callback records the
+transition and posts control work; it does not stop streams, wait for allocator references, or destroy GL resources
+itself. Ordinary signal loss should produce missing/no-source frames without synchronously tearing down the session.
+When reconfiguration is required, the serialized device-control executor stops capture, the render side releases its
+retained texture without waiting, and the old allocator drains before its transfer stream is retired and a replacement
+pool is created. Old and new full-size pools must not coexist merely to make reconfiguration easier.
 
 If a DeckLink input and output share a hardware/reference domain, that relationship can provide a stronger alignment
 than host callback arrival time. It must still be represented explicitly rather than inferred from equal numeric PTS
@@ -346,9 +368,21 @@ Preserve scheduled playback and callback replenishment, but associate each rende
 DeckLink schedule time. Maintain explicit low, target, and high queue watermarks. On underrun, repeat the previous frame
 or schedule black according to policy; discard a rendered frame that arrives after its useful scheduling point.
 
+Each scheduled frame must retain the download lease that backs its `IDeckLinkVideoBuffer` until DeckLink reports frame
+completion. Do not copy completed downloads into a second DeckLink-owned frame buffer. The SDK completion callback may
+poll completed leases and replenish the bounded schedule, but it must not make a GL context current or wait for a GPU
+transfer. Transfer workers own their GL contexts and completion fences.
+
+Playback start, stop, mode changes, and failure recovery belong to the serialized device-control executor. Shutdown is
+a state transition: unregister scheduling, request `StopScheduledPlayback()`, and retain the callback, device, scheduled
+frames, and their leases until `ScheduledPlaybackHasStopped()` or a bounded device-loss timeout. Node destruction must
+remain non-blocking on the render thread even though normal removal may visibly interrupt output.
+
 Use `GetBufferedVideoFrameCount()` and completion results to report queue depth, completed frames, late display,
 drops, flushes, repeats, underruns, and preroll state. The output hardware/reference clock should be available as a
-program-clock source.
+program-clock source. Reference lock and the resolved incoming reference mode are distinct from the configured output
+mode and should be reported separately. SDK bitmask/FourCC values are implementation details: interpret flags as
+bitmasks and resolve known modes to user-facing names, using `Unknown` when the SDK cannot identify one.
 
 ### NDI output
 
@@ -361,9 +395,19 @@ monitoring.
 
 ### Screen output
 
-The display/compositor clock is independent from the program clock. Screen output should select the newest program
-frame not later than its display target and release shared render slots only after GPU presentation use completes. It
-is a rate-adapting preview sink and should not implicitly define the broadcast program clock.
+Screen output is a scheduled, buffered output. Its presentation worker should derive its cadence from the selected
+monitor's refresh rate and, where the platform exposes it, actual presentation feedback. The render side should queue
+frames with their intended program PTS into a bounded set of shared render slots and maintain explicit preroll and
+queue watermarks. It must not simply draw whichever frame happens to be newest when the display thread wakes up.
+
+At each display presentation point, the output selects the queued program frame appropriate for that target. When the
+display and program rates differ or rendering misses a deadline, it deliberately repeats the retained frame or drops
+an obsolete queued frame according to the same policy used by other timed outputs. Queue overflow, underrun, repeat,
+drop, late presentation, and measured presentation cadence should be reported as status.
+
+The display context owns presentation and waits only through GPU-side synchronization. A shared render slot is not
+returned to the producer until the display context has finished sampling it. Window visibility or compositor behavior
+must not make the program render thread block; platform presentation stalls are contained by the bounded output queue.
 
 ## Atomic graph transactions
 
@@ -398,18 +442,21 @@ The intended roles are:
 
 - scheduler/render thread: frame boundaries, active graph evaluation, root GL submission, transaction application;
 - configuration thread: parsing, validation, and transaction construction;
-- SDK callback threads: bounded capture/timing observations only;
+- SDK callback threads: bounded capture/timing observations and ownership handoffs only;
 - device-control workers: blocking device start, stop, reconnect, and mode changes;
 - decode/CPU workers: demux, decode, font rasterization, and CPU image processing;
 - GL transfer workers: shared-context upload/download submission and fences;
 - output workers/SDK callbacks: hardware/network scheduling from bounded PTS-aware queues.
 
 No background object may destroy GL resources directly. Existing render-thread node destruction and service-owned
-deferred cleanup must be preserved. Every queue requires a capacity, ownership transition, stale-epoch rejection, and
-shutdown procedure.
+deferred cleanup on the owning GL worker must be preserved. Device callbacks and control tasks may release SDK/COM
+references, but transfer leases must flow back to the transfer service for GL cleanup. Every queue requires a capacity,
+ownership transition, stale-epoch rejection, and shutdown procedure. A node's asynchronous stop state must retain all
+callback, device, allocator, and queued-frame objects that the SDK can still reference.
 
-The global `glFinish()` can remain during early migration, but the end state should use per-resource and per-transfer
-fences so unrelated GPU work is not forced to complete at every frame boundary.
+The global `glFinish()` can remain during early migration, but the end state should associate GL sync objects with the
+resource or transfer slots whose reuse they protect. OpenGL fences belong to a command stream rather than intrinsically
+to a resource, so one frame-completion fence may safely guard several resources last used by that frame.
 
 ## Status and diagnostics
 
@@ -485,18 +532,23 @@ sample-rate conversion and bounded buffering rather than video-style discrete re
 
 - Make DeckLink output fully PTS-aware with explicit preroll and watermarks.
 - Establish output deadline, repeat, late, and underrun semantics.
+- Preserve the existing zero-copy download-lease-backed scheduled frames and asynchronous stop ownership while adding
+  timing selection; do not rebuild device lifecycle management into the frame scheduler.
 - Validate behavior using both fake output tests and hardware metrics.
 
 ### Stage 7: synchronized live inputs
 
 - Migrate DeckLink capture to source-clock recovery and program-PTS selection.
+- Extend the existing callback-submitted upload stream with bounded timed-frame selection. Do not move capture or
+  transfer initiation into `prepare()` and do not assume SDK buffer allocation/release occurs once per captured frame.
 - Migrate NDI FrameSync requests to program-frame tickets.
 - Exercise independent-rate, jitter, disconnect, and reconnect behavior.
 
 ### Stage 8: remaining outputs
 
 - Make NDI sending PTS-selective and cadence driven.
-- Make screen presentation an explicit program-to-display rate adapter.
+- Make screen presentation a PTS-aware buffered output driven by the selected monitor's refresh/presentation cadence,
+  with explicit preroll, watermarks, repeat, drop, and underrun behavior.
 
 ### Stage 9: FFmpeg sources
 
@@ -526,11 +578,18 @@ fake transfer delays, and fake buffered outputs. Cover at least:
 - transaction behavior when its render frame is skipped;
 - inactive branches producing no decode/transfer work;
 - queue overflow and transfer memory-budget failure;
+- SDK buffer-object reuse with a fresh transfer lease for every write-access cycle;
+- repeated DeckLink format changes without concurrent old/new full-size allocator pools;
+- cable disconnect and reconnect without a render-thread stall;
+- node removal with callbacks, scheduled frames, allocator buffers, and GL transfers outstanding;
+- output shutdown when the device disappears without delivering its final stopped callback;
 - safe shutdown with queued callbacks, frames, and GL resources.
 
 Hardware validation remains required for DeckLink reference clocks, scheduled playback, unplug/reconnect behavior,
 NDI network jitter, CUDA/DVP/PBO transfer paths, and display-compositor timing. Long-running soak tests should verify
-that recovered phase and queue depth remain bounded instead of slowly drifting.
+that recovered phase and queue depth remain bounded instead of slowly drifting. The local DeckLink output-to-input
+loopback is useful for lifecycle, pacing, and long-running ownership tests, but independent source-clock tests are still
+required because loopback shares unusually favorable hardware timing.
 
 ## Decisions to preserve during implementation
 
