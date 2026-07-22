@@ -1,7 +1,11 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "core/app_state.hpp"
+#include "core/application_settings.hpp"
+#include "core/clock_source.hpp"
 #include "core/configuration.hpp"
+#include "core/frame_scheduler.hpp"
 #include "core/node_manager.hpp"
+#include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
 #include "utils/process_id.hpp"
@@ -19,6 +23,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 
@@ -46,6 +51,27 @@ void start_shutdown_watchdog()
         std::_Exit(1);
     }).detach();
 #endif
+}
+
+void publish_scheduler_status(core::app_state_s*                     app,
+                              const core::frame_scheduler_s&         scheduler,
+                              const core::frame_scheduler_metrics_s& metrics)
+{
+    const auto to_microseconds = [](utils::flicks value) {
+        return std::chrono::duration_cast<std::chrono::microseconds>(value).count();
+    };
+
+    const auto& context = app->frame_context();
+    auto        writer  = app->status_registry()->write_node(core::APPLICATION_SETTINGS_ID);
+    writer.write("clock_source", std::string(scheduler.clock_name()));
+    writer.write("frame_number", context.frame_number);
+    writer.write("pts_flicks", context.pts.count());
+    writer.write("render_duration_us", to_microseconds(metrics.render_duration));
+    writer.write("start_lateness_us", to_microseconds(metrics.start_lateness));
+    writer.write("deadline_margin_us", to_microseconds(metrics.deadline_margin));
+    writer.write("skipped_frames_last", metrics.skipped_frames);
+    writer.write("skipped_frames_total", metrics.skipped_frames_total);
+    writer.write("sustained_overload", metrics.sustained_overload);
 }
 
 } // namespace
@@ -109,8 +135,8 @@ int main(int argc, char* argv[])
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(
                 node_manager, configuration, *web_server, *app.font_registry()));
 
-            app.frame_info.timestamp = utils::flicks_now();
-            app.frame_info.pts       = utils::flicks{0};
+            core::steady_clock_source_s frame_clock;
+            core::frame_scheduler_s     frame_scheduler(frame_clock);
 
             std::optional<std::chrono::steady_clock::time_point> stop_time;
             if (stop_after.has_value()) {
@@ -118,26 +144,21 @@ int main(int argc, char* argv[])
                             std::chrono::duration_cast<std::chrono::steady_clock::duration>(*stop_after);
             }
 
+            uint64_t      status_epoch{};
+            utils::flicks next_status_pts{};
+
             while (get_signal_status() == 0 &&
                    (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
-                // getlog("app")->info("Frame no {}", frame_no++);
-
-                node_manager.tick_one_frame(&app);
+                node_manager.tick_one_frame(&app, frame_scheduler);
 
                 gpu::context_s::poll();
 
-                app.frame_info.timestamp += app.frame_info.duration;
-                app.frame_info.pts += app.frame_info.duration;
-                app.frame_info.field_even = !app.frame_info.field_even;
-
-                auto now = utils::flicks_now();
-                if (app.frame_info.timestamp + app.frame_info.duration < now) {
-                    getlog("app")->info("Late frame");
-                    app.frame_info.timestamp += app.frame_info.duration;
-                }
-
-                if (app.frame_info.timestamp > now) {
-                    std::this_thread::sleep_for(app.frame_info.timestamp - now);
+                const auto& metrics = frame_scheduler.finish_frame();
+                const auto& context = app.frame_context();
+                if (context.epoch != status_epoch || context.pts >= next_status_pts) {
+                    publish_scheduler_status(&app, frame_scheduler, metrics);
+                    status_epoch    = context.epoch;
+                    next_status_pts = context.pts + utils::k_flicks_one_second;
                 }
             }
 

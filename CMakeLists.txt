@@ -3,6 +3,12 @@ project(miximus)
 
 include(CTest)
 
+if(BUILD_TESTING)
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    add_subdirectory(submodules/googletest EXCLUDE_FROM_ALL)
+    include(GoogleTest)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/submodules/sanitizers-cmake/cmake")

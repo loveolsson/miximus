@@ -2,6 +2,7 @@
 #include "core/app_state_fwd.hpp"
 #include "core/application_settings.hpp"
 #include "core/configuration_fwd.hpp"
+#include "core/frame_scheduler_fwd.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map.hpp"
@@ -80,7 +81,7 @@ class node_manager_s
     void add_adapter(std::unique_ptr<adapter_i>&& adapter);
     void clear_adapters();
 
-    void tick_one_frame(app_state_s*);
+    void tick_one_frame(app_state_s*, frame_scheduler_s&);
     void clear_nodes(app_state_s*);
 
     std::pair<std::shared_ptr<nodes::node_i>, error_e> create_node(std::string_view type);

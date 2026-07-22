@@ -1,6 +1,7 @@
 #include "core/node_manager.hpp"
 
 #include "core/app_state.hpp"
+#include "core/frame_scheduler.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
@@ -377,7 +378,7 @@ void node_manager_s::clear_adapters()
     adapters_.clear();
 }
 
-void node_manager_s::tick_one_frame(app_state_s* app)
+void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& scheduler)
 {
     status_registry_ = app->status_registry();
 
@@ -415,7 +416,8 @@ void node_manager_s::tick_one_frame(app_state_s* app)
             }
         }
 
-        app->begin_frame(application_settings);
+        app->begin_frame(application_settings,
+                         scheduler.begin_frame(application_settings.frame_rate, application_settings.revision));
 
         {
             auto        writer        = app->status_registry()->write_node(APPLICATION_SETTINGS_ID);

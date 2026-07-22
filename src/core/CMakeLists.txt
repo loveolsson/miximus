@@ -5,10 +5,15 @@ add_library(app
     app_state.hpp
     app_state_fwd.hpp
     app_state.cpp
+    clock_source.hpp
+    clock_source.cpp
     configuration.hpp
     configuration_fwd.hpp
     configuration.cpp
     frame_context.hpp
+    frame_scheduler.hpp
+    frame_scheduler_fwd.hpp
+    frame_scheduler.cpp
     node_manager.hpp
     node_manager_fwd.hpp
     node_manager.cpp
@@ -40,11 +45,14 @@ endif()
 add_sanitizers(app)
 
 if(BUILD_TESTING)
-    add_executable(application_settings_test
-        application_settings_test.cpp
+    add_executable(core_test
+        tests/application_settings_test.cpp
+        tests/frame_scheduler_test.cpp
         application_settings.cpp
+        frame_scheduler.cpp
+        clock_source.cpp
     )
-    target_link_libraries(application_settings_test PRIVATE miximus_types magic_enum::magic_enum)
-    add_sanitizers(application_settings_test)
-    add_test(NAME application_settings COMMAND application_settings_test)
+    target_link_libraries(core_test PRIVATE miximus_types magic_enum::magic_enum GTest::gtest_main)
+    add_sanitizers(core_test)
+    gtest_discover_tests(core_test)
 endif()

@@ -52,9 +52,11 @@ caches and potentially multiple graph evaluations for the same logical scene.
 
 ## Current limitations
 
-The current loop stores a steady-clock `timestamp`, a media `pts`, and a hardcoded 1/60-second duration. When it is
-late it advances the deadline separately from the PTS, so the two timelines can diverge. Deadlines are not managed by
-a configurable clock object, and lateness has no policy beyond a single-frame adjustment.
+The fixed loop-local timing arithmetic has been replaced by an anchor-based scheduler with an internal steady clock,
+explicit epochs, monotonic frame identities, coordinated PTS gaps, and a replaceable late-frame policy. The current
+provisional policy permits an evaluation up to one frame late and skips every older evaluation in one decision. Input
+selection and output buffering are not yet PTS-aware; those remain the important limitations addressed by later
+stages.
 
 The current graph frame performs these operations:
 
@@ -596,7 +598,14 @@ Exit criteria:
 
 ### Stage 2: deterministic clock and scheduler
 
-**Status:** Pending
+**Status:** Complete
+
+Implementation and deterministic validation are complete. `clock_source_i` supplies the production steady clock and
+test clocks; `frame_scheduler_s` owns the fixed anchor, program identities, epoch changes, deadlines, skip decisions,
+and overload accounting. GoogleTest simulations cover 100,000-frame integer and 1000/1001 timelines, useful-late and
+multi-frame overruns, policy comparisons over the same recorded workload, sustained overload, and live rate changes.
+The hardware graph ran cleanly at 60 fps, accepted a live 60000/1001 epoch change, and was visually verified to remain
+continuous and smooth across DeckLink loopback, NDI, screen output, and animated generators.
 
 Deliverables:
 

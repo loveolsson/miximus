@@ -4,12 +4,16 @@
 
 Miximus is a native C++20 real-time video application driven by a persisted node graph. Nodes represent sources, generators, GPU transformations, and outputs. The native process owns graph state and validates all mutations. A Vue 3/Baklava client edits a synchronized projection of that graph over WebSocket.
 
-The main loop currently defaults to a 60 Hz cadence. It loads settings, starts the embedded web server, runs
-`core::node_manager_s::tick_one_frame()`, polls GLFW, advances flick timestamps, sleeps to the next frame deadline,
-and saves the graph during ordered shutdown. The configured rational frame rate is copied from node-like application
-settings into one immutable `frame_context_s` at the start of each evaluation. `app_state_s::frame_info.duration`
-remains the compatibility cadence for current nodes; nodes and workers that publish timing must read it and track
-changes rather than assuming the default.
+The main loop defaults to a 60 Hz cadence. It loads settings, starts the embedded web server, runs
+`core::node_manager_s::tick_one_frame()`, polls GLFW, and lets `core::frame_scheduler_s` pace the next evaluation from
+a stable clock anchor. The configured rational frame rate is copied from node-like application settings into one
+immutable `frame_context_s` at the start of each evaluation. `app_state_s::frame_info` mirrors that context for current
+nodes; nodes and workers that publish timing must read it and track changes rather than assuming the default.
+
+The scheduler currently uses an internal `steady_clock` source and a provisional policy that permits the next
+evaluation to begin up to one frame late. Older evaluations are skipped in one decision: frame number and PTS advance
+together while the clock anchor remains fixed. Frame-rate changes start a new epoch and re-anchor the mapping. The
+scheduler publishes rate-limited timing, deadline, skip, and overload metrics through the reserved `$app` status.
 
 The planned transition to a configurable program timeline, source clock recovery, PTS-aware media selection, buffered
 outputs, and frame-atomic graph transactions is documented in
@@ -65,6 +69,7 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 9. Call `complete()` on every node.
 10. Rewind the root GL context.
 11. Flush and broadcast node-status deltas.
+12. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
 
 ### Node lifecycle responsibilities
 

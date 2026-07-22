@@ -99,6 +99,12 @@ npm install
 npm run build
 ```
 
+Native deterministic tests use GoogleTest and are registered individually with CTest. Run them with:
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
 The native build hashes web sources, rebuilds `web/dist` only when needed, and bundles web output and `resources/` into `static_files`. Web-build failures are reported at the end of the native build.
 
 ## Adding or changing a node

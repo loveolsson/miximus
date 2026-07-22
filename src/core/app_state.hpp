@@ -43,8 +43,6 @@ class app_state_s
 
     frame_rate_s    frame_rate_{DEFAULT_FRAME_RATE};
     frame_context_s frame_context_{};
-    uint64_t        next_frame_number_{};
-    uint64_t        epoch_{};
 
   public:
     app_state_s();
@@ -60,7 +58,7 @@ class app_state_s
     auto thread_pool() { return thread_pool_.get(); }
     auto status_registry() { return status_registry_.get(); }
 
-    void begin_frame(const application_settings_snapshot_s& settings);
+    void begin_frame(const application_settings_snapshot_s& settings, frame_context_s frame_context);
 
     frame_rate_s           frame_rate() const { return frame_rate_; }
     const frame_context_s& frame_context() const { return frame_context_; }

@@ -12,39 +12,19 @@
 #include "render/font/font_registry.hpp"
 
 #include <memory>
-#include <stdexcept>
 
 using namespace boost::asio;
 
 namespace miximus::core {
 
-void app_state_s::begin_frame(const application_settings_snapshot_s& settings)
+void app_state_s::begin_frame(const application_settings_snapshot_s& settings, frame_context_s frame_context)
 {
-    bool discontinuity = false;
-    if (settings.frame_rate != frame_rate_) {
-        frame_rate_         = settings.frame_rate;
-        const auto duration = get_frame_duration(frame_rate_);
-        if (!duration.has_value()) {
-            throw std::logic_error("Application frame rate has no exact flick duration");
-        }
-
-        frame_info.duration  = *duration;
-        frame_info.timestamp = utils::flicks_now();
-        frame_info.pts       = utils::k_flicks_zero_seconds;
-        ++epoch_;
-        discontinuity = true;
-    }
-
-    frame_context_ = {
-        .frame_number      = next_frame_number_++,
-        .epoch             = epoch_,
-        .settings_revision = settings.revision,
-        .pts               = frame_info.pts,
-        .duration          = frame_info.duration,
-        .target_time       = frame_info.timestamp,
-        .render_deadline   = frame_info.timestamp + frame_info.duration,
-        .discontinuity     = discontinuity,
-    };
+    frame_rate_           = settings.frame_rate;
+    frame_context_        = frame_context;
+    frame_info.timestamp  = frame_context.target_time;
+    frame_info.pts        = frame_context.pts;
+    frame_info.duration   = frame_context.duration;
+    frame_info.field_even = frame_context.frame_number % 2 == 0;
 }
 
 app_state_s::app_state_s()
