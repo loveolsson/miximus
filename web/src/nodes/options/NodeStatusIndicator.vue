@@ -105,6 +105,7 @@ const statusLabel = computed(() => {
 function formatValue(field: NodeStatusField, value: unknown): string {
   if (field.key === "connected") return value === true ? "Connected" : "Not connected";
   if (field.format === "locked") return value === true ? "Locked" : "Unlocked";
+  if (field.format === "active") return value === true ? "Active" : "Idle";
   if (field.format === "busy") return value === true ? "Busy" : "Idle";
   if (field.format === "integer") {
     return typeof value === "number" ? value.toLocaleString() : String(value);

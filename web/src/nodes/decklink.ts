@@ -53,7 +53,7 @@ const decklinkOutputStatus: readonly NodeStatusSection[] = [
     fields: [
       { key: "connected", label: "Connection" },
       { key: "active_format", label: "Active format" },
-      { key: "playback_busy", label: "Playback", format: "busy" },
+      { key: "playback_busy", label: "Playback", format: "active" },
       { key: "output_pixel_format", label: "Pixel format" },
       { key: "reference_locked", label: "Reference signal", format: "locked" },
       { key: "reference_format", label: "Reference format" },

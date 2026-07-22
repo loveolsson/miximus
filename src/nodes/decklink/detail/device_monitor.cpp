@@ -139,14 +139,17 @@ read_mode(IDeckLinkStatus* status, IDeckLinkInput* input, IDeckLinkOutput* outpu
 
     decklink_ptr<IDeckLinkDisplayMode> mode;
     const auto                         display_mode = static_cast<BMDDisplayMode>(*value);
-    HRESULT                            result       = E_FAIL;
+    if (display_mode == bmdModeUnknown) {
+        return "Unknown";
+    }
+
+    HRESULT result = E_FAIL;
     if (id == bmdDeckLinkStatusDetectedVideoInputMode || id == bmdDeckLinkStatusCurrentVideoInputMode) {
         result = input != nullptr ? input->GetDisplayMode(display_mode, mode.releaseAndGetAddressOf()) : E_FAIL;
     } else {
         result = output != nullptr ? output->GetDisplayMode(display_mode, mode.releaseAndGetAddressOf()) : E_FAIL;
     }
-    return result == S_OK && mode ? std::optional(get_display_mode_name(mode.get()))
-                                  : std::optional(fourcc(static_cast<uint32_t>(*value)));
+    return result == S_OK && mode ? std::optional(get_display_mode_name(mode.get())) : std::nullopt;
 }
 
 void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkStatusID id)

@@ -76,7 +76,7 @@ export interface SettingsOption {
   readonly label: string;
 }
 
-export type NodeStatusFormat = "busy" | "integer" | "locked" | "temperature";
+export type NodeStatusFormat = "active" | "busy" | "integer" | "locked" | "temperature";
 
 export interface NodeStatusField {
   readonly key: string;
