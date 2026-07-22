@@ -100,7 +100,7 @@ backend_result_s create_backend(const texture_transfer_requirements_s& requireme
     }
 
     if (state.cuda_available) {
-        const bool direct_image = texture_s::format_info(requirements.format).storage_identical;
+        const bool direct_image = cuda_transfer_s::supports_direct_image(requirements.format);
         if (direct_image) {
             try {
                 if (auto backend = try_bind(std::make_unique<cuda_transfer_s>(requirements, direction, true))) {

@@ -26,6 +26,25 @@ bool cuda_transfer_s::initialized_ = false;
 bool cuda_transfer_s::supported_   = false;
 int  cuda_transfer_s::device_      = 0;
 
+bool cuda_transfer_s::supports_direct_image(texture_s::format_e format)
+{
+    // Direct copies require both identical host/storage bytes and an OpenGL
+    // internal format supported by cudaGraphicsGLRegisterImage. CUDA does not
+    // support packed GL_RGB10_A2 images, even though uyuv_u10 has an identical
+    // four-byte host and texture-storage representation.
+    switch (format) {
+        case texture_s::format_e::rgba_u8:
+            return texture_s::format_info(format).storage_identical;
+        case texture_s::format_e::rgb_f16:
+        case texture_s::format_e::rgba_f16:
+        case texture_s::format_e::bgra_u8:
+        case texture_s::format_e::uyuv_u8:
+        case texture_s::format_e::uyuv_u10:
+            return false;
+    }
+    return false;
+}
+
 bool cuda_transfer_s::initialize_context()
 {
     if (initialized_) {

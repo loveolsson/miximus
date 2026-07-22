@@ -43,6 +43,7 @@ class cuda_transfer_s : public backend_i
     bool transfer() final;
     bool wait_for_completion() final;
 
+    static bool supports_direct_image(texture_s::format_e format);
     static bool initialize_context();
     static void shutdown_context();
 };
