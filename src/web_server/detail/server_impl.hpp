@@ -29,10 +29,10 @@ class web_server_impl : public server_s
     using sub_by_topic_t = std::array<callback_t, enum_count<topic_e>()>;
     using msg_ptr_t      = server_t::message_ptr;
 
-    void terminate_and_log(const con_hdl_t& hdl, const std::string& msg);
+    void terminate_and_log(const con_hdl_t& hdl, const std::string& message);
 
-    void on_http(const con_hdl_t& hdl);
-    void serve_static_file(const server_t::connection_ptr& con, std::string_view path);
+    void        on_http(const con_hdl_t& hdl);
+    static void serve_static_file(const server_t::connection_ptr& con, std::string_view path);
     void handle_api_request(const server_t::connection_ptr& con, const std::string& method, std::string_view api_path);
     void handle_api_v1_get_config(const server_t::connection_ptr& con) const;
     void handle_api_v1_post_control(const server_t::connection_ptr& con);

@@ -39,6 +39,7 @@ class shader_program_s
     enum name_e
     {
         basic,
+        texture_mix,
         yuv_to_rgb,
         rgb_to_yuv,
         apply_gamma,

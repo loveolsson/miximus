@@ -41,6 +41,15 @@ export const enum type_e {
   test_pattern = "test_pattern",
   draw_box = "draw_box",
   infinite_multiviewer = "infinite_multiviewer",
+  mix_tex_2 = "mix_tex_2",
+  switch_f64_4 = "switch_f64_4",
+  switch_f64_8 = "switch_f64_8",
+  switch_vec2_4 = "switch_vec2_4",
+  switch_vec2_8 = "switch_vec2_8",
+  switch_rect_4 = "switch_rect_4",
+  switch_rect_8 = "switch_rect_8",
+  switch_tex_4 = "switch_tex_4",
+  switch_tex_8 = "switch_tex_8",
 }
 
 export type position_t = [number, number];

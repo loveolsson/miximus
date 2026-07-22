@@ -50,4 +50,33 @@ void textured_quad_s::draw(texture_s* texture, rect_s rect, double opacity)
     batch.draw(texture, rect, opacity);
 }
 
+void textured_quad_s::draw_mix(texture_s*  a,
+                               texture_s*  b,
+                               double      t,
+                               rect_s      a_rect,
+                               rect_s      b_rect,
+                               mix_space_e mix_space)
+{
+    if (a == nullptr || b == nullptr) {
+        return;
+    }
+
+    shader_->set_uniform("offset", vec2_t{0, 0});
+    shader_->set_uniform("scale", vec2_t{1, 1});
+    shader_->set_uniform("tex", 0);
+    shader_->set_uniform("tex_b", 1);
+    shader_->set_uniform("t", t);
+    shader_->set_uniform("a_offset", a_rect.pos);
+    shader_->set_uniform("a_scale", a_rect.size);
+    shader_->set_uniform("b_offset", b_rect.pos);
+    shader_->set_uniform("b_scale", b_rect.size);
+    shader_->set_uniform("video_mix", mix_space == mix_space_e::video ? 1 : 0);
+
+    a->bind(0);
+    b->bind(1);
+    draw_state_.draw();
+    texture_s::unbind(1);
+    texture_s::unbind(0);
+}
+
 } // namespace miximus::gpu

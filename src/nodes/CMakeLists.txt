@@ -28,6 +28,7 @@ add_subdirectory(text)
 add_subdirectory(debug)
 add_subdirectory(generators)
 add_subdirectory(composite)
+add_subdirectory(switch)
 
 find_package(nlohmann_json REQUIRED)
 

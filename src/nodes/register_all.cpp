@@ -8,6 +8,7 @@
 #include "nodes/math/register.hpp"
 #include "nodes/ndi/register.hpp"
 #include "nodes/screen/register.hpp"
+#include "nodes/switch/register.hpp"
 #include "nodes/teleprompter/register.hpp"
 #include "nodes/text/register.hpp"
 #include "nodes/utils/register.hpp"
@@ -27,6 +28,7 @@ void register_all_nodes(node_definition_map_t* map)
     composite::register_nodes(map);
     debug::register_nodes(map);
     generators::register_nodes(map);
+    switch_nodes::register_nodes(map);
 }
 
 } // namespace miximus::nodes

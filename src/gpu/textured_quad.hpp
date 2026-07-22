@@ -16,6 +16,12 @@ class textured_quad_s
         flipped,
     };
 
+    enum class mix_space_e
+    {
+        linear,
+        video,
+    };
+
     class batch_s
     {
         textured_quad_s* owner_{};
@@ -59,6 +65,7 @@ class textured_quad_s
     shader_program_s* shader() const { return shader_; }
     batch_s           begin_batch() { return batch_s(this); }
     void              draw(texture_s* texture, rect_s rect = {}, double opacity = 1.0);
+    void draw_mix(texture_s* a, texture_s* b, double t, rect_s a_rect, rect_s b_rect, mix_space_e mix_space);
 };
 
 } // namespace miximus::gpu

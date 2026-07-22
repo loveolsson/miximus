@@ -332,6 +332,9 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
         case name_e::basic:
             fragment_shader = "shaders/basic.fs.glsl";
             break;
+        case name_e::texture_mix:
+            fragment_shader = "shaders/mix.fs.glsl";
+            break;
         case name_e::yuv_to_rgb:
             fragment_shader = "shaders/from_yuv.fs.glsl";
             break;

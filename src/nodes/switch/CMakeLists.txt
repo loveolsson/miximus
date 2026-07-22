@@ -2,7 +2,5 @@ target_sources(nodes
 PRIVATE
     register.hpp
     register.cpp
-    draw_box.cpp
-    infinite_multiviewer.cpp
-    mix_tex_2.cpp
+    switch.cpp
 )

@@ -306,11 +306,11 @@ struct ellipse_coverage_s
     double radius_x;
     double radius_y;
 
-    ellipse_coverage_s(double center_x, double center_y, double radius_x, double radius_y)
-        : center_x(center_x)
-        , center_y(center_y)
-        , radius_x(radius_x)
-        , radius_y(radius_y)
+    ellipse_coverage_s(double center_x_, double center_y_, double radius_x_, double radius_y_)
+        : center_x(center_x_)
+        , center_y(center_y_)
+        , radius_x(radius_x_)
+        , radius_y(radius_y_)
     {
     }
 
