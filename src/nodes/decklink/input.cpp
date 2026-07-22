@@ -2,6 +2,7 @@
 #include "core/node_status_registry.hpp"
 #include "detail/allocator.hpp"
 #include "detail/colorspace.hpp"
+#include "detail/device_reservation.hpp"
 #include "detail/platform_compat.hpp"
 #include "gpu/color_transfer.hpp"
 #include "gpu/context.hpp"
@@ -31,7 +32,6 @@
 #include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_set>
 #include <utility>
 
 namespace {
@@ -73,49 +73,6 @@ struct frame_info_s
     BMDColorspace                                           colorspace{bmdColorspaceRec709};
 };
 
-class device_reservation_s
-{
-    IDeckLinkInput* device_;
-
-    static auto& mutex()
-    {
-        static std::mutex value;
-        return value;
-    }
-
-    static auto& devices()
-    {
-        static std::unordered_set<IDeckLinkInput*> value;
-        return value;
-    }
-
-    explicit device_reservation_s(IDeckLinkInput* device)
-        : device_(device)
-    {
-    }
-
-  public:
-    device_reservation_s(const device_reservation_s&)            = delete;
-    device_reservation_s& operator=(const device_reservation_s&) = delete;
-    device_reservation_s(device_reservation_s&&)                 = delete;
-    device_reservation_s& operator=(device_reservation_s&&)      = delete;
-
-    ~device_reservation_s()
-    {
-        const std::scoped_lock lock(mutex());
-        devices().erase(device_);
-    }
-
-    static std::shared_ptr<device_reservation_s> acquire(IDeckLinkInput* device)
-    {
-        const std::scoped_lock lock(mutex());
-        if (device == nullptr || !devices().emplace(device).second) {
-            return {};
-        }
-        return std::shared_ptr<device_reservation_s>(new device_reservation_s(device));
-    }
-};
-
 // ─── callback_s ──────────────────────────────────────────────────────────────
 // Implements both IDeckLinkInputCallback (capture events) and
 // IDeckLinkVideoBufferAllocatorProvider (provides our transfer-backed buffers
@@ -152,9 +109,9 @@ class callback_s
     gpu::transfer::texture_upload_service_s*                upload_service_;
     utils::serial_executor_s*                               control_executor_;
     decklink_ptr<IDeckLinkInput>                            device_;
-    std::shared_ptr<device_reservation_s>                   reservation_;
+    std::shared_ptr<device_reservation_s<IDeckLinkInput>>   reservation_;
     std::string                                             device_name_;
-    decklink_ptr<allocator_s>                               allocator_;
+    decklink_ptr<input_video_buffer_allocator_s>            allocator_;
     std::mutex                                              upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     std::map<uint64_t, upload_metadata_s>                   upload_metadata_;
@@ -219,7 +176,7 @@ class callback_s
 
     void release_upload_pool()
     {
-        decklink_ptr<allocator_s> allocator;
+        decklink_ptr<input_video_buffer_allocator_s> allocator;
         {
             const std::scoped_lock lock(upload_mutex_);
             upload_metadata_.clear();
@@ -364,11 +321,11 @@ class callback_s
         uint32_t available_video_frames{};
     };
 
-    callback_s(gpu::transfer::texture_upload_service_s* upload_service,
-               utils::serial_executor_s*                control_executor,
-               decklink_ptr<IDeckLinkInput>             device,
-               std::shared_ptr<device_reservation_s>    reservation,
-               std::string                              device_name)
+    callback_s(gpu::transfer::texture_upload_service_s*              upload_service,
+               utils::serial_executor_s*                             control_executor,
+               decklink_ptr<IDeckLinkInput>                          device,
+               std::shared_ptr<device_reservation_s<IDeckLinkInput>> reservation,
+               std::string                                           device_name)
         : upload_service_(upload_service)
         , control_executor_(control_executor)
         , device_(std::move(device))
@@ -437,12 +394,11 @@ class callback_s
             };
             const auto stream = upload_service_->create_stream({
                 .requirements      = requirements,
-                .max_slots         = 6,
+                .max_slots         = input_video_buffer_allocator_s::BUFFER_COUNT,
                 .generate_mip_maps = false,
             });
 
-            auto allocator = make_decklink_ptr<allocator_s>(bufferSize);
-            allocator->set_upload_stream(stream);
+            auto allocator = make_decklink_ptr<input_video_buffer_allocator_s>(bufferSize, stream);
             {
                 const std::scoped_lock lock(upload_mutex_);
                 if (allocator_) {
@@ -529,9 +485,9 @@ class callback_s
 
         const gpu::vec2i_t src_dim{videoFrame->GetWidth(), videoFrame->GetHeight()};
         auto               video_buffer  = query_decklink_interface<IDeckLinkVideoBuffer>(videoFrame);
-        auto               upload_buffer = query_upload_video_buffer(video_buffer.get());
+        auto               upload_buffer = query_input_video_buffer(video_buffer.get());
 
-        allocator_s* allocator{};
+        input_video_buffer_allocator_s* allocator{};
         {
             const std::scoped_lock lock(upload_mutex_);
             allocator = allocator_.get();
@@ -795,14 +751,14 @@ class node_impl : public node_i
 
     bool start_capture(core::app_state_s* app, decklink_ptr<IDeckLinkInput> device, std::string_view device_name)
     {
-        auto reservation = device_reservation_s::acquire(device.get());
+        auto reservation = device_reservation_s<IDeckLinkInput>::acquire(device.get());
         if (!reservation) {
             return false;
         }
 
         log()->info("Scheduling DeckLink input setup for {}", device_name);
         callback_ = make_decklink_ptr<callback_s>(app->texture_upload_service(),
-                                                  app->decklink_registry()->input_control_executor(),
+                                                  app->decklink_registry()->control_executor(),
                                                   std::move(device),
                                                   std::move(reservation),
                                                   std::string(device_name));

@@ -67,7 +67,7 @@ bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
     return true;
 }
 
-REFIID upload_video_buffer_iid() noexcept
+REFIID input_video_buffer_iid() noexcept
 {
     static constexpr IID iid{
         0x4005D928, 0xBA67, 0x4663, {0xA7, 0xFA, 0xF4, 0x4A, 0xB8, 0x25, 0xC8, 0x09}

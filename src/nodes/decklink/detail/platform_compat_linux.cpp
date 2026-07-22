@@ -33,9 +33,26 @@ bool decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept
            lhs.byte12 == rhs.byte12 && lhs.byte13 == rhs.byte13 && lhs.byte14 == rhs.byte14 && lhs.byte15 == rhs.byte15;
 }
 
-REFIID upload_video_buffer_iid() noexcept
+REFIID input_video_buffer_iid() noexcept
 {
-    return {0x40, 0x05, 0xD9, 0x28, 0xBA, 0x67, 0x46, 0x63, 0xA7, 0xFA, 0xF4, 0x4A, 0xB8, 0x25, 0xC8, 0x09};
+    return {
+        .byte0  = 0x40,
+        .byte1  = 0x05,
+        .byte2  = 0xD9,
+        .byte3  = 0x28,
+        .byte4  = 0xBA,
+        .byte5  = 0x67,
+        .byte6  = 0x46,
+        .byte7  = 0x63,
+        .byte8  = 0xA7,
+        .byte9  = 0xFA,
+        .byte10 = 0xF4,
+        .byte11 = 0x4A,
+        .byte12 = 0xB8,
+        .byte13 = 0x25,
+        .byte14 = 0xC8,
+        .byte15 = 0x09,
+    };
 }
 
 std::string get_device_display_name(IDeckLink* device)

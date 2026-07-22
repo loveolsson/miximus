@@ -6,6 +6,8 @@ PRIVATE
     detail/allocator.cpp
     detail/device_monitor.hpp
     detail/device_monitor.cpp
+    detail/device_reservation.hpp
+    detail/output_video_buffer.hpp
     detail/platform_compat.hpp
     input.cpp
     output.cpp

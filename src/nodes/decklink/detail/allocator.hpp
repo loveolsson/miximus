@@ -2,40 +2,44 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "platform_compat.hpp"
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
-#include <deque>
-#include <map>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <utility>
 
 namespace miximus::nodes::decklink::detail {
 
-class allocator_s;
+class input_video_buffer_allocator_s;
 
 // Implements IDeckLinkVideoBuffer with a lease into the asynchronous texture
 // upload pool. DeckLink DMA writes directly into backend-owned transfer memory.
-class video_buffer_s : public IDeckLinkVideoBuffer
+class input_video_buffer_s final : public IDeckLinkVideoBuffer
 {
-    allocator_s*                                         allocator_;
+    input_video_buffer_allocator_s*                      allocator_;
     std::optional<gpu::transfer::texture_upload_lease_s> upload_;
     std::atomic_ulong                                    ref_count_{1};
     uint32_t                                             buffer_size_;
     bool                                                 first_access_{true};
 
+    friend class input_video_buffer_allocator_s;
+
+    void activate() { ref_count_ = 1; }
+    void clear_upload() { upload_.reset(); }
+
   public:
-    video_buffer_s(allocator_s* allocator, uint32_t buffer_size)
+    input_video_buffer_s(input_video_buffer_allocator_s* allocator, uint32_t buffer_size)
         : allocator_(allocator)
         , buffer_size_(buffer_size)
     {
     }
 
-    void         clear_upload() { upload_.reset(); }
-    uint64_t     upload_version() const { return upload_ ? upload_->version() : 0; }
-    void         submit_upload() { upload_->submit(); }
-    void         reset_ref_count() { ref_count_ = 1; }
-    allocator_s* allocator() const { return allocator_; }
+    uint64_t                        upload_version() const { return upload_ ? upload_->version() : 0; }
+    void                            submit_upload() { upload_->submit(); }
+    input_video_buffer_allocator_s* allocator() const { return allocator_; }
 
     HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) override
     {
@@ -74,7 +78,7 @@ class video_buffer_s : public IDeckLinkVideoBuffer
             AddRef();
             return S_OK;
         }
-        if (decklink_iid_equal(iid, upload_video_buffer_iid())) {
+        if (decklink_iid_equal(iid, input_video_buffer_iid())) {
             *ppv = this;
             AddRef();
             return S_OK;
@@ -86,34 +90,41 @@ class video_buffer_s : public IDeckLinkVideoBuffer
     ULONG STDMETHODCALLTYPE Release() override;
 };
 
-class allocator_s : public IDeckLinkVideoBufferAllocator
+class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocator
 {
-    using buffer_ptr_t   = std::unique_ptr<video_buffer_s>;
-    using buffer_map_t   = std::map<video_buffer_s*, buffer_ptr_t>;
-    using buffer_queue_t = std::deque<buffer_ptr_t>;
+  public:
+    static constexpr size_t BUFFER_COUNT = 6;
+
+  private:
+    struct buffer_slot_s
+    {
+        std::unique_ptr<input_video_buffer_s> buffer;
+        bool                                  active{};
+    };
 
     std::mutex                                              mutex_;
     std::condition_variable                                 idle_condition_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
-    buffer_map_t                                            allocated_buffers_;
-    buffer_queue_t                                          free_buffers_;
+    std::array<buffer_slot_s, BUFFER_COUNT>                 buffers_;
+    size_t                                                  active_buffers_{};
     bool                                                    shutting_down_{};
     std::atomic_ulong                                       ref_count_{1};
     uint32_t                                                buffer_size_;
 
   public:
-    explicit allocator_s(uint32_t buffer_size)
-        : buffer_size_(buffer_size)
+    input_video_buffer_allocator_s(uint32_t                                                buffer_size,
+                                   std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream)
+        : upload_stream_(std::move(upload_stream))
+        , buffer_size_(buffer_size)
     {
     }
-    ~allocator_s();
+    ~input_video_buffer_allocator_s();
 
-    void set_upload_stream(std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream);
     auto acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>;
     auto buffer_size() const { return buffer_size_; }
 
     HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) override;
-    void                      return_buffer(video_buffer_s* buffer);
+    void                      return_buffer(input_video_buffer_s* buffer);
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
     {
@@ -143,6 +154,6 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     void shutdown_and_wait();
 };
 
-decklink_ptr<video_buffer_s> query_upload_video_buffer(IUnknown* source);
+decklink_ptr<input_video_buffer_s> query_input_video_buffer(IUnknown* source);
 
 } // namespace miximus::nodes::decklink::detail
