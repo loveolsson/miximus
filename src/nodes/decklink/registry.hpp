@@ -24,7 +24,8 @@ namespace miximus::nodes::decklink {
 class discovery_callback;
 namespace detail {
 class device_monitor_s;
-}
+class input_control_s;
+} // namespace detail
 
 struct device_status_s
 {
@@ -64,6 +65,7 @@ class decklink_registry_s
     std::map<std::string, std::shared_ptr<detail::device_monitor_s>, std::less<>> monitors_;
     std::atomic<uint64_t>                                                         device_list_version_{0};
     std::jthread                                                                  statistics_thread_;
+    std::unique_ptr<detail::input_control_s>                                      input_control_;
 
     friend class discovery_callback;
 
@@ -76,6 +78,7 @@ class decklink_registry_s
     decklink_ptr<IDeckLinkInput>           get_input(std::string_view name);
     decklink_ptr<IDeckLinkOutput>          get_output(std::string_view name);
     std::shared_ptr<const device_status_s> get_device_status(std::string_view name);
+    detail::input_control_s*               input_control() { return input_control_.get(); }
 
     uint64_t get_device_list_version() { return device_list_version_.load(std::memory_order_relaxed); }
 

@@ -2,7 +2,6 @@
 
 #include "logger/logger.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <exception>
@@ -12,7 +11,7 @@
 namespace miximus::nodes::decklink::detail {
 namespace {
 constexpr size_t MAX_ALLOCATIONS = 6;
-}
+} // namespace
 
 ULONG video_buffer_s::Release()
 {
@@ -21,6 +20,25 @@ ULONG video_buffer_s::Release()
         allocator_->return_buffer(this);
     }
     return count;
+}
+
+HRESULT video_buffer_s::StartAccess(BMDBufferAccessFlags flags)
+{
+    if ((flags & bmdBufferAccessWrite) == 0) {
+        return S_OK;
+    }
+
+    // DeckLink allocates a small set of buffer objects and cycles them. A
+    // fresh one-shot transfer lease is therefore needed for every write
+    // access, not only when the IDeckLinkVideoBuffer object is allocated.
+    upload_.reset();
+    auto upload = allocator_->acquire_upload(first_access_);
+    if (!upload) {
+        return E_OUTOFMEMORY;
+    }
+    first_access_ = false;
+    upload_.emplace(std::move(*upload));
+    return S_OK;
 }
 
 allocator_s::~allocator_s()
@@ -38,6 +56,23 @@ void allocator_s::set_upload_stream(std::shared_ptr<gpu::transfer::texture_uploa
     upload_stream_ = std::move(stream);
 }
 
+auto allocator_s::acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>
+{
+    std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
+    {
+        const std::scoped_lock lock(mutex_);
+        stream = shutting_down_ ? nullptr : upload_stream_;
+    }
+    if (!stream) {
+        return std::nullopt;
+    }
+
+    // Initial backend allocation may queue behind application startup. Once
+    // warm, waiting at most one frame bounds capture-thread backpressure while
+    // leaving the render thread entirely uninvolved.
+    return stream->acquire_for(first_access ? std::chrono::seconds(2) : std::chrono::milliseconds(20));
+}
+
 HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
 {
     if (allocatedBuffer == nullptr) {
@@ -46,35 +81,18 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
     *allocatedBuffer = nullptr;
 
     try {
-        std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
-        buffer_ptr_t                                            reusable;
+        buffer_ptr_t reusable;
         {
             const std::scoped_lock lock(mutex_);
-            stream = shutting_down_ ? nullptr : upload_stream_;
-            if (stream && !free_buffers_.empty()) {
+            if (shutting_down_ || !upload_stream_) {
+                return E_OUTOFMEMORY;
+            }
+            if (!free_buffers_.empty()) {
                 reusable = std::move(free_buffers_.front());
                 free_buffers_.pop_front();
+            } else if (allocated_buffers_.size() + free_buffers_.size() >= MAX_ALLOCATIONS) {
+                return E_OUTOFMEMORY;
             }
-        }
-        if (!stream) {
-            return E_OUTOFMEMORY;
-        }
-
-        // Returned SDK objects still pin their submitted upload lease. Release it
-        // before asking the stream for replacement memory to avoid pool starvation.
-        if (reusable) {
-            reusable->clear_upload();
-        }
-
-        // This callback runs on a DeckLink SDK thread, never the render thread. A
-        // short wait allows the GL upload worker to lazily allocate a backend slot.
-        auto upload = stream->acquire_for(std::chrono::milliseconds(100));
-        if (!upload) {
-            if (reusable) {
-                const std::scoped_lock lock(mutex_);
-                free_buffers_.emplace_front(std::move(reusable));
-            }
-            return E_OUTOFMEMORY;
         }
 
         const std::scoped_lock lock(mutex_);
@@ -85,7 +103,6 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
         }
         if (reusable) {
             auto* raw = reusable.get();
-            raw->set_upload(std::move(*upload));
             raw->reset_ref_count();
             allocated_buffers_.emplace(raw, std::move(reusable));
             *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(raw);
@@ -97,7 +114,7 @@ HRESULT allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
         }
 
         getlog("decklink")->debug("Allocating upload-backed DeckLink buffer, current count {}", ++allocations_g);
-        auto  buffer = std::make_unique<video_buffer_s>(this, std::move(*upload));
+        auto  buffer = std::make_unique<video_buffer_s>(this, buffer_size_);
         auto* raw    = buffer.get();
         allocated_buffers_.emplace(raw, std::move(buffer));
 
@@ -122,46 +139,38 @@ void allocator_s::return_buffer(video_buffer_s* buffer)
     if (shutting_down_) {
         --allocations_g;
         allocated_buffers_.erase(it);
+        if (allocated_buffers_.empty()) {
+            idle_condition_.notify_all();
+        }
         return;
     }
+    buffer->clear_upload();
     free_buffers_.emplace_back(std::move(it->second));
     allocated_buffers_.erase(it);
 }
 
-uint64_t allocator_s::upload_version(IDeckLinkVideoBuffer* buffer)
+decklink_ptr<video_buffer_s> query_upload_video_buffer(IUnknown* source)
 {
-    const std::scoped_lock lock(mutex_);
-    const auto             it = std::ranges::find_if(allocated_buffers_, [buffer](const auto& entry) {
-        return static_cast<IDeckLinkVideoBuffer*>(entry.first) == buffer;
-    });
-    if (it == allocated_buffers_.end()) {
-        return 0;
+    if (source == nullptr) {
+        return {};
     }
-    return it->second->upload_version();
+
+    video_buffer_s* buffer = nullptr;
+    if (FAILED(source->QueryInterface(upload_video_buffer_iid(), reinterpret_cast<void**>(&buffer)))) {
+        return {};
+    }
+    return decklink_ptr<video_buffer_s>(buffer, false);
 }
 
-bool allocator_s::submit_upload(IDeckLinkVideoBuffer* buffer)
+void allocator_s::shutdown_and_wait()
 {
-    const std::scoped_lock lock(mutex_);
-    const auto             it = std::ranges::find_if(allocated_buffers_, [buffer](const auto& entry) {
-        return static_cast<IDeckLinkVideoBuffer*>(entry.first) == buffer;
-    });
-    if (it == allocated_buffers_.end()) {
-        return false;
-    }
-    it->second->submit_upload();
-    return true;
-}
-
-size_t allocator_s::destroy_free_buffers()
-{
-    const std::scoped_lock lock(mutex_);
+    std::unique_lock lock(mutex_);
     shutting_down_ = true;
     allocations_g -= free_buffers_.size();
     free_buffers_.clear();
     upload_stream_.reset();
-    getlog("decklink")->debug("Destroying free DeckLink buffers, current count {}", allocations_g.load());
-    return allocated_buffers_.size();
+    idle_condition_.wait(lock, [this] { return allocated_buffers_.empty(); });
+    getlog("decklink")->debug("Destroying drained DeckLink buffer pool, current count {}", allocations_g.load());
 }
 
 } // namespace miximus::nodes::decklink::detail

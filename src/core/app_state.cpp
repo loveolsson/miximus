@@ -41,6 +41,11 @@ app_state_s::~app_state_s()
     decklink_registry_->uninstall();
     cfg_work_ = nullptr;
 
+    // Capture-control work may still be retiring SDK buffers and upload
+    // streams after a node was removed. Drain it before destroying the shared
+    // transfer services it uses.
+    decklink_registry_.reset();
+
     // DVP is tied to the root GL context and must be closed before that context
     // is destroyed. Nodes and their transfers are destroyed before app_state.
     texture_download_service_.reset();

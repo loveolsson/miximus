@@ -10,6 +10,7 @@ decklink_ptr<IDeckLinkVideoConversion> create_video_conversion();
 std::string                            get_device_display_name(IDeckLink* device);
 std::string                            get_display_mode_name(IDeckLinkDisplayMode* mode);
 bool                                   decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept;
+REFIID                                 upload_video_buffer_iid() noexcept;
 
 } // namespace miximus::nodes::decklink::detail
 

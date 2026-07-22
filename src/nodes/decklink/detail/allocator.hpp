@@ -3,6 +3,7 @@
 #include "platform_compat.hpp"
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
@@ -20,20 +21,21 @@ class video_buffer_s : public IDeckLinkVideoBuffer
     allocator_s*                                         allocator_;
     std::optional<gpu::transfer::texture_upload_lease_s> upload_;
     std::atomic_ulong                                    ref_count_{1};
+    uint32_t                                             buffer_size_;
+    bool                                                 first_access_{true};
 
   public:
-    video_buffer_s(allocator_s* allocator, gpu::transfer::texture_upload_lease_s upload)
+    video_buffer_s(allocator_s* allocator, uint32_t buffer_size)
         : allocator_(allocator)
-        , upload_(std::move(upload))
+        , buffer_size_(buffer_size)
     {
     }
 
-    void     set_upload(gpu::transfer::texture_upload_lease_s upload) { upload_.emplace(std::move(upload)); }
-    void     clear_upload() { upload_.reset(); }
-    uint64_t upload_version() const { return upload_ ? upload_->version() : 0; }
-    void     submit_upload() { upload_->submit(); }
-    uint32_t buffer_size() const { return upload_ ? static_cast<uint32_t>(upload_->bytes().size()) : 0; }
-    void     reset_ref_count() { ref_count_ = 1; }
+    void         clear_upload() { upload_.reset(); }
+    uint64_t     upload_version() const { return upload_ ? upload_->version() : 0; }
+    void         submit_upload() { upload_->submit(); }
+    void         reset_ref_count() { ref_count_ = 1; }
+    allocator_s* allocator() const { return allocator_; }
 
     HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) override
     {
@@ -53,11 +55,11 @@ class video_buffer_s : public IDeckLinkVideoBuffer
         if (size == nullptr) {
             return E_POINTER;
         }
-        *size = buffer_size();
-        return upload_ ? S_OK : E_FAIL;
+        *size = buffer_size_;
+        return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags /*flags*/) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags flags) override;
     HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) override { return S_OK; }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
@@ -69,6 +71,11 @@ class video_buffer_s : public IDeckLinkVideoBuffer
 
         if (decklink_iid_matches<IUnknown>(iid) || decklink_iid_matches<IDeckLinkVideoBuffer>(iid)) {
             *ppv = static_cast<IDeckLinkVideoBuffer*>(this);
+            AddRef();
+            return S_OK;
+        }
+        if (decklink_iid_equal(iid, upload_video_buffer_iid())) {
+            *ppv = this;
             AddRef();
             return S_OK;
         }
@@ -86,19 +93,25 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
     using buffer_queue_t = std::deque<buffer_ptr_t>;
 
     std::mutex                                              mutex_;
+    std::condition_variable                                 idle_condition_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     buffer_map_t                                            allocated_buffers_;
     buffer_queue_t                                          free_buffers_;
     bool                                                    shutting_down_{};
     std::atomic_ulong                                       ref_count_{1};
+    uint32_t                                                buffer_size_;
 
     static inline std::atomic_size_t allocations_g{0};
 
   public:
-    allocator_s() = default;
+    explicit allocator_s(uint32_t buffer_size)
+        : buffer_size_(buffer_size)
+    {
+    }
     ~allocator_s();
 
     void set_upload_stream(std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream);
+    auto acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>;
 
     HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) override;
     void                      return_buffer(video_buffer_s* buffer);
@@ -128,10 +141,9 @@ class allocator_s : public IDeckLinkVideoBufferAllocator
         return count;
     }
 
-    uint64_t upload_version(IDeckLinkVideoBuffer* buffer);
-    bool     submit_upload(IDeckLinkVideoBuffer* buffer);
-
-    size_t destroy_free_buffers();
+    void shutdown_and_wait();
 };
+
+decklink_ptr<video_buffer_s> query_upload_video_buffer(IUnknown* source);
 
 } // namespace miximus::nodes::decklink::detail

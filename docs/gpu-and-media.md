@@ -113,6 +113,26 @@ Transfer shutdown runs from `app_state_s` with the root GL context current, afte
 
 DeckLink input uses an `IDeckLinkVideoBufferAllocatorProvider` and `IDeckLinkVideoBufferAllocator` implementation. SDK capture buffers hold upload leases, allowing DeckLink DMA to write directly into backend-owned host memory. The SDK callback records frame metadata and submits the lease; it performs no GL work. The render node polls completed UYUV textures and retains the stream while sampling one.
 
+DeckLink cycles a fixed set of allocator buffer objects rather than allocating an object for every captured frame. Each
+buffer therefore acquires a fresh one-shot upload lease from `StartAccess(bmdBufferAccessWrite)`. `GetBytes()` exposes
+that lease's host address for the current SDK write cycle, and the frame callback submits it. Keeping one lease for the
+full lifetime of a DeckLink buffer would upload only its first frame and exhaust the transfer slots after the initial
+pool. Completed GPU textures remain owned by the upload stream independently of the DeckLink buffer object.
+
+DeckLink wraps application-provided buffers in its input-frame objects. Upload-backed buffers therefore expose a private
+IID, matching the SDK custom-allocator examples, so the callback can recover the original buffer and submit its lease.
+The registry owns a serialized DeckLink input-control worker. Capture start, stop, flush, disable, device removal, and
+allocator retirement all run there; the render thread never calls those potentially blocking SDK methods. A format
+callback only records the pending mode and asks the render node to release its current texture. The next render prepare
+acknowledges that release without waiting, after which the control worker stops capture and waits for SDK buffer
+references to drain. Only then is the old allocator and upload stream retired and capture enabled at the pending mode.
+Old and new full-size allocator pools never coexist.
+
+Input-node destruction is likewise non-blocking: it clears render-owned textures, requests asynchronous capture stop,
+and releases its callback reference. Control tasks retain the callback and device until the SDK callback is unregistered,
+all capture buffers are returned, and transfer-stream destruction has been queued on the GL upload worker. Application
+shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
+
 DeckLink output renders packed 10-bit YUV into a download target. The transfer worker completes readback, and the DeckLink scheduled-frame callback polls a CPU-frame lease and copies it into DeckLink-owned output memory. The callback neither makes a GL context current nor waits for a transfer.
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
