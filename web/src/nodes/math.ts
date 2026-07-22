@@ -3,7 +3,7 @@ import { setType } from "@baklavajs/interface-types";
 import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { t_f64, t_vec2, t_rect } from "./interface_types";
 import { type_e } from "@/messages";
-import { DropdownInterface, NumericInterface } from "./interfaces";
+import { DropdownInterface, NumericInterface, Vec2Interface } from "./interfaces";
 
 const scalarOptions = { precision: 2, step: 0.1 } as const;
 const factorOptions = { precision: 2, step: 0.05, min: 0, max: 1 } as const;
@@ -119,5 +119,44 @@ export const F64EasingNode = defineNode({
   },
   outputs: {
     res: () => new NodeInterface<number>("Result", 0).use(setType, t_f64),
+  },
+});
+
+export const F64ClampNode = defineNode({
+  type: type_e.clamp_f64,
+  title: "F64 Clamp",
+  inputs: {
+    value: () => new NumericInterface("Value", 0, scalarOptions).use(setType, t_f64),
+    min: () => new NumericInterface("Min", 0, scalarOptions).use(setType, t_f64),
+    max: () => new NumericInterface("Max", 1, scalarOptions).use(setType, t_f64),
+  },
+  outputs: {
+    res: () => new NodeInterface<number>("Result", 0).use(setType, t_f64),
+  },
+});
+
+export const Vec2ClampNode = defineNode({
+  type: type_e.clamp_vec2,
+  title: "Vec2 Clamp",
+  inputs: {
+    value: () => new Vec2Interface("Value", [0, 0], scalarOptions).use(setType, t_vec2),
+    min: () => new Vec2Interface("Min", [0, 0], scalarOptions).use(setType, t_vec2),
+    max: () => new Vec2Interface("Max", [1, 1], scalarOptions).use(setType, t_vec2),
+  },
+  outputs: {
+    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+  },
+});
+
+export const RectClampNode = defineNode({
+  type: type_e.clamp_rect,
+  title: "Rect Clamp",
+  inputs: {
+    value: () => new NodeInterface<null>("Value", null).use(setType, t_rect),
+    min: () => new NodeInterface<null>("Min", null).use(setType, t_rect),
+    max: () => new NodeInterface<null>("Max", null).use(setType, t_rect),
+  },
+  outputs: {
+    res: () => new NodeInterface<null>("Result", null).use(setType, t_rect),
   },
 });

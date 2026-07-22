@@ -172,6 +172,9 @@ Strict warnings apply to project targets after submodules are configured. Third-
 - Follow the established `_s` suffix for concrete structs/classes and `_i` for interfaces.
 - Prefer RAII and explicit ownership with smart pointers.
 - Use `std::string_view` for non-owning parameters, but do not store it past the owner's lifetime.
+- For templated node families, pass stable protocol type strings, default display names, and any varying interface names
+  explicitly from each concrete factory. Do not infer protocol metadata from the C++ value type through template traits;
+  the same value type may back multiple independently versioned node types.
 - Ordered string maps use `std::less<>` for heterogeneous lookup.
 - Unordered string maps use `utils::transparent_string_hash` plus `std::equal_to<>` when lookup by view is useful.
 - C++20 does not have heterogeneous `unordered_map::erase(key)`; find by view and erase the iterator.

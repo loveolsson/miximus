@@ -19,78 +19,20 @@ using namespace miximus::nodes;
 
 constexpr std::array<std::string_view, 8> INPUT_NAMES{"a", "b", "c", "d", "e", "f", "g", "h"};
 
-template <typename T>
-struct switch_traits_s;
-
-template <>
-struct switch_traits_s<double>
-{
-    static constexpr std::string_view type_4{"switch_f64_4"};
-    static constexpr std::string_view type_8{"switch_f64_8"};
-    static constexpr std::string_view name_4{"Switch Number x4"};
-    static constexpr std::string_view name_8{"Switch Number x8"};
-    static constexpr std::string_view output{"res"};
-};
-
-template <>
-struct switch_traits_s<gpu::vec2_t>
-{
-    static constexpr std::string_view type_4{"switch_vec2_4"};
-    static constexpr std::string_view type_8{"switch_vec2_8"};
-    static constexpr std::string_view name_4{"Switch Vec2 x4"};
-    static constexpr std::string_view name_8{"Switch Vec2 x8"};
-    static constexpr std::string_view output{"res"};
-};
-
-template <>
-struct switch_traits_s<gpu::rect_s>
-{
-    static constexpr std::string_view type_4{"switch_rect_4"};
-    static constexpr std::string_view type_8{"switch_rect_8"};
-    static constexpr std::string_view name_4{"Switch Rect x4"};
-    static constexpr std::string_view name_8{"Switch Rect x8"};
-    static constexpr std::string_view output{"res"};
-};
-
-template <>
-struct switch_traits_s<gpu::texture_s*>
-{
-    static constexpr std::string_view type_4{"switch_tex_4"};
-    static constexpr std::string_view type_8{"switch_tex_8"};
-    static constexpr std::string_view name_4{"Switch Texture x4"};
-    static constexpr std::string_view name_8{"Switch Texture x8"};
-    static constexpr std::string_view output{"tex"};
-};
-
 template <typename T, size_t SlotCount>
-class switch_node_s : public node_i
+class node_impl : public node_i
 {
-    static_assert(SlotCount == 4 || SlotCount == 8);
-
     input_interface_s<double>                                  active_{*this, "active"};
     std::array<std::optional<input_interface_s<T>>, SlotCount> inputs_;
-    output_interface_s<T>                                      output_{*this, switch_traits_s<T>::output};
-
-    static constexpr std::string_view node_type()
-    {
-        if constexpr (SlotCount == 4) {
-            return switch_traits_s<T>::type_4;
-        } else {
-            return switch_traits_s<T>::type_8;
-        }
-    }
-
-    static constexpr std::string_view default_name()
-    {
-        if constexpr (SlotCount == 4) {
-            return switch_traits_s<T>::name_4;
-        } else {
-            return switch_traits_s<T>::name_8;
-        }
-    }
+    output_interface_s<T>                                      output_;
+    std::string_view                                           type_;
+    std::string_view                                           name_;
 
   public:
-    switch_node_s()
+    node_impl(std::string_view type, std::string_view name, std::string_view output_name)
+        : output_(*this, output_name)
+        , type_(type)
+        , name_(name)
     {
         for (size_t index = 0; index < inputs_.size(); ++index) {
             inputs_.at(index).emplace(*this, INPUT_NAMES.at(index));
@@ -117,8 +59,8 @@ class switch_node_s : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",   default_name()},
-            {"active", 1             },
+            {"name",   name_},
+            {"active", 1    },
         };
     }
 
@@ -131,26 +73,51 @@ class switch_node_s : public node_i
         return option_result_e::invalid;
     }
 
-    std::string_view type() const final { return node_type(); }
+    std::string_view type() const final { return type_; }
 };
-
-template <typename T, size_t SlotCount>
-std::shared_ptr<node_i> create_switch_node()
-{
-    return std::make_shared<switch_node_s<T, SlotCount>>();
-}
 
 } // namespace
 
 namespace miximus::nodes::switch_nodes {
 
-std::shared_ptr<node_i> create_switch_f64_4_node() { return create_switch_node<double, 4>(); }
-std::shared_ptr<node_i> create_switch_f64_8_node() { return create_switch_node<double, 8>(); }
-std::shared_ptr<node_i> create_switch_vec2_4_node() { return create_switch_node<gpu::vec2_t, 4>(); }
-std::shared_ptr<node_i> create_switch_vec2_8_node() { return create_switch_node<gpu::vec2_t, 8>(); }
-std::shared_ptr<node_i> create_switch_rect_4_node() { return create_switch_node<gpu::rect_s, 4>(); }
-std::shared_ptr<node_i> create_switch_rect_8_node() { return create_switch_node<gpu::rect_s, 8>(); }
-std::shared_ptr<node_i> create_switch_tex_4_node() { return create_switch_node<gpu::texture_s*, 4>(); }
-std::shared_ptr<node_i> create_switch_tex_8_node() { return create_switch_node<gpu::texture_s*, 8>(); }
+std::shared_ptr<node_i> create_switch_f64_4_node()
+{
+    return std::make_shared<node_impl<double, 4>>("switch_f64_4", "Switch Number x4", "res");
+}
+
+std::shared_ptr<node_i> create_switch_f64_8_node()
+{
+    return std::make_shared<node_impl<double, 8>>("switch_f64_8", "Switch Number x8", "res");
+}
+
+std::shared_ptr<node_i> create_switch_vec2_4_node()
+{
+    return std::make_shared<node_impl<gpu::vec2_t, 4>>("switch_vec2_4", "Switch Vec2 x4", "res");
+}
+
+std::shared_ptr<node_i> create_switch_vec2_8_node()
+{
+    return std::make_shared<node_impl<gpu::vec2_t, 8>>("switch_vec2_8", "Switch Vec2 x8", "res");
+}
+
+std::shared_ptr<node_i> create_switch_rect_4_node()
+{
+    return std::make_shared<node_impl<gpu::rect_s, 4>>("switch_rect_4", "Switch Rect x4", "res");
+}
+
+std::shared_ptr<node_i> create_switch_rect_8_node()
+{
+    return std::make_shared<node_impl<gpu::rect_s, 8>>("switch_rect_8", "Switch Rect x8", "res");
+}
+
+std::shared_ptr<node_i> create_switch_tex_4_node()
+{
+    return std::make_shared<node_impl<gpu::texture_s*, 4>>("switch_tex_4", "Switch Texture x4", "tex");
+}
+
+std::shared_ptr<node_i> create_switch_tex_8_node()
+{
+    return std::make_shared<node_impl<gpu::texture_s*, 8>>("switch_tex_8", "Switch Texture x8", "tex");
+}
 
 } // namespace miximus::nodes::switch_nodes

@@ -10,6 +10,9 @@ std::shared_ptr<node_i> create_lerp_f64_node();
 std::shared_ptr<node_i> create_lerp_vec2_node();
 std::shared_ptr<node_i> create_lerp_rect_node();
 std::shared_ptr<node_i> create_easing_f64_node();
+std::shared_ptr<node_i> create_clamp_f64_node();
+std::shared_ptr<node_i> create_clamp_vec2_node();
+std::shared_ptr<node_i> create_clamp_rect_node();
 
 void register_nodes(node_definition_map_t* map)
 {
@@ -20,6 +23,9 @@ void register_nodes(node_definition_map_t* map)
     map->emplace("lerp_vec2", create_lerp_vec2_node);
     map->emplace("lerp_rect", create_lerp_rect_node);
     map->emplace("easing_f64", create_easing_f64_node);
+    map->emplace("clamp_f64", create_clamp_f64_node);
+    map->emplace("clamp_vec2", create_clamp_vec2_node);
+    map->emplace("clamp_rect", create_clamp_rect_node);
 }
 
 } // namespace miximus::nodes::math

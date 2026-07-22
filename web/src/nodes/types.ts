@@ -10,6 +10,9 @@ import {
   Vec2LerpNode,
   RectLerpNode,
   F64EasingNode,
+  F64ClampNode,
+  Vec2ClampNode,
+  RectClampNode,
 } from "./math";
 import { Vec2Node, RectNode, FrameBufferNode, FramebufferToTextureNode } from "./utils";
 import { DrawBoxNode, InfiniteMultiviewerNode, MixTex2Node } from "./composite";
@@ -38,6 +41,9 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(Vec2LerpNode, { category: "Math" });
   editor.registerNodeType(RectLerpNode, { category: "Math" });
   editor.registerNodeType(F64EasingNode, { category: "Math" });
+  editor.registerNodeType(F64ClampNode, { category: "Math" });
+  editor.registerNodeType(Vec2ClampNode, { category: "Math" });
+  editor.registerNodeType(RectClampNode, { category: "Math" });
   editor.registerNodeType(Vec2Node, { category: "Utils" });
   editor.registerNodeType(RectNode, { category: "Utils" });
   editor.registerNodeType(FrameBufferNode, { category: "Utils" });

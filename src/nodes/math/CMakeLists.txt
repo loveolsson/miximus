@@ -5,4 +5,5 @@ PRIVATE
     math.cpp
     lerp.cpp
     easing.cpp
+    clamp.cpp
 )
