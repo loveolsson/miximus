@@ -40,6 +40,7 @@ PRIVATE
     decklink
     ndi
     render
+    miximus_media
     miximus_types
     Boost::fiber
     magic_enum::magic_enum

@@ -49,11 +49,12 @@ if(BUILD_TESTING)
         tests/application_settings_test.cpp
         tests/frame_execution_test.cpp
         tests/frame_scheduler_test.cpp
+        tests/source_timing_test.cpp
         application_settings.cpp
         frame_scheduler.cpp
         clock_source.cpp
     )
-    target_link_libraries(core_test PRIVATE nodes miximus_types magic_enum::magic_enum GTest::gtest_main)
+    target_link_libraries(core_test PRIVATE nodes miximus_media miximus_types magic_enum::magic_enum GTest::gtest_main)
     add_sanitizers(core_test)
     gtest_discover_tests(core_test)
 endif()

@@ -84,7 +84,12 @@ allocation in front of the PBO. Download slots likewise expose their mapped pack
 
 ### Upload streams
 
-An upload stream is a bounded, lazily allocated set of backend-owned writable slots. A CPU producer calls `try_acquire()`, writes through the returned lease's mutable byte span, then calls `submit()`. The upload worker owns a permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes the texture. The render thread calls `consume_latest()` or `consume_through()`; both are polling operations and retain the previous texture while a newer upload is incomplete.
+An upload stream is a bounded, lazily allocated set of backend-owned writable slots. A CPU producer calls
+`try_acquire()`, writes through the returned lease's mutable byte span, then calls `submit()`. The upload worker owns a
+permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes
+the texture. Legacy and non-timed producers may poll with `consume_latest()` or `consume_through()` and retain their
+previous texture while a newer upload is incomplete. A PTS-aware source instead calls `wait_until_ready()` for its
+exact prepared version during execution and only then makes that version current with `consume_through()`.
 
 Submitted leases also pin their writable memory until the producer releases the lease. This is important for SDK allocators such as DeckLink, which may retain a buffer after delivering its frame callback.
 
@@ -110,7 +115,10 @@ This distinction is intentional. A texture's CUDA array reflects native storage,
 
 ### Completion and handoff
 
-Completion is represented by ownership, not a node-side wait. An upload texture is not visible through `consume_latest()` until its transfer fence has completed. A download frame is not visible through `try_consume_latest()` until its host buffer is safe to read. Queue mutexes alone never imply GPU/DVP/CUDA completion.
+Completion is represented by the transfer service's publication state, not by queue ownership alone. An upload texture
+is not visible through `consume_latest()` or reported ready by `wait_until_ready()` until its transfer fence has
+completed. A download frame is not visible through `try_consume_latest()` until its host buffer is safe to read. Queue
+mutexes alone never imply GPU/DVP/CUDA completion.
 
 Transfer shutdown runs from `app_state_s` with the root GL context current, after node transfers/textures are destroyed and before root-context destruction. DVP and CUDA context teardown must remain in that window.
 

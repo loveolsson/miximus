@@ -28,7 +28,9 @@ The design has five central rules:
   demand controls consumption and painting, never whether an input is hot.
 - Give active graph work a submission pass before its execution pass so transfers and other asynchronous work can begin
   before any consumer needs to resolve them.
-- Keep decode, blocking SDK work, CPU image processing, and host/GPU transfer waits off the render thread.
+- Keep decode, blocking SDK work, CPU image processing, and transfer execution off the render thread. The render thread
+  only reaches the mandatory synchronization point for an exact selected transfer during node `execute()` after every
+  active source has had an opportunity to submit work.
 - Support DeckLink, NDI, screen presentation, and future FFmpeg sources through common timing contracts while
   preserving their different native memory and clock models.
 - Allow external controllers to submit a batch of option changes that takes effect atomically at one frame boundary.
@@ -62,14 +64,17 @@ The current graph frame performs these operations:
 
 1. update the stable render snapshot;
 2. call `prepare()` on every node;
-3. lazily execute dependencies of every `must_run` root;
-4. call `glFinish()` globally;
-5. call `complete()` on every node.
+3. determine demanding sinks and their structurally active upstream closure;
+4. call `submit()` once on every node in that closure;
+5. lazily execute the dependencies of every demanding sink;
+6. call `glFinish()` globally;
+7. call `complete()` on every node.
 
-This preserves a stable graph, advances every node through `prepare()`, and keeps render-thread GL destruction, all of
-which should remain. It does not provide a first graph traversal in which active nodes can submit transfers and other
-asynchronous work before a second traversal resolves dependencies and paints. `prepare()` also currently combines
-configuration maintenance, device lifecycle, status updates, queue advancement, allocation, and per-frame acquisition.
+This preserves a stable graph, advances every node through `prepare()`, gives active sources an opportunity to submit
+work before painting, and keeps render-thread GL destruction. The remaining limitation is that media inputs do not yet
+use the submission pass to select and start a PTS-aligned transfer ticket that execution subsequently awaits.
+`prepare()` also still combines configuration maintenance, device lifecycle, status updates, queue advancement,
+allocation, and per-frame acquisition in several existing nodes.
 
 The transfer services use monotonic versions or arbitrary integer tags and publish the latest completed transfer.
 Those are useful implementation details but do not identify the media frame for which a transfer was requested.
@@ -213,7 +218,7 @@ Every selection should produce a result that distinguishes at least:
 - an intentional repeat;
 - missing signal/black fallback;
 - discontinuity;
-- a frame that could not become transfer-ready before the deadline.
+- transfer failure.
 
 ## Clock sources
 
@@ -302,16 +307,18 @@ texture. The ticket should carry the media identity and a readiness state such a
 - missing;
 - discontinued.
 
-Callback-driven devices such as DeckLink continuously accept frames into a bounded transfer stream; by the time a
-program frame is submitted, an appropriate source frame may already be in flight or ready. All-node `prepare()` first
-advances the source queue, and the active submission traversal selects and reserves the ticket for the current program
-PTS. Pull-driven sources such as NDI FrameSync or a decoder keep their production request stream moving from
-`prepare()` and may associate additional active-frame work during submission. Both paths expose the same ticket
-contract to execution and retain its storage until frame retirement.
+Callback-driven devices such as DeckLink continuously accept frames into bounded host-visible reservations. All-node
+`prepare()` advances the source queue. The active submission traversal selects the exact frame assigned to the current
+program PTS, parks its ticket, and starts that frame's transfer. Pull-driven sources such as NDI FrameSync or a decoder
+likewise keep their production queues moving from `prepare()`, while submission starts the selected host/GPU transfer.
+Both paths retain the selected frame and its storage until frame retirement.
 
-Execution may enqueue a GPU-side wait when a shared-context transfer has already been issued. It must not perform an
-unbounded CPU wait. If the worker has not submitted the transfer before the remaining render budget expires, the node
-uses its declared fallback policy: repeat, black/missing, or mark the program frame unusable for a mandatory source.
+Execution awaits the exact ticket selected for this program PTS. Transfer lateness therefore makes the program frame
+late; it must never silently replace the selected frame with an older ready frame. Bounded output queues are responsible
+for absorbing ordinary render-time variance. A repeat, missing frame, or black frame is chosen deliberately by the
+source timing policy before submission when no newer source frame is appropriate. Once selected, that decision is
+authoritative for the evaluation. Device loss, cancellation, and transfer failure still require finite operational
+failure handling so shutdown cannot hang, but they are errors rather than normal deadline-based fallback decisions.
 
 Transfer APIs should replace bare `version`/`tag` semantics at media-facing boundaries with structured metadata such
 as:
@@ -359,10 +366,9 @@ For each captured frame, retain:
 - the upload reservation/version used by the transfer service.
 
 The DeckLink synchronizer maps stream time into the program timeline using hardware-reference observations where
-possible. Capture and upload submission happen asynchronously for every arriving frame, regardless of current graph
-demand. All-node preparation advances the bounded timed queue, and active submission selects and parks the appropriate
-already-ready or in-flight upload ticket for the requested program PTS. Execution resolves that ticket without asking
-the device to capture or re-upload the frame.
+possible. Capture continuously fills bounded host-visible reservations regardless of current graph demand. All-node
+preparation advances the timed queue; active submission selects the appropriate reservation for the requested program
+PTS and starts its upload; execution awaits and resolves that exact ticket without asking the device to capture again.
 
 The custom allocator is a long-lived capture-session resource, not a per-program-frame allocator. DeckLink may retain
 and reuse an `IDeckLinkVideoBuffer` object across many captured frames. Each `StartAccess(bmdBufferAccessWrite)` begins
@@ -386,9 +392,9 @@ values.
 Keep NDI FrameSync. Its documented purpose includes adapting independent sender clocks for video and audio mixing.
 
 Every NDI input should keep its coalesced sampling/request stream active from all-node preparation. The capture worker
-calls `NDIlib_framesync_capture_video()`, copies into an upload lease, and tags the result with the associated program
-frame identity. Active submission selects and parks the appropriate result rather than being responsible for keeping
-the receiver warm.
+calls `NDIlib_framesync_capture_video()`, copies into an unsubmitted upload lease, and tags the result with the
+associated source observation. Active submission selects the appropriate reservation, parks its ticket, and starts its
+upload rather than being responsible for keeping the receiver warm.
 The returned NDI timecode, receive timestamp, format, and frame rate should be retained for diagnostics and
 discontinuity detection even though FrameSync performs the primary time-base correction.
 
@@ -627,7 +633,7 @@ Exit criteria:
 
 ### Stage 3: all-node preparation and two active traversals
 
-**Status:** Implemented; hardware behavior verification pending
+**Status:** Implemented and hardware-verified
 
 Deliverables:
 
@@ -653,22 +659,23 @@ Exit criteria:
 
 ### Stage 4: timed source queues and prepared tickets
 
-**Status:** Pending
+**Status:** In progress
 
 Deliverables:
 
 - Add source epoch, sequence, source PTS, duration, arrival observation, and readiness to media-facing transfer results.
 - Implement bounded timed queues and selection APIs instead of `consume_latest()` at input boundaries.
 - Implement the source-to-program clock estimator, hysteretic repeat/drop selection, and discontinuity reset behavior.
-- Let submission park a ticket for the current frame and execution resolve it within the frame budget.
+- Let submission park and start the exact ticket for the current frame, then have execution await that same ticket.
 - Keep raw texture/framebuffer graph interfaces unchanged; timing remains private to the source boundary.
 
 Exit criteria:
 
 - Fake sources with jitter, arbitrary PTS origins, drift, rate mismatch, and discontinuities select deterministic frames.
-- Queues remain bounded and explicitly account for drops, repeats, missing frames, and readiness misses.
+- Queues remain bounded and explicitly account for drops, repeats, missing frames, transfer lateness, and failures.
 - A repeated source frame still permits normal downstream execution.
-- No transfer wait blocks the render thread without a bounded deadline/fallback policy.
+- Tests prove a late selected transfer is never replaced by a previously ready frame.
+- Operational cancellation and failure paths are finite even though normal transfer lateness does not change selection.
 
 ### Stage 5: DeckLink scheduled output
 
@@ -810,7 +817,8 @@ required because loopback shares unusually favorable hardware timing.
 - Use render demand only to select the submission/execution closure, never to suspend an input pipeline.
 - Keep native state authoritative and validate before broadcast.
 - Keep normal node and GL-resource destruction on the render thread with a context current.
-- Prefer bounded queues and an explicit dropped/repeated frame over render-thread stalls.
+- Prefer bounded queues and explicit selection-time drop/repeat decisions over unbounded buffering. Once a frame is
+  selected, its mandatory execute-time transfer wait must not be converted into an implicit repeat.
 - Treat source timestamps as source-local observations, never automatically as program PTS.
 - Preserve SDK-specific synchronization primitives behind common media timing contracts rather than forcing all
   sources through identical implementation details.

@@ -28,6 +28,13 @@ struct texture_upload_desc_s
     bool                            generate_mip_maps{true};
 };
 
+enum class texture_upload_wait_result_e : uint8_t
+{
+    ready,
+    failed,
+    stopped,
+};
+
 class texture_upload_lease_s
 {
     std::shared_ptr<detail::texture_upload_stream_state_s> stream_;
@@ -72,12 +79,16 @@ class texture_upload_stream_s
     std::optional<texture_upload_lease_s> try_acquire();
     std::optional<texture_upload_lease_s> acquire_for(std::chrono::milliseconds timeout);
 
-    // Called on the render thread with its GL context current. Never waits:
-    // only textures already completed by the upload worker are published.
+    // Called on the render thread with its GL context current. Polling consumers
+    // can retain their current texture while a newer upload remains incomplete.
     texture_s* consume_latest();
     texture_s* consume_through(uint64_t version);
-    uint64_t   latest_ready_version() const;
-    uint64_t   current_version() const;
+
+    // Waits for one exact submitted version. This does not make a different
+    // completed texture current; call consume_through(version) after success.
+    texture_upload_wait_result_e wait_until_ready(uint64_t version) const;
+    uint64_t                     latest_ready_version() const;
+    uint64_t                     current_version() const;
 
     bool allocation_failed() const;
     auto desc() const -> texture_upload_desc_s;
