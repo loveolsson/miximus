@@ -25,10 +25,9 @@ class node_i
     virtual ~node_i() = default;
 
   public:
-    struct traits_s
+    struct prepare_result_s
     {
-        bool must_run;
-        bool wait_for_sync;
+        bool demands_execution{};
     };
 
     virtual std::string_view type() const = 0;
@@ -47,7 +46,14 @@ class node_i
      * already-current context essentially free, nodes can create a scope
      * unconditionally when they need the context.
      */
-    virtual void prepare(core::app_state_s*, const node_state_s&, traits_s*) {};
+    virtual void prepare(core::app_state_s*, const node_state_s&, prepare_result_s*) {};
+
+    /**
+     * Called once for every node in the demanded upstream closure after all
+     * nodes have prepared and before any demanded node executes. Use this to
+     * park frame-local work or initiate asynchronous work; do not wait for it.
+     */
+    virtual void submit(core::app_state_s*, const node_map_t&, const node_state_s&) {}
 
     /**
      * Called on the main thread with the main GL context current. Invoked lazily

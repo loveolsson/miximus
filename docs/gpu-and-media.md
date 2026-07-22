@@ -21,6 +21,11 @@ On Linux, GLFW is forced to X11 to obtain a GLX context. DVP requires GLX and ma
 
 `gpu::texture_s` owns a 2D texture and records display dimensions, storage dimensions, external pixel format/type, and color format. Storage and host formats are not necessarily byte-identical; OpenGL upload/readback operations may perform normalization or channel conversion.
 
+`app_state_s` owns a small transparent RGBA16 fallback texture. Nodes whose operation requires a valid sampler, such
+as a two-input mix, pass it explicitly as the fallback to texture-interface resolution. A missing texture otherwise
+remains `nullptr`; absence can represent a disabled input, unavailable frame, or unselected switch branch and is not
+globally converted into image data.
+
 `gpu::framebuffer_s` owns a render target texture. Framebuffer values represent mutable ordered rendering and therefore have stricter graph fan-out rules than texture values.
 
 `gpu::textured_quad_s` owns the standard textured-quad draw state. It sets the common rectangle and opacity uniforms,

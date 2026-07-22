@@ -155,7 +155,7 @@ class node_impl : public node_i
     void operator=(const node_impl&) = delete;
     void operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
     {
         auto* sr = app->status_registry();
 

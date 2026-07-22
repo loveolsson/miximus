@@ -3,6 +3,7 @@
 #include "core/frame_context.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
+#include "gpu/texture_fwd.hpp"
 #include "gpu/transfer/texture_download_fwd.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
@@ -34,6 +35,7 @@ class app_state_s
     std::unique_ptr<thread_pool_t> thread_pool_;
 
     std::unique_ptr<gpu::context_s>                            ctx_;
+    std::unique_ptr<gpu::texture_s>                            fallback_texture_;
     std::unique_ptr<gpu::transfer::texture_upload_service_s>   texture_upload_service_;
     std::unique_ptr<gpu::transfer::texture_download_service_s> texture_download_service_;
     std::unique_ptr<nodes::decklink::decklink_registry_s>      decklink_registry_;
@@ -50,6 +52,7 @@ class app_state_s
 
     auto cfg_executor() { return &cfg_executor_; }
     auto ctx() { return ctx_.get(); }
+    auto fallback_texture() { return fallback_texture_.get(); }
     auto texture_upload_service() { return texture_upload_service_.get(); }
     auto texture_download_service() { return texture_download_service_.get(); }
     auto decklink_registry() { return decklink_registry_.get(); }

@@ -83,7 +83,7 @@ class node_impl : public node_i
     void operator=(const node_impl&) = delete;
     void operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
     {
         const auto monitor_version = gpu::context_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
@@ -96,7 +96,7 @@ class node_impl : public node_i
         auto enabled = state.get_option<bool>("enabled", false);
 
         if (enabled) {
-            traits->must_run = true;
+            result->demands_execution = true;
 
             const bool context_created = !render_state_;
             if (context_created) {

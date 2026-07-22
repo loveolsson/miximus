@@ -121,7 +121,8 @@ A complete node generally requires native and web changes.
 5. Implement `normalize_option()` using `normalize_option_value<T>()` where possible. Return `ok` for an unchanged
    valid value, `corrected` after canonicalizing it, and `invalid` for malformed or unsupported input. Common options
    are normalized centrally by `node_i::set_options()`.
-6. Use `prepare`, `execute`, and `complete` according to the frame lifecycle in [architecture.md](architecture.md).
+6. Use `prepare`, `submit`, `execute`, and `complete` according to the frame lifecycle in
+   [architecture.md](architecture.md).
 7. Add the factory to the group's `register.cpp`.
 8. Add sources to the group's `CMakeLists.txt`.
 9. Ensure the group is invoked from `nodes::register_all_nodes()`.

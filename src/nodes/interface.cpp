@@ -3,6 +3,7 @@
 #include "core/app_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
+#include "nodes/frame_execution.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 
@@ -49,9 +50,8 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
 
             iface = node->find_interface(con.from_interface);
 
-            if (iface != nullptr && !app->frame_info.executed_nodes.contains(record->first)) {
-                app->frame_info.executed_nodes.emplace(record->first);
-                node->execute(app, nodes, record->second.state);
+            if (iface != nullptr) {
+                execute_node_once(app, nodes, record->first, app->frame_info.executed_nodes);
             }
         }
 
@@ -161,7 +161,8 @@ gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const in
                                                                         gpu::texture_s* const& fallback)
 {
     if (const auto cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface)) {
-        return cast->get_value();
+        auto* texture = cast->get_value();
+        return texture != nullptr ? texture : fallback;
     }
 
     if (const auto cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {

@@ -25,7 +25,7 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, traits_s* /*traits*/) final {}
+    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, prepare_result_s* /*result*/) final {}
 
     void execute(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final {}
 

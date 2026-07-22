@@ -3,6 +3,7 @@
 #include "core/application_settings.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
+#include "gpu/texture.hpp"
 #include "gpu/transfer/detail/backend_factory.hpp"
 #include "gpu/transfer/texture_download.hpp"
 #include "gpu/transfer/texture_upload.hpp"
@@ -12,10 +13,14 @@
 #include "render/font/font_registry.hpp"
 
 #include <memory>
+#include <utility>
 
 using namespace boost::asio;
 
 namespace miximus::core {
+namespace {
+constexpr int FALLBACK_TEXTURE_DIMENSION = 16;
+}
 
 void app_state_s::begin_frame(const application_settings_snapshot_s& settings, frame_context_s frame_context)
 {
@@ -44,9 +49,13 @@ app_state_s::app_state_s()
     // intentionally part of app startup rather than context construction so a
     // failed optional backend simply selects the persistent-PBO implementation.
     const gpu::context_scope_s context_scope(*ctx_);
+    auto                       fallback_texture = std::make_unique<gpu::texture_s>(
+        gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::texture_s::format_e::rgba_f16);
+    fallback_texture->clear();
     gpu::transfer::detail::initialize_backends();
     texture_upload_service_   = std::make_unique<gpu::transfer::texture_upload_service_s>(ctx_.get());
     texture_download_service_ = std::make_unique<gpu::transfer::texture_download_service_s>(ctx_.get());
+    fallback_texture_         = std::move(fallback_texture);
 }
 
 app_state_s::~app_state_s()
@@ -65,6 +74,7 @@ app_state_s::~app_state_s()
     texture_upload_service_.reset();
     {
         const gpu::context_scope_s context_scope(*ctx_);
+        fallback_texture_.reset();
         gpu::transfer::detail::shutdown_backends();
     }
     ctx_.reset();

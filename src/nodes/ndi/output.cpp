@@ -195,13 +195,12 @@ class node_impl : public node_i
     void operator=(const node_impl&) = delete;
     void operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
     {
-        traits->must_run = true;
-
         auto*      sr               = app->status_registry();
         const auto enabled          = state.get_option<bool>("enabled");
         const bool frame_rate_valid = update_frame_rate(app->frame_info.duration);
+        result->demands_execution   = enabled;
 
         sr->write(id_, "connected", sender_ != nullptr);
 

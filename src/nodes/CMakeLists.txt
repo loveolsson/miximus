@@ -9,6 +9,8 @@ add_library(nodes
     interface_type.hpp
     connection.hpp
     connection.cpp
+    frame_execution.hpp
+    frame_execution.cpp
     register_all.hpp
     register_all.cpp
     node_map.hpp

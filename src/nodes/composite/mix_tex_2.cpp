@@ -46,22 +46,19 @@ class node_impl : public node_i
         const auto t_option = state.get_option<double>("t");
         const auto t_value  = iface_t_.resolve_value(app, nodes, state, t_option);
         const auto t        = glm::clamp(t_value, 0.0, 1.0);
+        auto*      fallback = app->fallback_texture();
 
         gpu::texture_s* a{};
         gpu::texture_s* b{};
         if (t <= 0.0) {
-            a = iface_a_.resolve_value(app, nodes, state);
+            a = iface_a_.resolve_value(app, nodes, state, fallback);
             b = a;
         } else if (t >= 1.0) {
-            b = iface_b_.resolve_value(app, nodes, state);
+            b = iface_b_.resolve_value(app, nodes, state, fallback);
             a = b;
         } else {
-            a = iface_a_.resolve_value(app, nodes, state);
-            b = iface_b_.resolve_value(app, nodes, state);
-        }
-
-        if (a == nullptr || b == nullptr) {
-            return;
+            a = iface_a_.resolve_value(app, nodes, state, fallback);
+            b = iface_b_.resolve_value(app, nodes, state, fallback);
         }
 
         const auto target_dimensions = framebuffer->texture()->display_dimensions();

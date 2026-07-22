@@ -142,6 +142,14 @@ void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
 
 void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 
+void texture_s::clear() const
+{
+    const auto mip_map_levels = format_info(colorspace_).mip_map_levels;
+    for (GLsizei level = 0; level < mip_map_levels; ++level) {
+        glClearTexImage(id_, level, format_, type_, nullptr);
+    }
+}
+
 size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, format_e format)
 {
     if (dimensions.x <= 0 || dimensions.y <= 0) {

@@ -61,20 +61,23 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 1. Make the root GL context current.
 2. Snapshot application settings and apply dirty and removed records to `nodes_copy_`.
 3. Create the immutable frame context for this evaluation.
-4. Clear `frame_info.executed_nodes`.
-5. Call `prepare()` on every render-snapshot node and collect nodes setting `traits.must_run`.
-6. Execute those roots. Resolving an input recursively executes its upstream node.
-7. Record executed IDs so each node executes at most once per frame.
-8. Call `gpu::context_s::finish()` after all submitted `execute()` work.
-9. Call `complete()` on every node.
-10. Rewind the root GL context.
-11. Flush and broadcast node-status deltas.
-12. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
+4. Call `prepare()` on every render-snapshot node and collect the sinks that demand a frame.
+5. Build the demanded sinks' upstream connection closure.
+6. Call `submit()` once on every node in that closure, upstream first.
+7. Execute the demanding sinks. Resolving an input recursively executes its upstream node.
+8. Record executed IDs so each node executes at most once per frame.
+9. Call `gpu::context_s::finish()` after all submitted `execute()` work.
+10. Call `complete()` on every node.
+11. Rewind the root GL context.
+12. Flush and broadcast node-status deltas.
+13. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
 
 ### Node lifecycle responsibilities
 
 - `init()`: lightweight one-time setup after construction; there is no GL context.
-- `prepare()`: read options, update status, create lazy render resources, and set `must_run` for roots/outputs.
+- `prepare()`: advance all-node state, read options, update status, create lazy render resources, and report whether a
+  sink demands execution.
+- `submit()`: park frame-local work or initiate asynchronous work for the demanded upstream closure without waiting.
 - `execute()`: resolve inputs and submit render work with the root GL context current.
 - `complete()`: consume completed readbacks or enqueue data after the global `glFinish`; avoid slow I/O.
 - destructor: GL-resource destruction is arranged on the render thread with a context current.

@@ -274,7 +274,7 @@ The intended frame order is therefore:
 The manager should first determine which sinks need a frame. Examples include:
 
 - enabled DeckLink outputs;
-- NDI outputs with active receivers;
+- enabled NDI outputs, regardless of current receiver count;
 - enabled screen outputs;
 - future encoders, recorders, and explicit preview consumers.
 
@@ -443,8 +443,9 @@ Keep `clock_video = false` while the Miximus scheduler owns cadence. The worker 
 send PTS, not consume an arbitrary latest result. Missing frames should be repeated deliberately and counted. NDI
 timecode should be derived from program PTS, and future audio must use the same program timeline.
 
-An NDI output with no receivers should stop demanding upstream frame work while continuing lightweight connection
-monitoring.
+An enabled NDI output continues demanding upstream frame work even with no receivers. Receiver attachment must not
+cause a sudden change in render load or reveal a graph that cannot sustain its configured outputs. The sender may skip
+the download and network send while no receiver is present, but the upstream graph remains active.
 
 ### Screen output
 
@@ -523,6 +524,8 @@ The scheduler should report:
 
 - program rate, frame number, PTS, epoch, and clock source;
 - render start/end time, render duration, deadline margin, and lateness;
+- prepare, closure-planning, submission, execution, GPU-finish, and completion durations;
+- demanding-sink and submitted-closure node counts;
 - skipped frames and sustained-overload state;
 - active settings revision and pending/applied option-batch counts.
 
@@ -624,7 +627,7 @@ Exit criteria:
 
 ### Stage 3: all-node preparation and two active traversals
 
-**Status:** Pending
+**Status:** Implemented; hardware behavior verification pending
 
 Deliverables:
 
@@ -634,6 +637,11 @@ Deliverables:
 - Give nodes a small explicit hook for submission; keep the existing execution contract during migration.
 - Replace `must_run` with explicit sink demand and remove or redefine the unused `wait_for_sync` trait.
 - Instrument phase duration and ordering before moving real transfer behavior into the new hook.
+
+The initial closure is deliberately structural: it follows every connected upstream edge from a demanding sink.
+Execution remains lazy and may visit a smaller subset when a node selects among inputs at runtime. Future nodes that
+submit expensive branch-specific work must expose enough routing information to prune unused candidates rather than
+assuming every structurally reachable branch is selected.
 
 Exit criteria:
 

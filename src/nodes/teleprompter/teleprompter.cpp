@@ -97,7 +97,7 @@ class node_impl : public node_i
         }
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
     {
         const auto font_version      = app->font_registry()->get_font_list_version();
         const bool font_list_changed = reported_font_version_.observe(font_version);

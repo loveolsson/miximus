@@ -64,7 +64,7 @@ class node_impl : public node_i
         font_loader_ = std::make_shared<render::font_loader_s>();
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* /*traits*/) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
     {
         const auto font_version      = app->font_registry()->get_font_list_version();
         const bool font_list_changed = font_version_.observe(font_version);

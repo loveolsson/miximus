@@ -12,6 +12,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -50,16 +51,17 @@ class node_manager_s
 
     using adapter_list_t = std::vector<std::unique_ptr<adapter_i>>;
 
-    std::mutex                      nodes_mutex_;
-    nodes::node_map_t               nodes_;
-    nodes::node_map_t               nodes_copy_;
-    std::unordered_set<std::string> dirty_nodes_;
-    std::unordered_set<std::string> removed_nodes_;
-    nodes::con_set_t                connections_;
-    nodes::node_definition_map_t    node_definitions_;
-    application_settings_s          application_settings_;
-    adapter_list_t                  adapters_;
-    node_status_registry_s*         status_registry_{nullptr};
+    std::mutex                            nodes_mutex_;
+    nodes::node_map_t                     nodes_;
+    nodes::node_map_t                     nodes_copy_;
+    std::unordered_set<std::string>       dirty_nodes_;
+    std::unordered_set<std::string>       removed_nodes_;
+    nodes::con_set_t                      connections_;
+    nodes::node_definition_map_t          node_definitions_;
+    application_settings_s                application_settings_;
+    adapter_list_t                        adapters_;
+    node_status_registry_s*               status_registry_{nullptr};
+    std::chrono::steady_clock::time_point next_lifecycle_status_{};
 
     error_e remove_connection_locked(const nodes::connection_s& con, int64_t client_id);
 

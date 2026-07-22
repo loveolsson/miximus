@@ -6,8 +6,10 @@
 #include "gpu/context.hpp"
 #include "gpu/sync.hpp"
 #include "logger/logger.hpp"
+#include "nodes/frame_execution.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "utils/flicks.hpp"
 #include "web_server/server.hpp"
 
 #include <nlohmann/json.hpp>
@@ -428,31 +430,41 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             writer.write("settings_revision", frame_context.settings_revision);
         }
 
+        const auto prepare_start   = utils::flicks_now();
+        const auto demanding_nodes = nodes::prepare_all_nodes(app, nodes_copy_);
+        const auto prepare_end     = utils::flicks_now();
+
+        const nodes::frame_execution_plan_s execution_plan(nodes_copy_, demanding_nodes);
+        const auto                          plan_end = utils::flicks_now();
+
+        execution_plan.submit(app);
+        const auto submit_end = utils::flicks_now();
+
         app->frame_info.executed_nodes.clear();
-
-        std::vector<std::pair<std::string_view, nodes::node_record_s*>> must_execute;
-
-        // Call prepare on all nodes, and collect their traits
-        for (auto& [id, record] : nodes_copy_) {
-            nodes::node_i::traits_s traits = {};
-            record.node->prepare(app, record.state, &traits);
-
-            if (traits.must_run) {
-                must_execute.emplace_back(id, &record);
-            }
-        }
-
-        for (auto [id, record] : must_execute) {
-            if (!app->frame_info.executed_nodes.contains(id)) {
-                app->frame_info.executed_nodes.emplace(id);
-                record->node->execute(app, nodes_copy_, record->state);
-            }
-        }
+        execution_plan.execute(app, app->frame_info.executed_nodes);
+        const auto execute_end = utils::flicks_now();
 
         gpu::context_s::finish();
+        const auto finish_end = utils::flicks_now();
 
-        for (auto& [_, record] : nodes_copy_) {
-            record.node->complete(app);
+        nodes::complete_all_nodes(app, nodes_copy_);
+        const auto complete_end = utils::flicks_now();
+
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= next_lifecycle_status_) {
+            const auto to_microseconds = [](utils::flicks duration) {
+                return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+            };
+            auto writer = app->status_registry()->write_node(APPLICATION_SETTINGS_ID);
+            writer.write("prepare_duration_us", to_microseconds(prepare_end - prepare_start));
+            writer.write("plan_duration_us", to_microseconds(plan_end - prepare_end));
+            writer.write("submit_duration_us", to_microseconds(submit_end - plan_end));
+            writer.write("execute_duration_us", to_microseconds(execute_end - submit_end));
+            writer.write("gpu_finish_duration_us", to_microseconds(finish_end - execute_end));
+            writer.write("complete_duration_us", to_microseconds(complete_end - finish_end));
+            writer.write("demanding_node_count", demanding_nodes.size());
+            writer.write("active_node_count", execution_plan.active_nodes().size());
+            next_lifecycle_status_ = now + 1s;
         }
     }
 

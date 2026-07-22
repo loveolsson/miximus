@@ -693,10 +693,9 @@ class node_impl : public node_i
     node_impl(node_impl&&)                 = delete;
     node_impl& operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, traits_s* traits) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
     {
-        traits->must_run = true;
-        auto* status     = app->status_registry();
+        auto* status = app->status_registry();
 
         const auto device_list_version = app->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(device_list_version);
@@ -704,9 +703,10 @@ class node_impl : public node_i
             status->write(id_, "device_names", app->decklink_registry()->get_output_options());
         }
 
-        const auto device_name  = state.get_option<std::string>("device_name");
-        const auto display_mode = state.get_option<std::string>("display_mode");
-        const auto enabled      = state.get_option<bool>("enabled");
+        const auto device_name    = state.get_option<std::string>("device_name");
+        const auto display_mode   = state.get_option<std::string>("display_mode");
+        const auto enabled        = state.get_option<bool>("enabled");
+        result->demands_execution = enabled;
         publish_device_status(app, device_name);
 
         const selection_t selection{device_name, display_mode, enabled};
