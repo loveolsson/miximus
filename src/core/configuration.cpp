@@ -5,6 +5,7 @@
 #include "logger/logger.hpp"
 #include "nodes/connection.hpp"
 #include "nodes/node.hpp"
+#include "nodes/system/register.hpp"
 #include "utils/lookup.hpp"
 
 #include <nlohmann/json.hpp>
@@ -160,20 +161,17 @@ namespace miximus::core {
 void configuration_s::load(json config)
 {
     const auto document_version = get_schema_version(config, "Configuration");
-    if (document_version > SCHEMA_VERSION) {
+    if (document_version != SCHEMA_VERSION) {
         throw std::runtime_error(std::format(
-            "Configuration schema version {} is not supported; latest is {}", document_version, SCHEMA_VERSION));
-    }
-    if (document_version == 1) {
-        config["application_settings"] = node_manager_.application_settings_.options();
-    } else if (document_version != SCHEMA_VERSION) {
-        throw std::runtime_error(std::format("Configuration schema version {} has no migration", document_version));
+            "Configuration schema version {} is not supported; expected {}", document_version, SCHEMA_VERSION));
     }
     config["schema_version"] = SCHEMA_VERSION;
 
     {
         const std::unique_lock lock(node_manager_.nodes_mutex_);
-        if (!node_manager_.nodes_.empty() || !node_manager_.connections_.empty()) {
+        const bool             only_settings_node =
+            node_manager_.nodes_.size() == 1 && node_manager_.nodes_.contains(nodes::system::SETTINGS_NODE_ID);
+        if (!only_settings_node || !node_manager_.connections_.empty()) {
             throw std::logic_error("Cannot load configuration into a non-empty node manager");
         }
     }
@@ -184,18 +182,20 @@ void configuration_s::load(json config)
         throw std::runtime_error("Configuration nodes and connections must be arrays");
     }
 
-    require_no_error(
-        node_manager_.handle_update_node(APPLICATION_SETTINGS_ID, config.at("application_settings"), -1).error,
-        "load application settings",
-        APPLICATION_SETTINGS_ID);
-
     const auto node_info = migrate_nodes(nodes, node_manager_.node_definitions_);
     migrate_connections(connections, node_info);
 
     for (const auto& node : nodes) {
         const auto type = node.at("type").get<std::string_view>();
         const auto id   = node.at("id").get<std::string_view>();
-        require_no_error(node_manager_.handle_add_node(type, id, node.at("options"), -1), "create node", id);
+        if (id == nodes::system::SETTINGS_NODE_ID) {
+            if (type != nodes::system::SETTINGS_NODE_TYPE) {
+                throw std::runtime_error("The reserved application settings node has the wrong type");
+            }
+            require_no_error(node_manager_.handle_update_node(id, node.at("options"), -1).error, "update node", id);
+        } else {
+            require_no_error(node_manager_.handle_add_node(type, id, node.at("options"), -1), "create node", id);
+        }
     }
 
     for (const auto& connection : connections) {
@@ -252,10 +252,9 @@ json configuration_s::serialize(bool include_status) const
     }
 
     json result{
-        {"schema_version",       SCHEMA_VERSION                               },
-        {"application_settings", node_manager_.application_settings_.options()},
-        {"nodes",                std::move(nodes)                             },
-        {"connections",          std::move(connections)                       },
+        {"schema_version", SCHEMA_VERSION        },
+        {"nodes",          std::move(nodes)      },
+        {"connections",    std::move(connections)},
     };
 
     if (include_status) {

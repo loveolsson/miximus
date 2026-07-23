@@ -6,9 +6,11 @@ Miximus is a native C++20 real-time video application driven by a persisted node
 
 The main loop defaults to a 60 Hz cadence. It loads settings, starts the embedded web server, runs
 `core::node_manager_s::tick_one_frame()`, polls GLFW, and lets `core::frame_scheduler_s` pace the next evaluation from
-a stable clock anchor. The configured rational frame rate is copied from node-like application settings into one
-immutable `frame_context_s` at the start of each evaluation. `app_state_s::frame_info` mirrors that context for current
-nodes; nodes and workers that publish timing must read it and track changes rather than assuming the default.
+a stable clock anchor. The configured rational frame rate is read once from the reserved `$app` node's render-snapshot
+state at the start of each evaluation and stored in immutable frame-local settings on `app_state_s`. The scheduler
+produces the matching `frame_context_s`. Nodes and workers read those frame-local values and track changes rather than
+assuming the default. `app_state_s::frame_info` contains only the submission and execution traversal state owned by the
+current frame.
 
 The scheduler currently uses an internal `steady_clock` source and a provisional policy that permits the next
 evaluation to begin up to one frame late. Older evaluations are skipped in one decision: frame number and PTS advance
@@ -59,7 +61,7 @@ Node records contain a shared `node_i` instance plus copyable `node_state_s`. St
 The order in `node_manager_s::tick_one_frame()` is an invariant:
 
 1. Make the root GL context current.
-2. Snapshot application settings and apply dirty and removed records to `nodes_copy_`.
+2. Apply dirty and removed records to `nodes_copy_` and read the reserved settings node from that stable snapshot.
 3. Create the immutable frame context for this evaluation.
 4. Call `prepare()` on every render-snapshot node and collect the sinks that demand a frame.
 5. Recursively call `submit()` from every demanding sink. Each node follows the input connections it may need through
@@ -82,6 +84,10 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 - `execute()`: resolve inputs and submit render work with the root GL context current.
 - `complete()`: consume completed readbacks or enqueue data after the global `glFinish`; avoid slow I/O.
 - destructor: GL-resource destruction is arranged on the render thread with a context current.
+
+Submission is conservative for routing controlled by a connected interface: a submitted node is not guaranteed to
+execute in that evaluation. Work started by `submit()` must therefore remain owned by a bounded service or queue until
+it is consumed, superseded, cancelled, or shut down. `complete()` must not assume that submission implies execution.
 
 ## Nodes, interfaces, and connections
 
@@ -126,10 +132,12 @@ rejects invalid keys or values, and stores accepted normalized values. Update br
 corrected. Common options include the display name and editor position.
 
 The persisted settings JSON is owned by `core::configuration_s`. Its JSON load/serialization API is separate from the
-file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version`, an
-`application_settings` object, plus node IDs, types, per-node schema versions, options, and connections. Application
-settings use the reserved `$app` ID for node-like option updates but are not a graph node and cannot be created,
-removed, connected, or traversed. Runtime status is added only to client snapshots and is not written to disk.
+file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version`, node
+IDs, types, per-node schema versions, options, and connections. Application settings are an ordinary `node_i` with the
+reserved `$app` ID and are persisted in that same node array. The node has no interfaces or render work; external
+creation under another ID, removal, and connections are rejected. The bundled client omits it from the visible
+Baklava graph, while updates and runtime status continue to use the normal node channels. Runtime status is added only
+to client snapshots and is not written to disk.
 
 Unversioned documents and nodes are the version 1 baseline. When a node schema changes, its registered transitions migrate the options JSON in place. Connections replay the output-interface migrations for their source node and the input-interface migrations for their destination node over the same version range. Migration completes before the existing node and connection construction paths are called; any missing transition or construction error aborts startup.
 

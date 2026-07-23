@@ -41,7 +41,7 @@ std::span<const connection_s> interface_i::connections(const node_state_s& state
 void interface_i::submit_connections(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) const
 {
     for (const auto& connection : connections(state)) {
-        submit_node_once(app, nodes, connection.from_node, app->frame_info.submitted_nodes);
+        submit_node_once(app, nodes, connection.from_node);
     }
 }
 
@@ -62,7 +62,7 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
             iface = node->find_interface(con.from_interface);
 
             if (iface != nullptr) {
-                execute_node_once(app, nodes, record->first, app->frame_info.executed_nodes);
+                execute_node_once(app, nodes, record->first);
             }
         }
 

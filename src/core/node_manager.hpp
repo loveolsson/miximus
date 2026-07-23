@@ -1,6 +1,5 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
-#include "core/application_settings.hpp"
 #include "core/configuration_fwd.hpp"
 #include "core/frame_scheduler_fwd.hpp"
 #include "core/node_status_registry_fwd.hpp"
@@ -58,7 +57,6 @@ class node_manager_s
     std::unordered_set<std::string>       removed_nodes_;
     nodes::con_set_t                      connections_;
     nodes::node_definition_map_t          node_definitions_;
-    application_settings_s                application_settings_;
     adapter_list_t                        adapters_;
     node_status_registry_s*               status_registry_{nullptr};
     std::chrono::steady_clock::time_point next_lifecycle_status_{};
@@ -78,7 +76,6 @@ class node_manager_s
     error_e handle_remove_connection(const nodes::connection_s& con, int64_t client_id);
 
     nlohmann::json get_node_status(std::string_view id) const;
-    nlohmann::json get_application_settings();
 
     void add_adapter(std::unique_ptr<adapter_i>&& adapter);
     void clear_adapters();

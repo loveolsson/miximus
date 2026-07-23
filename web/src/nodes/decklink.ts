@@ -36,6 +36,13 @@ const decklinkInputStatus: readonly NodeStatusSection[] = [
     ],
   },
   {
+    title: "Timing",
+    fields: [
+      { key: "source_recovered_rate", label: "Recovered clock ratio" },
+      { key: "source_phase_offset_us", label: "Phase offset (µs)", format: "integer" },
+    ],
+  },
+  {
     title: "Frame statistics",
     fields: [
       { key: "frames_received", label: "Received", format: "integer" },

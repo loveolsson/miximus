@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -36,21 +37,29 @@ class fake_clock_source_s final : public core::clock_source_i
     void set(utils::flicks time) { time_ = time; }
 };
 
+utils::flicks require_frame_duration(frame_rate_s rate)
+{
+    const auto duration = get_frame_duration(rate);
+    if (!duration.has_value()) {
+        throw std::logic_error("test frame rate must have an exact duration");
+    }
+    return duration.value();
+}
+
 void expect_exact_timeline(frame_rate_s rate, uint64_t frame_count)
 {
     constexpr utils::flicks START_TIME{987'654'321};
 
     fake_clock_source_s     clock(START_TIME);
     core::frame_scheduler_s scheduler(clock);
-    const auto              duration = *get_frame_duration(rate);
+    const auto              duration = require_frame_duration(rate);
 
     for (uint64_t frame = 0; frame < frame_count; ++frame) {
-        const auto context = scheduler.begin_frame(rate, 7);
+        const auto context = scheduler.begin_frame(rate);
         const auto offset  = duration * static_cast<utils::flicks::rep>(frame);
         ASSERT_EQ(context.frame_number, frame) << "at frame " << frame;
         ASSERT_EQ(context.pts, offset) << "at frame " << frame;
         ASSERT_EQ(context.target_time, START_TIME + offset) << "at frame " << frame;
-        ASSERT_EQ(context.settings_revision, 7) << "at frame " << frame;
         ASSERT_EQ(context.discontinuity, frame == 0) << "at frame " << frame;
 
         const auto& metrics = scheduler.finish_frame();
@@ -72,15 +81,15 @@ TEST(FrameScheduler, RetainsUsefulLateFramesAndSkipsObsoleteFramesAtOnce)
 
     fake_clock_source_s     clock(START_TIME);
     core::frame_scheduler_s scheduler(clock);
-    const auto              duration = *get_frame_duration(RATE);
+    const auto              duration = require_frame_duration(RATE);
 
-    const auto first = scheduler.begin_frame(RATE, 1);
+    const auto first = scheduler.begin_frame(RATE);
     clock.advance(duration + duration / 2);
     const auto& first_metrics = scheduler.finish_frame();
     EXPECT_EQ(first.frame_number, 0);
     EXPECT_EQ(first_metrics.skipped_frames, 0);
 
-    const auto second = scheduler.begin_frame(RATE, 1);
+    const auto second = scheduler.begin_frame(RATE);
     EXPECT_EQ(second.frame_number, 1);
     EXPECT_EQ(second.pts, duration);
 
@@ -89,7 +98,7 @@ TEST(FrameScheduler, RetainsUsefulLateFramesAndSkipsObsoleteFramesAtOnce)
     EXPECT_EQ(second_metrics.skipped_frames, 3);
     EXPECT_EQ(second_metrics.skipped_frames_total, 3);
 
-    const auto recovered = scheduler.begin_frame(RATE, 1);
+    const auto recovered = scheduler.begin_frame(RATE);
     EXPECT_EQ(recovered.frame_number, 5);
     EXPECT_EQ(recovered.pts, duration * 5);
     EXPECT_EQ(recovered.target_time, START_TIME + duration * 5);
@@ -103,9 +112,9 @@ TEST(FrameScheduler, RateChangeStartsANewEpochWithoutResettingFrameNumbers)
     fake_clock_source_s     clock(START_TIME);
     core::frame_scheduler_s scheduler(clock);
 
-    const auto first = scheduler.begin_frame(DEFAULT_FRAME_RATE, 1);
+    const auto first = scheduler.begin_frame(DEFAULT_FRAME_RATE);
     scheduler.finish_frame();
-    const auto second = scheduler.begin_frame({.numerator = 50, .denominator = 1}, 2);
+    const auto second = scheduler.begin_frame({.numerator = 50, .denominator = 1});
 
     EXPECT_EQ(first.epoch, 1);
     EXPECT_EQ(second.epoch, 2);
@@ -122,10 +131,10 @@ TEST(FrameScheduler, RejectsInvalidLifecycleAndFrameRates)
     core::frame_scheduler_s scheduler(clock);
 
     EXPECT_THROW(scheduler.finish_frame(), std::logic_error);
-    scheduler.begin_frame(DEFAULT_FRAME_RATE, 1);
-    EXPECT_THROW(scheduler.begin_frame(DEFAULT_FRAME_RATE, 1), std::logic_error);
+    scheduler.begin_frame(DEFAULT_FRAME_RATE);
+    EXPECT_THROW(scheduler.begin_frame(DEFAULT_FRAME_RATE), std::logic_error);
     scheduler.finish_frame();
-    EXPECT_THROW(scheduler.begin_frame({.numerator = 59, .denominator = 1}, 1), std::invalid_argument);
+    EXPECT_THROW(scheduler.begin_frame({.numerator = 59, .denominator = 1}), std::invalid_argument);
 }
 
 TEST(FrameScheduler, ReportsSustainedOverloadAndClearsItAfterRecovery)
@@ -137,13 +146,13 @@ TEST(FrameScheduler, ReportsSustainedOverloadAndClearsItAfterRecovery)
     core::frame_scheduler_s scheduler(clock);
 
     for (uint32_t frame = 0; frame < 60; ++frame) {
-        const auto context = scheduler.begin_frame(RATE, 1);
+        const auto context = scheduler.begin_frame(RATE);
         clock.set(context.render_deadline + utils::flicks{1});
         scheduler.finish_frame();
     }
     EXPECT_TRUE(scheduler.metrics().sustained_overload);
 
-    scheduler.begin_frame(RATE, 1);
+    scheduler.begin_frame(RATE);
     scheduler.finish_frame();
     EXPECT_FALSE(scheduler.metrics().sustained_overload);
 }
@@ -154,7 +163,7 @@ uint64_t replay_trace(core::late_frame_policy_s policy, const std::vector<utils:
     core::frame_scheduler_s scheduler(clock, policy);
 
     for (const auto render_duration : render_durations) {
-        scheduler.begin_frame(DEFAULT_FRAME_RATE, 1);
+        scheduler.begin_frame(DEFAULT_FRAME_RATE);
         clock.advance(render_duration);
         scheduler.finish_frame();
     }
@@ -163,7 +172,7 @@ uint64_t replay_trace(core::late_frame_policy_s policy, const std::vector<utils:
 
 TEST(FrameScheduler, RecordedWorkloadCanCompareLateFramePolicies)
 {
-    const auto        duration = *get_frame_duration(DEFAULT_FRAME_RATE);
+    const auto        duration = require_frame_duration(DEFAULT_FRAME_RATE);
     const std::vector trace{
         duration / 2,
         duration + duration / 2,

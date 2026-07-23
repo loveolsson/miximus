@@ -20,6 +20,7 @@ export const enum topic_e {
 }
 
 export const enum type_e {
+  application_settings = "application_settings",
   vec2 = "vec2",
   rect = "rect",
   math_f64 = "math_f64",
@@ -57,15 +58,6 @@ export const enum type_e {
 }
 
 export type position_t = [number, number];
-
-export interface frame_rate_s {
-  numerator: number;
-  denominator: number;
-}
-
-export interface application_settings_s {
-  frame_rate: frame_rate_s;
-}
 
 export interface options_s {
   node_visual_position?: position_t;
@@ -157,7 +149,6 @@ export interface result_s extends message_s {
 
 interface config_s {
   schema_version: number;
-  application_settings: application_settings_s;
   nodes: node_s[];
   connections: connection_s[];
   status?: Record<string, Record<string, unknown>>;

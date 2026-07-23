@@ -1,6 +1,5 @@
 #include "app_state.hpp"
 
-#include "core/application_settings.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/texture.hpp"
@@ -22,14 +21,10 @@ namespace {
 constexpr int FALLBACK_TEXTURE_DIMENSION = 16;
 }
 
-void app_state_s::begin_frame(const application_settings_snapshot_s& settings, frame_context_s frame_context)
+void app_state_s::begin_frame(frame_settings_s settings, frame_context_s frame_context)
 {
-    frame_rate_           = settings.frame_rate;
-    frame_context_        = frame_context;
-    frame_info.timestamp  = frame_context.target_time;
-    frame_info.pts        = frame_context.pts;
-    frame_info.duration   = frame_context.duration;
-    frame_info.field_even = frame_context.frame_number % 2 == 0;
+    frame_settings_ = settings;
+    frame_context_  = frame_context;
 }
 
 app_state_s::app_state_s()
@@ -43,8 +38,6 @@ app_state_s::app_state_s()
     , font_registry_(render::font_registry_s::create_font_registry())
     , status_registry_(std::make_unique<node_status_registry_s>())
 {
-    frame_info.duration = *get_frame_duration(DEFAULT_FRAME_RATE);
-
     // Transfer backend initialization must happen on the root GL context. It is
     // intentionally part of app startup rather than context construction so a
     // failed optional backend simply selects the persistent-PBO implementation.
@@ -53,13 +46,24 @@ app_state_s::app_state_s()
         gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::texture_s::format_e::rgba_f16);
     fallback_texture->clear();
     gpu::transfer::detail::initialize_backends();
-    texture_upload_service_   = std::make_unique<gpu::transfer::texture_upload_service_s>(ctx_.get());
+    // These must be constructed after backend initialization with the root
+    // context current, so constructor member initializers are not valid here.
+    // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
+    texture_upload_service_ = std::make_unique<gpu::transfer::texture_upload_service_s>(ctx_.get());
+    // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
     texture_download_service_ = std::make_unique<gpu::transfer::texture_download_service_s>(ctx_.get());
-    fallback_texture_         = std::move(fallback_texture);
+    // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
+    fallback_texture_ = std::move(fallback_texture);
 }
+
+app_state_s::app_state_s(test_state_t /*test_state*/) {}
 
 app_state_s::~app_state_s()
 {
+    if (!ctx_) {
+        return;
+    }
+
     decklink_registry_->uninstall();
     cfg_work_ = nullptr;
 

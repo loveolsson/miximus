@@ -28,11 +28,9 @@ void complete_all_nodes(core::app_state_s* app, node_map_t& nodes)
     }
 }
 
-bool submit_node_once(core::app_state_s*    app,
-                      const node_map_t&     nodes,
-                      std::string_view      id,
-                      submitted_node_set_t& submitted_nodes)
+bool submit_node_once(core::app_state_s* app, const node_map_t& nodes, std::string_view id)
 {
+    auto& submitted_nodes = app->frame_info.submitted_nodes;
     if (!submitted_nodes.emplace(id).second) {
         return false;
     }
@@ -47,11 +45,9 @@ bool submit_node_once(core::app_state_s*    app,
     return true;
 }
 
-bool execute_node_once(core::app_state_s*   app,
-                       const node_map_t&    nodes,
-                       std::string_view     id,
-                       executed_node_set_t& executed_nodes)
+bool execute_node_once(core::app_state_s* app, const node_map_t& nodes, std::string_view id)
 {
+    auto& executed_nodes = app->frame_info.executed_nodes;
     if (!executed_nodes.emplace(id).second) {
         return false;
     }
@@ -66,24 +62,21 @@ bool execute_node_once(core::app_state_s*   app,
     return true;
 }
 
-frame_execution_plan_s::frame_execution_plan_s(node_map_t& nodes, std::span<const std::string_view> demanding_nodes)
-    : nodes_(&nodes)
+void submit_demanding_nodes(core::app_state_s*                app,
+                            const node_map_t&                 nodes,
+                            std::span<const std::string_view> demanding_nodes)
 {
-    demanding_nodes_.reserve(demanding_nodes.size());
-    demanding_nodes_.assign(demanding_nodes.begin(), demanding_nodes.end());
-}
-
-void frame_execution_plan_s::submit(core::app_state_s* app) const
-{
-    for (const auto id : demanding_nodes_) {
-        submit_node_once(app, *nodes_, id, app->frame_info.submitted_nodes);
+    for (const auto id : demanding_nodes) {
+        submit_node_once(app, nodes, id);
     }
 }
 
-void frame_execution_plan_s::execute(core::app_state_s* app) const
+void execute_demanding_nodes(core::app_state_s*                app,
+                             const node_map_t&                 nodes,
+                             std::span<const std::string_view> demanding_nodes)
 {
-    for (const auto id : demanding_nodes_) {
-        execute_node_once(app, *nodes_, id, app->frame_info.executed_nodes);
+    for (const auto id : demanding_nodes) {
+        execute_node_once(app, nodes, id);
     }
 }
 

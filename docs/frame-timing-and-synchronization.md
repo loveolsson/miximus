@@ -71,8 +71,8 @@ The current graph frame performs these operations:
 7. call `complete()` on every node.
 
 This preserves a stable graph, advances every node through `prepare()`, gives active sources an opportunity to submit
-work before painting, and keeps render-thread GL destruction. The remaining limitation is that media inputs do not yet
-use the submission pass to select and start a PTS-aligned transfer ticket that execution subsequently awaits.
+work before painting, and keeps render-thread GL destruction. DeckLink input now uses the submission pass to select and
+start a PTS-aligned transfer ticket that execution subsequently awaits. Other media inputs have not migrated yet.
 `prepare()` also still combines configuration maintenance, device lifecycle, status updates, queue advancement,
 allocation, and per-frame acquisition in several existing nodes.
 
@@ -478,20 +478,18 @@ must not make the program render thread block; platform presentation stalls are 
 
 ## Application settings
 
-Global application settings should initially behave like the option state of a node with a reserved ID, without being
-an actual graph node. Reuse the established option-default, normalization, correction, read, update, and broadcast
-patterns where practical, but keep the state outside `node_manager_s::nodes_` so it cannot be traversed, connected,
-created, removed, or rendered.
-
-The reserved ID and state belong in one shared native definition. Real-node creation must reject the reserved ID.
-Configuration should persist the state as a top-level application-settings object rather than a fake entry in the
-node array. The WebSocket update path may address it like node options, and a future system-settings view can consume
-the same metadata without displaying a Baklava node.
+Global application settings initially use a proper `node_i` with the reserved `$app` ID. This deliberately reuses the
+existing node option defaults, normalization, correction, authoritative/render state snapshots, persistence, updates,
+and status reporting without committing to a separate settings subsystem. The node is stored in
+`node_manager_s::nodes_`, persisted in the ordinary node array, and has no interfaces or render behavior. Its no-op
+lifecycle hooks are harmless during all-node preparation and completion. Creation under another ID, removal, and
+connections are rejected, and the bundled client omits it from the visible Baklava graph.
 
 The first settings include the rational global frame rate and configurable policy values for input queue targets,
 output buffer depths, missing-frame timeout, and late-frame handling. Exact defaults are deliberately provisional and
 will be tuned. A frame-rate change creates a new epoch and may restart timing-dependent integrations. The render thread
-reads one immutable application-settings snapshot for the whole frame.
+reads the reserved node's state once from the same immutable render snapshot used by the rest of the graph, then
+stores the resolved values as frame-local settings on `app_state_s` for nodes to consume.
 
 ## Atomic option batches
 
@@ -540,7 +538,7 @@ The scheduler should report:
 - prepare, traversal setup, submission, execution, GPU-finish, and completion durations;
 - demanding-sink and submitted-closure node counts;
 - skipped frames and sustained-overload state;
-- active settings revision and pending/applied option-batch counts.
+- pending/applied option-batch counts once atomic batches are implemented.
 
 Each input should report:
 
@@ -592,24 +590,25 @@ the application remains usable and regressions have a narrow source.
 **Status:** Complete
 
 Implemented in the first timing migration. The current loop intentionally remains unchanged apart from consuming the
-configured cadence. Focused tests cover exact integer and 1000/1001 rates, canonicalization, invalid settings, and
-render-snapshot revisions. A real hardware-graph run verified legacy configuration migration, schema-2 persistence,
-the default 60 fps graph, and graceful timed shutdown.
+configured cadence. Focused tests cover exact integer and 1000/1001 rates, canonicalization, invalid settings, and the
+settings node's normal option behavior. A real hardware-graph run verified the default 60 fps graph and graceful timed
+shutdown.
 
 Deliverables:
 
-- Add the reserved-ID, node-like application-settings state outside the graph.
-- Persist it as a top-level configuration object and migrate existing configurations to the default 60 fps setting.
+- Add a proper application-settings node with a reserved ID and no interfaces or render work.
+- Persist it through the existing node array without changing the document schema.
 - Add an exact rational frame-rate type, derived `utils::flicks` duration, frame number, epoch, and immutable
   `frame_context_s`.
 - Pass the context through `app_state_s` without changing current scheduling behavior.
-- Expose settings and timing values through status/snapshot paths without adding a fake Baklava node.
+- Expose settings and timing values through the normal node status/snapshot paths while omitting the node from the
+  visible Baklava graph.
 
 Exit criteria:
 
-- Existing configurations load unchanged and save with the new application settings.
+- Existing configurations retain the same document schema; the reserved settings node is persisted like other nodes.
 - Integer and 1000/1001 rates round-trip exactly.
-- Every node in one evaluation observes the same immutable settings revision and frame context.
+- Every node in one evaluation observes the same immutable frame context.
 - The existing default graph still runs at 60 fps.
 
 ### Stage 2: deterministic clock and scheduler
@@ -666,7 +665,12 @@ Exit criteria:
 
 ### Stage 4: timed source queues and prepared tickets
 
-**Status:** Foundation implemented; source integrations in progress
+**Status:** Foundation implemented; source integrations and selection-policy tuning in progress
+
+The current estimator recovers an affine source-to-program mapping (rate and phase) from filtered timestamp
+observations and resets on epoch, sequence, or large timing discontinuities. Queue selection is deterministic and
+bounded, but its early tolerance is not yet the final hysteretic broadcast policy; that policy remains an explicit
+exit criterion rather than an implied property of the current implementation.
 
 Deliverables:
 
@@ -704,7 +708,13 @@ Exit criteria:
 
 ### Stage 6: DeckLink timed input
 
-**Status:** Pending
+**Status:** In progress; timed submission is implemented and hardware-verified
+
+DeckLink capture now records one stream-time observation per callback, advances a bounded timed queue in `prepare()`,
+submits the selected upload without waiting, and awaits that exact upload during `execute()`. Conservative submission
+may start a transfer that is not executed in the same evaluation; the bounded queue retains ownership so a later
+selection can resolve it without copying. Independent-clock hysteresis and the remaining diagnostics below are still
+required before this stage is complete.
 
 Deliverables:
 

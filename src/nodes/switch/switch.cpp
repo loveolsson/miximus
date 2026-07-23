@@ -73,9 +73,10 @@ class node_impl : public node_i
             return;
         }
 
-        const auto index = active_index(static_cast<double>(state.get_option<int>("active", 1)));
-        if (inputs_.at(index).has_value()) {
-            inputs_.at(index)->submit_connections(app, nodes, state);
+        const auto  index = active_index(static_cast<double>(state.get_option<int>("active", 1)));
+        const auto& input = inputs_.at(index);
+        if (input.has_value()) {
+            input->submit_connections(app, nodes, state);
         }
     }
 

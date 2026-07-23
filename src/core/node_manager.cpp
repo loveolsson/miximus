@@ -9,6 +9,7 @@
 #include "nodes/frame_execution.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "nodes/system/register.hpp"
 #include "utils/flicks.hpp"
 #include "web_server/server.hpp"
 
@@ -80,7 +81,15 @@ namespace miximus::core {
 using nlohmann::json;
 using namespace std::chrono_literals;
 
-node_manager_s::node_manager_s() { nodes::register_all_nodes(&node_definitions_); }
+node_manager_s::node_manager_s()
+{
+    nodes::register_all_nodes(&node_definitions_);
+    const auto error = handle_add_node(
+        nodes::system::SETTINGS_NODE_TYPE, nodes::system::SETTINGS_NODE_ID, nlohmann::json::object(), -1);
+    if (error != error_e::no_error) {
+        throw std::logic_error("Failed to create the application settings node");
+    }
+}
 
 error_e
 node_manager_s::handle_add_node(std::string_view type, std::string_view id, const json& options, int64_t client_id)
@@ -88,9 +97,11 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
     const std::unique_lock lock(nodes_mutex_);
     _log()->info("Creating {} node with id {}", type, id);
 
-    if (id == APPLICATION_SETTINGS_ID) {
-        _log()->warn("Node id {} is reserved for application settings", id);
-        return error_e::duplicate_id;
+    const bool is_settings_id   = id == nodes::system::SETTINGS_NODE_ID;
+    const bool is_settings_type = type == nodes::system::SETTINGS_NODE_TYPE;
+    if (is_settings_id != is_settings_type) {
+        _log()->warn("Application settings type and reserved id must be used together");
+        return error_e::invalid_type;
     }
 
     const std::string id_str(id);
@@ -133,7 +144,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
 {
     const std::unique_lock lock(nodes_mutex_);
 
-    if (id == APPLICATION_SETTINGS_ID) {
+    if (id == nodes::system::SETTINGS_NODE_ID) {
         return error_e::invalid_type;
     }
 
@@ -172,17 +183,6 @@ nodes::set_options_result_s
 node_manager_s::handle_update_node(std::string_view id, const json& options, int64_t client_id)
 {
     const std::unique_lock lock(nodes_mutex_);
-
-    if (id == APPLICATION_SETTINGS_ID) {
-        const auto result = application_settings_.set_options(options);
-        if (result.error == error_e::no_error) {
-            for (auto& adapter : adapters_) {
-                adapter->emit_update_node(
-                    APPLICATION_SETTINGS_ID, application_settings_.options(), result.has_corrected_values, client_id);
-            }
-        }
-        return result;
-    }
 
     const std::string id_str(id);
 
@@ -360,12 +360,6 @@ nlohmann::json node_manager_s::get_node_status(std::string_view id) const
     return status_registry_->get(id);
 }
 
-nlohmann::json node_manager_s::get_application_settings()
-{
-    const std::unique_lock lock(nodes_mutex_);
-    return application_settings_.options();
-}
-
 void node_manager_s::add_adapter(std::unique_ptr<adapter_i>&& adapter)
 {
     const std::unique_lock lock(nodes_mutex_);
@@ -384,8 +378,6 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 {
     status_registry_ = app->status_registry();
 
-    application_settings_snapshot_s application_settings;
-
     {
         const gpu::context_scope_s context_scope(*app->ctx());
 
@@ -398,7 +390,6 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
              *      making resource management a lot simpler
              */
             std::unique_lock lock(nodes_mutex_);
-            application_settings = application_settings_.sync_render_snapshot();
             if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
                 for (const auto& id : removed_nodes_) {
                     nodes_copy_.erase(id);
@@ -418,32 +409,34 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             }
         }
 
-        app->begin_frame(application_settings,
-                         scheduler.begin_frame(application_settings.frame_rate, application_settings.revision));
+        const auto settings = nodes_copy_.find(nodes::system::SETTINGS_NODE_ID);
+        if (settings == nodes_copy_.end()) {
+            throw std::logic_error("Application settings node is missing from the render snapshot");
+        }
+        const auto& settings_state = settings->second.state;
+        const auto  frame_rate     = settings_state.options.at("frame_rate").get<frame_rate_s>();
+        app->begin_frame({.frame_rate = frame_rate}, scheduler.begin_frame(frame_rate));
 
         {
-            auto        writer        = app->status_registry()->write_node(APPLICATION_SETTINGS_ID);
+            auto        writer        = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
             const auto& frame_context = app->frame_context();
-            writer.write("frame_rate", app->frame_rate());
+            writer.write("frame_rate", app->frame_settings().frame_rate);
             writer.write("frame_duration_flicks", frame_context.duration.count());
             writer.write("epoch", frame_context.epoch);
-            writer.write("settings_revision", frame_context.settings_revision);
         }
 
         const auto prepare_start   = utils::flicks_now();
         const auto demanding_nodes = nodes::prepare_all_nodes(app, nodes_copy_);
         const auto prepare_end     = utils::flicks_now();
 
-        const nodes::frame_execution_plan_s execution_plan(nodes_copy_, demanding_nodes);
-        const auto                          plan_end = utils::flicks_now();
-
         app->frame_info.submitted_nodes.clear();
         app->frame_info.submitted_nodes.reserve(nodes_copy_.size());
-        execution_plan.submit(app);
+        nodes::submit_demanding_nodes(app, nodes_copy_, demanding_nodes);
         const auto submit_end = utils::flicks_now();
 
         app->frame_info.executed_nodes.clear();
-        execution_plan.execute(app);
+        app->frame_info.executed_nodes.reserve(nodes_copy_.size());
+        nodes::execute_demanding_nodes(app, nodes_copy_, demanding_nodes);
         const auto execute_end = utils::flicks_now();
 
         gpu::context_s::finish();
@@ -457,15 +450,15 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             const auto to_microseconds = [](utils::flicks duration) {
                 return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
             };
-            auto writer = app->status_registry()->write_node(APPLICATION_SETTINGS_ID);
+            auto writer = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
             writer.write("prepare_duration_us", to_microseconds(prepare_end - prepare_start));
-            writer.write("plan_duration_us", to_microseconds(plan_end - prepare_end));
-            writer.write("submit_duration_us", to_microseconds(submit_end - plan_end));
+            writer.write("submit_duration_us", to_microseconds(submit_end - prepare_end));
             writer.write("execute_duration_us", to_microseconds(execute_end - submit_end));
             writer.write("gpu_finish_duration_us", to_microseconds(finish_end - execute_end));
             writer.write("complete_duration_us", to_microseconds(complete_end - finish_end));
             writer.write("demanding_node_count", demanding_nodes.size());
-            writer.write("active_node_count", app->frame_info.submitted_nodes.size());
+            writer.write("submitted_node_count", app->frame_info.submitted_nodes.size());
+            writer.write("executed_node_count", app->frame_info.executed_nodes.size());
             next_lifecycle_status_ = now + 1s;
         }
     }

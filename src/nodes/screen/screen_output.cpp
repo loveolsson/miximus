@@ -173,7 +173,7 @@ class node_impl : public node_i
         // A fence consumed from another context must be flushed by its producer.
         gpu::context_s::flush();
 
-        render_state_->frames_rendered.push_frame(slot_index, app->frame_info.timestamp);
+        render_state_->frames_rendered.push_frame(slot_index, app->frame_context().target_time);
         render_state_->frame_cv.notify_one();
     }
 

@@ -1,5 +1,4 @@
 #pragma once
-#include "core/application_settings_fwd.hpp"
 #include "core/frame_context.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
@@ -12,7 +11,6 @@
 #include "render/font/font_registry_fwd.hpp"
 #include "types/frame_rate.hpp"
 #include "utils/asio.hpp"
-#include "utils/flicks.hpp"
 
 #include <FiberPool.hpp>
 #include <chrono>
@@ -24,6 +22,13 @@ namespace miximus::core {
 
 class app_state_s
 {
+  public:
+    struct frame_settings_s
+    {
+        frame_rate_s frame_rate{DEFAULT_FRAME_RATE};
+    };
+
+  private:
     using io_service_t  = boost::asio::io_context;
     using work_guard_t  = boost::asio::executor_work_guard<io_service_t::executor_type>;
     using thread_pool_t = FiberPool::FiberPool<true>;
@@ -42,11 +47,19 @@ class app_state_s
     std::unique_ptr<render::font_registry_s>                   font_registry_;
     std::unique_ptr<node_status_registry_s>                    status_registry_;
 
-    frame_rate_s    frame_rate_{DEFAULT_FRAME_RATE};
-    frame_context_s frame_context_{};
+    frame_settings_s frame_settings_{};
+    frame_context_s  frame_context_{};
 
   public:
+    // Builds only frame-local state so graph lifecycle tests do not initialize
+    // hardware, worker threads, or OpenGL resources.
+    struct test_state_t
+    {
+        explicit test_state_t() = default;
+    };
+
     app_state_s();
+    explicit app_state_s(test_state_t);
     ~app_state_s();
 
     auto cfg_executor() { return &cfg_executor_; }
@@ -60,17 +73,13 @@ class app_state_s
     auto thread_pool() { return thread_pool_.get(); }
     auto status_registry() { return status_registry_.get(); }
 
-    void begin_frame(const application_settings_snapshot_s& settings, frame_context_s frame_context);
+    void begin_frame(frame_settings_s settings, frame_context_s frame_context);
 
-    frame_rate_s           frame_rate() const { return frame_rate_; }
-    const frame_context_s& frame_context() const { return frame_context_; }
+    const frame_settings_s& frame_settings() const { return frame_settings_; }
+    const frame_context_s&  frame_context() const { return frame_context_; }
 
     struct
     {
-        utils::flicks               timestamp;
-        utils::flicks               pts;
-        utils::flicks               duration;
-        bool                        field_even{};
         nodes::submitted_node_set_t submitted_nodes;
         nodes::executed_node_set_t  executed_nodes;
     } frame_info;

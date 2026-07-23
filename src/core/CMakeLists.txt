@@ -1,7 +1,4 @@
 add_library(app
-    application_settings.hpp
-    application_settings_fwd.hpp
-    application_settings.cpp
     app_state.hpp
     app_state_fwd.hpp
     app_state.cpp
@@ -46,15 +43,22 @@ add_sanitizers(app)
 
 if(BUILD_TESTING)
     add_executable(core_test
-        tests/application_settings_test.cpp
+        tests/settings_node_test.cpp
         tests/frame_execution_test.cpp
         tests/frame_scheduler_test.cpp
         tests/source_timing_test.cpp
-        application_settings.cpp
-        frame_scheduler.cpp
-        clock_source.cpp
     )
-    target_link_libraries(core_test PRIVATE nodes miximus_media miximus_types magic_enum::magic_enum GTest::gtest_main)
+    target_link_libraries(
+        core_test
+        PRIVATE app magic_enum::magic_enum GTest::gtest_main
+    )
+    if(MIXIMUS_ENABLE_CLANG_TIDY)
+        set_property(
+            TARGET core_test
+            PROPERTY CXX_CLANG_TIDY
+                     "${MIXIMUS_CLANG_TIDY_EXECUTABLE};--checks=-readability-function-cognitive-complexity"
+        )
+    endif()
     add_sanitizers(core_test)
     gtest_discover_tests(core_test)
 endif()

@@ -5,6 +5,9 @@
 #include <chrono>
 #include <future>
 #include <gtest/gtest.h>
+#include <optional>
+#include <stdexcept>
+#include <utility>
 
 namespace {
 using namespace miximus;
@@ -19,6 +22,15 @@ media::media_frame_id_s make_frame_id(uint64_t sequence, utils::flicks pts, uint
         .pts      = pts,
         .duration = FRAME_DURATION,
     };
+}
+
+template <typename T>
+T require_value(std::optional<T> value)
+{
+    if (!value.has_value()) {
+        throw std::logic_error("test expected an optional value");
+    }
+    return std::move(value).value();
 }
 
 TEST(SourceClock, MapsArbitraryOriginsAndFiltersArrivalJitter)
@@ -36,14 +48,12 @@ TEST(SourceClock, MapsArbitraryOriginsAndFiltersArrivalJitter)
 
     EXPECT_EQ(clock.observe(make_frame_id(1, SOURCE_ORIGIN), PROGRAM_ORIGIN),
               media::source_clock_observation_e::initialized);
-    ASSERT_TRUE(clock.map(SOURCE_ORIGIN).has_value());
-    EXPECT_EQ(*clock.map(SOURCE_ORIGIN), PROGRAM_ORIGIN);
+    EXPECT_EQ(require_value(clock.map(SOURCE_ORIGIN)), PROGRAM_ORIGIN);
 
     const auto source_pts = SOURCE_ORIGIN + FRAME_DURATION;
     EXPECT_EQ(clock.observe(make_frame_id(2, source_pts), PROGRAM_ORIGIN + FRAME_DURATION + JITTER),
               media::source_clock_observation_e::updated);
-    ASSERT_TRUE(clock.map(source_pts).has_value());
-    EXPECT_EQ(*clock.map(source_pts), PROGRAM_ORIGIN + FRAME_DURATION + ADJUSTMENT);
+    EXPECT_EQ(require_value(clock.map(source_pts)), PROGRAM_ORIGIN + FRAME_DURATION + ADJUSTMENT);
 }
 
 TEST(SourceClock, ReanchorsAfterEpochAndSequenceDiscontinuities)
@@ -59,15 +69,13 @@ TEST(SourceClock, ReanchorsAfterEpochAndSequenceDiscontinuities)
     const auto new_program_pts = utils::to_flicks(8.0);
     EXPECT_EQ(clock.observe(make_frame_id(1, new_source_pts, 2), new_program_pts),
               media::source_clock_observation_e::discontinuity);
-    ASSERT_TRUE(clock.map(new_source_pts).has_value());
-    EXPECT_EQ(*clock.map(new_source_pts), new_program_pts);
+    EXPECT_EQ(require_value(clock.map(new_source_pts)), new_program_pts);
 
     const auto restarted_source_pts  = utils::to_flicks(1.0);
     const auto restarted_program_pts = utils::to_flicks(9.0);
     EXPECT_EQ(clock.observe(make_frame_id(1, restarted_source_pts, 2), restarted_program_pts),
               media::source_clock_observation_e::discontinuity);
-    ASSERT_TRUE(clock.map(restarted_source_pts).has_value());
-    EXPECT_EQ(*clock.map(restarted_source_pts), restarted_program_pts);
+    EXPECT_EQ(require_value(clock.map(restarted_source_pts)), restarted_program_pts);
 }
 
 TEST(SourceClock, TracksSustainedSourceDriftWithoutFollowingIndividualFrames)
@@ -90,8 +98,36 @@ TEST(SourceClock, TracksSustainedSourceDriftWithoutFollowingIndividualFrames)
                   media::source_clock_observation_e::updated);
     }
 
-    ASSERT_TRUE(clock.map(final_source_pts).has_value());
-    EXPECT_LT(std::chrono::abs(*clock.map(final_source_pts) - final_observation), utils::to_flicks(0.001));
+    EXPECT_LT(std::chrono::abs(require_value(clock.map(final_source_pts)) - final_observation),
+              utils::to_flicks(0.001));
+    const auto expected_rate =
+        1.0 + (static_cast<double>(DRIFT_PER_FRAME.count()) / static_cast<double>(FRAME_DURATION.count()));
+    EXPECT_NEAR(require_value(clock.recovered_rate()), expected_rate, 0.0001);
+}
+
+TEST(SourceClock, ChangesRecoveredRateWithoutMovingTheCurrentPhase)
+{
+    constexpr auto DRIFT_PER_FRAME = utils::to_flicks(0.00001);
+
+    media::source_clock_estimator_s clock({
+        .phase_filter_divisor       = 1,
+        .rate_filter_divisor        = 1,
+        .rate_observation_frames    = 2,
+        .maximum_rate_deviation_ppm = 5'000.0,
+        .maximum_phase_adjustment   = {},
+        .discontinuity_threshold    = utils::to_flicks(0.5),
+    });
+
+    ASSERT_EQ(clock.observe(make_frame_id(1, {}), {}), media::source_clock_observation_e::initialized);
+    ASSERT_EQ(clock.observe(make_frame_id(2, FRAME_DURATION), FRAME_DURATION + DRIFT_PER_FRAME),
+              media::source_clock_observation_e::updated);
+
+    const auto current_source_pts = FRAME_DURATION * 2;
+    ASSERT_EQ(clock.observe(make_frame_id(3, current_source_pts), current_source_pts + (DRIFT_PER_FRAME * 2)),
+              media::source_clock_observation_e::updated);
+    EXPECT_EQ(require_value(clock.map(current_source_pts)), current_source_pts);
+    EXPECT_EQ(require_value(clock.map(current_source_pts + FRAME_DURATION)),
+              current_source_pts + FRAME_DURATION + DRIFT_PER_FRAME);
 }
 
 TEST(TimedSourceQueue, SelectsNewestEligibleFrameAndThenRepeatsIt)
@@ -177,6 +213,30 @@ TEST(TimedSourceQueue, AwaitUsesTheExactSelectedFrameInsteadOfThePreviousFrame)
     EXPECT_TRUE(waiting.get());
     EXPECT_TRUE(queue.commit(selected_ticket));
     EXPECT_EQ(selected_ticket.frame()->value(), 20);
+}
+
+TEST(TimedSourceQueue, SubmittedFrameCanBeResolvedAfterAnUnexecutedTraversal)
+{
+    media::timed_source_queue_s<int> queue;
+    constexpr auto                   TARGET_TIME   = utils::to_flicks(100.0);
+    constexpr auto                   SOURCE_ORIGIN = utils::to_flicks(40.0);
+
+    const auto frame = queue.create_frame(make_frame_id(1, SOURCE_ORIGIN), TARGET_TIME, 10);
+    queue.push(frame);
+    queue.advance({}, TARGET_TIME);
+
+    {
+        const auto unexecuted_ticket = queue.select({});
+        ASSERT_EQ(unexecuted_ticket.selection(), media::prepared_frame_selection_e::new_frame);
+        ASSERT_TRUE(frame->mark_submitted());
+    }
+
+    const auto later_ticket = queue.select({});
+    EXPECT_EQ(later_ticket.frame(), frame);
+    EXPECT_EQ(frame->readiness(), media::source_frame_readiness_e::submitted);
+    ASSERT_TRUE(frame->mark_ready());
+    EXPECT_TRUE(later_ticket.await());
+    EXPECT_TRUE(queue.commit(later_ticket));
 }
 
 TEST(TimedSourceQueue, ReportsFailureForTheExactSelectedFrame)

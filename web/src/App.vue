@@ -44,6 +44,8 @@ import {
   type result_config_s,
 } from "./messages";
 
+const SETTINGS_NODE_ID = "$app";
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -86,6 +88,7 @@ const connected = ref(false);
 // --- add_node ---
 ws.subscribe<command_add_node_s>(topic_e.add_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
+  if (msg.node.id === SETTINGS_NODE_ID) return;
   if (is_origin) {
     // Our own add was acknowledged; server may have filled in options.
     handle_server_update_node(msg.node.id, msg.node.options);
@@ -98,6 +101,7 @@ ws.subscribe<command_add_node_s>(topic_e.add_node, (msg, is_origin) => {
 // --- remove_node ---
 ws.subscribe<command_remove_node_s>(topic_e.remove_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
+  if (msg.id === SETTINGS_NODE_ID) return;
   if (is_origin) return;
   handle_server_remove_node(msg.id);
 });
@@ -105,6 +109,7 @@ ws.subscribe<command_remove_node_s>(topic_e.remove_node, (msg, is_origin) => {
 // --- update_node ---
 ws.subscribe<command_update_node_s>(topic_e.update_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
+  if (msg.id === SETTINGS_NODE_ID) return;
   if (is_origin) return;
   handle_server_update_node(msg.id, msg.options);
 });
@@ -159,6 +164,7 @@ ws.on("on_connected", () => {
     }
 
     for (const node of config.nodes) {
+      if (node.id === SETTINGS_NODE_ID) continue;
       handle_server_add_node(node.type, node.id);
       handle_server_update_node(node.id, node.options);
     }

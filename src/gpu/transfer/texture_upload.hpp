@@ -57,8 +57,10 @@ class texture_upload_lease_s
 
     std::span<std::byte> bytes() const;
     uint64_t             version() const;
-    bool                 submit();
-    explicit             operator bool() const { return slot_ != nullptr; }
+    // Leases from one stream must be submitted in acquisition order. A lease
+    // may be returned without submission; skipped versions are permitted.
+    bool     submit();
+    explicit operator bool() const { return slot_ != nullptr; }
 };
 
 class texture_upload_stream_s

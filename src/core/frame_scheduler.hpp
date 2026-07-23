@@ -54,7 +54,7 @@ class frame_scheduler_s
   public:
     explicit frame_scheduler_s(clock_source_i& clock, late_frame_policy_s late_policy = {});
 
-    frame_context_s                  begin_frame(frame_rate_s frame_rate, uint64_t settings_revision);
+    frame_context_s                  begin_frame(frame_rate_s frame_rate);
     const frame_scheduler_metrics_s& finish_frame();
 
     const frame_scheduler_metrics_s& metrics() const { return metrics_; }

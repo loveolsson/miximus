@@ -27,7 +27,7 @@ class node_impl : public node_i
         const auto speed  = state.get_option<double>("speed");
         const auto phase  = state.get_option<double>("phase");
 
-        const double seconds       = utils::to_seconds(app->frame_info.pts);
+        const double seconds       = utils::to_seconds(app->frame_context().pts);
         const double phase_radians = phase * std::numbers::pi_v<double> / 180.0;
         const double angle         = (seconds * speed) + phase_radians;
         const auto   result        = center + (gpu::vec2_t{std::cos(angle), std::sin(angle)} * size);

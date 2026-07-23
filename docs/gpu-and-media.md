@@ -225,6 +225,7 @@ Worker/callback rules:
 - `src/gpu/transfer/texture_download.hpp/.cpp`
 - `src/gpu/transfer/detail/`
 - `src/nodes/decklink/`
+- `src/nodes/decklink/detail/input_capture.hpp/.cpp`
 - `src/nodes/ndi/`
 - `src/render/font/`
 - `src/render/surface/`

@@ -215,7 +215,9 @@ Mutable registries should protect collections, return owned values or stable han
 
 ## Formatting and validation
 
-There is currently no substantial automated test suite under `src/`. At minimum:
+The focused native suite under `src/core/tests/` covers the reserved settings node, graph lifecycle traversal, the
+deterministic scheduler, source-clock recovery, and timed-source queues. It does not replace integration testing. At
+minimum:
 
 ### Native changes
 

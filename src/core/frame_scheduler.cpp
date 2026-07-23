@@ -19,7 +19,7 @@ uint64_t late_frame_policy_s::frames_to_skip(utils::flicks now, utils::flicks ne
     }
 
     const auto excess = now - next_target - permitted_lateness;
-    return static_cast<uint64_t>((excess.count() - 1) / duration.count() + 1);
+    return static_cast<uint64_t>(((excess.count() - 1) / duration.count()) + 1);
 }
 
 frame_scheduler_s::frame_scheduler_s(clock_source_i& clock, late_frame_policy_s late_policy)
@@ -28,7 +28,7 @@ frame_scheduler_s::frame_scheduler_s(clock_source_i& clock, late_frame_policy_s 
 {
 }
 
-frame_context_s frame_scheduler_s::begin_frame(frame_rate_s frame_rate, uint64_t settings_revision)
+frame_context_s frame_scheduler_s::begin_frame(frame_rate_s frame_rate)
 {
     if (frame_active_) {
         throw std::logic_error("Cannot begin a frame before finishing the previous frame");
@@ -54,14 +54,13 @@ frame_context_s frame_scheduler_s::begin_frame(frame_rate_s frame_rate, uint64_t
     const auto frame_offset = duration_ * static_cast<utils::flicks::rep>(timeline_frame_);
     const auto target_time  = anchor_time_ + frame_offset;
     context_                = {
-                       .frame_number      = next_frame_number_,
-                       .epoch             = epoch_,
-                       .settings_revision = settings_revision,
-                       .pts               = frame_offset,
-                       .duration          = duration_,
-                       .target_time       = target_time,
-                       .render_deadline   = target_time + duration_,
-                       .discontinuity     = discontinuity,
+                       .frame_number    = next_frame_number_,
+                       .epoch           = epoch_,
+                       .pts             = frame_offset,
+                       .duration        = duration_,
+                       .target_time     = target_time,
+                       .render_deadline = target_time + duration_,
+                       .discontinuity   = discontinuity,
     };
 
     metrics_ = {

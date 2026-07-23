@@ -7,6 +7,8 @@ PRIVATE
     detail/device_monitor.hpp
     detail/device_monitor.cpp
     detail/device_reservation.hpp
+    detail/input_capture.hpp
+    detail/input_capture.cpp
     detail/output_video_buffer.hpp
     input.cpp
     output.cpp

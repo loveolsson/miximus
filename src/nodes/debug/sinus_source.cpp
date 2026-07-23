@@ -26,7 +26,7 @@ class node_impl : public node_i
         auto speed  = state.get_option<double>("speed");
         auto phase  = state.get_option<double>("phase");
 
-        const double s             = utils::to_seconds(app->frame_info.pts);
+        const double s             = utils::to_seconds(app->frame_context().pts);
         const double phase_radians = phase * std::numbers::pi_v<double> / 180.0;
         const double res           = (std::sin((s * speed) + phase_radians) * size) + center;
 

@@ -32,6 +32,7 @@ add_subdirectory(debug)
 add_subdirectory(generators)
 add_subdirectory(composite)
 add_subdirectory(switch)
+add_subdirectory(system)
 
 find_package(nlohmann_json REQUIRED)
 
@@ -41,7 +42,7 @@ PRIVATE
     decklink
     ndi
     render
-    miximus_media
+    media
     miximus_types
     Boost::fiber
     magic_enum::magic_enum

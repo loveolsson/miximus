@@ -1,6 +1,5 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "core/app_state.hpp"
-#include "core/application_settings.hpp"
 #include "core/clock_source.hpp"
 #include "core/configuration.hpp"
 #include "core/frame_scheduler.hpp"
@@ -8,12 +7,14 @@
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
+#include "nodes/system/register.hpp"
 #include "utils/process_id.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdlib>
 #include <exception>
@@ -62,7 +63,7 @@ void publish_scheduler_status(core::app_state_s*                     app,
     };
 
     const auto& context = app->frame_context();
-    auto        writer  = app->status_registry()->write_node(core::APPLICATION_SETTINGS_ID);
+    auto        writer  = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
     writer.write("clock_source", std::string(scheduler.clock_name()));
     writer.write("frame_number", context.frame_number);
     writer.write("pts_flicks", context.pts.count());
@@ -100,7 +101,7 @@ int main(int argc, char* argv[])
                 const auto value           = arguments[++i];
                 const auto [end, error]    = std::from_chars(value.data(), value.data() + value.size(), seconds);
                 const bool parsed_entirely = error == std::errc{} && end == value.data() + value.size();
-                if (!parsed_entirely || seconds <= 0.0) {
+                if (!parsed_entirely || !std::isfinite(seconds) || seconds <= 0.0) {
                     std::cerr << "--stop-after requires a positive number of seconds\n";
                     return EXIT_FAILURE;
                 }

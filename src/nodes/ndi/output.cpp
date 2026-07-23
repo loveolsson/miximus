@@ -20,7 +20,6 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <optional>
 #include <string>
 #include <thread>
@@ -34,16 +33,10 @@ auto log() { return getlog("ndi"); }
 
 class node_impl : public node_i
 {
-    struct frame_rate_s
-    {
-        int numerator{};
-        int denominator{};
-    };
-
-    NDIlib_send_instance_t                 sender_{nullptr};
-    utils::observed_value_s<std::string>   sender_name_;
-    utils::observed_value_s<utils::flicks> frame_duration_;
-    std::atomic<frame_rate_s>              frame_rate_{frame_rate_s{}};
+    NDIlib_send_instance_t                         sender_{nullptr};
+    utils::observed_value_s<std::string>           sender_name_;
+    utils::observed_value_s<miximus::frame_rate_s> frame_rate_;
+    std::atomic<miximus::frame_rate_s>             worker_frame_rate_{DEFAULT_FRAME_RATE};
 
     std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
     std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
@@ -83,7 +76,7 @@ class node_impl : public node_i
             }
 
             const utils::flicks pts(static_cast<utils::flicks::rep>(frame->tag()));
-            const auto          frame_rate  = frame_rate_.load(std::memory_order_relaxed);
+            const auto          frame_rate  = worker_frame_rate_.load(std::memory_order_relaxed);
             const auto          frame_bytes = frame->bytes();
 
             NDIlib_video_frame_v2_t ndi_frame{};
@@ -93,8 +86,8 @@ class node_impl : public node_i
             ndi_frame.FourCC               = NDIlib_FourCC_video_type_RGBA;
             ndi_frame.line_stride_in_bytes = dim.x * 4;
             ndi_frame.p_data               = ndi_sdk::send_buffer(frame_bytes);
-            ndi_frame.frame_rate_N         = frame_rate.numerator;
-            ndi_frame.frame_rate_D         = frame_rate.denominator;
+            ndi_frame.frame_rate_N         = static_cast<int>(frame_rate.numerator);
+            ndi_frame.frame_rate_D         = static_cast<int>(frame_rate.denominator);
             ndi_frame.frame_format_type    = NDIlib_frame_format_type_progressive;
             ndi_frame.timecode             = pts.count() * 10'000'000LL / utils::k_flicks_one_second.count();
             ndi_frame.p_metadata           = COLOR_METADATA;
@@ -114,32 +107,16 @@ class node_impl : public node_i
         inflight.reset();
     }
 
-    bool update_frame_rate(utils::flicks duration)
+    bool update_frame_rate(miximus::frame_rate_s frame_rate)
     {
-        if (!frame_duration_.observe(duration)) {
-            return frame_rate_.load(std::memory_order_relaxed).denominator != 0;
-        }
-
-        if (duration <= utils::flicks::zero()) {
-            frame_rate_.store({}, std::memory_order_relaxed);
-            log()->error("Cannot publish NDI output with a non-positive frame duration");
+        if (!std::in_range<int>(frame_rate.numerator) || !std::in_range<int>(frame_rate.denominator)) {
+            log()->error("Cannot represent the configured frame rate in the NDI API");
             return false;
         }
 
-        const auto duration_count = duration.count();
-        const auto second_count   = utils::k_flicks_one_second.count();
-        const auto divisor        = std::gcd(second_count, duration_count);
-        const auto numerator      = second_count / divisor;
-        const auto denominator    = duration_count / divisor;
-
-        if (!std::in_range<int>(numerator) || !std::in_range<int>(denominator)) {
-            frame_rate_.store({}, std::memory_order_relaxed);
-            log()->error("Cannot represent the current frame duration as an NDI frame rate");
-            return false;
+        if (frame_rate_.observe(frame_rate)) {
+            worker_frame_rate_.store(frame_rate, std::memory_order_relaxed);
         }
-
-        frame_rate_.store({.numerator = static_cast<int>(numerator), .denominator = static_cast<int>(denominator)},
-                          std::memory_order_relaxed);
         return true;
     }
 
@@ -199,7 +176,7 @@ class node_impl : public node_i
     {
         auto*      sr               = app->status_registry();
         const auto enabled          = state.get_option<bool>("enabled");
-        const bool frame_rate_valid = update_frame_rate(app->frame_info.duration);
+        const bool frame_rate_valid = update_frame_rate(app->frame_settings().frame_rate);
         result->demands_execution   = enabled;
 
         sr->write(id_, "connected", sender_ != nullptr);
@@ -229,10 +206,6 @@ class node_impl : public node_i
 
         auto texture = iface_tex_.resolve_value(app, nodes, state);
         if (texture == nullptr) {
-            return;
-        }
-
-        if (NDIlib_send_get_no_connections(sender_, 0) == 0) {
             return;
         }
 
@@ -280,7 +253,7 @@ class node_impl : public node_i
         textured_quad_->draw(texture);
         gpu::framebuffer_s::end_render();
 
-        target->set_tag(static_cast<uint64_t>(app->frame_info.pts.count()));
+        target->set_tag(static_cast<uint64_t>(app->frame_context().pts.count()));
         target->submit();
     }
 

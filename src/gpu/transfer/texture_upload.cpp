@@ -64,6 +64,7 @@ struct texture_upload_stream_state_s
     size_t                                              pending_allocations{};
     size_t                                              active_leases{};
     uint64_t                                            next_version{};
+    uint64_t                                            last_submitted_version{};
     uint64_t                                            completed_version{};
     uint64_t                                            current_version{};
     std::chrono::steady_clock::time_point               retry_allocation_after;
@@ -352,11 +353,13 @@ bool texture_upload_lease_s::submit()
     }
     {
         const std::scoped_lock lock(stream_->mutex);
-        if (!stream_->active || slot_->state != detail::slot_state_e::cpu_writing) {
+        if (!stream_->active || slot_->state != detail::slot_state_e::cpu_writing ||
+            slot_->version <= stream_->last_submitted_version) {
             return false;
         }
-        slot_->state = detail::slot_state_e::queued;
-        submitted_   = true;
+        stream_->last_submitted_version = slot_->version;
+        slot_->state                    = detail::slot_state_e::queued;
+        submitted_                      = true;
     }
     service->enqueue({.type = detail::task_type_e::upload, .stream = stream_, .slot = slot_});
     return true;

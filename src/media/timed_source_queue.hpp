@@ -149,13 +149,15 @@ struct timed_source_queue_config_s
 
 struct timed_source_queue_metrics_s
 {
-    uint64_t pushed{};
-    uint64_t overflow_drops{};
-    uint64_t selection_drops{};
-    uint64_t repeated{};
-    uint64_t missing{};
-    uint64_t discontinuities{};
-    uint64_t transfer_failures{};
+    uint64_t                     pushed{};
+    uint64_t                     overflow_drops{};
+    uint64_t                     selection_drops{};
+    uint64_t                     repeated{};
+    uint64_t                     missing{};
+    uint64_t                     discontinuities{};
+    uint64_t                     transfer_failures{};
+    std::optional<double>        recovered_rate;
+    std::optional<utils::flicks> phase_offset;
 };
 
 template <typename T>
@@ -391,6 +393,8 @@ class timed_source_queue_s
             .missing           = missing_.load(std::memory_order_relaxed),
             .discontinuities   = discontinuities_.load(std::memory_order_relaxed),
             .transfer_failures = transfer_failures_.load(std::memory_order_relaxed),
+            .recovered_rate    = clock_.recovered_rate(),
+            .phase_offset      = clock_.phase_offset(),
         };
     }
 };
