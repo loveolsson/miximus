@@ -136,8 +136,9 @@ file wrappers so future web commands can reuse the same path. The document conta
 IDs, types, per-node schema versions, options, and connections. Application settings are an ordinary `node_i` with the
 reserved `$app` ID and are persisted in that same node array. The node has no interfaces or render work; external
 creation under another ID, removal, and connections are rejected. The bundled client omits it from the visible
-Baklava graph, while updates and runtime status continue to use the normal node channels. Runtime status is added only
-to client snapshots and is not written to disk.
+Baklava graph, but mirrors its options into a global-settings toolbar panel using the same interface components as
+ordinary nodes. Panel changes and authoritative server corrections use the normal `update_node` channel. Runtime
+status is added only to client snapshots and is not written to disk.
 
 Unversioned documents and nodes are the version 1 baseline. When a node schema changes, its registered transitions migrate the options JSON in place. Connections replay the output-interface migrations for their source node and the input-interface migrations for their destination node over the same version range. Migration completes before the existing node and connection construction paths are called; any missing transition or construction error aborts startup.
 

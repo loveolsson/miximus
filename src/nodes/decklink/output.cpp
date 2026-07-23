@@ -10,6 +10,7 @@
 #include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_download.hpp"
 #include "logger/logger.hpp"
+#include "media/output_buffer_watermark.hpp"
 #include "media/timed_output_queue.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -46,6 +47,8 @@ using namespace miximus::nodes;
 using namespace miximus::nodes::decklink;
 using namespace miximus::nodes::decklink::detail;
 using namespace std::chrono_literals;
+
+constexpr int DOWNLOAD_HEADROOM = 3;
 
 auto log() { return getlog("decklink"); }
 
@@ -134,6 +137,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     std::shared_ptr<gpu::transfer::texture_download_stream_s>      download_stream_;
     decklink_ptr<IDeckLinkVideoFrame>                              last_frame_;
     media::timed_output_queue_s<decklink_ptr<IDeckLinkVideoFrame>> output_queue_;
+    media::output_buffer_watermark_s                               output_watermark_;
     mode_info_s                                                    mode_info_;
     BMDTimeValue                                                   pts_{};
     utils::flicks                                                  program_frame_duration_;
@@ -141,6 +145,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     uint64_t                                                       program_epoch_{};
     uint64_t                                                       program_sequence_{};
     uint64_t                                                       program_frames_missing_{};
+    size_t                                                         preroll_frames_{};
 
     std::atomic_bool     stop_requested_;
     std::atomic<phase_e> phase_{phase_e::starting};
@@ -283,11 +288,12 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return false;
         }
 
-        for (int i = 0; i < 4; ++i) {
+        for (size_t i = 0; i < preroll_frames_; ++i) {
             if (device_->ScheduleVideoFrame(frame.get(), pts_, mode_info_.frame_duration, mode_info_.time_scale) !=
                 S_OK) {
                 return false;
             }
+            output_watermark_.frame_scheduled();
             pts_ += mode_info_.frame_duration;
         }
         last_frame_ = frame.query<IDeckLinkVideoFrame>();
@@ -329,7 +335,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                                .byte_size   = static_cast<size_t>(mode->row_bytes) * mode->dim.y,
                                .host_access = gpu::transfer::host_access_e::read_only,
                                },
-            .max_slots = 7,
+            .max_slots = output_watermark_.target() + DOWNLOAD_HEADROOM,
         });
 
         mode_info_       = *mode;
@@ -492,27 +498,37 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return S_OK;
         }
 
-        poll_buffered_video_frames();
-        consume_downloaded_frames();
-        if (next_program_pts_.has_value()) {
-            const auto selection = output_queue_.select(program_epoch_, *next_program_pts_);
-            if (selection.frame != nullptr) {
-                last_frame_ = selection.frame->value;
-            }
-            *next_program_pts_ += mode_info_.frame_duration_flicks;
-        } else {
-            ++program_frames_missing_;
-        }
-        if (!last_frame_) {
-            return S_OK;
-        }
-
-        if (device_->ScheduleVideoFrame(last_frame_.get(), pts_, mode_info_.frame_duration, mode_info_.time_scale) !=
-            S_OK) {
+        if (!output_watermark_.frame_completed()) {
+            log()->error("DeckLink reported an output completion with no scheduled frame");
             request_failure();
             return E_FAIL;
         }
-        pts_ += mode_info_.frame_duration;
+
+        poll_buffered_video_frames();
+        consume_downloaded_frames();
+        const auto refill_count = output_watermark_.refill_count();
+        for (size_t i = 0; i < refill_count; ++i) {
+            if (next_program_pts_.has_value()) {
+                const auto selection = output_queue_.select(program_epoch_, *next_program_pts_);
+                if (selection.frame != nullptr) {
+                    last_frame_ = selection.frame->value;
+                }
+                *next_program_pts_ += mode_info_.frame_duration_flicks;
+            } else {
+                ++program_frames_missing_;
+            }
+
+            if (!last_frame_) {
+                return S_OK;
+            }
+            if (device_->ScheduleVideoFrame(
+                    last_frame_.get(), pts_, mode_info_.frame_duration, mode_info_.time_scale) != S_OK) {
+                request_failure();
+                return E_FAIL;
+            }
+            output_watermark_.frame_scheduled();
+            pts_ += mode_info_.frame_duration;
+        }
         return S_OK;
     }
 
@@ -524,16 +540,20 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                std::string                                device_name,
                std::string                                requested_mode_name,
                utils::flicks                              program_frame_duration,
-               uint64_t                                   program_epoch)
+               uint64_t                                   program_epoch,
+               size_t                                     preroll_frames,
+               size_t                                     buffer_frames)
         : download_service_(download_service)
         , control_executor_(control_executor)
         , device_(std::move(device))
         , reservation_(std::move(reservation))
         , device_name_(std::move(device_name))
         , requested_mode_name_(std::move(requested_mode_name))
-        , output_queue_({.capacity = 7, .early_tolerance = program_frame_duration / 2})
+        , output_queue_({.capacity = buffer_frames + DOWNLOAD_HEADROOM, .early_tolerance = program_frame_duration / 2})
+        , output_watermark_(buffer_frames)
         , program_frame_duration_(program_frame_duration)
         , program_epoch_(program_epoch)
+        , preroll_frames_(preroll_frames)
     {
     }
 
@@ -663,7 +683,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
 class node_impl : public node_i
 {
-    using selection_t = std::tuple<std::string, std::string, bool, frame_rate_s, uint64_t>;
+    using selection_t = std::tuple<std::string, std::string, bool, frame_rate_s, uint64_t, int, int>;
 
     decklink_ptr<callback_s>                  callback_;
     std::optional<callback_s::render_state_s> render_state_;
@@ -697,7 +717,9 @@ class node_impl : public node_i
                         std::string_view              device_name,
                         std::string_view              display_mode,
                         utils::flicks                 program_frame_duration,
-                        uint64_t                      program_epoch)
+                        uint64_t                      program_epoch,
+                        int                           preroll_frames,
+                        int                           buffer_frames)
     {
         auto reservation = device_reservation_s<IDeckLinkOutput>::acquire(device.get());
         if (!reservation) {
@@ -712,7 +734,9 @@ class node_impl : public node_i
                                                   std::string(device_name),
                                                   std::string(display_mode),
                                                   program_frame_duration,
-                                                  program_epoch);
+                                                  program_epoch,
+                                                  static_cast<size_t>(preroll_frames),
+                                                  static_cast<size_t>(buffer_frames));
         callback_->start_async();
         return true;
     }
@@ -780,6 +804,8 @@ class node_impl : public node_i
         const auto device_name    = state.get_option<std::string>("device_name");
         const auto display_mode   = state.get_option<std::string>("display_mode");
         const auto enabled        = state.get_option<bool>("enabled");
+        const auto preroll_frames = app->frame_settings().decklink_output.preroll_frames;
+        const auto buffer_frames  = app->frame_settings().decklink_output.buffer_frames;
         result->demands_execution = enabled;
         publish_device_status(app, device_name);
 
@@ -789,6 +815,8 @@ class node_impl : public node_i
             enabled,
             app->frame_settings().frame_rate,
             app->frame_context().epoch,
+            preroll_frames,
+            buffer_frames,
         };
         if (selection_.observe(selection)) {
             stop_playback();
@@ -837,7 +865,9 @@ class node_impl : public node_i
                                        device_name,
                                        display_mode,
                                        app->frame_context().duration,
-                                       app->frame_context().epoch)) {
+                                       app->frame_context().epoch,
+                                       preroll_frames,
+                                       buffer_frames)) {
             next_start_attempt_ = std::chrono::steady_clock::now() + 100ms;
         }
     }

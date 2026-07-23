@@ -1,3 +1,4 @@
+#include "media/output_buffer_watermark.hpp"
 #include "media/timed_output_queue.hpp"
 #include "utils/flicks.hpp"
 
@@ -18,6 +19,43 @@ media::output_frame_s<int> make_frame(uint64_t sequence, utils::flicks pts, int 
                  },
         .value = value,
     };
+}
+
+TEST(OutputBufferWatermark, RefillsFromPrerollToTargetAndAfterCompletions)
+{
+    media::output_buffer_watermark_s watermark(4);
+    watermark.frame_scheduled();
+    watermark.frame_scheduled();
+    EXPECT_EQ(watermark.refill_count(), 2);
+
+    watermark.frame_scheduled();
+    watermark.frame_scheduled();
+    EXPECT_EQ(watermark.refill_count(), 0);
+    EXPECT_TRUE(watermark.frame_completed());
+    EXPECT_EQ(watermark.refill_count(), 1);
+}
+
+TEST(OutputBufferWatermark, RejectsInvalidTargetsAndUnexpectedCompletions)
+{
+    EXPECT_THROW((void)media::output_buffer_watermark_s(0), std::invalid_argument);
+
+    media::output_buffer_watermark_s watermark(1);
+    EXPECT_FALSE(watermark.frame_completed());
+}
+
+TEST(OutputBufferWatermark, PrerollAboveTheSteadyTargetDrainsNaturally)
+{
+    media::output_buffer_watermark_s watermark(2);
+    for (size_t i = 0; i < 4; ++i) {
+        watermark.frame_scheduled();
+    }
+
+    EXPECT_TRUE(watermark.frame_completed());
+    EXPECT_EQ(watermark.refill_count(), 0);
+    EXPECT_TRUE(watermark.frame_completed());
+    EXPECT_EQ(watermark.refill_count(), 0);
+    EXPECT_TRUE(watermark.frame_completed());
+    EXPECT_EQ(watermark.refill_count(), 1);
 }
 
 TEST(TimedOutputQueue, SelectsNewestEligibleFrameAndRepeatsIt)

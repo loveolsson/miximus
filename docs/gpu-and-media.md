@@ -175,8 +175,11 @@ DeckLink output renders packed 10-bit YUV into a PTS-tagged download target. The
 and the scheduled-frame callback drains ready leases in FIFO order into a bounded timed-output queue. It selects the
 newest eligible program frame for each exact DeckLink interval, explicitly retaining frames for repeats and accounting
 for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
-frame keeps host memory reserved until DeckLink releases it. Four black frames currently provide fixed startup preroll.
-The callback neither makes a GL context current nor waits for a transfer.
+frame keeps host memory reserved until DeckLink releases it. The configured black-frame preroll and steady
+scheduled-frame target default to four frames and are independently adjustable from one to eight frames through the
+global DeckLink-output settings. All DeckLink output nodes use the same frame-boundary snapshot. Changing either
+setting uses the normal asynchronous output restart and recreates each affected bounded download stream; a brief
+output interruption is expected. The callback neither makes a GL context current nor waits for a transfer.
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
 

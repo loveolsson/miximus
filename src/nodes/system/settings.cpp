@@ -1,5 +1,7 @@
+#include "core/app_state.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
+#include "nodes/normalize_option.hpp"
 #include "register.hpp"
 #include "types/frame_rate.hpp"
 
@@ -15,6 +17,8 @@ namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using nlohmann::json;
+
+using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
 
 std::optional<uint32_t> read_positive_uint32(const json& value)
 {
@@ -78,7 +82,9 @@ class node_impl final : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"frame_rate", DEFAULT_FRAME_RATE},
+            {"frame_rate",                     DEFAULT_FRAME_RATE                                },
+            {"decklink_output_preroll_frames", decklink_output_settings_s::DEFAULT_PREROLL_FRAMES},
+            {"decklink_output_buffer_frames",  decklink_output_settings_s::DEFAULT_BUFFER_FRAMES },
         };
     }
 
@@ -86,6 +92,10 @@ class node_impl final : public node_i
     {
         if (name == "frame_rate") {
             return normalize_frame_rate(value);
+        }
+        if (name == "decklink_output_preroll_frames" || name == "decklink_output_buffer_frames") {
+            return normalize_option_value<int>(
+                value, decklink_output_settings_s::MIN_BUFFER_FRAMES, decklink_output_settings_s::MAX_BUFFER_FRAMES);
         }
         return option_result_e::invalid;
     }

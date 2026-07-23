@@ -13,11 +13,16 @@
         </template>
       </BaklavaEditor>
     </div>
+    <GlobalSettingsPanel
+      :open="settingsOpen"
+      :node="applicationSettings"
+      @close="settingsOpen = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onUnmounted, provide } from "vue";
+import { ref, nextTick, onUnmounted, provide, markRaw } from "vue";
 import {
   BaklavaEditor,
   useBaklava,
@@ -26,8 +31,11 @@ import {
 } from "@baklavajs/renderer-vue";
 import "@baklavajs/themes/dist/syrup-dark.css";
 import ColoredConnectionWrapper from "./components/ColoredConnectionWrapper.vue";
+import GlobalSettingsPanel from "./components/GlobalSettingsPanel.vue";
+import SettingsIcon from "./components/SettingsIcon.vue";
 
 import { websocket_key, ws_wrapper } from "./websocket";
+import { SETTINGS_NODE_ID, useApplicationSettings } from "./application_settings";
 import { register_node_types, register_interface_types } from "./nodes/types";
 import { update_node_status, clear_all_status } from "./nodes/status_store";
 import { useServerSync } from "./server_sync";
@@ -44,7 +52,7 @@ import {
   type result_config_s,
 } from "./messages";
 
-const SETTINGS_NODE_ID = "$app";
+const OPEN_SETTINGS_COMMAND = "OPEN_APPLICATION_SETTINGS";
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -53,9 +61,23 @@ const SETTINGS_NODE_ID = "$app";
 const baklava = useBaklava();
 const ws = new ws_wrapper();
 provide(websocket_key, ws);
+const connected = ref(false);
+const settingsOpen = ref(false);
+const {
+  node: applicationSettings,
+  apply: applyApplicationSettings,
+  destroy: destroyApplicationSettings,
+} = useApplicationSettings(ws);
 
 register_node_types(baklava.editor);
 register_interface_types(baklava);
+
+baklava.commandHandler.registerCommand(OPEN_SETTINGS_COMMAND, {
+  execute: () => {
+    settingsOpen.value = true;
+  },
+  canExecute: () => connected.value,
+});
 
 // Remove toolbar items that are not meaningful in a server-driven graph.
 const _excludedToolbarCommands = new Set([
@@ -68,6 +90,11 @@ const _excludedToolbarCommands = new Set([
 baklava.settings.toolbar.commands = baklava.settings.toolbar.commands.filter(
   (c) => !_excludedToolbarCommands.has(c.command),
 );
+baklava.settings.toolbar.commands.push({
+  command: OPEN_SETTINGS_COMMAND,
+  title: "Global Settings",
+  icon: markRaw(SettingsIcon),
+});
 
 const {
   handle_server_add_node,
@@ -78,8 +105,6 @@ const {
   handle_server_init_node_status,
   destroy: destroySync,
 } = useServerSync(baklava, ws);
-
-const connected = ref(false);
 
 // ---------------------------------------------------------------------------
 // WebSocket subscriptions
@@ -109,7 +134,10 @@ ws.subscribe<command_remove_node_s>(topic_e.remove_node, (msg, is_origin) => {
 // --- update_node ---
 ws.subscribe<command_update_node_s>(topic_e.update_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
-  if (msg.id === SETTINGS_NODE_ID) return;
+  if (msg.id === SETTINGS_NODE_ID) {
+    applyApplicationSettings(msg.options);
+    return;
+  }
   if (is_origin) return;
   handle_server_update_node(msg.id, msg.options);
 });
@@ -164,7 +192,10 @@ ws.on("on_connected", () => {
     }
 
     for (const node of config.nodes) {
-      if (node.id === SETTINGS_NODE_ID) continue;
+      if (node.id === SETTINGS_NODE_ID) {
+        applyApplicationSettings(node.options);
+        continue;
+      }
       handle_server_add_node(node.type, node.id);
       handle_server_update_node(node.id, node.options);
     }
@@ -186,6 +217,7 @@ ws.on("on_connected", () => {
 // --- on_disconnected: clear graph and status ---
 ws.on("on_disconnected", () => {
   connected.value = false;
+  settingsOpen.value = false;
   for (const node of [...baklava.editor.graph.nodes]) {
     handle_server_remove_node(node.id);
   }
@@ -197,6 +229,7 @@ ws.on("on_disconnected", () => {
 // ---------------------------------------------------------------------------
 
 onUnmounted(() => {
+  destroyApplicationSettings();
   destroySync();
   ws.destroy();
 });

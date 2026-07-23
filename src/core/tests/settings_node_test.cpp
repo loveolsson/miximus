@@ -1,3 +1,4 @@
+#include "core/app_state.hpp"
 #include "nodes/node.hpp"
 #include "nodes/system/register.hpp"
 #include "types/error.hpp"
@@ -60,12 +61,36 @@ TEST(FrameRate, CanonicalizesEquivalentRatesAndRejectsInexactRates)
     EXPECT_FALSE(get_frame_duration({.numerator = 59, .denominator = 1}).has_value());
 }
 
-TEST(SettingsNode, ProvidesTheDefaultFrameRate)
+TEST(SettingsNode, ProvidesTheDefaultSettings)
 {
+    using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
+
     const auto settings = create_settings_node();
     const auto defaults = settings->get_default_options();
     ASSERT_TRUE(defaults.contains("frame_rate"));
     EXPECT_EQ(defaults.at("frame_rate").get<frame_rate_s>(), DEFAULT_FRAME_RATE);
+    EXPECT_EQ(defaults.at("decklink_output_preroll_frames").get<int>(),
+              decklink_output_settings_s::DEFAULT_PREROLL_FRAMES);
+    EXPECT_EQ(defaults.at("decklink_output_buffer_frames").get<int>(),
+              decklink_output_settings_s::DEFAULT_BUFFER_FRAMES);
+}
+
+TEST(SettingsNode, CorrectsDeckLinkOutputBufferSettings)
+{
+    using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
+
+    const auto           settings = create_settings_node();
+    auto                 state    = settings->get_default_options();
+    const nlohmann::json update{
+        {"decklink_output_preroll_frames", 0  },
+        {"decklink_output_buffer_frames",  100},
+    };
+    const auto result = settings->set_options(state, update);
+
+    EXPECT_EQ(result.error, error_e::no_error);
+    EXPECT_TRUE(result.has_corrected_values);
+    EXPECT_EQ(state.at("decklink_output_preroll_frames").get<int>(), decklink_output_settings_s::MIN_BUFFER_FRAMES);
+    EXPECT_EQ(state.at("decklink_output_buffer_frames").get<int>(), decklink_output_settings_s::MAX_BUFFER_FRAMES);
 }
 
 TEST(SettingsNode, ReportsAndStoresCanonicalCorrections)

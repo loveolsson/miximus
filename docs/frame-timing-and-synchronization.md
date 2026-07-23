@@ -690,12 +690,15 @@ Exit criteria:
 
 ### Stage 5: DeckLink scheduled output
 
-**Status:** PTS-aware cadence selection implemented; hardware verification and configurable watermarks remain
+**Status:** PTS-aware cadence selection and configurable buffering implemented; hardware stress verification remains
 
 Each completed GPU download now retains its program epoch and PTS until the DeckLink completion callback consumes it.
 The callback selects against an exact DeckLink-duration cursor, explicitly repeats the retained frame when the program
 cadence is slower, and drops superseded frames when it is faster. The existing four-frame SDK preroll remains the
-provisional fixed output buffer; making that watermark configurable follows hardware validation of the selection model.
+default, while separate global one-to-eight-frame DeckLink-output settings control startup preroll and the steady
+scheduled-frame target for every output of that type. Changing either setting deliberately follows the existing
+asynchronous stop/restart path and recreates the affected bounded download streams; preserving output continuity across
+a buffer-size change is not a requirement.
 
 Deliverables:
 
