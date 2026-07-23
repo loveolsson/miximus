@@ -197,11 +197,27 @@ SDK 16 buffer access uses `IDeckLinkVideoBuffer`: query it, call `StartAccess`, 
 
 ## NDI
 
-The NDI registry runs a discovery thread, owns copied source names, protects them with a shared mutex, and increments `source_list_version_` after changes.
+The NDI registry runs a discovery thread, owns copied source names, protects them with a shared mutex, and increments
+`source_list_version_` after changes. A separate serialized control executor creates and destroys receivers, senders,
+and their workers outside the render thread. Application shutdown drains that executor before the shared transfer
+services and process-wide NDI runtime are destroyed.
 
-NDI input owns a dedicated capture thread. Each render tick coalesces a FrameSync sampling request; that worker performs the immediate FrameSync capture and copies into an upload lease. The render thread only signals, polls completed textures, and performs color conversion, preserving FrameSync time-base correction without a render-thread memory copy.
+NDI input owns a dedicated capture thread which continuously drains `NDIlib_recv_capture_v3()`. It copies each decoded
+frame into a bounded unsubmitted upload lease, immediately frees the SDK frame, and pushes source timestamp, sequence,
+duration, arrival observation, and NDI timing metadata through the same `media::timed_source_queue_s<T>` used by
+DeckLink. The queue's shared source-clock estimator maps the arbitrary sender timestamp origin onto program time.
+All-node preparation advances that queue. Active graph submission starts the exact selected upload, and execution waits
+for and consumes that same version before color conversion. Superseded, overflowed, or inactive frames release their
+host leases without starting GPU work. The SDK's frame-sync layer is intentionally not placed in front of this common
+timing path.
 
-NDI output renders into a storage-identical RGBA download target. Its worker polls completed CPU-frame leases, performs potentially blocking asynchronous sends, and retains each lease until the following NDI async-send call releases the SDK's use of that memory.
+NDI output renders program-PTS-tagged frames into a bounded RGBA download stream. Its worker consumes completed leases
+in FIFO order, prerolls to the globally configured NDI-output buffer depth, and advances an explicit steady-clock send
+cursor at the program rate. It deliberately drops superseded program frames, repeats the retained frame across missing
+intervals, skips obsolete output intervals rather than bursting to catch up, and derives NDI timecode from the output
+cursor. `clock_video` remains disabled. Potentially blocking asynchronous sends stay on the worker, and each download
+lease is retained until the following NDI async-send call releases the SDK's use of that memory. Enabled NDI outputs
+remain demanding graph sinks regardless of receiver count.
 
 ## Font registry and CPU surfaces
 

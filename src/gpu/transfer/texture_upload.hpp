@@ -88,6 +88,11 @@ class texture_upload_stream_s
     // be returned in a different order from their transfer-slot acquisition.
     texture_s* consume_exact(uint64_t version);
 
+    // Retires an exact submitted upload which the render traversal no longer
+    // needs. A queued transfer is reclaimed when its worker task completes;
+    // an already-ready transfer is reclaimed immediately.
+    void discard_exact(uint64_t version);
+
     // Waits for one exact submitted version. This does not make a different
     // completed texture current; call the appropriate consume function after
     // success.

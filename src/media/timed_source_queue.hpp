@@ -143,6 +143,7 @@ struct timed_source_queue_config_s
 {
     size_t                capacity{8};
     utils::flicks         playout_delay{};
+    size_t                playout_delay_frames{};
     utils::flicks         early_tolerance{};
     source_clock_config_s clock{};
 };
@@ -230,6 +231,9 @@ class timed_source_queue_s
     {
         if (config_.capacity == 0) {
             throw std::invalid_argument("timed source queue capacity must be positive");
+        }
+        if (!std::in_range<utils::flicks::rep>(config_.playout_delay_frames)) {
+            throw std::invalid_argument("timed source queue frame delay is too large");
         }
     }
 
@@ -321,9 +325,10 @@ class timed_source_queue_s
                 continue;
             }
 
+            const auto frame_delay = frame->id.duration * static_cast<utils::flicks::rep>(config_.playout_delay_frames);
             aligned_frame_s aligned{
                 .frame       = std::move(frame),
-                .program_pts = *mapped + config_.playout_delay,
+                .program_pts = *mapped + config_.playout_delay + frame_delay,
             };
             const auto insertion =
                 std::ranges::upper_bound(frames_, aligned.program_pts, {}, &aligned_frame_s::program_pts);

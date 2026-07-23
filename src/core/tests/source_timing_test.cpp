@@ -175,6 +175,31 @@ TEST(TimedSourceQueue, SelectsNewestEligibleFrameAndThenRepeatsIt)
     EXPECT_EQ(metrics.repeated, 1);
 }
 
+TEST(TimedSourceQueue, AppliesPlayoutDelayInSourceFrameIntervals)
+{
+    media::timed_source_queue_s<int> queue({.playout_delay_frames = 1});
+    constexpr auto                   TARGET_TIME   = utils::to_flicks(100.0);
+    constexpr auto                   SOURCE_ORIGIN = utils::to_flicks(40.0);
+
+    const auto first = queue.create_frame(make_frame_id(1, SOURCE_ORIGIN), TARGET_TIME, 10);
+    queue.push(first);
+    queue.advance({}, TARGET_TIME);
+    EXPECT_EQ(queue.select({}).selection(), media::prepared_frame_selection_e::missing);
+
+    const auto second =
+        queue.create_frame(make_frame_id(2, SOURCE_ORIGIN + FRAME_DURATION), TARGET_TIME + FRAME_DURATION, 20);
+    queue.push(second);
+    queue.advance(FRAME_DURATION, TARGET_TIME + FRAME_DURATION);
+
+    const auto ticket = queue.select(FRAME_DURATION);
+    ASSERT_EQ(ticket.selection(), media::prepared_frame_selection_e::new_frame);
+    ASSERT_EQ(ticket.frame(), first);
+    ASSERT_TRUE(first->mark_submitted());
+    ASSERT_TRUE(first->mark_ready());
+    ASSERT_TRUE(ticket.await());
+    EXPECT_TRUE(queue.commit(ticket));
+}
+
 TEST(TimedSourceQueue, AwaitUsesTheExactSelectedFrameInsteadOfThePreviousFrame)
 {
     using namespace std::chrono_literals;

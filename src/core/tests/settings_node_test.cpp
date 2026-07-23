@@ -64,6 +64,7 @@ TEST(FrameRate, CanonicalizesEquivalentRatesAndRejectsInexactRates)
 TEST(SettingsNode, ProvidesTheDefaultSettings)
 {
     using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
+    using ndi_output_settings_s      = core::app_state_s::frame_settings_s::ndi_output_settings_s;
 
     const auto settings = create_settings_node();
     const auto defaults = settings->get_default_options();
@@ -73,6 +74,7 @@ TEST(SettingsNode, ProvidesTheDefaultSettings)
               decklink_output_settings_s::DEFAULT_PREROLL_FRAMES);
     EXPECT_EQ(defaults.at("decklink_output_buffer_frames").get<int>(),
               decklink_output_settings_s::DEFAULT_BUFFER_FRAMES);
+    EXPECT_EQ(defaults.at("ndi_output_buffer_frames").get<int>(), ndi_output_settings_s::DEFAULT_BUFFER_FRAMES);
 }
 
 TEST(SettingsNode, CorrectsDeckLinkOutputBufferSettings)
@@ -91,6 +93,22 @@ TEST(SettingsNode, CorrectsDeckLinkOutputBufferSettings)
     EXPECT_TRUE(result.has_corrected_values);
     EXPECT_EQ(state.at("decklink_output_preroll_frames").get<int>(), decklink_output_settings_s::MIN_BUFFER_FRAMES);
     EXPECT_EQ(state.at("decklink_output_buffer_frames").get<int>(), decklink_output_settings_s::MAX_BUFFER_FRAMES);
+}
+
+TEST(SettingsNode, CorrectsNdiOutputBufferSettings)
+{
+    using ndi_output_settings_s = core::app_state_s::frame_settings_s::ndi_output_settings_s;
+
+    const auto           settings = create_settings_node();
+    auto                 state    = settings->get_default_options();
+    const nlohmann::json update{
+        {"ndi_output_buffer_frames", 100}
+    };
+    const auto result = settings->set_options(state, update);
+
+    EXPECT_EQ(result.error, error_e::no_error);
+    EXPECT_TRUE(result.has_corrected_values);
+    EXPECT_EQ(state.at("ndi_output_buffer_frames").get<int>(), ndi_output_settings_s::MAX_BUFFER_FRAMES);
 }
 
 TEST(SettingsNode, ReportsAndStoresCanonicalCorrections)

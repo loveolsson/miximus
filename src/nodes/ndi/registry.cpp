@@ -1,6 +1,7 @@
 #include "registry.hpp"
 
 #include "logger/logger.hpp"
+#include "utils/serial_executor.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
 
 #include <shared_mutex>
@@ -9,6 +10,7 @@
 namespace miximus::nodes::ndi {
 
 ndi_registry_s::ndi_registry_s()
+    : control_executor_(std::make_unique<utils::serial_executor_s>())
 {
     if (!NDIlib_initialize()) {
         getlog("ndi")->error("NDIlib_initialize() failed — CPU may not support NDI");
@@ -42,6 +44,10 @@ ndi_registry_s::~ndi_registry_s()
     if (finder_ != nullptr) {
         NDIlib_find_destroy(static_cast<NDIlib_find_instance_t>(finder_));
     }
+
+    // Receiver and sender control tasks must finish before the process-wide
+    // NDI runtime is destroyed.
+    control_executor_.reset();
 
     if (initialized_) {
         NDIlib_destroy();

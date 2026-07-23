@@ -231,8 +231,8 @@ There is exactly one authoritative program clock. Normal inputs adapt to it inde
 selected as the master, its callback must publish clock observations to the scheduler through a bounded/thread-safe
 bridge; SDK callbacks must never invoke graph evaluation directly.
 
-NDI FrameSync is designed to adapt NDI inputs to the receiver's clock and should normally follow the program timeline,
-not become its hard clock source.
+NDI sender timestamps are observations in an independent source-clock domain. Raw NDI frames use the same adaptive
+source-to-program mapping and timed-source queue as DeckLink rather than making NDI's pull-call timing a second clock.
 
 Changing the program frame rate creates a new timeline epoch. This is an initial-setup operation, not a normal live
 control: it may flush input selection, restart output scheduling, repreroll devices, and cause a multi-second glitch.
@@ -314,11 +314,10 @@ texture. The ticket should carry the media identity and a readiness state such a
 - missing;
 - discontinued.
 
-Callback-driven devices such as DeckLink continuously accept frames into bounded host-visible reservations. All-node
-`prepare()` advances the source queue. The active submission traversal selects the exact frame assigned to the current
-program PTS, parks its ticket, and starts that frame's transfer. Pull-driven sources such as NDI FrameSync or a decoder
-likewise keep their production queues moving from `prepare()`, while submission starts the selected host/GPU transfer.
-Both paths retain the selected frame and its storage until frame retirement.
+Callback- and worker-driven sources such as DeckLink, raw NDI reception, and future decoders continuously accept frames
+into bounded host-visible reservations. All-node `prepare()` advances the shared timed-source queue. The active
+submission traversal selects the exact frame assigned to the current program PTS, parks its ticket, and starts that
+frame's transfer. Every path retains the selected frame and its storage until frame retirement.
 
 Execution awaits the exact ticket selected for this program PTS. Transfer lateness therefore makes the program frame
 late; it must never silently replace the selected frame with an older ready frame. Bounded output queues are responsible
@@ -396,17 +395,19 @@ values.
 
 ### NDI input
 
-Keep NDI FrameSync. Its documented purpose includes adapting independent sender clocks for video and audio mixing.
+Continuously drain `NDIlib_recv_capture_v3()` on the capture worker. Each raw decoded video frame retains the SDK
+timestamp, sender timecode, nominal frame rate, source sequence/epoch, and local arrival observation. The SDK timestamp
+has an arbitrary sender-clock origin; normalize it to a safe relative value and feed it through the same templated
+`timed_source_queue_s<T>` and embedded `source_clock_estimator_s` used by DeckLink. When the SDK timestamp is
+unavailable, synthesize a source-local PTS from the nominal frame duration and sequence while retaining a distinct
+epoch across timing/format discontinuities.
 
-Every NDI input should keep its coalesced sampling/request stream active from all-node preparation. The capture worker
-calls `NDIlib_framesync_capture_video()`, copies into an unsubmitted upload lease, and tags the result with the
-associated source observation. Active submission selects the appropriate reservation, parks its ticket, and starts its
-upload rather than being responsible for keeping the receiver warm.
-The returned NDI timecode, receive timestamp, format, and frame rate should be retained for diagnostics and
-discontinuity detection even though FrameSync performs the primary time-base correction.
-
-Calling FrameSync from a worker is appropriate because host memory copying should stay off the render thread. The
-request queue must be bounded and obsolete requests must be dropped deliberately.
+The capture worker copies into bounded unsubmitted upload leases and immediately frees the SDK frame. All-node
+preparation advances the common timed-source queue whether or not the input is in the active graph closure. Active
+submission selects and starts the exact upload assigned to program PTS; execution awaits and consumes that same upload.
+Frames which are superseded or overflow the bounded queue are released without starting GPU work. Receiver queue depth
+and SDK-reported drops remain visible as diagnostics. Do not place the SDK's frame-sync layer in front of the common
+source-clock mapping, because its call-time-driven correction would become an opaque second input timing policy.
 
 ### FFmpeg input
 
@@ -565,8 +566,8 @@ sample ranges rather than single video instants, and an audio device may eventua
 Program PTS, epochs, clock recovery, output preroll, and transaction boundaries must therefore remain meaningful at
 audio sample precision.
 
-NDI FrameSync can dynamically resample received audio to the local clock. Other audio inputs will need equivalent
-sample-rate conversion and bounded buffering rather than video-style discrete repeat/drop alone.
+Raw timestamped NDI audio should eventually use the same program-aligned audio buffering and global resampling policy
+as DeckLink and other inputs. Do not rely on an NDI-only resampling path that would make input types behave differently.
 
 ## Migration stages
 
@@ -746,12 +747,20 @@ Exit criteria:
 
 ### Stage 7: NDI input and output
 
-**Status:** Pending
+**Status:** In progress; raw timed input and buffered output cadence implemented
+
+NDI input now drains raw SDK frames continuously, converts sender timestamps into relative source PTS, and passes them
+through the same templated clock estimator/timed-source queue used by DeckLink. It starts only the exact active-closure
+upload from submission, and execution awaits and consumes that upload. NDI output uses a bounded FIFO download stream
+and a worker-owned cadence cursor with configurable global preroll, explicit repeat/drop behavior, program-derived
+timecode, and correct asynchronous-send lease retention. Receiver and sender lifecycle runs through a serialized NDI
+control executor. Rate-mismatch and network-delay stress validation remain before this stage is complete.
 
 Deliverables:
 
-- Keep every NDI input's FrameSync sampling and upload stream hot from all-node preparation.
-- Tag results with requested program identity and retain NDI timing observations for diagnostics/discontinuities.
+- Keep every raw NDI receiver and bounded host queue hot independently of graph selection.
+- Feed source timestamps and arrival observations through the common timed-source queue; retain NDI timing metadata for
+  diagnostics and discontinuity handling.
 - Make NDI output consume program-PTS results at its configured cadence, explicitly repeat missing frames, and derive
   timecode from the program timeline.
 - Keep enabled NDI outputs as demanding sinks even when no receiver is connected, so connecting a receiver cannot
@@ -760,7 +769,8 @@ Deliverables:
 Exit criteria:
 
 - Rate mismatch and injected network/capture delay keep bounded queues and predictable repeat/drop behavior.
-- No NDI capture, copy, send, or transfer wait blocks the render thread.
+- NDI capture, CPU copy, sender calls, and lifecycle work stay off the render thread; execution may wait only for the
+  exact upload selected during submission.
 - Receiver connect/disconnect does not change graph demand or input readiness.
 
 ### Stage 8: screen output

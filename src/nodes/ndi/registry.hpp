@@ -1,5 +1,6 @@
 #pragma once
 #include "types/settings_option.hpp"
+#include "utils/serial_executor_fwd.hpp"
 
 #include <atomic>
 #include <memory>
@@ -22,6 +23,8 @@ class ndi_registry_s
     std::atomic<bool> running_{false};
     std::thread       discovery_thread_;
 
+    std::unique_ptr<utils::serial_executor_s> control_executor_;
+
     void discovery_loop();
 
   public:
@@ -36,6 +39,8 @@ class ndi_registry_s
     uint64_t get_source_list_version() const { return source_list_version_.load(std::memory_order_relaxed); }
 
     std::vector<settings_option_s> get_source_options() const;
+
+    utils::serial_executor_s* control_executor() { return control_executor_.get(); }
 
     static std::unique_ptr<ndi_registry_s> create_ndi_registry();
 };

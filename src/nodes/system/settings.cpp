@@ -19,6 +19,7 @@ using namespace miximus::nodes;
 using nlohmann::json;
 
 using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
+using ndi_output_settings_s      = core::app_state_s::frame_settings_s::ndi_output_settings_s;
 
 std::optional<uint32_t> read_positive_uint32(const json& value)
 {
@@ -85,6 +86,7 @@ class node_impl final : public node_i
             {"frame_rate",                     DEFAULT_FRAME_RATE                                },
             {"decklink_output_preroll_frames", decklink_output_settings_s::DEFAULT_PREROLL_FRAMES},
             {"decklink_output_buffer_frames",  decklink_output_settings_s::DEFAULT_BUFFER_FRAMES },
+            {"ndi_output_buffer_frames",       ndi_output_settings_s::DEFAULT_BUFFER_FRAMES      },
         };
     }
 
@@ -96,6 +98,10 @@ class node_impl final : public node_i
         if (name == "decklink_output_preroll_frames" || name == "decklink_output_buffer_frames") {
             return normalize_option_value<int>(
                 value, decklink_output_settings_s::MIN_BUFFER_FRAMES, decklink_output_settings_s::MAX_BUFFER_FRAMES);
+        }
+        if (name == "ndi_output_buffer_frames") {
+            return normalize_option_value<int>(
+                value, ndi_output_settings_s::MIN_BUFFER_FRAMES, ndi_output_settings_s::MAX_BUFFER_FRAMES);
         }
         return option_result_e::invalid;
     }

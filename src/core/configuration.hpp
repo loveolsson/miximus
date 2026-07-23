@@ -5,6 +5,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <string_view>
 
 namespace miximus::core {
 
@@ -25,9 +27,11 @@ class configuration_s
     void load(nlohmann::json config);
     void load_file(const std::filesystem::path& path);
 
-    nlohmann::json get_config() const;
-    nlohmann::json get_snapshot() const;
-    void           save_file(const std::filesystem::path& path) const;
+    nlohmann::json                get_config() const;
+    nlohmann::json                get_snapshot() const;
+    std::optional<nlohmann::json> get_node(std::string_view id) const;
+    std::optional<nlohmann::json> get_node_status(std::string_view id) const;
+    void                          save_file(const std::filesystem::path& path) const;
 };
 
 } // namespace miximus::core

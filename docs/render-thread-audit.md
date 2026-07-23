@@ -56,10 +56,10 @@ atomically published ready/error state. GL transfer resources must still be crea
 
 #### NDI receiver/sender lifecycle
 
-NDI receiver and sender creation/destruction, plus worker joins, currently occur from `prepare()` when options change.
-Frame capture uses the frame-sync API without a wait timeout and sending is already delegated, but SDK lifecycle calls
-can still stall. A dedicated owner thread should process desired source/name changes and publish ready handles. Care is
-required because the render thread currently consumes those handles directly.
+NDI receiver and sender creation/destruction, plus worker joins, now run through the registry's serialized control
+executor. Raw receive and CPU copying run on the input worker; paced asynchronous sends run on the output worker. Node
+option changes only schedule lifecycle work and observe published phases from `prepare()`. Application shutdown drains
+the control executor before transfer services and the process-wide NDI runtime.
 
 ### Medium-priority follow-up
 

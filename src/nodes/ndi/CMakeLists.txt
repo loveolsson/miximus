@@ -5,6 +5,10 @@ PRIVATE
     registry.cpp
     register.hpp
     register.cpp
+    detail/input_capture.hpp
+    detail/input_capture.cpp
+    detail/output_sender.hpp
+    detail/output_sender.cpp
     input.cpp
     output.cpp
 )

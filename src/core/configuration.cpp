@@ -72,6 +72,18 @@ void require_no_error(error_e error, std::string_view operation, std::string_vie
     }
 }
 
+json serialize_node(std::string_view                         id,
+                    const miximus::nodes::node_record_s&     record,
+                    const miximus::nodes::node_definition_s& definition)
+{
+    return {
+        {"id",             id                         },
+        {"type",           record.node->type()        },
+        {"schema_version", definition.schema_version()},
+        {"options",        record.state.options       },
+    };
+}
+
 node_load_info_map_t migrate_nodes(json& nodes, const miximus::nodes::node_definition_map_t& definitions)
 {
     node_load_info_map_t node_info;
@@ -239,12 +251,7 @@ json configuration_s::serialize(bool include_status) const
             throw std::logic_error(std::format("Node type {} is not registered", record.node->type()));
         }
 
-        nodes.emplace_back(json{
-            {"id",             id                                 },
-            {"type",           record.node->type()                },
-            {"schema_version", definition->second.schema_version()},
-            {"options",        record.state.options               },
-        });
+        nodes.emplace_back(serialize_node(id, record, definition->second));
     }
 
     for (const auto& connection : node_manager_.connections_) {
@@ -268,6 +275,33 @@ json configuration_s::serialize(bool include_status) const
 json configuration_s::get_config() const { return serialize(false); }
 
 json configuration_s::get_snapshot() const { return serialize(true); }
+
+std::optional<json> configuration_s::get_node(std::string_view id) const
+{
+    const std::unique_lock lock(node_manager_.nodes_mutex_);
+
+    const auto record = node_manager_.nodes_.find(id);
+    if (record == node_manager_.nodes_.end()) {
+        return std::nullopt;
+    }
+
+    const auto definition = node_manager_.node_definitions_.find(record->second.node->type());
+    if (definition == node_manager_.node_definitions_.end()) {
+        throw std::logic_error(std::format("Node type {} is not registered", record->second.node->type()));
+    }
+
+    return serialize_node(record->first, record->second, definition->second);
+}
+
+std::optional<json> configuration_s::get_node_status(std::string_view id) const
+{
+    const std::unique_lock lock(node_manager_.nodes_mutex_);
+    if (!node_manager_.nodes_.contains(id)) {
+        return std::nullopt;
+    }
+
+    return node_manager_.status_registry_ != nullptr ? node_manager_.status_registry_->get(id) : json::object();
+}
 
 void configuration_s::save_file(const std::filesystem::path& path) const
 {

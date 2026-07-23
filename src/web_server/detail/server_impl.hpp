@@ -35,6 +35,8 @@ class web_server_impl : public server_s
     static void serve_static_file(const server_t::connection_ptr& con, std::string_view path);
     void handle_api_request(const server_t::connection_ptr& con, const std::string& method, std::string_view api_path);
     void handle_api_v1_get_config(const server_t::connection_ptr& con) const;
+    void handle_api_v1_get_node(const server_t::connection_ptr& con, std::string_view encoded_id) const;
+    void handle_api_v1_get_node_status(const server_t::connection_ptr& con, std::string_view encoded_id) const;
     void handle_api_v1_post_control(const server_t::connection_ptr& con);
     error_e handle_user_command(nlohmann::json&& doc, int64_t connection_id);
     void    on_message(const con_hdl_t& hdl, const msg_ptr_t& msg);

@@ -615,6 +615,20 @@ class callback_s
         return &info;
     }
 
+    void release_frame(frame_ticket_t& ticket)
+    {
+        if (ticket.selection() != media::prepared_frame_selection_e::new_frame || ticket.frame() == nullptr ||
+            ticket.frame()->readiness() != media::source_frame_readiness_e::submitted) {
+            return;
+        }
+
+        auto& info = ticket.frame()->value();
+        if (info.stream) {
+            info.stream->discard_exact(info.upload_version);
+        }
+        frame_queue_.fail(ticket);
+    }
+
     void reset_frames() { frame_queue_.reset(); }
 
     void start_async()
@@ -762,11 +776,17 @@ std::optional<captured_input_frame_s> input_capture_s::resolve_frame()
     };
 }
 
-void input_capture_s::release_prepared_frame() { impl_->prepared_frame.reset(); }
+void input_capture_s::release_prepared_frame()
+{
+    if (impl_->callback && impl_->prepared_frame.has_value()) {
+        impl_->callback->release_frame(*impl_->prepared_frame);
+    }
+    impl_->prepared_frame.reset();
+}
 
 void input_capture_s::reset_frames()
 {
-    impl_->prepared_frame.reset();
+    release_prepared_frame();
     if (impl_->callback) {
         impl_->callback->reset_frames();
     }

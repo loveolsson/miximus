@@ -6,15 +6,20 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string_view>
 
 namespace miximus::web_server {
 
-typedef std::function<void(nlohmann::json&&, int64_t)> callback_t;
-typedef std::function<nlohmann::json()>                json_getter_t;
+typedef std::function<void(nlohmann::json&&, int64_t)>                 callback_t;
+typedef std::function<nlohmann::json()>                                json_getter_t;
+typedef std::function<std::optional<nlohmann::json>(std::string_view)> keyed_json_getter_t;
 
 struct config_getters_t
 {
-    json_getter_t node_config;
+    json_getter_t       node_config;
+    keyed_json_getter_t node;
+    keyed_json_getter_t node_status;
 };
 
 class server_s

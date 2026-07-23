@@ -71,6 +71,7 @@ app_state_s::~app_state_s()
     // streams after a node was removed. Drain it before destroying the shared
     // transfer services it uses.
     decklink_registry_.reset();
+    ndi_registry_.reset();
 
     // DVP is tied to the root GL context and must be closed before that context
     // is destroyed. Nodes and their transfers are destroyed before app_state.

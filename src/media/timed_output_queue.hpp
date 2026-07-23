@@ -149,6 +149,7 @@ class timed_output_queue_s
     }
 
     const timed_output_queue_metrics_s& metrics() const { return metrics_; }
+    size_t                              queued() const { return frames_.size(); }
 };
 
 } // namespace miximus::media

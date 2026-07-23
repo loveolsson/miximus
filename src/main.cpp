@@ -130,6 +130,8 @@ int main(int argc, char* argv[])
             // Set up web server config getters
             web_server->set_config_getters({
                 .node_config = std::bind_front(&core::configuration_s::get_snapshot, &configuration),
+                .node        = std::bind_front(&core::configuration_s::get_node, &configuration),
+                .node_status = std::bind_front(&core::configuration_s::get_node_status, &configuration),
             });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
