@@ -239,6 +239,18 @@ The web build runs Vue TypeScript checking and a Vite production build.
 
 For changes involving nodes or the protocol, inspect both native and TypeScript definitions. For DeckLink, NDI, CUDA, DVP, font discovery, or display timing, perform runtime validation on suitable hardware; compilation alone cannot validate behavior.
 
+The DeckLink loopback mode-change test owns the Miximus process, waits for the HTTP API, applies each requested mode,
+waits for both output playback and input capture to restart, restores the original mode, and shuts the process down:
+
+```bash
+scripts/test_decklink_mode_changes.sh DECKLINK_OUTPUT_NODE_ID 720p60 1080p50 1080p30
+```
+
+It runs against a private copy of `build/settings.json` and leaves the developer settings unchanged. Timestamped test
+actions and Miximus logs are interleaved on the terminal and retained together under `build/integration-tests/`.
+`BUILD_DIR`, `SETTINGS`, `MIXIMUS_API_URL`, `TRANSITION_TIMEOUT_SECONDS`, and `STARTUP_SETTLE_SECONDS` can override its
+defaults. `MODE_DWELL_SECONDS` controls how long playback is observed after each completed mode transition.
+
 ## Shutdown ordering
 
 Shutdown order is deliberate:

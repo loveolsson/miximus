@@ -410,7 +410,8 @@ class callback_s
         }
 
         ++frames_received_;
-        if ((videoFrame->GetFlags() & bmdFrameHasNoInputSource) != 0) {
+        const bool has_no_input_source = (videoFrame->GetFlags() & bmdFrameHasNoInputSource) != 0;
+        if (has_no_input_source) {
             ++no_input_source_frames_;
         }
 
@@ -433,6 +434,10 @@ class callback_s
 
         if (frame_duration <= 0) {
             ++upload_slot_drops_;
+            return S_OK;
+        }
+
+        if (has_no_input_source) {
             return S_OK;
         }
 
