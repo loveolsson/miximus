@@ -721,8 +721,10 @@ Exit criteria:
 DeckLink capture now records one stream-time observation per callback, advances a bounded timed queue in `prepare()`,
 submits the selected upload without waiting, and awaits that exact upload during `execute()`. Conservative submission
 may start a transfer that is not executed in the same evaluation; the bounded queue retains ownership so a later
-selection can resolve it without copying. Independent-clock hysteresis and the remaining diagnostics below are still
-required before this stage is complete.
+selection can resolve it without copying. Timed selection never regresses to an older source sequence after adaptive
+clock corrections, and exact transfer consumption does not assume that DeckLink returns custom buffers in their
+transfer-slot acquisition order. Independent-clock hysteresis and the remaining diagnostics below are still required
+before this stage is complete.
 
 Deliverables:
 

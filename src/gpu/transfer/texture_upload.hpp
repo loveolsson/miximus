@@ -57,10 +57,8 @@ class texture_upload_lease_s
 
     std::span<std::byte> bytes() const;
     uint64_t             version() const;
-    // Leases from one stream must be submitted in acquisition order. A lease
-    // may be returned without submission; skipped versions are permitted.
-    bool     submit();
-    explicit operator bool() const { return slot_ != nullptr; }
+    bool                 submit();
+    explicit             operator bool() const { return slot_ != nullptr; }
 };
 
 class texture_upload_stream_s
@@ -85,9 +83,14 @@ class texture_upload_stream_s
     // can retain their current texture while a newer upload remains incomplete.
     texture_s* consume_latest();
     texture_s* consume_through(uint64_t version);
+    // Makes one exact completed upload current and discards other completed
+    // uploads. This is intended for PTS-selected sources whose host buffers may
+    // be returned in a different order from their transfer-slot acquisition.
+    texture_s* consume_exact(uint64_t version);
 
     // Waits for one exact submitted version. This does not make a different
-    // completed texture current; call consume_through(version) after success.
+    // completed texture current; call the appropriate consume function after
+    // success.
     texture_upload_wait_result_e wait_until_ready(uint64_t version) const;
     uint64_t                     latest_ready_version() const;
     uint64_t                     current_version() const;

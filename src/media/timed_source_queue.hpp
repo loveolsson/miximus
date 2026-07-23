@@ -336,19 +336,32 @@ class timed_source_queue_s
         const auto limit    = program_pts + config_.early_tolerance;
         auto       selected = frames_.end();
         for (auto it = frames_.begin(); it != frames_.end() && it->program_pts <= limit; ++it) {
-            selected = it;
+            if (selected == frames_.end() || it->frame->id.epoch > selected->frame->id.epoch ||
+                (it->frame->id.epoch == selected->frame->id.epoch &&
+                 it->frame->id.sequence > selected->frame->id.sequence)) {
+                selected = it;
+            }
         }
 
         const bool discontinuity = std::exchange(discontinuity_pending_, false);
         if (selected != frames_.end()) {
-            const auto dropped = static_cast<uint64_t>(std::distance(frames_.begin(), selected));
+            const auto selected_frame        = selected->frame;
+            const auto is_older_source_frame = [&selected_frame](const aligned_frame_s& candidate) {
+                return candidate.frame != selected_frame &&
+                       (candidate.frame->id.epoch < selected_frame->id.epoch ||
+                        (candidate.frame->id.epoch == selected_frame->id.epoch &&
+                         candidate.frame->id.sequence < selected_frame->id.sequence));
+            };
+            const auto dropped = static_cast<uint64_t>(std::ranges::count_if(frames_, is_older_source_frame));
             selection_drops_.fetch_add(dropped, std::memory_order_relaxed);
-            for (auto it = frames_.begin(); it != selected; ++it) {
-                cancel_frame(it->frame);
+            for (const auto& frame : frames_) {
+                if (is_older_source_frame(frame)) {
+                    cancel_frame(frame.frame);
+                }
             }
-            frames_.erase(frames_.begin(), selected);
+            std::erase_if(frames_, is_older_source_frame);
             release_queued_frames(static_cast<size_t>(dropped));
-            return ticket_t(selected->frame, prepared_frame_selection_e::new_frame, discontinuity);
+            return ticket_t(selected_frame, prepared_frame_selection_e::new_frame, discontinuity);
         }
 
         if (current_ != nullptr) {
@@ -375,9 +388,8 @@ class timed_source_queue_s
         if (match == frames_.end()) {
             return false;
         }
-        const auto erased = static_cast<size_t>(std::distance(frames_.begin(), std::next(match)));
-        frames_.erase(frames_.begin(), std::next(match));
-        release_queued_frames(erased);
+        frames_.erase(match);
+        release_queued_frames(1);
         current_ = ticket.frame_;
         return true;
     }

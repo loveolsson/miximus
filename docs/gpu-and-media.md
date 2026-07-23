@@ -89,7 +89,8 @@ An upload stream is a bounded, lazily allocated set of backend-owned writable sl
 permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes
 the texture. Legacy and non-timed producers may poll with `consume_latest()` or `consume_through()` and retain their
 previous texture while a newer upload is incomplete. A PTS-aware source instead calls `wait_until_ready()` for its
-exact prepared version during execution and only then makes that version current with `consume_through()`.
+exact prepared version during execution and only then makes that version current with `consume_exact()`. Exact
+consumption also reclaims other completed slots that the source's timing selection has made obsolete.
 
 Submitted leases also pin their writable memory until the producer releases the lease. This is important for SDK allocators such as DeckLink, which may retain a buffer after delivering its frame callback.
 
@@ -136,7 +137,8 @@ callback records the source PTS and frame metadata, detaches the write cycle's o
 custom buffer, and stores that lease in a bounded timed-source queue. The custom buffer can therefore return to the SDK
 allocator immediately, and the callback performs no GL work. During the active submission traversal, the render node
 selects the frame assigned to the current program PTS and submits that exact lease. Execution waits for and consumes
-that same upload version before converting its UYUV texture.
+that same upload version before converting its UYUV texture. DeckLink may finish buffers in a different order from
+their `StartAccess()` calls, so upload-slot versions are opaque identities rather than a media-ordering mechanism.
 
 DeckLink may retain and reuse allocator buffer objects across captured frames rather than requesting a new object for
 every frame. Each buffer therefore acquires a fresh one-shot upload lease from `StartAccess(bmdBufferAccessWrite)`.

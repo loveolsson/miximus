@@ -64,8 +64,6 @@ struct texture_upload_stream_state_s
     size_t                                              pending_allocations{};
     size_t                                              active_leases{};
     uint64_t                                            next_version{};
-    uint64_t                                            last_submitted_version{};
-    uint64_t                                            completed_version{};
     uint64_t                                            current_version{};
     std::chrono::steady_clock::time_point               retry_allocation_after;
     bool                                                allocation_failed{};
@@ -188,7 +186,6 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         }
 
         const std::scoped_lock lock(stream->mutex);
-        stream->completed_version = std::max(stream->completed_version, slot->version);
         if (!success || !stream->active) {
             slot->state = slot_state_e::reclaim;
             stream->completion_cv.notify_all();
@@ -353,13 +350,11 @@ bool texture_upload_lease_s::submit()
     }
     {
         const std::scoped_lock lock(stream_->mutex);
-        if (!stream_->active || slot_->state != detail::slot_state_e::cpu_writing ||
-            slot_->version <= stream_->last_submitted_version) {
+        if (!stream_->active || slot_->state != detail::slot_state_e::cpu_writing) {
             return false;
         }
-        stream_->last_submitted_version = slot_->version;
-        slot_->state                    = detail::slot_state_e::queued;
-        submitted_                      = true;
+        slot_->state = detail::slot_state_e::queued;
+        submitted_   = true;
     }
     service->enqueue({.type = detail::task_type_e::upload, .stream = stream_, .slot = slot_});
     return true;
@@ -484,24 +479,71 @@ texture_s* texture_upload_stream_s::consume_through(uint64_t version)
     return result;
 }
 
+texture_s* texture_upload_stream_s::consume_exact(uint64_t version)
+{
+    std::vector<std::shared_ptr<detail::texture_upload_slot_s>> reclaim;
+    texture_s*                                                  result = nullptr;
+    {
+        const std::scoped_lock lock(state_->mutex);
+        if (!state_->active) {
+            return nullptr;
+        }
+
+        const auto selected =
+            std::ranges::find_if(state_->ready_slots, [version](const auto& slot) { return slot->version == version; });
+        if (selected == state_->ready_slots.end()) {
+            return nullptr;
+        }
+
+        auto next = std::move(*selected);
+        state_->ready_slots.erase(selected);
+        for (auto& slot : state_->ready_slots) {
+            slot->state = detail::slot_state_e::reclaim;
+            reclaim.emplace_back(std::move(slot));
+        }
+        state_->ready_slots.clear();
+
+        if (state_->current_slot) {
+            state_->current_slot->state = detail::slot_state_e::reclaim;
+            reclaim.emplace_back(std::move(state_->current_slot));
+        }
+        next->state             = detail::slot_state_e::current;
+        state_->current_version = next->version;
+        state_->current_slot    = std::move(next);
+        result                  = state_->current_slot->texture.get();
+    }
+
+    if (auto service = state_->service.lock()) {
+        for (auto& slot : reclaim) {
+            service->enqueue({.type = detail::task_type_e::reclaim, .stream = state_, .slot = std::move(slot)});
+        }
+    }
+    return result;
+}
+
 texture_upload_wait_result_e texture_upload_stream_s::wait_until_ready(uint64_t version) const
 {
-    const auto is_ready = [this, version] {
-        if (state_->current_slot && state_->current_slot->version == version) {
-            return true;
-        }
-        return std::ranges::any_of(state_->ready_slots,
-                                   [version](const auto& slot) { return slot->version == version; });
+    const auto find_slot = [this, version] {
+        return std::ranges::find_if(state_->slots, [version](const auto& slot) { return slot->version == version; });
     };
 
     std::unique_lock lock(state_->mutex);
-    state_->completion_cv.wait(lock, [this, version, &is_ready] {
-        return !state_->active || is_ready() || state_->completed_version >= version;
+    state_->completion_cv.wait(lock, [this, &find_slot] {
+        if (!state_->active) {
+            return true;
+        }
+        const auto slot = find_slot();
+        return slot == state_->slots.end() || (*slot)->state != detail::slot_state_e::queued;
     });
-    if (is_ready()) {
+    if (!state_->active) {
+        return texture_upload_wait_result_e::stopped;
+    }
+    const auto slot = find_slot();
+    if (slot != state_->slots.end() &&
+        ((*slot)->state == detail::slot_state_e::ready || (*slot)->state == detail::slot_state_e::current)) {
         return texture_upload_wait_result_e::ready;
     }
-    return state_->active ? texture_upload_wait_result_e::failed : texture_upload_wait_result_e::stopped;
+    return texture_upload_wait_result_e::failed;
 }
 
 uint64_t texture_upload_stream_s::latest_ready_version() const

@@ -581,7 +581,7 @@ class callback_s
                 frame_queue_.fail(ticket);
                 return nullptr;
             }
-            info.texture = info.stream->consume_through(info.upload_version);
+            info.texture = info.stream->consume_exact(info.upload_version);
             if (info.texture == nullptr || info.stream->current_version() != info.upload_version ||
                 !frame.mark_ready()) {
                 if (!warned_consume_failure_) {

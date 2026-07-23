@@ -239,6 +239,39 @@ TEST(TimedSourceQueue, SubmittedFrameCanBeResolvedAfterAnUnexecutedTraversal)
     EXPECT_TRUE(queue.commit(later_ticket));
 }
 
+TEST(TimedSourceQueue, NeverSelectsAnOlderSourceFrameAfterClockCorrectionReordersMappedTimes)
+{
+    media::timed_source_queue_s<int> queue({
+        .clock =
+            {
+                    .phase_filter_divisor     = 1,
+                    .maximum_phase_adjustment = utils::to_flicks(1.0),
+                    .discontinuity_threshold  = utils::to_flicks(1.0),
+                    },
+    });
+    constexpr auto                   TARGET_TIME   = utils::to_flicks(100.0);
+    constexpr auto                   SOURCE_ORIGIN = utils::to_flicks(40.0);
+
+    const auto older = queue.create_frame(make_frame_id(1, SOURCE_ORIGIN), TARGET_TIME + utils::to_flicks(0.1), 10);
+    const auto newer = queue.create_frame(make_frame_id(2, SOURCE_ORIGIN + FRAME_DURATION), TARGET_TIME, 20);
+    queue.push(older);
+    queue.push(newer);
+    queue.advance({}, TARGET_TIME);
+
+    const auto selected = queue.select({});
+    ASSERT_EQ(selected.selection(), media::prepared_frame_selection_e::new_frame);
+    ASSERT_EQ(selected.frame(), newer);
+    ASSERT_TRUE(newer->mark_submitted());
+    ASSERT_TRUE(newer->mark_ready());
+    ASSERT_TRUE(queue.commit(selected));
+
+    const auto later = queue.select(utils::to_flicks(0.1));
+    EXPECT_EQ(later.selection(), media::prepared_frame_selection_e::repeat);
+    EXPECT_EQ(later.frame(), newer);
+    EXPECT_EQ(older->readiness(), media::source_frame_readiness_e::failed);
+    EXPECT_EQ(queue.metrics().selection_drops, 1);
+}
+
 TEST(TimedSourceQueue, ReportsFailureForTheExactSelectedFrame)
 {
     media::timed_source_queue_s<int> queue;
