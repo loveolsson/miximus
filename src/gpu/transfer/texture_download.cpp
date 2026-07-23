@@ -422,6 +422,22 @@ std::optional<texture_download_frame_s> texture_download_stream_s::try_consume_l
     return texture_download_frame_s(state_, std::move(selected));
 }
 
+std::optional<texture_download_frame_s> texture_download_stream_s::try_consume_oldest()
+{
+    std::shared_ptr<detail::texture_download_slot_s> selected;
+    {
+        const std::scoped_lock lock(state_->mutex);
+        if (!state_->active || state_->ready_slots.empty()) {
+            return std::nullopt;
+        }
+        selected = std::move(state_->ready_slots.front());
+        state_->ready_slots.pop_front();
+        selected->state = detail::slot_state_e::cpu_reading;
+        ++state_->active_frames;
+    }
+    return texture_download_frame_s(state_, std::move(selected));
+}
+
 bool texture_download_stream_s::allocation_failed() const
 {
     const std::scoped_lock lock(state_->mutex);

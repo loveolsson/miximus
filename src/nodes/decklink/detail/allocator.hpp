@@ -96,7 +96,9 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
 class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocator
 {
   public:
-    static constexpr size_t BUFFER_COUNT = 6;
+    // Four slots may be retained by timed selection. The remaining slots cover
+    // the published texture, asynchronous reclaim, and DeckLink's next DMA write.
+    static constexpr size_t BUFFER_COUNT = 8;
 
   private:
     struct buffer_slot_s

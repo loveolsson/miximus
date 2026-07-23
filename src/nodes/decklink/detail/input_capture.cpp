@@ -72,6 +72,7 @@ class callback_s
     std::atomic_uint64_t                  upload_slot_drops_;
     std::atomic_uint32_t                  available_video_frames_{0};
     std::chrono::steady_clock::time_point next_queue_poll_;
+    std::chrono::steady_clock::time_point next_upload_slot_warning_;
     BMDTimeValue                          last_stream_time_{};
     bool                                  has_stream_time_{};
     std::atomic_bool                      reset_stream_time_;
@@ -467,7 +468,11 @@ class callback_s
         auto upload = upload_buffer->take_upload();
         if (!upload.has_value()) {
             ++upload_slot_drops_;
-            log()->warn("VideoInputFrameArrived dropped frame: no upload slot");
+            if (now >= next_upload_slot_warning_) {
+                log()->warn("VideoInputFrameArrived dropped frame: no upload slot ({} total)",
+                            upload_slot_drops_.load());
+                next_upload_slot_warning_ = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            }
             return S_OK;
         }
         const auto version = upload->version();

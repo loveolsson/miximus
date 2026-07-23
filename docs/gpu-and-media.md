@@ -93,13 +93,19 @@ exact prepared version during execution and only then makes that version current
 
 Submitted leases also pin their writable memory until the producer releases the lease. This is important for SDK allocators such as DeckLink, which may retain a buffer after delivering its frame callback.
 
+Timed-source capacity applies across both callback-pending and render-aligned frames, not independently to each side
+of the handoff. This keeps retained transfer memory at the advertised bound even when the render thread is delayed.
+
 Use `acquire_for()` only on native SDK threads that are allowed to wait for lazy slot allocation. Render and fiber workers use `try_acquire()` and yield/drop work when no slot is available.
 
 ### Download streams
 
 A download stream owns bounded render-target/readback slots. The render thread calls `try_acquire()`, renders into the target framebuffer, and calls `submit()`. Submission only inserts and flushes a fence. The download worker waits for rendering and performs the DVP/CUDA/PBO/basic readback on its shared context.
 
-CPU consumers poll `try_consume_latest()`. Its frame lease exposes a read-only byte span and keeps host memory reserved until an NDI send or DeckLink copy has finished. If no render target is free, the node drops that output frame instead of waiting.
+CPU consumers normally poll `try_consume_latest()`. PTS-aware consumers use `try_consume_oldest()` to retain FIFO
+ordering and perform their own timed selection. A frame lease exposes a read-only byte span and keeps host memory
+reserved until the external SDK has finished using it. If no render target is free, the node drops that output frame
+instead of waiting.
 
 Both services enforce memory budgets and catch allocation failures. Slots are allocated only after a stream is first used, and stream destruction reclaims its resources on the owning GL worker. Per-stream slot limits bound latency and memory growth.
 
@@ -139,6 +145,9 @@ Keeping one lease for the full lifetime of a DeckLink buffer would upload only i
 slots after the initial pool. Completed GPU textures remain owned by the upload stream independently of the DeckLink
 buffer object.
 
+The input pool has eight slots: four may be retained by timed selection, while the remainder cover the published
+texture, asynchronous reclaim, and DeckLink's next DMA write without requiring the SDK callback to wait on rendering.
+
 The upload stream retains its current completed texture until the render thread consumes a newer completed version;
 publishing the replacement returns the former slot to the stream. The timing queue deliberately chooses whether a
 program frame uses a new capture, repeats its committed capture, or has no capture before submission. Once a new frame
@@ -162,7 +171,12 @@ and releases its callback reference. Control tasks retain the callback and devic
 all capture buffers are returned, and transfer-stream destruction has been queued on the GL upload worker. Application
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
-DeckLink output renders packed 10-bit YUV into a download target. The transfer worker completes readback, and the DeckLink scheduled-frame callback polls a CPU-frame lease and copies it into DeckLink-owned output memory. The callback neither makes a GL context current nor waits for a transfer.
+DeckLink output renders packed 10-bit YUV into a PTS-tagged download target. The transfer worker completes readback,
+and the scheduled-frame callback drains ready leases in FIFO order into a bounded timed-output queue. It selects the
+newest eligible program frame for each exact DeckLink interval, explicitly retaining frames for repeats and accounting
+for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
+frame keeps host memory reserved until DeckLink releases it. Four black frames currently provide fixed startup preroll.
+The callback neither makes a GL context current nor waits for a transfer.
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
 

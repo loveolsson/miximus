@@ -57,8 +57,8 @@ caches and potentially multiple graph evaluations for the same logical scene.
 The fixed loop-local timing arithmetic has been replaced by an anchor-based scheduler with an internal steady clock,
 explicit epochs, monotonic frame identities, coordinated PTS gaps, and a replaceable late-frame policy. The current
 provisional policy permits an evaluation up to one frame late and skips every older evaluation in one decision. Input
-selection and output buffering are not yet PTS-aware; those remain the important limitations addressed by later
-stages.
+selection is now PTS-aware for DeckLink capture, and DeckLink output performs deterministic PTS selection against its
+hardware cadence. The remaining source and output integrations are the important limitations addressed by later stages.
 
 The current graph frame performs these operations:
 
@@ -639,7 +639,7 @@ Exit criteria:
 
 ### Stage 3: all-node preparation and two active traversals
 
-**Status:** Implemented and hardware-verified
+**Status:** Complete
 
 Deliverables:
 
@@ -690,7 +690,12 @@ Exit criteria:
 
 ### Stage 5: DeckLink scheduled output
 
-**Status:** In progress
+**Status:** PTS-aware cadence selection implemented; hardware verification and configurable watermarks remain
+
+Each completed GPU download now retains its program epoch and PTS until the DeckLink completion callback consumes it.
+The callback selects against an exact DeckLink-duration cursor, explicitly repeats the retained frame when the program
+cadence is slower, and drops superseded frames when it is faster. The existing four-frame SDK preroll remains the
+provisional fixed output buffer; making that watermark configurable follows hardware validation of the selection model.
 
 Deliverables:
 

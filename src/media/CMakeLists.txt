@@ -2,6 +2,7 @@ add_library(media
     media_frame.hpp
     source_clock.hpp
     source_clock.cpp
+    timed_output_queue.hpp
     timed_source_queue.hpp
 )
 

@@ -150,6 +150,7 @@ struct timed_source_queue_config_s
 struct timed_source_queue_metrics_s
 {
     uint64_t                     pushed{};
+    size_t                       queued{};
     uint64_t                     overflow_drops{};
     uint64_t                     selection_drops{};
     uint64_t                     repeated{};
@@ -182,6 +183,7 @@ class timed_source_queue_s
     std::deque<aligned_frame_s> frames_;
     frame_ptr_t                 current_;
     bool                        discontinuity_pending_{};
+    std::atomic_size_t          queued_frames_{};
 
     std::atomic_uint64_t pushed_{};
     std::atomic_uint64_t overflow_drops_{};
@@ -198,6 +200,13 @@ class timed_source_queue_s
         }
     }
 
+    void release_queued_frames(size_t count)
+    {
+        if (count != 0) {
+            queued_frames_.fetch_sub(count, std::memory_order_relaxed);
+        }
+    }
+
     void clear_for_discontinuity(bool reset_clock)
     {
         if (reset_clock) {
@@ -207,6 +216,7 @@ class timed_source_queue_s
             cancel_frame(frame.frame);
         }
         cancel_frame(current_);
+        release_queued_frames(frames_.size());
         frames_.clear();
         current_.reset();
         discontinuity_pending_ = true;
@@ -257,12 +267,31 @@ class timed_source_queue_s
         }
 
         const std::scoped_lock lock(pending_mutex_);
-        pending_.push_back(std::move(frame));
         pushed_.fetch_add(1, std::memory_order_relaxed);
-        while (pending_.size() > config_.capacity) {
-            cancel_frame(pending_.front());
-            pending_.pop_front();
-            overflow_drops_.fetch_add(1, std::memory_order_relaxed);
+
+        auto queued = queued_frames_.load(std::memory_order_relaxed);
+        while (true) {
+            if (queued >= config_.capacity) {
+                if (pending_.empty()) {
+                    cancel_frame(frame);
+                    overflow_drops_.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+                cancel_frame(pending_.front());
+                pending_.pop_front();
+                overflow_drops_.fetch_add(1, std::memory_order_relaxed);
+                break;
+            }
+            if (queued_frames_.compare_exchange_weak(
+                    queued, queued + 1, std::memory_order_relaxed, std::memory_order_relaxed)) {
+                break;
+            }
+        }
+        try {
+            pending_.push_back(std::move(frame));
+        } catch (...) {
+            release_queued_frames(1);
+            throw;
         }
     }
 
@@ -288,6 +317,7 @@ class timed_source_queue_s
 
             const auto mapped = clock_.map(frame->id.pts);
             if (!mapped.has_value()) {
+                release_queued_frames(1);
                 continue;
             }
 
@@ -298,11 +328,6 @@ class timed_source_queue_s
             const auto insertion =
                 std::ranges::upper_bound(frames_, aligned.program_pts, {}, &aligned_frame_s::program_pts);
             frames_.insert(insertion, std::move(aligned));
-            while (frames_.size() > config_.capacity) {
-                cancel_frame(frames_.front().frame);
-                frames_.pop_front();
-                overflow_drops_.fetch_add(1, std::memory_order_relaxed);
-            }
         }
     }
 
@@ -322,6 +347,7 @@ class timed_source_queue_s
                 cancel_frame(it->frame);
             }
             frames_.erase(frames_.begin(), selected);
+            release_queued_frames(static_cast<size_t>(dropped));
             return ticket_t(selected->frame, prepared_frame_selection_e::new_frame, discontinuity);
         }
 
@@ -349,7 +375,9 @@ class timed_source_queue_s
         if (match == frames_.end()) {
             return false;
         }
+        const auto erased = static_cast<size_t>(std::distance(frames_.begin(), std::next(match)));
         frames_.erase(frames_.begin(), std::next(match));
+        release_queued_frames(erased);
         current_ = ticket.frame_;
         return true;
     }
@@ -367,6 +395,7 @@ class timed_source_queue_s
             std::ranges::find_if(frames_, [&](const aligned_frame_s& frame) { return frame.frame == ticket.frame_; });
         if (match != frames_.end()) {
             frames_.erase(match);
+            release_queued_frames(1);
         }
         transfer_failures_.fetch_add(1, std::memory_order_relaxed);
     }
@@ -378,6 +407,7 @@ class timed_source_queue_s
             for (const auto& frame : pending_) {
                 cancel_frame(frame);
             }
+            release_queued_frames(pending_.size());
             pending_.clear();
         }
         clear_for_discontinuity(true);
@@ -387,6 +417,7 @@ class timed_source_queue_s
     {
         return {
             .pushed            = pushed_.load(std::memory_order_relaxed),
+            .queued            = queued_frames_.load(std::memory_order_relaxed),
             .overflow_drops    = overflow_drops_.load(std::memory_order_relaxed),
             .selection_drops   = selection_drops_.load(std::memory_order_relaxed),
             .repeated          = repeated_.load(std::memory_order_relaxed),

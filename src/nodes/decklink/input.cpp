@@ -110,6 +110,7 @@ class node_impl : public node_i
         writer.write("upload_slot_drops", metrics.upload_slot_drops);
         writer.write("available_video_frames", metrics.available_video_frames);
         writer.write("source_queue_pushed", metrics.source_queue.pushed);
+        writer.write("source_queue_depth", metrics.source_queue.queued);
         writer.write("source_queue_overflow_drops", metrics.source_queue.overflow_drops);
         writer.write("source_queue_selection_drops", metrics.source_queue.selection_drops);
         writer.write("source_queue_repeated", metrics.source_queue.repeated);

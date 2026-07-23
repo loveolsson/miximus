@@ -46,6 +46,7 @@ if(BUILD_TESTING)
         tests/settings_node_test.cpp
         tests/frame_execution_test.cpp
         tests/frame_scheduler_test.cpp
+        tests/output_timing_test.cpp
         tests/source_timing_test.cpp
     )
     target_link_libraries(

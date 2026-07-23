@@ -309,6 +309,32 @@ TEST(TimedSourceQueue, StaysBoundedAndInvalidatesRepeatsAtDiscontinuities)
     EXPECT_EQ(queue.metrics().discontinuities, 1);
 }
 
+TEST(TimedSourceQueue, CapacityAppliesAcrossPendingAndAlignedFrames)
+{
+    media::timed_source_queue_s<int> queue({.capacity = 2});
+    constexpr auto                   TARGET_TIME   = utils::to_flicks(100.0);
+    constexpr auto                   SOURCE_ORIGIN = utils::to_flicks(40.0);
+
+    queue.push(queue.create_frame(make_frame_id(1, SOURCE_ORIGIN), TARGET_TIME, 10));
+    queue.push(queue.create_frame(make_frame_id(2, SOURCE_ORIGIN + FRAME_DURATION), TARGET_TIME + FRAME_DURATION, 20));
+    queue.advance(FRAME_DURATION, TARGET_TIME + FRAME_DURATION);
+
+    queue.push(
+        queue.create_frame(make_frame_id(3, SOURCE_ORIGIN + FRAME_DURATION * 2), TARGET_TIME + FRAME_DURATION * 2, 30));
+    EXPECT_EQ(queue.metrics().queued, 2);
+    EXPECT_EQ(queue.metrics().overflow_drops, 1);
+
+    queue.advance(FRAME_DURATION * 2, TARGET_TIME + FRAME_DURATION * 2);
+    const auto ticket = queue.select(FRAME_DURATION * 2);
+    ASSERT_EQ(ticket.selection(), media::prepared_frame_selection_e::new_frame);
+    ASSERT_TRUE(ticket.frame()->mark_submitted());
+    ASSERT_TRUE(ticket.frame()->mark_ready());
+    ASSERT_TRUE(ticket.await());
+    ASSERT_TRUE(queue.commit(ticket));
+    EXPECT_EQ(ticket.frame()->value(), 20);
+    EXPECT_EQ(queue.metrics().queued, 0);
+}
+
 TEST(TimedSourceQueue, RepeatsDeterministicallyWhenTheSourceRateIsLower)
 {
     media::timed_source_queue_s<int> queue;

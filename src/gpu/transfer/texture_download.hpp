@@ -96,6 +96,7 @@ class texture_download_stream_s
 
     // CPU worker API. The returned lease keeps the buffer unavailable until
     // the external consumer has finished reading it.
+    std::optional<texture_download_frame_s> try_consume_oldest();
     std::optional<texture_download_frame_s> try_consume_latest();
 
     bool allocation_failed() const;
