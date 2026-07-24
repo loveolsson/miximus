@@ -1,44 +1,53 @@
 #pragma once
-#include <format>
+#include <ostream>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace miximus::web_server::detail {
 
-inline std::string html_escape(std::string_view value)
+struct html_escape_s
 {
-    std::string result;
-    result.reserve(value.size());
-    for (const char character : value) {
+    std::string_view value;
+};
+
+constexpr html_escape_s html_escape(std::string_view value) noexcept { return {value}; }
+
+inline std::ostream& operator<<(std::ostream& output, html_escape_s escaped)
+{
+    for (const char character : escaped.value) {
         switch (character) {
             case '<':
-                result += "&lt;";
+                output << "&lt;";
                 break;
             case '>':
-                result += "&gt;";
+                output << "&gt;";
                 break;
             case '&':
-                result += "&amp;";
+                output << "&amp;";
                 break;
             case '"':
-                result += "&quot;";
+                output << "&quot;";
                 break;
             default:
-                result += character;
+                output << character;
                 break;
         }
     }
-    return result;
+    return output;
 }
 
 inline std::string create_404_body(std::string_view resource)
 {
-    return std::format("<!doctype html><html><head>"
-                       "<title>Error 404 (Resource not found)</title><body>"
-                       "<h1>Error 404</h1>"
-                       "<p>The requested URL {} was not found on this server.</p>"
-                       "</body></head></html>",
-                       html_escape(resource));
+    std::ostringstream output;
+    output << "<!doctype html><html><head>"
+           << "<title>Error 404 (Resource not found)</title>"
+           << "</head><body>"
+           << "<h1>Error 404</h1>"
+           << "<p>The requested URL " << html_escape(resource) << " was not found on this server.</p>"
+           << "</body></html>";
+    return std::move(output).str();
 }
 
 } // namespace miximus::web_server::detail

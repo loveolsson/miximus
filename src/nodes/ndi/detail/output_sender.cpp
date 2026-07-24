@@ -35,10 +35,10 @@ class output_sender_s::impl_s
     struct stream_state_s
     {
         std::shared_ptr<gpu::transfer::texture_download_stream_s> stream;
-        gpu::vec2i_t                                              dimensions;
+        gpu::vec2i_t                                              dimensions{};
         frame_rate_s                                              frame_rate;
         uint64_t                                                  epoch{};
-        utils::flicks                                             frame_duration;
+        utils::flicks                                             frame_duration{};
         size_t                                                    buffer_frames{};
         uint64_t                                                  generation{};
     };
@@ -48,7 +48,7 @@ class output_sender_s::impl_s
     NDIlib_send_instance_t    sender_{nullptr};
 
     std::atomic<phase_e> phase_{phase_e::starting};
-    std::atomic_bool     stop_requested_{};
+    std::atomic_bool     stop_requested_;
 
     mutable std::mutex            state_mutex_;
     std::condition_variable       state_condition_;
@@ -57,21 +57,22 @@ class output_sender_s::impl_s
     bool                          worker_running_{};
     std::thread                   worker_;
 
-    std::atomic_uint64_t program_frames_received_{};
-    std::atomic_uint64_t program_queue_overflow_drops_{};
-    std::atomic_uint64_t program_timing_drops_{};
-    std::atomic_uint64_t program_frames_repeated_{};
-    std::atomic_uint64_t program_frames_missing_{};
-    std::atomic_uint64_t output_intervals_skipped_{};
-    std::atomic_uint64_t frames_sent_{};
-    std::atomic_size_t   queued_frames_{};
+    std::atomic_uint64_t program_frames_received_;
+    std::atomic_uint64_t program_queue_overflow_drops_;
+    std::atomic_uint64_t program_timing_drops_;
+    std::atomic_uint64_t program_frames_repeated_;
+    std::atomic_uint64_t program_frames_missing_;
+    std::atomic_uint64_t output_intervals_skipped_;
+    std::atomic_uint64_t frames_sent_;
+    std::atomic_size_t   queued_frames_;
 
     static int64_t to_ndi_timecode(utils::flicks pts)
     {
         constexpr int64_t NDI_TICKS_PER_SECOND = 10'000'000;
         const auto        seconds              = pts.count() / utils::k_flicks_one_second.count();
         const auto        remainder            = pts.count() % utils::k_flicks_one_second.count();
-        return seconds * NDI_TICKS_PER_SECOND + remainder * NDI_TICKS_PER_SECOND / utils::k_flicks_one_second.count();
+        return (seconds * NDI_TICKS_PER_SECOND) +
+               ((remainder * NDI_TICKS_PER_SECOND) / utils::k_flicks_one_second.count());
     }
 
     void publish_queue_metrics(const media::timed_output_queue_s<sender_frame_s>& queue)
@@ -110,7 +111,47 @@ class output_sender_s::impl_s
         ++frames_sent_;
     }
 
-    void run_stream(stream_state_s state)
+    bool is_current_stream(const stream_state_s& state) const
+    {
+        const std::scoped_lock lock(state_mutex_);
+        return worker_running_ && stream_state_.has_value() && stream_state_->generation == state.generation;
+    }
+
+    static void collect_ready_downloads(const stream_state_s&                        state,
+                                        media::timed_output_queue_s<sender_frame_s>& queue,
+                                        std::optional<utils::flicks>&                output_pts)
+    {
+        while (auto download = state.stream->try_consume_oldest()) {
+            if (std::cmp_greater(download->tag(), std::numeric_limits<utils::flicks::rep>::max())) {
+                continue;
+            }
+            const auto expected_size =
+                static_cast<size_t>(state.dimensions.x) * static_cast<size_t>(state.dimensions.y) * 4;
+            if (download->bytes().size() != expected_size) {
+                continue;
+            }
+            const auto pts = utils::flicks(static_cast<utils::flicks::rep>(download->tag()));
+            if (!output_pts.has_value()) {
+                output_pts = pts;
+            }
+            queue.push({
+                .id =
+                    {
+                         .epoch    = state.epoch,
+                         .sequence = download->tag(),
+                         .pts      = pts,
+                         .duration = state.frame_duration,
+                         },
+                .value =
+                    {
+                         .download   = std::make_shared<gpu::transfer::texture_download_frame_s>(std::move(*download)),
+                         .dimensions = state.dimensions,
+                         },
+            });
+        }
+    }
+
+    void run_stream(const stream_state_s& state)
     {
         media::timed_output_queue_s<sender_frame_s>              queue({
                          .capacity        = output_sender_s::get_queue_capacity(state.buffer_frames),
@@ -122,41 +163,11 @@ class output_sender_s::impl_s
         bool                                                     started{};
 
         while (true) {
-            {
-                const std::scoped_lock lock(state_mutex_);
-                if (!worker_running_ || !stream_state_.has_value() || stream_state_->generation != state.generation) {
-                    break;
-                }
+            if (!is_current_stream(state)) {
+                break;
             }
 
-            while (auto download = state.stream->try_consume_oldest()) {
-                if (std::cmp_greater(download->tag(), std::numeric_limits<utils::flicks::rep>::max())) {
-                    continue;
-                }
-                const auto expected_size =
-                    static_cast<size_t>(state.dimensions.x) * static_cast<size_t>(state.dimensions.y) * 4;
-                if (download->bytes().size() != expected_size) {
-                    continue;
-                }
-                const auto pts = utils::flicks(static_cast<utils::flicks::rep>(download->tag()));
-                if (!output_pts.has_value()) {
-                    output_pts = pts;
-                }
-                queue.push({
-                    .id =
-                        {
-                             .epoch    = state.epoch,
-                             .sequence = download->tag(),
-                             .pts      = pts,
-                             .duration = state.frame_duration,
-                             },
-                    .value =
-                        {
-                             .download = std::make_shared<gpu::transfer::texture_download_frame_s>(std::move(*download)),
-                             .dimensions = state.dimensions,
-                             },
-                });
-            }
+            collect_ready_downloads(state, queue, output_pts);
             publish_queue_metrics(queue);
 
             if (!output_pts.has_value() || (!started && queue.queued() < state.buffer_frames)) {
@@ -214,9 +225,12 @@ class output_sender_s::impl_s
                 if (!worker_running_) {
                     return;
                 }
+                if (!stream_state_.has_value()) {
+                    continue;
+                }
                 state = *stream_state_;
             }
-            run_stream(std::move(state));
+            run_stream(state);
         }
     }
 
@@ -226,6 +240,11 @@ class output_sender_s::impl_s
         , sender_name_(std::move(sender_name))
     {
     }
+
+    impl_s(const impl_s&)            = delete;
+    impl_s(impl_s&&)                 = delete;
+    impl_s& operator=(const impl_s&) = delete;
+    impl_s& operator=(impl_s&&)      = delete;
 
     ~impl_s() { stop_control(); }
 

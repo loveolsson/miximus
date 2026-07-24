@@ -43,11 +43,11 @@ std::string make_decoded_path(boost::urls::segments_view segments)
     }
 
     bool first_segment = true;
-    for (auto segment = segments.begin(); segment != segments.end(); ++segment) {
+    for (const auto& segment : segments) {
         if (!first_segment) {
             path.push_back('/');
         }
-        path += *segment;
+        path += segment;
         first_segment = false;
     }
 
@@ -84,8 +84,8 @@ void web_server_impl::on_http(const con_hdl_t& hdl)
             return;
         }
 
-        const auto parsed = *result;
-        const auto path   = parsed.segments();
+        const auto& parsed = *result;
+        const auto  path   = parsed.segments();
 
         endpoint_.get_alog().write(alevel::http, std::string(parsed.encoded_path()));
 

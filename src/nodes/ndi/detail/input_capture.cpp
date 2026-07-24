@@ -86,8 +86,8 @@ class input_capture_s::impl_s
     NDIlib_recv_instance_t receiver_{nullptr};
 
     std::atomic<phase_e> phase_{phase_e::starting};
-    std::atomic_bool     stop_requested_{};
-    std::atomic_bool     worker_running_{};
+    std::atomic_bool     stop_requested_;
+    std::atomic_bool     worker_running_;
     std::thread          worker_;
 
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
@@ -105,11 +105,11 @@ class input_capture_s::impl_s
     uint64_t                       source_epoch_{1};
     uint64_t                       next_sequence_{};
 
-    std::atomic_uint64_t                  frames_received_{};
-    std::atomic_uint64_t                  invalid_frames_{};
-    std::atomic_uint64_t                  receiver_video_drops_{};
-    std::atomic_uint32_t                  receiver_queue_depth_{};
-    std::atomic_uint64_t                  upload_slot_drops_{};
+    std::atomic_uint64_t                  frames_received_;
+    std::atomic_uint64_t                  invalid_frames_;
+    std::atomic_uint64_t                  receiver_video_drops_;
+    std::atomic_uint32_t                  receiver_queue_depth_;
+    std::atomic_uint64_t                  upload_slot_drops_;
     std::chrono::steady_clock::time_point next_metrics_poll_;
 
     bool warned_invalid_frame_{};
@@ -228,7 +228,8 @@ class input_capture_s::impl_s
             return false;
         }
 
-        auto frame_id = make_frame_id(video_frame, {dimensions, frame_rate}, *duration);
+        auto frame_id =
+            make_frame_id(video_frame, source_format_s{.dimensions = dimensions, .frame_rate = frame_rate}, *duration);
         if (!frame_id.has_value()) {
             return false;
         }
@@ -321,6 +322,11 @@ class input_capture_s::impl_s
         , receiver_name_(std::move(receiver_name))
     {
     }
+
+    impl_s(const impl_s&)            = delete;
+    impl_s(impl_s&&)                 = delete;
+    impl_s& operator=(const impl_s&) = delete;
+    impl_s& operator=(impl_s&&)      = delete;
 
     ~impl_s() { stop_control(); }
 
