@@ -46,6 +46,7 @@ class web_server_impl : public server_s
                                         const std::string&              method,
                                         boost::urls::segments_view      node_path);
     void        handle_api_v1_get_config(const server_t::connection_ptr& con) const;
+    void        handle_api_v1_get_status(const server_t::connection_ptr& con) const;
     void        handle_api_v1_get_node(const server_t::connection_ptr& con, std::string_view id) const;
     void        handle_api_v1_get_node_status(const server_t::connection_ptr& con, std::string_view id) const;
     void        handle_api_v1_post_control(const server_t::connection_ptr& con);

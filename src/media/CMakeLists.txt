@@ -1,6 +1,7 @@
 add_library(media
     media_frame.hpp
     output_buffer_watermark.hpp
+    output_runtime_metrics.hpp
     source_clock.hpp
     source_clock.cpp
     timed_output_queue.hpp

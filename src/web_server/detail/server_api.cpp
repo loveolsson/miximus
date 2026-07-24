@@ -105,6 +105,13 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& connect
             return;
         }
 
+        if (path_matches(api_path, {"status"})) {
+            if (prepare_api_route(connection, method, HTTP_GET)) {
+                handle_api_v1_get_status(connection);
+            }
+            return;
+        }
+
         if (path_matches(api_path, {"control"})) {
             if (prepare_api_route(connection, method, HTTP_POST)) {
                 handle_api_v1_post_control(connection);
@@ -182,6 +189,27 @@ void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& c
     try {
         const nlohmann::json config = config_getters_.node_config();
         connection->set_body(config.dump());
+        connection->set_status(status_code::ok);
+    } catch (const std::exception& error) {
+        const auto payload = create_error_payload("", error_e::internal_error, error.what());
+        connection->set_body(payload.dump());
+        connection->set_status(status_code::internal_server_error);
+    }
+}
+
+void web_server_impl::handle_api_v1_get_status(const server_t::connection_ptr& connection) const
+{
+    using namespace websocketpp::http;
+
+    if (!config_getters_.node_statuses) {
+        const auto error = create_error_payload("", error_e::internal_error, "Node status service not available");
+        connection->set_body(error.dump());
+        connection->set_status(status_code::service_unavailable);
+        return;
+    }
+
+    try {
+        connection->set_body(config_getters_.node_statuses().dump());
         connection->set_status(status_code::ok);
     } catch (const std::exception& error) {
         const auto payload = create_error_payload("", error_e::internal_error, error.what());

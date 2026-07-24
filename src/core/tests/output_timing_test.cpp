@@ -1,7 +1,9 @@
 #include "media/output_buffer_watermark.hpp"
+#include "media/output_runtime_metrics.hpp"
 #include "media/timed_output_queue.hpp"
 #include "utils/flicks.hpp"
 
+#include <chrono>
 #include <gtest/gtest.h>
 
 namespace {
@@ -158,6 +160,51 @@ TEST(TimedOutputQueue, DropsOldestQueuedFramesAtCapacity)
     EXPECT_EQ(selection.frame->value, 30);
     EXPECT_EQ(queue.metrics().overflow_drops, 1);
     EXPECT_EQ(queue.metrics().selection_drops, 1);
+}
+
+TEST(OutputRuntimeMetrics, SeparatesCadenceRepeatsFromStarvation)
+{
+    media::output_runtime_metrics_s metrics;
+
+    metrics.observe_selection(media::output_frame_selection_e::repeat, true);
+    metrics.observe_selection(media::output_frame_selection_e::repeat, false);
+    metrics.observe_selection(media::output_frame_selection_e::repeat, false);
+    metrics.observe_selection(media::output_frame_selection_e::new_frame, false);
+
+    const auto snapshot = metrics.snapshot();
+    EXPECT_EQ(snapshot.cadence_repeats, 1);
+    EXPECT_EQ(snapshot.starvation_repeats, 2);
+    EXPECT_EQ(snapshot.starvation_repeat_streak, 0);
+    EXPECT_EQ(snapshot.starvation_repeat_streak_max, 2);
+}
+
+TEST(OutputRuntimeMetrics, RetainsCompletionBufferAndQueueExtrema)
+{
+    media::output_runtime_metrics_s metrics;
+    const auto                      start = std::chrono::steady_clock::time_point{};
+
+    metrics.observe_completion(start, 10);
+    metrics.observe_completion(start + std::chrono::milliseconds(20), 11);
+    metrics.observe_completion(start + std::chrono::milliseconds(35), 12);
+    metrics.observe_output_queue_depth(2);
+    metrics.observe_output_queue_depth(5);
+    metrics.observe_output_queue_depth(1);
+    metrics.observe_buffered_frames(4, 4);
+    metrics.observe_buffered_frames(2, 4);
+    metrics.observe_buffered_frames(0, 4);
+    metrics.observe_refill(2, 1);
+
+    const auto snapshot = metrics.snapshot();
+    EXPECT_EQ(snapshot.completion_intervals, 2);
+    EXPECT_EQ(snapshot.completion_interval_max, std::chrono::milliseconds(20));
+    EXPECT_EQ(snapshot.completion_interval_max_sequence, 11);
+    EXPECT_EQ(snapshot.output_queue_depth, 1);
+    EXPECT_EQ(snapshot.output_queue_depth_max, 5);
+    EXPECT_EQ(snapshot.buffered_frames_min, 0);
+    EXPECT_EQ(snapshot.buffered_frames_max, 4);
+    EXPECT_EQ(snapshot.buffered_below_target_samples, 2);
+    EXPECT_EQ(snapshot.buffered_zero_samples, 1);
+    EXPECT_EQ(snapshot.refill_shortfalls, 1);
 }
 
 } // namespace

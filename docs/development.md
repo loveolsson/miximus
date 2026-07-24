@@ -239,6 +239,31 @@ The web build runs Vue TypeScript checking and a Vite production build.
 
 For changes involving nodes or the protocol, inspect both native and TypeScript definitions. For DeckLink, NDI, CUDA, DVP, font discovery, or display timing, perform runtime validation on suitable hardware; compilation alone cannot validate behavior.
 
+### Long-running timing soak
+
+Use `scripts/test_timing_soak.sh` to run the configured graph for hours while retaining enough evidence to diagnose a
+brief output disturbance after it has passed. The runner uses a private copy of the settings file, owns the Miximus
+process lifecycle, samples the aggregate `/api/v1/status` endpoint once per second, records CPU/RSS/thread usage, and
+records NVIDIA process memory when `nvidia-smi` is available. Scheduler extrema and DeckLink output queue/buffer
+counters are cumulative for the lifetime of the active scheduler or output callback, so a transient between HTTP polls
+remains visible.
+
+```sh
+scripts/test_timing_soak.sh start 8h
+scripts/test_timing_soak.sh status
+scripts/test_timing_soak.sh stop
+scripts/test_timing_soak.sh report
+```
+
+For an A/B soak of the DeckLink output watermark without editing the developer settings, pass
+`--decklink-output-buffer 4` (or another value from 1 through 8) to `start`. The override is applied only to the run's
+private settings copy and is recorded in `summary.json`.
+
+Runs are stored under `build/integration-tests/timing-soak-*`; `timing-soak-latest` points to the newest one. Preserve
+`events.log`, `status-samples.jsonl`, `system-samples.jsonl`, `config.json`, `settings.json`, and `summary.json` when
+reporting a failure. The runner refuses to launch if another Miximus instance is already serving the configured API,
+which prevents accidental contention with a developer-run instance.
+
 The DeckLink loopback mode-change test owns the Miximus process, waits for the HTTP API, applies each requested mode,
 waits for both output playback and input capture to restart, restores the original mode, and shuts the process down:
 

@@ -157,6 +157,36 @@ TEST(FrameScheduler, ReportsSustainedOverloadAndClearsItAfterRecovery)
     EXPECT_FALSE(scheduler.metrics().sustained_overload);
 }
 
+TEST(FrameScheduler, RetainsLifetimeTimingExtremaAndDeadlineMisses)
+{
+    constexpr utils::flicks START_TIME{321'000};
+    constexpr frame_rate_s  RATE{.numerator = 60, .denominator = 1};
+
+    fake_clock_source_s     clock(START_TIME);
+    core::frame_scheduler_s scheduler(clock);
+    const auto              duration = require_frame_duration(RATE);
+
+    auto context = scheduler.begin_frame(RATE);
+    clock.advance(duration / 2);
+    auto metrics = scheduler.finish_frame();
+    EXPECT_EQ(metrics.render_duration_max, duration / 2);
+    EXPECT_EQ(metrics.render_duration_max_frame, context.frame_number);
+    EXPECT_EQ(metrics.deadline_misses_total, 0);
+
+    context = scheduler.begin_frame(RATE);
+    clock.set(context.render_deadline + duration / 4);
+    metrics = scheduler.finish_frame();
+    EXPECT_EQ(metrics.render_duration_max_frame, context.frame_number);
+    EXPECT_EQ(metrics.deadline_margin_min, -(duration / 4));
+    EXPECT_EQ(metrics.deadline_margin_min_frame, context.frame_number);
+    EXPECT_EQ(metrics.deadline_misses_total, 1);
+
+    scheduler.begin_frame(RATE);
+    metrics = scheduler.finish_frame();
+    EXPECT_EQ(metrics.deadline_margin_min, -(duration / 4));
+    EXPECT_EQ(metrics.deadline_misses_total, 1);
+}
+
 uint64_t replay_trace(core::late_frame_policy_s policy, const std::vector<utils::flicks>& render_durations)
 {
     fake_clock_source_s     clock(utils::k_flicks_zero_seconds);

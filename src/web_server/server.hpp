@@ -18,6 +18,7 @@ typedef std::function<std::optional<nlohmann::json>(std::string_view)> keyed_jso
 struct config_getters_t
 {
     json_getter_t       node_config;
+    json_getter_t       node_statuses;
     keyed_json_getter_t node;
     keyed_json_getter_t node_status;
 };

@@ -84,12 +84,34 @@ const frame_scheduler_metrics_s& frame_scheduler_s::finish_frame()
     metrics_.start_lateness  = std::max(metrics_.render_start - context_.target_time, utils::k_flicks_zero_seconds);
     metrics_.deadline_margin = context_.render_deadline - metrics_.render_end;
 
+    if (metrics_.render_duration > render_duration_max_) {
+        render_duration_max_       = metrics_.render_duration;
+        render_duration_max_frame_ = context_.frame_number;
+    }
+    if (metrics_.start_lateness > start_lateness_max_) {
+        start_lateness_max_       = metrics_.start_lateness;
+        start_lateness_max_frame_ = context_.frame_number;
+    }
+    if (!deadline_margin_observed_ || metrics_.deadline_margin < deadline_margin_min_) {
+        deadline_margin_min_       = metrics_.deadline_margin;
+        deadline_margin_min_frame_ = context_.frame_number;
+        deadline_margin_observed_  = true;
+    }
+
     if (metrics_.deadline_margin < utils::k_flicks_zero_seconds) {
+        ++deadline_misses_total_;
         accumulated_overload_ += duration_;
     } else {
         accumulated_overload_ = utils::k_flicks_zero_seconds;
     }
-    metrics_.sustained_overload = accumulated_overload_ >= utils::k_flicks_one_second;
+    metrics_.sustained_overload        = accumulated_overload_ >= utils::k_flicks_one_second;
+    metrics_.render_duration_max       = render_duration_max_;
+    metrics_.render_duration_max_frame = render_duration_max_frame_;
+    metrics_.start_lateness_max        = start_lateness_max_;
+    metrics_.start_lateness_max_frame  = start_lateness_max_frame_;
+    metrics_.deadline_margin_min       = deadline_margin_min_;
+    metrics_.deadline_margin_min_frame = deadline_margin_min_frame_;
+    metrics_.deadline_misses_total     = deadline_misses_total_;
 
     const auto next_timeline_frame = timeline_frame_ + 1;
     const auto next_target         = anchor_time_ + duration_ * static_cast<utils::flicks::rep>(next_timeline_frame);

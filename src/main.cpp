@@ -68,8 +68,15 @@ void publish_scheduler_status(core::app_state_s*                     app,
     writer.write("frame_number", context.frame_number);
     writer.write("pts_flicks", context.pts.count());
     writer.write("render_duration_us", to_microseconds(metrics.render_duration));
+    writer.write("render_duration_max_us", to_microseconds(metrics.render_duration_max));
+    writer.write("render_duration_max_frame", metrics.render_duration_max_frame);
     writer.write("start_lateness_us", to_microseconds(metrics.start_lateness));
+    writer.write("start_lateness_max_us", to_microseconds(metrics.start_lateness_max));
+    writer.write("start_lateness_max_frame", metrics.start_lateness_max_frame);
     writer.write("deadline_margin_us", to_microseconds(metrics.deadline_margin));
+    writer.write("deadline_margin_min_us", to_microseconds(metrics.deadline_margin_min));
+    writer.write("deadline_margin_min_frame", metrics.deadline_margin_min_frame);
+    writer.write("deadline_misses_total", metrics.deadline_misses_total);
     writer.write("skipped_frames_last", metrics.skipped_frames);
     writer.write("skipped_frames_total", metrics.skipped_frames_total);
     writer.write("sustained_overload", metrics.sustained_overload);
@@ -129,9 +136,10 @@ int main(int argc, char* argv[])
 
             // Set up web server config getters
             web_server->set_config_getters({
-                .node_config = std::bind_front(&core::configuration_s::get_snapshot, &configuration),
-                .node        = std::bind_front(&core::configuration_s::get_node, &configuration),
-                .node_status = std::bind_front(&core::configuration_s::get_node_status, &configuration),
+                .node_config   = std::bind_front(&core::configuration_s::get_snapshot, &configuration),
+                .node_statuses = [status_registry = app.status_registry()] { return status_registry->get_all(); },
+                .node          = std::bind_front(&core::configuration_s::get_node, &configuration),
+                .node_status   = std::bind_front(&core::configuration_s::get_node_status, &configuration),
             });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
