@@ -691,22 +691,26 @@ Exit criteria:
 
 ### Stage 5: DeckLink scheduled output
 
-**Status:** PTS-aware cadence selection and configurable buffering implemented; hardware stress verification remains
+**Status:** PTS-aware cadence selection, program-frame preroll, and configurable buffering implemented; hardware stress
+verification remains
 
 Each completed GPU download now retains its program epoch and PTS until the DeckLink completion callback consumes it.
 The callback selects against an exact DeckLink-duration cursor, explicitly repeats the retained frame when the program
-cadence is slower, and drops superseded frames when it is faster. The existing four-frame SDK preroll remains the
-default, while separate global one-to-eight-frame DeckLink-output settings control startup preroll and the steady
-scheduled-frame target for every output of that type. Changing either setting deliberately follows the existing
-asynchronous stop/restart path and recreates the affected bounded download streams; preserving output continuity across
-a buffer-size change is not a requirement. The output control path waits off the render thread for the bounded initial
-download-slot set before exposing the stream and beginning scheduled program playout. This prevents asynchronous pool
-growth from appearing as a sequence of otherwise avoidable program-frame repeats.
+cadence is slower, and drops superseded frames when it is faster. One global one-to-eight-frame DeckLink-output setting
+controls both startup and the steady scheduled-frame target for every output of that type; the SDK-reported minimum
+preroll raises the effective target when required. The output first exposes its bounded download stream, schedules
+actual completed program frames until that target is full, and only then starts scheduled playback. There is no
+separate generated black preroll or second startup-depth setting. A buffer-size change deliberately follows the
+existing asynchronous stop/restart path and recreates the affected stream; preserving output continuity across that
+change is not a requirement. The output control path waits off the render thread for the bounded initial download-slot
+set before exposing the stream. This prevents asynchronous pool growth from appearing as avoidable program-frame
+repeats.
 
 Deliverables:
 
 - Associate each rendered/downloaded result with program PTS and its DeckLink schedule interval.
-- Add explicit configurable preroll/target watermarks and cadence conversion from program rate to output rate.
+- Use one configurable output watermark for program-frame preroll and steady buffering, with cadence conversion from
+  program rate to output rate.
 - Explicitly schedule retained-frame repeats; never create timestamp gaps expecting the SDK to fill them.
 - Preserve zero-copy download-lease-backed frames, completion ownership, device-control serialization, and asynchronous
   shutdown.

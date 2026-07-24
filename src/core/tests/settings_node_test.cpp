@@ -32,6 +32,22 @@ std::shared_ptr<nodes::node_i> create_settings_node()
     return definitions.at(nodes::system::SETTINGS_NODE_TYPE).constructor();
 }
 
+TEST(SettingsNode, RemovesTheLegacyDeckLinkPrerollSetting)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::system::register_nodes(&definitions);
+    const auto& definition = definitions.at(nodes::system::SETTINGS_NODE_TYPE);
+    ASSERT_EQ(definition.schema_version(), 2);
+    ASSERT_EQ(definition.migrations.size(), 1);
+
+    auto options                              = definition.constructor()->get_default_options();
+    options["decklink_output_preroll_frames"] = 4;
+    definition.migrations[0].migrate_options(options);
+
+    EXPECT_FALSE(options.contains("decklink_output_preroll_frames"));
+    EXPECT_TRUE(options.contains("decklink_output_buffer_frames"));
+}
+
 TEST(FrameRate, CommonRatesHaveExactDurationsAndRoundTripThroughJson)
 {
     const auto integer_duration = require_value(get_frame_duration({.numerator = 60, .denominator = 1}));
@@ -70,8 +86,6 @@ TEST(SettingsNode, ProvidesTheDefaultSettings)
     const auto defaults = settings->get_default_options();
     ASSERT_TRUE(defaults.contains("frame_rate"));
     EXPECT_EQ(defaults.at("frame_rate").get<frame_rate_s>(), DEFAULT_FRAME_RATE);
-    EXPECT_EQ(defaults.at("decklink_output_preroll_frames").get<int>(),
-              decklink_output_settings_s::DEFAULT_PREROLL_FRAMES);
     EXPECT_EQ(defaults.at("decklink_output_buffer_frames").get<int>(),
               decklink_output_settings_s::DEFAULT_BUFFER_FRAMES);
     EXPECT_EQ(defaults.at("ndi_output_buffer_frames").get<int>(), ndi_output_settings_s::DEFAULT_BUFFER_FRAMES);
@@ -84,14 +98,12 @@ TEST(SettingsNode, CorrectsDeckLinkOutputBufferSettings)
     const auto           settings = create_settings_node();
     auto                 state    = settings->get_default_options();
     const nlohmann::json update{
-        {"decklink_output_preroll_frames", 0  },
-        {"decklink_output_buffer_frames",  100},
+        {"decklink_output_buffer_frames", 100},
     };
     const auto result = settings->set_options(state, update);
 
     EXPECT_EQ(result.error, error_e::no_error);
     EXPECT_TRUE(result.has_corrected_values);
-    EXPECT_EQ(state.at("decklink_output_preroll_frames").get<int>(), decklink_output_settings_s::MIN_BUFFER_FRAMES);
     EXPECT_EQ(state.at("decklink_output_buffer_frames").get<int>(), decklink_output_settings_s::MAX_BUFFER_FRAMES);
 }
 

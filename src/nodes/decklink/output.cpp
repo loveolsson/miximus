@@ -26,7 +26,6 @@
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -105,6 +104,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     enum class phase_e : uint8_t
     {
         starting,
+        prerolling,
         running,
         stopping,
         stopped,
@@ -167,30 +167,28 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     std::vector<settings_option_s> mode_options_;
     std::atomic_uint64_t           mode_options_version_;
 
-    mutable std::mutex                                              frame_mutex_;
-    std::shared_ptr<gpu::transfer::texture_download_stream_s>       download_stream_;
-    decklink_ptr<IDeckLinkVideoBuffer>                              last_buffer_;
-    media::timed_output_queue_s<decklink_ptr<IDeckLinkVideoBuffer>> output_queue_;
-    media::output_buffer_watermark_s                                output_watermark_;
-    media::output_runtime_metrics_s                                 runtime_metrics_;
-    mode_info_s                                                     mode_info_;
-    BMDTimeValue                                                    pts_{};
-    utils::flicks                                                   program_frame_duration_;
-    std::optional<utils::flicks>                                    next_program_pts_;
-    size_t                                                          program_preroll_frames_{};
-    size_t                                                          configured_buffer_frames_{};
-    uint64_t                                                        program_epoch_{};
-    uint64_t                                                        program_sequence_{};
-    uint64_t                                                        program_frames_missing_{};
-    size_t                                                          preroll_frames_{};
-    uint64_t                                                        completion_sequence_{};
-    uint64_t                                                        content_frames_sampled_{};
-    uint64_t                                                        content_frame_repeats_{};
-    uint64_t                                                        content_repeat_streak_{};
-    uint64_t                                                        content_repeat_streak_max_{};
-    uint64_t                                                        last_content_fingerprint_{};
+    mutable std::mutex                                                             frame_mutex_;
+    std::shared_ptr<gpu::transfer::texture_download_stream_s>                      download_stream_;
+    decklink_ptr<IDeckLinkVideoBuffer>                                             last_buffer_;
+    std::optional<media::timed_output_queue_s<decklink_ptr<IDeckLinkVideoBuffer>>> output_queue_;
+    media::output_buffer_watermark_s                                               output_watermark_;
+    media::output_runtime_metrics_s                                                runtime_metrics_;
+    mode_info_s                                                                    mode_info_;
+    BMDTimeValue                                                                   pts_{};
+    utils::flicks                                                                  program_frame_duration_;
+    std::optional<utils::flicks>                                                   next_program_pts_;
+    size_t                                                                         configured_buffer_frames_{};
+    uint64_t                                                                       program_epoch_{};
+    uint64_t                                                                       program_sequence_{};
+    uint64_t                                                                       completion_sequence_{};
+    uint64_t                                                                       content_frames_sampled_{};
+    uint64_t                                                                       content_frame_repeats_{};
+    uint64_t                                                                       content_repeat_streak_{};
+    uint64_t                                                                       content_repeat_streak_max_{};
+    uint64_t                                                                       last_content_fingerprint_{};
 
     std::atomic_bool     stop_requested_;
+    std::atomic_bool     preroll_pump_posted_;
     std::atomic<phase_e> phase_{phase_e::starting};
     bool                 callback_installed_{};
     bool                 output_enabled_{};
@@ -304,7 +302,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         auto    attributes = device_.query<IDeckLinkProfileAttributes>();
         int64_t minimum{};
         if (!attributes || attributes->GetInt(BMDDeckLinkMinimumPrerollFrames, &minimum) != S_OK || minimum <= 0) {
-            log()->warn("Unable to query minimum preroll for {}; using the configured value", device_name_);
+            log()->warn("Unable to query minimum preroll for {}; using the configured buffer depth", device_name_);
             return 1;
         }
         return static_cast<size_t>(minimum);
@@ -330,54 +328,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         return frame.query<IDeckLinkVideoFrame>();
     }
 
-    bool initialize_preroll()
-    {
-        decklink_ptr<IDeckLinkMutableVideoFrame> frame;
-        if (device_->CreateVideoFrame(mode_info_.dim.x,
-                                      mode_info_.dim.y,
-                                      mode_info_.row_bytes,
-                                      bmdFormat10BitYUV,
-                                      bmdFrameFlagDefault,
-                                      frame.releaseAndGetAddressOf()) != S_OK) {
-            return false;
-        }
-        set_colorspace_metadata(frame.get());
-
-        auto buffer = frame.query<IDeckLinkVideoBuffer>();
-        if (!buffer || buffer->StartAccess(bmdBufferAccessWrite) != S_OK) {
-            return false;
-        }
-
-        void* data = nullptr;
-        if (buffer->GetBytes(&data) != S_OK || data == nullptr) {
-            (void)buffer->EndAccess(bmdBufferAccessWrite);
-            return false;
-        }
-        constexpr std::array<uint32_t, 2> V210_BLACK{0x20010200, 0x04080040};
-        const auto word_count = static_cast<size_t>(mode_info_.row_bytes) * mode_info_.dim.y / sizeof(uint32_t);
-        auto*      words      = static_cast<uint32_t*>(data);
-        for (size_t index = 0; index < word_count; ++index) {
-            words[index] = V210_BLACK[index % V210_BLACK.size()];
-        }
-        if (buffer->EndAccess(bmdBufferAccessWrite) != S_OK) {
-            return false;
-        }
-
-        last_buffer_ = std::move(buffer);
-        for (size_t i = 0; i < preroll_frames_; ++i) {
-            auto scheduled_frame = create_frame(last_buffer_.get());
-            if (!scheduled_frame ||
-                device_->ScheduleVideoFrame(
-                    scheduled_frame.get(), pts_, mode_info_.frame_duration, mode_info_.time_scale) != S_OK) {
-                return false;
-            }
-            output_watermark_.frame_scheduled();
-            pts_ += mode_info_.frame_duration;
-        }
-        return true;
-    }
-
-    bool start_playback()
+    bool initialize_output()
     {
         const auto mode = select_display_mode();
         if (!mode) {
@@ -404,17 +355,20 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         output_enabled_ = true;
 
         const auto device_minimum = minimum_preroll_frames();
-        if (preroll_frames_ < device_minimum || configured_buffer_frames_ < device_minimum) {
-            log()->info("DeckLink output {} requires at least {} scheduled frames; configured preroll {}, buffer {}",
+        if (configured_buffer_frames_ < device_minimum) {
+            log()->info("DeckLink output {} requires at least {} buffered frames; configured {}",
                         device_name_,
                         device_minimum,
-                        preroll_frames_,
                         configured_buffer_frames_);
         }
-        preroll_frames_   = std::max(preroll_frames_, device_minimum);
-        output_watermark_ = media::output_buffer_watermark_s(std::max(configured_buffer_frames_, device_minimum));
+        const auto buffer_frames = std::max(configured_buffer_frames_, device_minimum);
+        output_watermark_        = media::output_buffer_watermark_s(buffer_frames);
+        output_queue_.emplace(media::timed_output_queue_config_s{
+            .capacity        = get_output_queue_capacity(buffer_frames),
+            .early_tolerance = program_frame_duration_ / 2,
+        });
 
-        const auto download_slot_count = get_download_slot_count(output_watermark_.target(), output_queue_.capacity());
+        const auto download_slot_count = get_download_slot_count(output_watermark_.target(), output_queue_->capacity());
         const auto stream              = download_service_->create_stream({
                          .requirements =
                 {
@@ -444,16 +398,6 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return false;
         }
         callback_installed_ = true;
-
-        if (!initialize_preroll()) {
-            log()->error("Failed to initialize DeckLink output preroll for {}", device_name_);
-            return false;
-        }
-        if (device_->StartScheduledPlayback(0, mode->time_scale, 1.0) != S_OK) {
-            log()->error("Failed to start DeckLink scheduled playback for {}", device_name_);
-            return false;
-        }
-        playback_started_ = true;
         return true;
     }
 
@@ -506,7 +450,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             retire_playback(phase_e::stopped);
             return;
         }
-        if (!start_playback()) {
+        if (!initialize_output()) {
             stop_requested_ = true;
             retire_playback(phase_e::failed);
             return;
@@ -516,8 +460,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return;
         }
 
-        phase_ = phase_e::running;
-        log()->info("DeckLink output playback running: {}", device_name_);
+        phase_ = phase_e::prerolling;
+        log()->info("DeckLink output ready for program-frame preroll: {}", device_name_);
     }
 
     void request_failure()
@@ -538,7 +482,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
     void consume_downloaded_frames()
     {
-        while (output_queue_.queued() < output_queue_.capacity()) {
+        while (output_queue_->queued() < output_queue_->capacity()) {
             auto frame = download_stream_->try_consume_oldest();
             if (!frame.has_value()) {
                 break;
@@ -564,7 +508,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             ++content_frames_sampled_;
             last_content_fingerprint_ = fingerprint;
             auto buffer               = make_decklink_ptr<output_video_buffer_s>(std::move(*frame));
-            output_queue_.push({
+            output_queue_->push({
                 .id =
                     {
                          .epoch    = program_epoch_,
@@ -574,6 +518,74 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                          },
                 .value = buffer.query<IDeckLinkVideoBuffer>(),
             });
+        }
+    }
+
+    bool schedule_program_frame(utils::flicks program_pts)
+    {
+        const auto selection = output_queue_->select(program_epoch_, program_pts);
+        runtime_metrics_.observe_selection(selection.selection, output_queue_->queued() != 0);
+        if (selection.frame != nullptr) {
+            last_buffer_ = selection.frame->value;
+        }
+        if (!last_buffer_) {
+            return false;
+        }
+
+        auto frame = create_frame(last_buffer_.get());
+        if (!frame ||
+            device_->ScheduleVideoFrame(frame.get(), pts_, mode_info_.frame_duration, mode_info_.time_scale) != S_OK) {
+            return false;
+        }
+        output_watermark_.frame_scheduled();
+        pts_ += mode_info_.frame_duration;
+        return true;
+    }
+
+    void pump_preroll()
+    {
+        preroll_pump_posted_ = false;
+        if (phase_.load() != phase_e::prerolling || stop_requested_.load()) {
+            return;
+        }
+
+        bool started{};
+        {
+            const std::scoped_lock lock(frame_mutex_);
+            consume_downloaded_frames();
+            runtime_metrics_.observe_output_queue_depth(output_queue_->queued());
+            if (output_queue_->queued() < output_watermark_.target()) {
+                return;
+            }
+
+            next_program_pts_ = output_queue_->oldest_pts();
+            for (size_t i = 0; i < output_watermark_.target(); ++i) {
+                if (!next_program_pts_.has_value() || !schedule_program_frame(*next_program_pts_)) {
+                    break;
+                }
+                *next_program_pts_ += mode_info_.frame_duration_flicks;
+            }
+            if (output_watermark_.scheduled_frames() != output_watermark_.target()) {
+                runtime_metrics_.observe_refill(output_watermark_.target(), output_watermark_.scheduled_frames());
+            } else {
+                phase_ = phase_e::running;
+                if (device_->StartScheduledPlayback(0, mode_info_.time_scale, 1.0) == S_OK) {
+                    playback_started_ = true;
+                    sample_buffered_video_frames();
+                    started = true;
+                } else {
+                    phase_ = phase_e::prerolling;
+                }
+            }
+        }
+
+        if (started) {
+            log()->info("DeckLink output playback running after {} program preroll frames: {}",
+                        output_watermark_.target(),
+                        device_name_);
+        } else {
+            log()->error("Failed to start DeckLink output with program-frame preroll: {}", device_name_);
+            request_failure();
         }
     }
 
@@ -593,39 +605,21 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         runtime_metrics_.observe_completion(std::chrono::steady_clock::now(), ++completion_sequence_);
         sample_buffered_video_frames();
         consume_downloaded_frames();
-        if (!next_program_pts_.has_value() && output_queue_.queued() >= program_preroll_frames_) {
-            next_program_pts_ = output_queue_.oldest_pts();
-        }
         const auto refill_count = output_watermark_.refill_count();
         size_t     scheduled{};
         for (size_t i = 0; i < refill_count; ++i) {
-            if (next_program_pts_.has_value()) {
-                const auto selection = output_queue_.select(program_epoch_, *next_program_pts_);
-                runtime_metrics_.observe_selection(selection.selection, output_queue_.queued() != 0);
-                if (selection.frame != nullptr) {
-                    last_buffer_ = selection.frame->value;
-                }
-                *next_program_pts_ += mode_info_.frame_duration_flicks;
-            } else {
-                ++program_frames_missing_;
-            }
-
-            if (!last_buffer_) {
+            if (!next_program_pts_.has_value() || !schedule_program_frame(*next_program_pts_)) {
                 break;
             }
-            auto scheduled_frame = create_frame(last_buffer_.get());
-            if (!scheduled_frame ||
-                device_->ScheduleVideoFrame(
-                    scheduled_frame.get(), pts_, mode_info_.frame_duration, mode_info_.time_scale) != S_OK) {
-                request_failure();
-                return E_FAIL;
-            }
-            output_watermark_.frame_scheduled();
-            pts_ += mode_info_.frame_duration;
+            *next_program_pts_ += mode_info_.frame_duration_flicks;
             ++scheduled;
         }
         runtime_metrics_.observe_refill(refill_count, scheduled);
-        runtime_metrics_.observe_output_queue_depth(output_queue_.queued());
+        runtime_metrics_.observe_output_queue_depth(output_queue_->queued());
+        if (scheduled != refill_count) {
+            request_failure();
+            return E_FAIL;
+        }
         return S_OK;
     }
 
@@ -638,7 +632,6 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                std::string                                requested_mode_name,
                utils::flicks                              program_frame_duration,
                uint64_t                                   program_epoch,
-               size_t                                     preroll_frames,
                size_t                                     buffer_frames)
         : download_service_(download_service)
         , control_executor_(control_executor)
@@ -646,16 +639,10 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         , reservation_(std::move(reservation))
         , device_name_(std::move(device_name))
         , requested_mode_name_(std::move(requested_mode_name))
-        , output_queue_({
-              .capacity        = get_output_queue_capacity(buffer_frames),
-              .early_tolerance = program_frame_duration / 2,
-          })
         , output_watermark_(buffer_frames)
         , program_frame_duration_(program_frame_duration)
-        , program_preroll_frames_(buffer_frames)
         , configured_buffer_frames_(buffer_frames)
         , program_epoch_(program_epoch)
-        , preroll_frames_(preroll_frames)
     {
     }
 
@@ -669,6 +656,14 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     void start_async()
     {
         post_control([](callback_s& self) { self.start_control(); });
+    }
+
+    void request_preroll_pump()
+    {
+        if (phase_.load() != phase_e::prerolling || preroll_pump_posted_.exchange(true)) {
+            return;
+        }
+        post_control([](callback_s& self) { self.pump_preroll(); });
     }
 
     void stop_async()
@@ -698,39 +693,40 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     metrics_s metrics() const
     {
         const std::scoped_lock lock(frame_mutex_);
-        const auto&            output_metrics  = output_queue_.metrics();
-        const auto             runtime_metrics = runtime_metrics_.snapshot();
-        auto                   result          = metrics_s{
-                                       .frames_completed                     = frames_completed_.load(),
-                                       .frames_displayed_late                = frames_displayed_late_.load(),
-                                       .frames_dropped                       = frames_dropped_.load(),
-                                       .frames_flushed                       = frames_flushed_.load(),
-                                       .program_frames_received              = output_metrics.pushed,
-                                       .program_queue_overflow_drops         = output_metrics.overflow_drops,
-                                       .program_timing_drops                 = output_metrics.selection_drops,
-                                       .program_frames_repeated              = output_metrics.repeated,
-                                       .program_frames_missing               = output_metrics.missing + program_frames_missing_,
-                                       .program_cadence_repeats              = runtime_metrics.cadence_repeats,
-                                       .program_starvation_repeats           = runtime_metrics.starvation_repeats,
-                                       .program_starvation_repeat_streak     = runtime_metrics.starvation_repeat_streak,
-                                       .program_starvation_repeat_streak_max = runtime_metrics.starvation_repeat_streak_max,
-                                       .output_refill_shortfalls             = runtime_metrics.refill_shortfalls,
-                                       .content_frames_sampled               = content_frames_sampled_,
-                                       .content_frame_repeats                = content_frame_repeats_,
-                                       .content_repeat_streak                = content_repeat_streak_,
-                                       .content_repeat_streak_max            = content_repeat_streak_max_,
-                                       .completion_intervals                 = runtime_metrics.completion_intervals,
-                                       .completion_interval_max_us =
+        const auto             output_metrics =
+            output_queue_.has_value() ? output_queue_->metrics() : media::timed_output_queue_metrics_s{};
+        const auto runtime_metrics = runtime_metrics_.snapshot();
+        auto       result          = metrics_s{
+                           .frames_completed                     = frames_completed_.load(),
+                           .frames_displayed_late                = frames_displayed_late_.load(),
+                           .frames_dropped                       = frames_dropped_.load(),
+                           .frames_flushed                       = frames_flushed_.load(),
+                           .program_frames_received              = output_metrics.pushed,
+                           .program_queue_overflow_drops         = output_metrics.overflow_drops,
+                           .program_timing_drops                 = output_metrics.selection_drops,
+                           .program_frames_repeated              = output_metrics.repeated,
+                           .program_frames_missing               = output_metrics.missing,
+                           .program_cadence_repeats              = runtime_metrics.cadence_repeats,
+                           .program_starvation_repeats           = runtime_metrics.starvation_repeats,
+                           .program_starvation_repeat_streak     = runtime_metrics.starvation_repeat_streak,
+                           .program_starvation_repeat_streak_max = runtime_metrics.starvation_repeat_streak_max,
+                           .output_refill_shortfalls             = runtime_metrics.refill_shortfalls,
+                           .content_frames_sampled               = content_frames_sampled_,
+                           .content_frame_repeats                = content_frame_repeats_,
+                           .content_repeat_streak                = content_repeat_streak_,
+                           .content_repeat_streak_max            = content_repeat_streak_max_,
+                           .completion_intervals                 = runtime_metrics.completion_intervals,
+                           .completion_interval_max_us =
                 std::chrono::duration_cast<std::chrono::microseconds>(runtime_metrics.completion_interval_max).count(),
-                                       .completion_interval_max_sequence = runtime_metrics.completion_interval_max_sequence,
-                                       .program_queue_depth              = runtime_metrics.output_queue_depth,
-                                       .program_queue_depth_max          = runtime_metrics.output_queue_depth_max,
-                                       .buffered_video_frames            = runtime_metrics.buffered_frames,
-                                       .buffered_video_frames_min        = runtime_metrics.buffered_frames_min,
-                                       .buffered_video_frames_max        = runtime_metrics.buffered_frames_max,
-                                       .buffered_below_target_samples    = runtime_metrics.buffered_below_target_samples,
-                                       .buffered_zero_samples            = runtime_metrics.buffered_zero_samples,
-                                       .download_stream                  = {},
+                           .completion_interval_max_sequence = runtime_metrics.completion_interval_max_sequence,
+                           .program_queue_depth              = runtime_metrics.output_queue_depth,
+                           .program_queue_depth_max          = runtime_metrics.output_queue_depth_max,
+                           .buffered_video_frames            = runtime_metrics.buffered_frames,
+                           .buffered_video_frames_min        = runtime_metrics.buffered_frames_min,
+                           .buffered_video_frames_max        = runtime_metrics.buffered_frames_max,
+                           .buffered_below_target_samples    = runtime_metrics.buffered_below_target_samples,
+                           .buffered_zero_samples            = runtime_metrics.buffered_zero_samples,
+                           .download_stream                  = {},
         };
         if (download_stream_) {
             result.download_stream = download_stream_->metrics();
@@ -810,7 +806,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
 class node_impl : public node_i
 {
-    using selection_t = std::tuple<std::string, std::string, bool, frame_rate_s, uint64_t, int, int>;
+    using selection_t = std::tuple<std::string, std::string, bool, frame_rate_s, uint64_t, int>;
 
     decklink_ptr<callback_s>                  callback_;
     std::optional<callback_s::render_state_s> render_state_;
@@ -845,7 +841,6 @@ class node_impl : public node_i
                         std::string_view              display_mode,
                         utils::flicks                 program_frame_duration,
                         uint64_t                      program_epoch,
-                        int                           preroll_frames,
                         int                           buffer_frames)
     {
         auto reservation = device_reservation_s<IDeckLinkOutput>::acquire(device.get());
@@ -862,7 +857,6 @@ class node_impl : public node_i
                                                   std::string(display_mode),
                                                   program_frame_duration,
                                                   program_epoch,
-                                                  static_cast<size_t>(preroll_frames),
                                                   static_cast<size_t>(buffer_frames));
         callback_->start_async();
         return true;
@@ -962,7 +956,6 @@ class node_impl : public node_i
         const auto device_name    = state.get_option<std::string>("device_name");
         const auto display_mode   = state.get_option<std::string>("display_mode");
         const auto enabled        = state.get_option<bool>("enabled");
-        const auto preroll_frames = app->frame_settings().decklink_output.preroll_frames;
         const auto buffer_frames  = app->frame_settings().decklink_output.buffer_frames;
         result->demands_execution = enabled;
         publish_device_status(app, device_name);
@@ -973,7 +966,6 @@ class node_impl : public node_i
             enabled,
             app->frame_settings().frame_rate,
             app->frame_context().epoch,
-            preroll_frames,
             buffer_frames,
         };
         if (selection_.observe(selection)) {
@@ -989,9 +981,12 @@ class node_impl : public node_i
         publish_callback_status(status, device_name);
         if (callback_) {
             const auto phase = callback_->phase();
-            if (phase == callback_s::phase_e::running) {
+            if (phase == callback_s::phase_e::prerolling || phase == callback_s::phase_e::running) {
                 if (!render_state_) {
                     render_state_ = callback_->render_state();
+                }
+                if (phase == callback_s::phase_e::prerolling) {
+                    callback_->request_preroll_pump();
                 }
                 status->write(id_, "connected", render_state_.has_value());
                 return;
@@ -1024,7 +1019,6 @@ class node_impl : public node_i
                                        display_mode,
                                        app->frame_context().duration,
                                        app->frame_context().epoch,
-                                       preroll_frames,
                                        buffer_frames)) {
             next_start_attempt_ = std::chrono::steady_clock::now() + 100ms;
         }
@@ -1078,6 +1072,7 @@ class node_impl : public node_i
         gpu::framebuffer_s::end_render();
         target->set_tag(static_cast<uint64_t>(app->frame_context().pts.count()));
         target->submit();
+        callback_->request_preroll_pump();
     }
 
     void complete(core::app_state_s* /*app*/) final {}

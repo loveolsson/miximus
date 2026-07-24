@@ -40,13 +40,6 @@ export const ApplicationSettingsNode = defineNode({
   title: "Application Settings",
   inputs: {
     frame_rate: () => new FrameRateInterface(),
-    decklink_output_preroll_frames: () =>
-      new NumericInterface("Preroll frames", 4, {
-        precision: 0,
-        step: 1,
-        min: 1,
-        max: 8,
-      }).setPort(false),
     decklink_output_buffer_frames: () =>
       new NumericInterface("Buffered frames", 4, {
         precision: 0,

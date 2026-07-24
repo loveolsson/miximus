@@ -83,10 +83,9 @@ class node_impl final : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"frame_rate",                     DEFAULT_FRAME_RATE                                },
-            {"decklink_output_preroll_frames", decklink_output_settings_s::DEFAULT_PREROLL_FRAMES},
-            {"decklink_output_buffer_frames",  decklink_output_settings_s::DEFAULT_BUFFER_FRAMES },
-            {"ndi_output_buffer_frames",       ndi_output_settings_s::DEFAULT_BUFFER_FRAMES      },
+            {"frame_rate",                    DEFAULT_FRAME_RATE                               },
+            {"decklink_output_buffer_frames", decklink_output_settings_s::DEFAULT_BUFFER_FRAMES},
+            {"ndi_output_buffer_frames",      ndi_output_settings_s::DEFAULT_BUFFER_FRAMES     },
         };
     }
 
@@ -95,7 +94,7 @@ class node_impl final : public node_i
         if (name == "frame_rate") {
             return normalize_frame_rate(value);
         }
-        if (name == "decklink_output_preroll_frames" || name == "decklink_output_buffer_frames") {
+        if (name == "decklink_output_buffer_frames") {
             return normalize_option_value<int>(
                 value, decklink_output_settings_s::MIN_BUFFER_FRAMES, decklink_output_settings_s::MAX_BUFFER_FRAMES);
         }

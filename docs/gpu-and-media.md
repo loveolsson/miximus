@@ -181,19 +181,20 @@ all capture buffers are returned, and transfer-stream destruction has been queue
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
 DeckLink output renders packed 10-bit YUV into a PTS-tagged download target. The transfer worker completes readback,
-and the scheduled-frame callback drains ready leases in FIFO order into a bounded timed-output queue. Draining stops
-when that queue is full, leaving backpressure in the download stream instead of discarding the oldest due frame. The
-callback continues scheduling the retained black preroll frame until the converted program queue reaches the configured
-buffer target, then selects the newest eligible program frame for each exact DeckLink interval. It explicitly retains
-frames for repeats and accounts for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer
-lease without a copy, so the SDK frame keeps host memory reserved until DeckLink releases it. The configured black-frame
-preroll and steady
-scheduled-frame target default to four frames and are independently adjustable from one to eight frames through the
-global DeckLink-output settings. All DeckLink output nodes use the same frame-boundary snapshot. Changing either
-setting uses the normal asynchronous output restart and recreates each affected bounded download stream; a brief
-output interruption is expected. Output streams enqueue their complete bounded slot set at creation so lazy pool growth
-cannot cause program-frame repeats after preroll begins. The callback neither makes a GL context current nor waits for a
-transfer.
+and ready leases drain in FIFO order into a bounded timed-output queue. Draining stops when that queue is full, leaving
+backpressure in the download stream instead of discarding the oldest due frame. Before playback starts, short
+non-blocking control tasks collect actual program downloads. Once the configured buffer target is available, those
+program frames are scheduled as the SDK preroll and playback begins. The completion callback then selects the newest
+eligible program frame for each exact DeckLink interval. It explicitly retains frames for repeats and accounts for
+superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
+frame keeps host memory reserved until DeckLink releases it.
+
+The single global DeckLink-output buffer target defaults to four frames and is adjustable from one to eight. The SDK's
+reported minimum preroll raises the effective target when necessary. All DeckLink output nodes use the same
+frame-boundary snapshot. Changing the setting uses the normal asynchronous output restart and recreates each affected
+bounded download stream; a brief output interruption is expected. Output streams enqueue their complete bounded slot
+set at creation so lazy pool growth cannot cause program-frame repeats after preroll begins. Neither the callback nor
+the preroll control task makes a GL context current or waits for a transfer.
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
 

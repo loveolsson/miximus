@@ -415,16 +415,13 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         }
         const auto& settings_state = settings->second.state;
         const auto  frame_rate     = settings_state.options.at("frame_rate").get<frame_rate_s>();
-        const auto  decklink_output_preroll_frames =
-            settings_state.options.at("decklink_output_preroll_frames").get<int>();
-        const auto decklink_output_buffer_frames =
+        const auto  decklink_output_buffer_frames =
             settings_state.options.at("decklink_output_buffer_frames").get<int>();
-        const auto ndi_output_buffer_frames = settings_state.options.at("ndi_output_buffer_frames").get<int>();
-        auto       frame_settings           = app_state_s::frame_settings_s{};
-        frame_settings.frame_rate           = frame_rate;
-        frame_settings.decklink_output.preroll_frames = decklink_output_preroll_frames;
-        frame_settings.decklink_output.buffer_frames  = decklink_output_buffer_frames;
-        frame_settings.ndi_output.buffer_frames       = ndi_output_buffer_frames;
+        const auto ndi_output_buffer_frames          = settings_state.options.at("ndi_output_buffer_frames").get<int>();
+        auto       frame_settings                    = app_state_s::frame_settings_s{};
+        frame_settings.frame_rate                    = frame_rate;
+        frame_settings.decklink_output.buffer_frames = decklink_output_buffer_frames;
+        frame_settings.ndi_output.buffer_frames      = ndi_output_buffer_frames;
         app->begin_frame(frame_settings, scheduler.begin_frame(frame_rate));
 
         {

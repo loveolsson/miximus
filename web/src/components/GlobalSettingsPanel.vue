@@ -55,7 +55,7 @@ const sectionDefinitions = [
   { title: "Program", keys: ["frame_rate"] },
   {
     title: "DeckLink Output",
-    keys: ["decklink_output_preroll_frames", "decklink_output_buffer_frames"],
+    keys: ["decklink_output_buffer_frames"],
   },
   { title: "NDI Output", keys: ["ndi_output_buffer_frames"] },
 ] as const;
