@@ -147,7 +147,7 @@ void web_server_impl::serve_static_file(const server_t::connection_ptr& connecti
     const auto* file  = files.get_file(resource);
 
     if (file == nullptr) {
-        connection->set_body(create_404_body(std::string(path)));
+        connection->set_body(create_404_body(path));
         connection->replace_header("Content-Type", "text/html;charset=UTF-8");
         connection->replace_header("Cache-Control", "no-store");
         connection->set_status(status_code::not_found);

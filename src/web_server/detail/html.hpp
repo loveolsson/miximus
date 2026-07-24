@@ -1,36 +1,37 @@
 #pragma once
 #include <format>
 #include <string>
+#include <string_view>
 
 namespace miximus::web_server::detail {
 
-inline std::string html_escape(const std::string& s)
+inline std::string html_escape(std::string_view value)
 {
-    std::string r;
-    r.reserve(s.size());
-    for (const char c : s) {
-        switch (c) {
+    std::string result;
+    result.reserve(value.size());
+    for (const char character : value) {
+        switch (character) {
             case '<':
-                r += "&lt;";
+                result += "&lt;";
                 break;
             case '>':
-                r += "&gt;";
+                result += "&gt;";
                 break;
             case '&':
-                r += "&amp;";
+                result += "&amp;";
                 break;
             case '"':
-                r += "&quot;";
+                result += "&quot;";
                 break;
             default:
-                r += c;
+                result += character;
                 break;
         }
     }
-    return r;
+    return result;
 }
 
-inline std::string create_404_body(const std::string& resource)
+inline std::string create_404_body(std::string_view resource)
 {
     return std::format("<!doctype html><html><head>"
                        "<title>Error 404 (Resource not found)</title><body>"
