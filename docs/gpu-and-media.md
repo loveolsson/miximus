@@ -108,7 +108,10 @@ ordering and perform their own timed selection. A frame lease exposes a read-onl
 reserved until the external SDK has finished using it. If no render target is free, the node drops that output frame
 instead of waiting.
 
-Both services enforce memory budgets and catch allocation failures. Slots are allocated only after a stream is first used, and stream destruction reclaims its resources on the owning GL worker. Per-stream slot limits bound latency and memory growth.
+Both services enforce memory budgets and catch allocation failures. Streams may request an initial bounded slot set when
+their steady-state retention is known; those allocations still run asynchronously on the owning GL worker. Otherwise,
+slots are allocated only after a stream is first used. Stream destruction reclaims its resources on that worker, and
+per-stream slot limits bound latency and memory growth.
 
 ### Texture lifetime hooks
 
@@ -147,8 +150,12 @@ Keeping one lease for the full lifetime of a DeckLink buffer would upload only i
 slots after the initial pool. Completed GPU textures remain owned by the upload stream independently of the DeckLink
 buffer object.
 
-The input pool has eight slots: four may be retained by timed selection, while the remainder cover the published
-texture, asynchronous reclaim, and DeckLink's next DMA write without requiring the SDK callback to wait on rendering.
+The custom allocator exposes at most eight reusable DeckLink buffer objects and reports `E_OUTOFMEMORY` when DeckLink
+has all eight checked out; this is how the SDK establishes the bounded capture pool. Its upload stream preallocates
+eight transfer slots and may grow to sixteen: four may be retained by timed selection, while the remainder cover the
+published texture, DeckLink DMA writes, uploads, and asynchronous reclaim without coupling capture cadence to the
+render thread. These limits are intentionally separate because DeckLink buffer-object reuse and transfer-slot lifetime
+are independent. Every address still comes from a transfer backend; there is no node-owned staging allocation.
 
 The upload stream retains its current completed texture until the render thread consumes a newer completed version;
 publishing the replacement returns the former slot to the stream. The timing queue deliberately chooses whether a
@@ -174,14 +181,19 @@ all capture buffers are returned, and transfer-stream destruction has been queue
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
 DeckLink output renders packed 10-bit YUV into a PTS-tagged download target. The transfer worker completes readback,
-and the scheduled-frame callback drains ready leases in FIFO order into a bounded timed-output queue. It selects the
-newest eligible program frame for each exact DeckLink interval, explicitly retaining frames for repeats and accounting
-for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
-frame keeps host memory reserved until DeckLink releases it. The configured black-frame preroll and steady
+and the scheduled-frame callback drains ready leases in FIFO order into a bounded timed-output queue. Draining stops
+when that queue is full, leaving backpressure in the download stream instead of discarding the oldest due frame. The
+callback continues scheduling the retained black preroll frame until the converted program queue reaches the configured
+buffer target, then selects the newest eligible program frame for each exact DeckLink interval. It explicitly retains
+frames for repeats and accounts for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer
+lease without a copy, so the SDK frame keeps host memory reserved until DeckLink releases it. The configured black-frame
+preroll and steady
 scheduled-frame target default to four frames and are independently adjustable from one to eight frames through the
 global DeckLink-output settings. All DeckLink output nodes use the same frame-boundary snapshot. Changing either
 setting uses the normal asynchronous output restart and recreates each affected bounded download stream; a brief
-output interruption is expected. The callback neither makes a GL context current nor waits for a transfer.
+output interruption is expected. Output streams enqueue their complete bounded slot set at creation so lazy pool growth
+cannot cause program-frame repeats after preroll begins. The callback neither makes a GL context current nor waits for a
+transfer.
 
 DeckLink registry discovery is asynchronous and protected by a shared mutex. Device arrival/removal increments `device_list_version_`. Nodes compare that version before rebuilding device-name status lists.
 
@@ -217,7 +229,8 @@ cursor at the program rate. It deliberately drops superseded program frames, rep
 intervals, skips obsolete output intervals rather than bursting to catch up, and derives NDI timecode from the output
 cursor. `clock_video` remains disabled. Potentially blocking asynchronous sends stay on the worker, and each download
 lease is retained until the following NDI async-send call releases the SDK's use of that memory. Enabled NDI outputs
-remain demanding graph sinks regardless of receiver count.
+remain demanding graph sinks regardless of receiver count. Like DeckLink output, the bounded download stream queues its
+initial slot set before sending begins rather than growing one retained slot at a time during playout.
 
 ## Font registry and CPU surfaces
 

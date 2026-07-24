@@ -105,6 +105,31 @@ TEST(SourceClock, TracksSustainedSourceDriftWithoutFollowingIndividualFrames)
     EXPECT_NEAR(require_value(clock.recovered_rate()), expected_rate, 0.0001);
 }
 
+TEST(SourceClock, RateRegressionRejectsCallbackArrivalJitter)
+{
+    constexpr auto JITTER = utils::to_flicks(0.008);
+
+    media::source_clock_estimator_s clock({
+        .phase_filter_divisor       = 128,
+        .rate_filter_divisor        = 1,
+        .rate_observation_frames    = 600,
+        .maximum_rate_deviation_ppm = 1'000.0,
+        .maximum_phase_adjustment   = utils::to_flicks(0.00025),
+        .discontinuity_threshold    = utils::to_flicks(0.5),
+    });
+
+    ASSERT_EQ(clock.observe(make_frame_id(1, {}), JITTER), media::source_clock_observation_e::initialized);
+    for (uint64_t frame = 1; frame <= 600; ++frame) {
+        const auto pts    = FRAME_DURATION * static_cast<utils::flicks::rep>(frame);
+        const auto jitter = frame % 2 == 0 ? JITTER : -JITTER;
+        ASSERT_EQ(clock.observe(make_frame_id(frame + 1, pts), pts + jitter),
+                  media::source_clock_observation_e::updated);
+    }
+
+    EXPECT_NEAR(require_value(clock.observed_rate()), 1.0, 0.0001);
+    EXPECT_NEAR(require_value(clock.recovered_rate()), 1.0, 0.0001);
+}
+
 TEST(SourceClock, ChangesRecoveredRateWithoutMovingTheCurrentPhase)
 {
     constexpr auto DRIFT_PER_FRAME = utils::to_flicks(0.00001);
@@ -198,6 +223,80 @@ TEST(TimedSourceQueue, AppliesPlayoutDelayInSourceFrameIntervals)
     ASSERT_TRUE(first->mark_ready());
     ASSERT_TRUE(ticket.await());
     EXPECT_TRUE(queue.commit(ticket));
+}
+
+TEST(TimedSourceQueue, HalfFrameToleranceRejectsArrivalJitterWithoutRepeatingOrDropping)
+{
+    media::timed_source_queue_s<int> queue({.playout_delay_frames = 1});
+    constexpr auto                   TARGET_TIME    = utils::to_flicks(100.0);
+    constexpr auto                   SOURCE_ORIGIN  = utils::to_flicks(40.0);
+    constexpr auto                   CALLBACK_PHASE = FRAME_DURATION / 2;
+    constexpr auto                   JITTER         = utils::to_flicks(0.002);
+
+    for (uint64_t frame = 0; frame < 300; ++frame) {
+        const auto offset      = FRAME_DURATION * static_cast<utils::flicks::rep>(frame);
+        const auto source_pts  = SOURCE_ORIGIN + offset;
+        const auto program_pts = offset;
+        const auto arrival     = TARGET_TIME + offset + CALLBACK_PHASE + (frame % 2 == 0 ? -JITTER : JITTER);
+        queue.push(queue.create_frame(make_frame_id(frame + 1, source_pts), arrival, static_cast<int>(frame)));
+        queue.advance(program_pts, TARGET_TIME + program_pts);
+
+        const auto ticket = queue.select(program_pts, FRAME_DURATION / 2);
+        if (frame == 0) {
+            EXPECT_EQ(ticket.selection(), media::prepared_frame_selection_e::missing);
+            continue;
+        }
+
+        ASSERT_EQ(ticket.selection(), media::prepared_frame_selection_e::new_frame);
+        ASSERT_NE(ticket.frame(), nullptr);
+        EXPECT_EQ(ticket.frame()->value(), static_cast<int>(frame - 1));
+        ASSERT_TRUE(ticket.frame()->mark_submitted());
+        ASSERT_TRUE(ticket.frame()->mark_ready());
+        ASSERT_TRUE(ticket.await());
+        ASSERT_TRUE(queue.commit(ticket));
+    }
+
+    EXPECT_EQ(queue.metrics().selection_drops, 0);
+    EXPECT_EQ(queue.metrics().repeated, 0);
+}
+
+TEST(TimedSourceQueue, DelayedExactRateSourceDoesNotOscillateAtTheHalfFrameBoundary)
+{
+    constexpr auto EXACT_FRAME_DURATION = utils::flicks{11'760'000};
+    constexpr auto TARGET_TIME          = utils::to_flicks(100.0);
+    constexpr auto SOURCE_ORIGIN        = utils::to_flicks(40.0);
+    constexpr auto CALLBACK_PHASE       = EXACT_FRAME_DURATION / 2;
+    constexpr auto JITTER               = utils::to_flicks(0.0001);
+
+    media::timed_source_queue_s<int> queue({.capacity = 5, .playout_delay_frames = 3});
+    for (uint64_t frame = 0; frame < 10'000; ++frame) {
+        const auto offset      = EXACT_FRAME_DURATION * static_cast<utils::flicks::rep>(frame);
+        const auto program_pts = offset;
+        const auto source_id   = media::media_frame_id_s{
+              .epoch    = 1,
+              .sequence = frame + 1,
+              .pts      = SOURCE_ORIGIN + offset,
+              .duration = EXACT_FRAME_DURATION,
+        };
+        const auto jitter = frame % 10 == 0 ? JITTER : -JITTER;
+        queue.push(
+            queue.create_frame(source_id, TARGET_TIME + offset + CALLBACK_PHASE + jitter, static_cast<int>(frame)));
+        queue.advance(program_pts, TARGET_TIME + program_pts);
+
+        const auto ticket = queue.select(program_pts, EXACT_FRAME_DURATION / 2);
+        if (ticket.selection() == media::prepared_frame_selection_e::missing) {
+            continue;
+        }
+        ASSERT_EQ(ticket.selection(), media::prepared_frame_selection_e::new_frame) << "at frame " << frame;
+        ASSERT_NE(ticket.frame(), nullptr);
+        ASSERT_TRUE(ticket.frame()->mark_submitted());
+        ASSERT_TRUE(ticket.frame()->mark_ready());
+        ASSERT_TRUE(ticket.await());
+        ASSERT_TRUE(queue.commit(ticket));
+    }
+
+    EXPECT_EQ(queue.metrics().timing_repeats, 0);
+    EXPECT_EQ(queue.metrics().overflow_drops, 0);
 }
 
 TEST(TimedSourceQueue, AwaitUsesTheExactSelectedFrameInsteadOfThePreviousFrame)
@@ -317,6 +416,25 @@ TEST(TimedSourceQueue, ReportsFailureForTheExactSelectedFrame)
     const auto missing = queue.select(FRAME_DURATION);
     EXPECT_EQ(missing.selection(), media::prepared_frame_selection_e::missing);
     EXPECT_EQ(missing.frame(), nullptr);
+}
+
+TEST(TimedSourceQueue, ReportsCancellationSeparatelyFromTransferFailure)
+{
+    media::timed_source_queue_s<int> queue;
+    constexpr auto                   TARGET_TIME   = utils::to_flicks(100.0);
+    constexpr auto                   SOURCE_ORIGIN = utils::to_flicks(40.0);
+
+    const auto selected = queue.create_frame(make_frame_id(1, SOURCE_ORIGIN), TARGET_TIME, 20);
+    queue.push(selected);
+    queue.advance({}, TARGET_TIME);
+    const auto ticket = queue.select({});
+    ASSERT_TRUE(selected->mark_submitted());
+
+    queue.cancel(ticket);
+    EXPECT_FALSE(ticket.await());
+    EXPECT_FALSE(queue.commit(ticket));
+    EXPECT_EQ(queue.metrics().transfer_failures, 0);
+    EXPECT_EQ(queue.metrics().transfer_cancellations, 1);
 }
 
 TEST(TimedSourceQueue, ResetCancelsAnExactOutstandingTicket)

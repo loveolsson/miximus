@@ -699,7 +699,9 @@ cadence is slower, and drops superseded frames when it is faster. The existing f
 default, while separate global one-to-eight-frame DeckLink-output settings control startup preroll and the steady
 scheduled-frame target for every output of that type. Changing either setting deliberately follows the existing
 asynchronous stop/restart path and recreates the affected bounded download streams; preserving output continuity across
-a buffer-size change is not a requirement.
+a buffer-size change is not a requirement. The output control path waits off the render thread for the bounded initial
+download-slot set before exposing the stream and beginning scheduled program playout. This prevents asynchronous pool
+growth from appearing as a sequence of otherwise avoidable program-frame repeats.
 
 Deliverables:
 

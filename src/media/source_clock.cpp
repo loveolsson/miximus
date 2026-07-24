@@ -34,7 +34,15 @@ source_clock_observation_e source_clock_estimator_s::observe(const media_frame_i
         rate_reference_sequence_ = id.sequence;
         rate_source_reference_   = id.pts;
         rate_program_reference_  = program_observation;
+        rate_source_sum_         = 0.0L;
+        rate_program_sum_        = 0.0L;
+        rate_source_squared_sum_ = 0.0L;
+        rate_source_program_sum_ = 0.0L;
+        rate_sample_count_       = 0;
         rate_                    = 1.0;
+        observed_rate_.reset();
+        phase_error_.reset();
+        phase_adjustment_.reset();
     };
 
     if (!epoch_.has_value()) {
@@ -58,12 +66,25 @@ source_clock_observation_e source_clock_estimator_s::observe(const media_frame_i
         return source_clock_observation_e::discontinuity;
     }
 
+    const auto rate_source_delta  = id.pts - rate_source_reference_;
+    const auto rate_program_delta = program_observation - rate_program_reference_;
+    if (rate_source_delta > utils::flicks::zero() && rate_program_delta > utils::flicks::zero()) {
+        const auto source  = static_cast<long double>(rate_source_delta.count());
+        const auto program = static_cast<long double>(rate_program_delta.count());
+        rate_source_sum_ += source;
+        rate_program_sum_ += program;
+        rate_source_squared_sum_ += source * source;
+        rate_source_program_sum_ += source * program;
+        ++rate_sample_count_;
+    }
+
     if (id.sequence - rate_reference_sequence_ >= config_.rate_observation_frames) {
-        const auto rate_source_delta  = id.pts - rate_source_reference_;
-        const auto rate_program_delta = program_observation - rate_program_reference_;
-        if (rate_source_delta > utils::flicks::zero() && rate_program_delta > utils::flicks::zero()) {
-            const auto observed_rate =
-                static_cast<double>(rate_program_delta.count()) / static_cast<double>(rate_source_delta.count());
+        const auto sample_count = static_cast<long double>(rate_sample_count_);
+        const auto denominator  = sample_count * rate_source_squared_sum_ - rate_source_sum_ * rate_source_sum_;
+        if (denominator > 0.0L) {
+            const auto numerator     = sample_count * rate_source_program_sum_ - rate_source_sum_ * rate_program_sum_;
+            const auto observed_rate = static_cast<double>(numerator / denominator);
+            observed_rate_           = observed_rate;
             const auto maximum_deviation = config_.maximum_rate_deviation_ppm / 1'000'000.0;
             const auto bounded_rate      = std::clamp(observed_rate, 1.0 - maximum_deviation, 1.0 + maximum_deviation);
             source_anchor_               = id.pts;
@@ -73,12 +94,19 @@ source_clock_observation_e source_clock_estimator_s::observe(const media_frame_i
         rate_reference_sequence_ = id.sequence;
         rate_source_reference_   = id.pts;
         rate_program_reference_  = program_observation;
+        rate_source_sum_         = 0.0L;
+        rate_program_sum_        = 0.0L;
+        rate_source_squared_sum_ = 0.0L;
+        rate_source_program_sum_ = 0.0L;
+        rate_sample_count_       = 0;
     }
 
     const auto error   = program_observation - *predicted;
     const auto divisor = static_cast<utils::flicks::rep>(config_.phase_filter_divisor);
     const auto adjustment =
         std::clamp(error / divisor, -config_.maximum_phase_adjustment, config_.maximum_phase_adjustment);
+    phase_error_      = error;
+    phase_adjustment_ = adjustment;
     program_anchor_ += adjustment;
     epoch_               = id.epoch;
     sequence_            = id.sequence;
@@ -108,11 +136,17 @@ std::optional<double> source_clock_estimator_s::recovered_rate() const
     return epoch_.has_value() ? std::optional(rate_) : std::nullopt;
 }
 
+std::optional<double> source_clock_estimator_s::observed_rate() const { return observed_rate_; }
+
 std::optional<utils::flicks> source_clock_estimator_s::phase_offset() const
 {
     const auto mapped = map(source_pts_);
     return mapped.has_value() ? std::optional(*mapped - source_pts_) : std::nullopt;
 }
+
+std::optional<utils::flicks> source_clock_estimator_s::phase_error() const { return phase_error_; }
+
+std::optional<utils::flicks> source_clock_estimator_s::phase_adjustment() const { return phase_adjustment_; }
 
 void source_clock_estimator_s::reset()
 {
@@ -125,7 +159,15 @@ void source_clock_estimator_s::reset()
     rate_reference_sequence_ = 0;
     rate_source_reference_   = {};
     rate_program_reference_  = {};
+    rate_source_sum_         = 0.0L;
+    rate_program_sum_        = 0.0L;
+    rate_source_squared_sum_ = 0.0L;
+    rate_source_program_sum_ = 0.0L;
+    rate_sample_count_       = 0;
     rate_                    = 1.0;
+    observed_rate_.reset();
+    phase_error_.reset();
+    phase_adjustment_.reset();
 }
 
 } // namespace miximus::media

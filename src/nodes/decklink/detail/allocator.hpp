@@ -96,9 +96,11 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
 class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocator
 {
   public:
-    // Four slots may be retained by timed selection. The remaining slots cover
-    // the published texture, asynchronous reclaim, and DeckLink's next DMA write.
-    static constexpr size_t BUFFER_COUNT = 8;
+    // DeckLink treats E_OUTOFMEMORY as the end of the capture-buffer pool.
+    // Keep SDK-owned buffers bounded independently of transfer-slot lifetime.
+    static constexpr size_t BUFFER_COUNT              = 8;
+    static constexpr size_t INITIAL_UPLOAD_SLOT_COUNT = BUFFER_COUNT;
+    static constexpr size_t UPLOAD_SLOT_COUNT         = 16;
 
   private:
     struct buffer_slot_s
@@ -113,6 +115,9 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
     std::array<buffer_slot_s, BUFFER_COUNT>                 buffers_;
     size_t                                                  active_buffers_{};
     bool                                                    shutting_down_{};
+    std::atomic_uint64_t                                    upload_acquire_slow_count_{};
+    std::atomic_uint64_t                                    upload_acquire_failures_{};
+    std::atomic_uint64_t                                    upload_acquire_wait_max_us_{};
     std::atomic_ulong                                       ref_count_{1};
     uint32_t                                                buffer_size_;
 
@@ -125,8 +130,11 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
     }
     ~input_video_buffer_allocator_s();
 
-    auto acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>;
-    auto buffer_size() const { return buffer_size_; }
+    auto     acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>;
+    auto     buffer_size() const { return buffer_size_; }
+    uint64_t upload_acquire_slow_count() const { return upload_acquire_slow_count_.load(); }
+    uint64_t upload_acquire_failures() const { return upload_acquire_failures_.load(); }
+    uint64_t upload_acquire_wait_max_us() const { return upload_acquire_wait_max_us_.load(); }
 
     HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) override;
     void                      return_buffer(input_video_buffer_s* buffer);

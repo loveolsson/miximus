@@ -155,11 +155,19 @@ struct timed_source_queue_metrics_s
     uint64_t                     overflow_drops{};
     uint64_t                     selection_drops{};
     uint64_t                     repeated{};
+    uint64_t                     starvation_repeats{};
+    uint64_t                     timing_repeats{};
     uint64_t                     missing{};
     uint64_t                     discontinuities{};
     uint64_t                     transfer_failures{};
+    uint64_t                     transfer_cancellations{};
     std::optional<double>        recovered_rate;
+    std::optional<double>        observed_rate;
     std::optional<utils::flicks> phase_offset;
+    std::optional<utils::flicks> phase_error;
+    std::optional<utils::flicks> phase_adjustment;
+    std::optional<utils::flicks> repeat_next_frame_lead_min;
+    std::optional<utils::flicks> repeat_next_frame_lead_max;
 };
 
 template <typename T>
@@ -177,22 +185,46 @@ class timed_source_queue_s
         utils::flicks program_pts;
     };
 
-    timed_source_queue_config_s config_;
-    source_clock_estimator_s    clock_;
-    mutable std::mutex          pending_mutex_;
-    std::deque<frame_ptr_t>     pending_;
-    std::deque<aligned_frame_s> frames_;
-    frame_ptr_t                 current_;
-    bool                        discontinuity_pending_{};
-    std::atomic_size_t          queued_frames_{};
+    timed_source_queue_config_s  config_;
+    source_clock_estimator_s     clock_;
+    mutable std::mutex           pending_mutex_;
+    std::deque<frame_ptr_t>      pending_;
+    std::deque<aligned_frame_s>  frames_;
+    frame_ptr_t                  current_;
+    std::optional<utils::flicks> arrival_offset_origin_;
+    bool                         discontinuity_pending_{};
+    std::atomic_size_t           queued_frames_{};
 
-    std::atomic_uint64_t pushed_{};
-    std::atomic_uint64_t overflow_drops_{};
-    std::atomic_uint64_t selection_drops_{};
-    std::atomic_uint64_t repeated_{};
-    std::atomic_uint64_t missing_{};
-    std::atomic_uint64_t discontinuities_{};
-    std::atomic_uint64_t transfer_failures_{};
+    std::atomic_uint64_t         pushed_{};
+    std::atomic_uint64_t         overflow_drops_{};
+    std::atomic_uint64_t         selection_drops_{};
+    std::atomic_uint64_t         repeated_{};
+    std::atomic_uint64_t         starvation_repeats_{};
+    std::atomic_uint64_t         timing_repeats_{};
+    std::atomic_uint64_t         missing_{};
+    std::atomic_uint64_t         discontinuities_{};
+    std::atomic_uint64_t         transfer_failures_{};
+    std::atomic_uint64_t         transfer_cancellations_{};
+    std::optional<utils::flicks> repeat_next_frame_lead_min_;
+    std::optional<utils::flicks> repeat_next_frame_lead_max_;
+
+    bool retire(const ticket_t& ticket)
+    {
+        if (ticket.selection_ != prepared_frame_selection_e::new_frame || ticket.frame_ == nullptr) {
+            return false;
+        }
+
+        if (!ticket.frame_->mark_failed()) {
+            return false;
+        }
+        const auto match =
+            std::ranges::find_if(frames_, [&](const aligned_frame_s& frame) { return frame.frame == ticket.frame_; });
+        if (match != frames_.end()) {
+            frames_.erase(match);
+            release_queued_frames(1);
+        }
+        return true;
+    }
 
     static void cancel_frame(const frame_ptr_t& frame)
     {
@@ -208,10 +240,27 @@ class timed_source_queue_s
         }
     }
 
+    static utils::flicks get_arrival_phase(utils::flicks offset, utils::flicks frame_duration)
+    {
+        if (frame_duration <= utils::flicks::zero()) {
+            return offset;
+        }
+
+        auto       phase = offset.count() % frame_duration.count();
+        const auto half  = frame_duration.count() / 2;
+        if (phase > half) {
+            phase -= frame_duration.count();
+        } else if (phase < -half) {
+            phase += frame_duration.count();
+        }
+        return utils::flicks{phase};
+    }
+
     void clear_for_discontinuity(bool reset_clock)
     {
         if (reset_clock) {
             clock_.reset();
+            arrival_offset_origin_.reset();
         }
         for (const auto& frame : frames_) {
             cancel_frame(frame.frame);
@@ -311,11 +360,25 @@ class timed_source_queue_s
             clear_for_discontinuity(true);
         }
 
+        if (!arrival_offset_origin_.has_value() && !pending.empty()) {
+            const auto newest = std::ranges::max_element(
+                pending, {}, [](const frame_ptr_t& frame) { return std::pair(frame->id.epoch, frame->id.sequence); });
+            const auto arrival_offset = (*newest)->arrival_time - program_target_time;
+            arrival_offset_origin_    = get_arrival_phase(arrival_offset, (*newest)->id.duration);
+        }
+
         for (auto& frame : pending) {
-            const auto program_observation = program_pts + frame->arrival_time - program_target_time;
-            const auto observation         = clock_.observe(frame->id, program_observation);
+            const auto arrival_offset      = frame->arrival_time - program_target_time;
+            auto       program_observation = program_pts + arrival_offset - *arrival_offset_origin_;
+            auto       observation         = clock_.observe(frame->id, program_observation);
             if (observation == source_clock_observation_e::discontinuity) {
-                // observe() has already re-anchored the estimator to this frame.
+                // A new source timeline also establishes a new relative arrival
+                // phase. The callback's absolute phase is transport latency,
+                // not part of the source PTS relationship.
+                arrival_offset_origin_ = get_arrival_phase(arrival_offset, frame->id.duration);
+                program_observation    = program_pts + arrival_offset - *arrival_offset_origin_;
+                clock_.reset();
+                (void)clock_.observe(frame->id, program_observation);
                 clear_for_discontinuity(false);
             }
 
@@ -336,9 +399,9 @@ class timed_source_queue_s
         }
     }
 
-    ticket_t select(utils::flicks program_pts)
+    ticket_t select(utils::flicks program_pts, utils::flicks early_tolerance = {})
     {
-        const auto limit    = program_pts + config_.early_tolerance;
+        const auto limit    = program_pts + config_.early_tolerance + early_tolerance;
         auto       selected = frames_.end();
         for (auto it = frames_.begin(); it != frames_.end() && it->program_pts <= limit; ++it) {
             if (selected == frames_.end() || it->frame->id.epoch > selected->frame->id.epoch ||
@@ -371,6 +434,18 @@ class timed_source_queue_s
 
         if (current_ != nullptr) {
             repeated_.fetch_add(1, std::memory_order_relaxed);
+            if (frames_.empty()) {
+                starvation_repeats_.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                timing_repeats_.fetch_add(1, std::memory_order_relaxed);
+                const auto lead = frames_.front().program_pts - program_pts;
+                if (!repeat_next_frame_lead_min_.has_value() || lead < *repeat_next_frame_lead_min_) {
+                    repeat_next_frame_lead_min_ = lead;
+                }
+                if (!repeat_next_frame_lead_max_.has_value() || lead > *repeat_next_frame_lead_max_) {
+                    repeat_next_frame_lead_max_ = lead;
+                }
+            }
             return ticket_t(current_, prepared_frame_selection_e::repeat, discontinuity);
         }
 
@@ -401,20 +476,16 @@ class timed_source_queue_s
 
     void fail(const ticket_t& ticket)
     {
-        if (ticket.selection_ != prepared_frame_selection_e::new_frame || ticket.frame_ == nullptr) {
-            return;
+        if (retire(ticket)) {
+            transfer_failures_.fetch_add(1, std::memory_order_relaxed);
         }
+    }
 
-        if (!ticket.frame_->mark_failed()) {
-            return;
+    void cancel(const ticket_t& ticket)
+    {
+        if (retire(ticket)) {
+            transfer_cancellations_.fetch_add(1, std::memory_order_relaxed);
         }
-        const auto match =
-            std::ranges::find_if(frames_, [&](const aligned_frame_s& frame) { return frame.frame == ticket.frame_; });
-        if (match != frames_.end()) {
-            frames_.erase(match);
-            release_queued_frames(1);
-        }
-        transfer_failures_.fetch_add(1, std::memory_order_relaxed);
     }
 
     void reset()
@@ -433,16 +504,24 @@ class timed_source_queue_s
     timed_source_queue_metrics_s metrics() const
     {
         return {
-            .pushed            = pushed_.load(std::memory_order_relaxed),
-            .queued            = queued_frames_.load(std::memory_order_relaxed),
-            .overflow_drops    = overflow_drops_.load(std::memory_order_relaxed),
-            .selection_drops   = selection_drops_.load(std::memory_order_relaxed),
-            .repeated          = repeated_.load(std::memory_order_relaxed),
-            .missing           = missing_.load(std::memory_order_relaxed),
-            .discontinuities   = discontinuities_.load(std::memory_order_relaxed),
-            .transfer_failures = transfer_failures_.load(std::memory_order_relaxed),
-            .recovered_rate    = clock_.recovered_rate(),
-            .phase_offset      = clock_.phase_offset(),
+            .pushed                     = pushed_.load(std::memory_order_relaxed),
+            .queued                     = queued_frames_.load(std::memory_order_relaxed),
+            .overflow_drops             = overflow_drops_.load(std::memory_order_relaxed),
+            .selection_drops            = selection_drops_.load(std::memory_order_relaxed),
+            .repeated                   = repeated_.load(std::memory_order_relaxed),
+            .starvation_repeats         = starvation_repeats_.load(std::memory_order_relaxed),
+            .timing_repeats             = timing_repeats_.load(std::memory_order_relaxed),
+            .missing                    = missing_.load(std::memory_order_relaxed),
+            .discontinuities            = discontinuities_.load(std::memory_order_relaxed),
+            .transfer_failures          = transfer_failures_.load(std::memory_order_relaxed),
+            .transfer_cancellations     = transfer_cancellations_.load(std::memory_order_relaxed),
+            .recovered_rate             = clock_.recovered_rate(),
+            .observed_rate              = clock_.observed_rate(),
+            .phase_offset               = clock_.phase_offset(),
+            .phase_error                = clock_.phase_error(),
+            .phase_adjustment           = clock_.phase_adjustment(),
+            .repeat_next_frame_lead_min = repeat_next_frame_lead_min_,
+            .repeat_next_frame_lead_max = repeat_next_frame_lead_max_,
         };
     }
 };

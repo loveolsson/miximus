@@ -117,11 +117,13 @@ class output_sender_s::impl_s
         return worker_running_ && stream_state_.has_value() && stream_state_->generation == state.generation;
     }
 
-    static void collect_ready_downloads(const stream_state_s&                        state,
-                                        media::timed_output_queue_s<sender_frame_s>& queue,
-                                        std::optional<utils::flicks>&                output_pts)
+    static void collect_ready_downloads(const stream_state_s& state, media::timed_output_queue_s<sender_frame_s>& queue)
     {
-        while (auto download = state.stream->try_consume_oldest()) {
+        while (queue.queued() < queue.capacity()) {
+            auto download = state.stream->try_consume_oldest();
+            if (!download.has_value()) {
+                break;
+            }
             if (std::cmp_greater(download->tag(), std::numeric_limits<utils::flicks::rep>::max())) {
                 continue;
             }
@@ -131,9 +133,6 @@ class output_sender_s::impl_s
                 continue;
             }
             const auto pts = utils::flicks(static_cast<utils::flicks::rep>(download->tag()));
-            if (!output_pts.has_value()) {
-                output_pts = pts;
-            }
             queue.push({
                 .id =
                     {
@@ -167,19 +166,20 @@ class output_sender_s::impl_s
                 break;
             }
 
-            collect_ready_downloads(state, queue, output_pts);
+            collect_ready_downloads(state, queue);
             publish_queue_metrics(queue);
 
-            if (!output_pts.has_value() || (!started && queue.queued() < state.buffer_frames)) {
+            if (!started && queue.queued() < state.buffer_frames) {
                 std::unique_lock lock(state_mutex_);
                 state_condition_.wait_for(lock, steady_duration(state.frame_duration));
                 continue;
             }
-            started = true;
 
             const auto now = std::chrono::steady_clock::now();
-            if (!output_deadline.has_value()) {
+            if (!started) {
+                output_pts      = queue.oldest_pts();
                 output_deadline = now;
+                started         = true;
             }
             if (now < *output_deadline) {
                 std::unique_lock lock(state_mutex_);

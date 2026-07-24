@@ -150,6 +150,14 @@ class timed_output_queue_s
 
     const timed_output_queue_metrics_s& metrics() const { return metrics_; }
     size_t                              queued() const { return frames_.size(); }
+    size_t                              capacity() const { return config_.capacity; }
+    std::optional<utils::flicks>        oldest_pts() const
+    {
+        if (frames_.empty()) {
+            return std::nullopt;
+        }
+        return frames_.front().id.pts;
+    }
 };
 
 } // namespace miximus::media

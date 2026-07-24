@@ -70,7 +70,7 @@ class input_capture_s : public std::enable_shared_from_this<input_capture_s>
     metrics_s metrics() const;
 
     void advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity);
-    bool submit_frame(utils::flicks program_pts);
+    bool submit_frame(utils::flicks program_pts, utils::flicks early_tolerance);
     std::optional<resolved_input_frame_s> resolve_frame();
     void                                  release_prepared_frame();
     void                                  reset_frames();

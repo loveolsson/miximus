@@ -82,6 +82,22 @@ class node_impl : public node_i
         writer.write("output_intervals_skipped", metrics.output_intervals_skipped);
         writer.write("frames_sent", metrics.frames_sent);
         writer.write("queued_frames", metrics.queued_frames);
+        if (download_stream_) {
+            const auto download_metrics = download_stream_->metrics();
+            writer.write("download_slots", download_metrics.slots);
+            writer.write("download_slots_free", download_metrics.free_slots);
+            writer.write("download_slots_rendering", download_metrics.rendering_slots);
+            writer.write("download_slots_queued", download_metrics.queued_slots);
+            writer.write("download_slots_ready", download_metrics.ready_slots);
+            writer.write("download_slots_cpu_reading", download_metrics.cpu_reading_slots);
+            writer.write("download_pending_allocations", download_metrics.pending_allocations);
+            writer.write("download_acquire_misses", download_metrics.acquire_misses);
+            writer.write("download_transfers_completed", download_metrics.transfers_completed);
+            writer.write("download_transfer_failures", download_metrics.transfer_failures);
+            writer.write("download_transfer_duration_total_us", download_metrics.transfer_duration_total_us);
+            writer.write("download_transfer_duration_max_us", download_metrics.transfer_duration_max_us);
+            writer.write("download_allocation_failed", download_metrics.allocation_failed);
+        }
         writer.write("render_target_drops", render_target_drops_);
         next_metrics_status_ = now + 1s;
     }
@@ -135,10 +151,12 @@ class node_impl : public node_i
             .byte_size   = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y) * 4,
             .host_access = gpu::transfer::host_access_e::read_only,
         };
+        const auto download_slot_count =
+            output_sender_s::get_download_slot_count(static_cast<size_t>(settings.ndi_output.buffer_frames));
         download_stream_ = app->texture_download_service()->create_stream({
-            .requirements = requirements,
-            .max_slots =
-                output_sender_s::get_download_slot_count(static_cast<size_t>(settings.ndi_output.buffer_frames)),
+            .requirements  = requirements,
+            .max_slots     = download_slot_count,
+            .initial_slots = download_slot_count,
         });
         stream_dimensions_.commit(dimensions);
         sender_->set_stream(download_stream_,
@@ -200,6 +218,9 @@ class node_impl : public node_i
         }
 
         ensure_download_stream(app, texture->display_dimensions());
+        if (download_stream_->initial_slots_pending()) {
+            return;
+        }
         auto target = download_stream_->try_acquire();
         if (!target.has_value()) {
             ++render_target_drops_;

@@ -14,8 +14,21 @@ using namespace miximus::decklink_sdk;
 
 namespace {
 constexpr auto initial_upload_timeout = std::chrono::seconds(2);
-constexpr auto upload_timeout         = std::chrono::milliseconds(20);
 } // namespace
+
+HRESULT input_video_buffer_s::StartAccess(BMDBufferAccessFlags flags)
+{
+    if ((flags & bmdBufferAccessWrite) == 0) {
+        return S_OK;
+    }
+
+    upload_.reset();
+    upload_ = allocator_->acquire_upload(first_access_);
+    if (upload_.has_value()) {
+        first_access_ = false;
+    }
+    return upload_.has_value() ? S_OK : E_OUTOFMEMORY;
+}
 
 ULONG input_video_buffer_s::Release()
 {
@@ -24,25 +37,6 @@ ULONG input_video_buffer_s::Release()
         allocator_->return_buffer(this);
     }
     return count;
-}
-
-HRESULT input_video_buffer_s::StartAccess(BMDBufferAccessFlags flags)
-{
-    if ((flags & bmdBufferAccessWrite) == 0) {
-        return S_OK;
-    }
-
-    // DeckLink allocates a small set of buffer objects and cycles them. A
-    // fresh one-shot transfer lease is therefore needed for every write
-    // access, not only when the IDeckLinkVideoBuffer object is allocated.
-    upload_.reset();
-    auto upload = allocator_->acquire_upload(first_access_);
-    if (!upload) {
-        return E_OUTOFMEMORY;
-    }
-    first_access_ = false;
-    upload_.emplace(std::move(*upload));
-    return S_OK;
 }
 
 input_video_buffer_allocator_s::~input_video_buffer_allocator_s() { assert(active_buffers_ == 0); }
@@ -59,10 +53,20 @@ auto input_video_buffer_allocator_s::acquire_upload(bool first_access)
         return std::nullopt;
     }
 
-    // Initial backend allocation may queue behind application startup. Once
-    // warm, waiting at most one frame bounds capture-thread backpressure while
-    // leaving the render thread entirely uninvolved.
-    return stream->acquire_for(first_access ? initial_upload_timeout : upload_timeout);
+    const auto start  = std::chrono::steady_clock::now();
+    auto       upload = first_access ? stream->acquire_for(initial_upload_timeout) : stream->try_acquire();
+    const auto wait   = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    const auto wait_us = static_cast<uint64_t>(wait.count());
+    auto       maximum = upload_acquire_wait_max_us_.load();
+    while (wait_us > maximum && !upload_acquire_wait_max_us_.compare_exchange_weak(maximum, wait_us)) {
+    }
+    if (wait >= std::chrono::milliseconds(1)) {
+        ++upload_acquire_slow_count_;
+    }
+    if (!upload.has_value()) {
+        ++upload_acquire_failures_;
+    }
+    return upload;
 }
 
 HRESULT input_video_buffer_allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)

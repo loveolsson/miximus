@@ -620,14 +620,20 @@ texture_upload_service_s::~texture_upload_service_s()
 
 std::shared_ptr<texture_upload_stream_s> texture_upload_service_s::create_stream(texture_upload_desc_s desc)
 {
-    if (desc.max_slots == 0 || desc.requirements.host_access == host_access_e::read_only) {
+    if (desc.max_slots == 0 || desc.initial_slots > desc.max_slots ||
+        desc.requirements.host_access == host_access_e::read_only) {
         throw std::invalid_argument("invalid texture upload stream description");
     }
     detail::normalize_requirements(desc.requirements);
-    auto stream     = std::make_shared<detail::texture_upload_stream_state_s>();
-    stream->service = state_;
-    stream->desc    = desc;
-    return std::shared_ptr<texture_upload_stream_s>(new texture_upload_stream_s(std::move(stream)));
+    auto stream                 = std::make_shared<detail::texture_upload_stream_state_s>();
+    stream->service             = state_;
+    stream->desc                = desc;
+    stream->pending_allocations = desc.initial_slots;
+    auto result                 = std::shared_ptr<texture_upload_stream_s>(new texture_upload_stream_s(stream));
+    for (size_t index = 0; index < desc.initial_slots; ++index) {
+        state_->enqueue({.type = detail::task_type_e::allocate, .stream = stream, .slot = {}});
+    }
+    return result;
 }
 
 size_t texture_upload_service_s::memory_usage() const { return state_->memory_usage(); }

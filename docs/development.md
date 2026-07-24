@@ -253,11 +253,44 @@ scripts/test_timing_soak.sh start 8h
 scripts/test_timing_soak.sh status
 scripts/test_timing_soak.sh stop
 scripts/test_timing_soak.sh report
+scripts/test_timing_soak.sh brief-report
 ```
+
+Use `observe DURATION DIR` to sample a developer-run instance without taking ownership of it. `live-snapshot` provides
+an immediate native configuration/status view, optionally filtered by exact node type. When a rebuilt binary must
+replace one running instance for hardware validation, `restart` first requests a graceful shutdown and then starts a
+normal owned soak; it refuses to stop anything if more than one Miximus process exists.
 
 For an A/B soak of the DeckLink output watermark without editing the developer settings, pass
 `--decklink-output-buffer 4` (or another value from 1 through 8) to `start`. The override is applied only to the run's
 private settings copy and is recorded in `summary.json`.
+
+To exercise cadence conversion while retaining the configured application clock, override only the DeckLink display
+mode:
+
+```sh
+scripts/test_timing_soak.sh start 10m --decklink-output-buffer 5 --decklink-display-mode 1080p59.94
+```
+
+The private run settings and summary record the selected mode. When the program and device rates differ,
+`program_timing_drops` or `program_cadence_repeats` on the output and `source_queue_timing_repeats` or selection drops
+on the looped input are expected cadence decisions, not automatically faults. Compare their rate with the exact
+rational cadence difference and separately require the hardware late/drop, starvation, overflow, transfer-failure,
+and buffer-underrun counters to remain stable.
+
+Before a multi-day endurance soak, use a campaign to collect comparable outlier distributions from shorter runs:
+
+```sh
+scripts/test_timing_soak.sh campaign 8h 30m
+scripts/test_timing_soak.sh campaign-status
+scripts/test_timing_soak.sh campaign-report
+```
+
+The standard campaign alternates DeckLink output buffer depths in a 5/4/4/5 sequence to reduce time-order bias. Every
+run has independent raw artifacts under `timing-campaign-*`, while the campaign summary groups late frames, drops,
+starvation repeats, input transfer-slot waits and failures, buffer-watermark samples, callback intervals, scheduler
+outliers, and memory maxima by buffer depth. Counter totals and sampled scheduler extrema exclude the initial warm-up;
+each run summary retains first, warm-up, and final status snapshots so startup behavior remains independently auditable.
 
 Runs are stored under `build/integration-tests/timing-soak-*`; `timing-soak-latest` points to the newest one. Preserve
 `events.log`, `status-samples.jsonl`, `system-samples.jsonl`, `config.json`, `settings.json`, and `summary.json` when

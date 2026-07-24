@@ -72,14 +72,34 @@ class node_impl : public node_i
         writer.write("source_queue_overflow_drops", metrics.source_queue.overflow_drops);
         writer.write("source_queue_selection_drops", metrics.source_queue.selection_drops);
         writer.write("source_queue_repeated", metrics.source_queue.repeated);
+        writer.write("source_queue_starvation_repeats", metrics.source_queue.starvation_repeats);
+        writer.write("source_queue_timing_repeats", metrics.source_queue.timing_repeats);
         writer.write("source_queue_missing", metrics.source_queue.missing);
         writer.write("source_queue_discontinuities", metrics.source_queue.discontinuities);
         writer.write("source_queue_transfer_failures", metrics.source_queue.transfer_failures);
+        writer.write("source_queue_transfer_cancellations", metrics.source_queue.transfer_cancellations);
         if (metrics.source_queue.recovered_rate.has_value()) {
             writer.write("source_recovered_rate", *metrics.source_queue.recovered_rate);
         }
+        if (metrics.source_queue.observed_rate.has_value()) {
+            writer.write("source_observed_rate", *metrics.source_queue.observed_rate);
+        }
         if (metrics.source_queue.phase_offset.has_value()) {
             writer.write("source_phase_offset_us", metrics.source_queue.phase_offset->count() / 706);
+        }
+        if (metrics.source_queue.phase_error.has_value()) {
+            writer.write("source_phase_error_us", metrics.source_queue.phase_error->count() / 706);
+        }
+        if (metrics.source_queue.phase_adjustment.has_value()) {
+            writer.write("source_phase_adjustment_us", metrics.source_queue.phase_adjustment->count() / 706);
+        }
+        if (metrics.source_queue.repeat_next_frame_lead_min.has_value()) {
+            writer.write("source_repeat_next_frame_lead_min_us",
+                         metrics.source_queue.repeat_next_frame_lead_min->count() / 706);
+        }
+        if (metrics.source_queue.repeat_next_frame_lead_max.has_value()) {
+            writer.write("source_repeat_next_frame_lead_max_us",
+                         metrics.source_queue.repeat_next_frame_lead_max->count() / 706);
         }
         next_metrics_status_ = now + 1s;
     }
@@ -152,7 +172,8 @@ class node_impl : public node_i
     void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         if (capture_) {
-            (void)capture_->submit_frame(app->frame_context().pts);
+            const auto& frame = app->frame_context();
+            (void)capture_->submit_frame(frame.pts, frame.duration / 2);
         }
     }
 

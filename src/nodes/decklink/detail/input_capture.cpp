@@ -5,6 +5,7 @@
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
+#include "media/frame_fingerprint.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <atomic>
@@ -19,12 +20,19 @@ using namespace miximus;
 using namespace miximus::decklink_sdk;
 using namespace miximus::nodes::decklink::detail;
 
+constexpr size_t SOURCE_PLAYOUT_DELAY_FRAMES = 3;
+// Selection happens on the render thread after the SDK callback may have
+// delivered the next frame. Account for both the frame becoming eligible and
+// that concurrent ingress frame in addition to the delayed frames.
+constexpr size_t SOURCE_QUEUE_CAPACITY = SOURCE_PLAYOUT_DELAY_FRAMES + 2;
+
 auto log() { return getlog("decklink"); }
 
 struct captured_frame_data_s
 {
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
     std::optional<gpu::transfer::texture_upload_lease_s>    upload;
+    decklink_ptr<IDeckLinkVideoInputFrame>                  input_frame;
     uint64_t                                                upload_version{};
     gpu::texture_s*                                         texture{};
     gpu::vec2i_t                                            src_dim{};
@@ -54,9 +62,11 @@ class callback_s
     std::shared_ptr<device_reservation_s<IDeckLinkInput>>   reservation_;
     std::string                                             device_name_;
     decklink_ptr<input_video_buffer_allocator_s>            allocator_;
-    std::mutex                                              upload_mutex_;
+    mutable std::mutex                                      upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
-    media::timed_source_queue_s<captured_frame_data_s>      frame_queue_{{.capacity = 4}};
+    media::timed_source_queue_s<captured_frame_data_s>      frame_queue_{
+             {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = SOURCE_PLAYOUT_DELAY_FRAMES}
+    };
 
     std::atomic<BMDDisplayMode> pending_display_mode_{bmdModeUnknown};
     std::atomic<BMDColorspace>  colorspace_{bmdColorspaceRec709};
@@ -70,11 +80,19 @@ class callback_s
     std::atomic_uint64_t                  frames_missing_;
     std::atomic_uint64_t                  no_input_source_frames_;
     std::atomic_uint64_t                  upload_slot_drops_;
+    std::atomic_uint64_t                  content_frames_sampled_;
+    std::atomic_uint64_t                  content_frame_repeats_;
+    std::atomic_uint64_t                  content_repeat_streak_;
+    std::atomic_uint64_t                  content_repeat_streak_max_;
+    std::atomic_uint64_t                  last_content_fingerprint_;
     std::atomic_uint32_t                  available_video_frames_{0};
     std::chrono::steady_clock::time_point next_queue_poll_;
     std::chrono::steady_clock::time_point next_upload_slot_warning_;
     BMDTimeValue                          last_stream_time_{};
     bool                                  has_stream_time_{};
+    BMDTimeValue                          hardware_reference_origin_{};
+    utils::flicks                         local_reference_origin_{};
+    bool                                  has_hardware_reference_{};
     std::atomic_bool                      reset_stream_time_;
     std::atomic_bool                      warned_missing_custom_buffer_;
     std::atomic_uint64_t                  source_epoch_;
@@ -83,6 +101,22 @@ class callback_s
     bool                                  warned_wait_failure_{};
     bool                                  warned_consume_failure_{};
     bool                                  warned_commit_failure_{};
+
+    void observe_frame_content(std::span<const std::byte> bytes)
+    {
+        const auto fingerprint = media::sampled_frame_fingerprint(bytes);
+        const auto previous    = last_content_fingerprint_.exchange(fingerprint);
+        const auto sampled     = content_frames_sampled_.fetch_add(1);
+        if (sampled != 0 && previous == fingerprint) {
+            ++content_frame_repeats_;
+            const auto streak  = content_repeat_streak_.fetch_add(1) + 1;
+            auto       maximum = content_repeat_streak_max_.load();
+            while (streak > maximum && !content_repeat_streak_max_.compare_exchange_weak(maximum, streak)) {
+            }
+        } else {
+            content_repeat_streak_ = 0;
+        }
+    }
 
     BMDColorspace get_frame_colorspace(IDeckLinkVideoInputFrame* frame) const
     {
@@ -275,6 +309,13 @@ class callback_s
         uint64_t                            frames_missing{};
         uint64_t                            no_input_source_frames{};
         uint64_t                            upload_slot_drops{};
+        uint64_t                            upload_acquire_slow_count{};
+        uint64_t                            upload_acquire_failures{};
+        uint64_t                            upload_acquire_wait_max_us{};
+        uint64_t                            content_frames_sampled{};
+        uint64_t                            content_frame_repeats{};
+        uint64_t                            content_repeat_streak{};
+        uint64_t                            content_repeat_streak_max{};
         uint32_t                            available_video_frames{};
         media::timed_source_queue_metrics_s source_queue;
     };
@@ -351,8 +392,13 @@ class callback_s
                 .host_access       = gpu::transfer::host_access_e::overwrite,
             };
             const auto stream = upload_service_->create_stream({
-                .requirements      = requirements,
-                .max_slots         = input_video_buffer_allocator_s::BUFFER_COUNT,
+                .requirements = requirements,
+                // Timed selection may retain five completed DMA writes while
+                // DeckLink continues cycling its independent buffer objects.
+                // Additional slots cover the published texture and asynchronous
+                // upload/reclaim without making StartAccess wait on rendering.
+                .max_slots         = input_video_buffer_allocator_s::UPLOAD_SLOT_COUNT,
+                .initial_slots     = input_video_buffer_allocator_s::INITIAL_UPLOAD_SLOT_COUNT,
                 .generate_mip_maps = false,
             });
 
@@ -419,7 +465,8 @@ class callback_s
         BMDTimeValue   stream_time{};
         BMDTimeValue   frame_duration{};
         if (reset_stream_time_.exchange(false)) {
-            has_stream_time_ = false;
+            has_stream_time_        = false;
+            has_hardware_reference_ = false;
         }
         if (videoFrame->GetStreamTime(&stream_time, &frame_duration, FLICK_TIME_SCALE) == S_OK && frame_duration > 0) {
             if (has_stream_time_ && stream_time > last_stream_time_ + frame_duration) {
@@ -435,6 +482,21 @@ class callback_s
         if (frame_duration <= 0) {
             ++upload_slot_drops_;
             return S_OK;
+        }
+
+        auto         frame_observation = frame_arrival_time;
+        BMDTimeValue hardware_reference_time{};
+        BMDTimeValue hardware_reference_duration{};
+        if (videoFrame->GetHardwareReferenceTimestamp(
+                FLICK_TIME_SCALE, &hardware_reference_time, &hardware_reference_duration) == S_OK &&
+            hardware_reference_duration > 0) {
+            const auto frame_start = hardware_reference_time - hardware_reference_duration;
+            if (!has_hardware_reference_) {
+                hardware_reference_origin_ = frame_start;
+                local_reference_origin_    = frame_arrival_time;
+                has_hardware_reference_    = true;
+            }
+            frame_observation = local_reference_origin_ + utils::flicks{frame_start - hardware_reference_origin_};
         }
 
         if (has_no_input_source) {
@@ -480,6 +542,7 @@ class callback_s
             }
             return S_OK;
         }
+        observe_frame_content(upload->bytes());
         const auto version = upload->version();
 
         const media::media_frame_id_s frame_id{
@@ -489,10 +552,11 @@ class callback_s
             .duration = utils::flicks{frame_duration},
         };
         frame_queue_.push(frame_queue_.create_frame(frame_id,
-                                                    frame_arrival_time,
+                                                    frame_observation,
                                                     captured_frame_data_s{
                                                         .stream         = std::move(stream),
                                                         .upload         = std::move(upload),
+                                                        .input_frame    = decklink_ptr(videoFrame),
                                                         .upload_version = version,
                                                         .texture        = nullptr,
                                                         .src_dim        = src_dim,
@@ -534,7 +598,10 @@ class callback_s
         frame_queue_.advance(program_pts, target_time, discontinuity);
     }
 
-    frame_ticket_t select_frame(utils::flicks program_pts) { return frame_queue_.select(program_pts); }
+    frame_ticket_t select_frame(utils::flicks program_pts, utils::flicks early_tolerance)
+    {
+        return frame_queue_.select(program_pts, early_tolerance);
+    }
 
     bool submit_frame(frame_ticket_t& ticket)
     {
@@ -601,6 +668,7 @@ class callback_s
                 frame_queue_.fail(ticket);
                 return nullptr;
             }
+            info.input_frame = nullptr;
         }
 
         if (!ticket.await() || !frame_queue_.commit(ticket)) {
@@ -626,7 +694,8 @@ class callback_s
         if (info.stream) {
             info.stream->discard_exact(info.upload_version);
         }
-        frame_queue_.fail(ticket);
+        info.input_frame = nullptr;
+        frame_queue_.cancel(ticket);
     }
 
     void reset_frames() { frame_queue_.reset(); }
@@ -663,13 +732,25 @@ class callback_s
 
     metrics_s metrics() const
     {
+        decklink_ptr<input_video_buffer_allocator_s> allocator;
+        {
+            const std::scoped_lock lock(upload_mutex_);
+            allocator = allocator_;
+        }
         return {
-            .frames_received        = frames_received_.load(),
-            .frames_missing         = frames_missing_.load(),
-            .no_input_source_frames = no_input_source_frames_.load(),
-            .upload_slot_drops      = upload_slot_drops_.load(),
-            .available_video_frames = available_video_frames_.load(),
-            .source_queue           = frame_queue_.metrics(),
+            .frames_received            = frames_received_.load(),
+            .frames_missing             = frames_missing_.load(),
+            .no_input_source_frames     = no_input_source_frames_.load(),
+            .upload_slot_drops          = upload_slot_drops_.load(),
+            .upload_acquire_slow_count  = allocator ? allocator->upload_acquire_slow_count() : 0,
+            .upload_acquire_failures    = allocator ? allocator->upload_acquire_failures() : 0,
+            .upload_acquire_wait_max_us = allocator ? allocator->upload_acquire_wait_max_us() : 0,
+            .content_frames_sampled     = content_frames_sampled_.load(),
+            .content_frame_repeats      = content_frame_repeats_.load(),
+            .content_repeat_streak      = content_repeat_streak_.load(),
+            .content_repeat_streak_max  = content_repeat_streak_max_.load(),
+            .available_video_frames     = available_video_frames_.load(),
+            .source_queue               = frame_queue_.metrics(),
         };
     }
 
@@ -746,14 +827,14 @@ void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks ta
     impl_->callback->advance_frames(program_pts, target_time, discontinuity);
 }
 
-bool input_capture_s::submit_frame(utils::flicks program_pts)
+bool input_capture_s::submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
 {
     impl_->prepared_frame.reset();
     if (!impl_->callback || impl_->callback->phase() != phase_e::running) {
         return false;
     }
 
-    impl_->prepared_frame.emplace(impl_->callback->select_frame(program_pts));
+    impl_->prepared_frame.emplace(impl_->callback->select_frame(program_pts, early_tolerance));
     if (!impl_->callback->submit_frame(*impl_->prepared_frame)) {
         impl_->prepared_frame.reset();
         return false;
@@ -800,12 +881,19 @@ input_capture_s::metrics_s input_capture_s::metrics() const
 {
     const auto metrics = impl_->callback->metrics();
     return {
-        .frames_received        = metrics.frames_received,
-        .frames_missing         = metrics.frames_missing,
-        .no_input_source_frames = metrics.no_input_source_frames,
-        .upload_slot_drops      = metrics.upload_slot_drops,
-        .available_video_frames = metrics.available_video_frames,
-        .source_queue           = metrics.source_queue,
+        .frames_received            = metrics.frames_received,
+        .frames_missing             = metrics.frames_missing,
+        .no_input_source_frames     = metrics.no_input_source_frames,
+        .upload_slot_drops          = metrics.upload_slot_drops,
+        .upload_acquire_slow_count  = metrics.upload_acquire_slow_count,
+        .upload_acquire_failures    = metrics.upload_acquire_failures,
+        .upload_acquire_wait_max_us = metrics.upload_acquire_wait_max_us,
+        .content_frames_sampled     = metrics.content_frames_sampled,
+        .content_frame_repeats      = metrics.content_frame_repeats,
+        .content_repeat_streak      = metrics.content_repeat_streak,
+        .content_repeat_streak_max  = metrics.content_repeat_streak_max,
+        .available_video_frames     = metrics.available_video_frames,
+        .source_queue               = metrics.source_queue,
     };
 }
 

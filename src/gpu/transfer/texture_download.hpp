@@ -4,6 +4,7 @@
 #include "gpu/transfer/texture_download_fwd.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -25,6 +26,24 @@ struct texture_download_desc_s
 {
     texture_transfer_requirements_s requirements{.host_access = host_access_e::read_only};
     size_t                          max_slots{4};
+    size_t                          initial_slots{};
+};
+
+struct texture_download_stream_metrics_s
+{
+    size_t   slots{};
+    size_t   free_slots{};
+    size_t   rendering_slots{};
+    size_t   queued_slots{};
+    size_t   ready_slots{};
+    size_t   cpu_reading_slots{};
+    size_t   pending_allocations{};
+    uint64_t acquire_misses{};
+    uint64_t transfers_completed{};
+    uint64_t transfer_failures{};
+    int64_t  transfer_duration_total_us{};
+    int64_t  transfer_duration_max_us{};
+    bool     allocation_failed{};
 };
 
 class texture_download_target_s
@@ -100,6 +119,9 @@ class texture_download_stream_s
     std::optional<texture_download_frame_s> try_consume_latest();
 
     bool allocation_failed() const;
+    bool initial_slots_pending() const;
+    bool wait_for_initial_slots(std::chrono::milliseconds timeout) const;
+    auto metrics() const -> texture_download_stream_metrics_s;
     auto desc() const -> texture_download_desc_s;
 };
 

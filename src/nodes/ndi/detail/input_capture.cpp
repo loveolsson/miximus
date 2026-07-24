@@ -403,14 +403,14 @@ class input_capture_s::impl_s
         frame_queue_.advance(program_pts, target_time, discontinuity);
     }
 
-    bool submit_frame(utils::flicks program_pts)
+    bool submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
     {
         prepared_frame_.reset();
         if (phase() != phase_e::running) {
             return false;
         }
 
-        prepared_frame_.emplace(frame_queue_.select(program_pts));
+        prepared_frame_.emplace(frame_queue_.select(program_pts, early_tolerance));
         auto& ticket = *prepared_frame_;
         if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
             return true;
@@ -494,7 +494,7 @@ class input_capture_s::impl_s
             if (info.stream) {
                 info.stream->discard_exact(info.upload_version);
             }
-            frame_queue_.fail(*prepared_frame_);
+            frame_queue_.cancel(*prepared_frame_);
         }
         prepared_frame_.reset();
     }
@@ -545,7 +545,10 @@ void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks ta
     impl_->advance_frames(program_pts, target_time, discontinuity);
 }
 
-bool input_capture_s::submit_frame(utils::flicks program_pts) { return impl_->submit_frame(program_pts); }
+bool input_capture_s::submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
+{
+    return impl_->submit_frame(program_pts, early_tolerance);
+}
 
 std::optional<resolved_input_frame_s> input_capture_s::resolve_frame() { return impl_->resolve_frame(); }
 

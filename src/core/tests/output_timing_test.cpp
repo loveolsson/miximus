@@ -162,6 +162,20 @@ TEST(TimedOutputQueue, DropsOldestQueuedFramesAtCapacity)
     EXPECT_EQ(queue.metrics().selection_drops, 1);
 }
 
+TEST(TimedOutputQueue, ReportsOldestRetainedPtsAfterOverflow)
+{
+    media::timed_output_queue_s<int> queue({.capacity = 2});
+    EXPECT_EQ(queue.capacity(), 2);
+    EXPECT_FALSE(queue.oldest_pts().has_value());
+
+    queue.push(make_frame(1, utils::to_flicks(0.01), 10));
+    queue.push(make_frame(2, utils::to_flicks(0.02), 20));
+    queue.push(make_frame(3, utils::to_flicks(0.03), 30));
+
+    ASSERT_TRUE(queue.oldest_pts().has_value());
+    EXPECT_EQ(*queue.oldest_pts(), utils::to_flicks(0.02));
+}
+
 TEST(OutputRuntimeMetrics, SeparatesCadenceRepeatsFromStarvation)
 {
     media::output_runtime_metrics_s metrics;

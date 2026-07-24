@@ -25,6 +25,7 @@ struct texture_upload_desc_s
 {
     texture_transfer_requirements_s requirements;
     size_t                          max_slots{3};
+    size_t                          initial_slots{};
     bool                            generate_mip_maps{true};
 };
 

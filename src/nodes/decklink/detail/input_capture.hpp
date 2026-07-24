@@ -43,6 +43,13 @@ class input_capture_s
         uint64_t                            frames_missing{};
         uint64_t                            no_input_source_frames{};
         uint64_t                            upload_slot_drops{};
+        uint64_t                            upload_acquire_slow_count{};
+        uint64_t                            upload_acquire_failures{};
+        uint64_t                            upload_acquire_wait_max_us{};
+        uint64_t                            content_frames_sampled{};
+        uint64_t                            content_frame_repeats{};
+        uint64_t                            content_repeat_streak{};
+        uint64_t                            content_repeat_streak_max{};
         uint32_t                            available_video_frames{};
         media::timed_source_queue_metrics_s source_queue;
     };
@@ -69,7 +76,7 @@ class input_capture_s
     void acknowledge_render_release();
 
     void advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity);
-    bool submit_frame(utils::flicks program_pts);
+    bool submit_frame(utils::flicks program_pts, utils::flicks early_tolerance);
     std::optional<captured_input_frame_s> resolve_frame();
     void                                  release_prepared_frame();
     void                                  reset_frames();
