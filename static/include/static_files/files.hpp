@@ -24,7 +24,8 @@ struct file_record_s
     std::span<const uint8_t> gzipped;
     size_t                   size;
     std::string_view         mime;
-    std::string_view         etag;
+    std::string_view         identity_hash;
+    std::string_view         gzip_hash;
     LIBRARY_API std::string unzip() const;
 };
 

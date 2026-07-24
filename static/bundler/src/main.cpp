@@ -102,6 +102,28 @@ std::string compress_gzip(std::string_view data)
     return output;
 }
 
+std::string sha1_hex(boost::uuids::detail::sha1& sha1)
+{
+    boost::uuids::detail::sha1::digest_type digest;
+    sha1.get_digest(digest);
+
+    constexpr std::string_view HEX_DIGITS = "0123456789abcdef";
+    std::string                result(std::size(digest) * 2, '0');
+    size_t                     offset = 0;
+    for (const auto byte : digest) {
+        result[offset++] = HEX_DIGITS[byte >> 4];
+        result[offset++] = HEX_DIGITS[byte & 0x0f];
+    }
+    return result;
+}
+
+std::string sha1_hex(std::string_view data)
+{
+    boost::uuids::detail::sha1 sha1;
+    sha1.process_bytes(data.data(), data.size());
+    return sha1_hex(sha1);
+}
+
 int bundle(const std::filesystem::path& src,
            const std::filesystem::path& dst,
            std::string_view             nspace,
@@ -135,7 +157,7 @@ int bundle(const std::filesystem::path& src,
     map << "{" << '\n';
     map << tab(1) << "static constexpr std::array<file_record_s, " << files.size() << "> records = {" << '\n';
 
-    // Accumulate a bundle-level hash from each file's ETag
+    // Accumulate a bundle-level hash from each file's uncompressed contents.
     boost::uuids::detail::sha1 bundle_sha1;
 
     // Iterate the files in the folder
@@ -160,18 +182,10 @@ int bundle(const std::filesystem::path& src,
         const auto compressed = compress_gzip(file_data);
         const auto arr_size   = compressed.size();
 
-        // SHA-1 of uncompressed data, used as ETag
-        boost::uuids::detail::sha1 sha1;
-        sha1.process_bytes(file_data.data(), file_data.size());
-        boost::uuids::detail::sha1::digest_type digest;
-        sha1.get_digest(digest);
-        std::string sha_hex;
-        sha_hex.reserve(40);
-        for (const auto byte : digest) {
-            sha_hex += std::format("{:02x}", byte);
-        }
+        const auto identity_hash = sha1_hex(file_data);
+        const auto gzip_hash     = sha1_hex(compressed);
 
-        bundle_sha1.process_bytes(sha_hex.data(), sha_hex.size());
+        bundle_sha1.process_bytes(identity_hash.data(), identity_hash.size());
 
         const auto comment = std::format("// File: {} ({} / {} compressed)", unix_name, file_data.size(), arr_size);
 
@@ -197,18 +211,13 @@ int bundle(const std::filesystem::path& src,
         map << tab(3) << ".gzipped = " << arr_name << "," << '\n';
         map << tab(3) << ".size = " << file_data.size() << "," << '\n';
         map << tab(3) << ".mime = \"" << get_mime(filename) << "\"," << '\n';
-        map << tab(3) << ".etag = \"" << sha_hex << "\"," << '\n';
+        map << tab(3) << ".identity_hash = \"" << identity_hash << "\"," << '\n';
+        map << tab(3) << ".gzip_hash = \"" << gzip_hash << "\"," << '\n';
         map << tab(2) << "}," << '\n';
     }
 
     // Terminate the map declaration and add it to the file
-    boost::uuids::detail::sha1::digest_type bundle_digest;
-    bundle_sha1.get_digest(bundle_digest);
-    std::string bundle_hash;
-    bundle_hash.reserve(40);
-    for (const auto byte : bundle_digest) {
-        bundle_hash += std::format("{:02x}", byte);
-    }
+    const auto bundle_hash = sha1_hex(bundle_sha1);
 
     map << tab(1) << "};" << '\n';
     map << tab(1) << "static constexpr file_map_s files(records, \"" << bundle_hash << "\");" << '\n' << '\n';

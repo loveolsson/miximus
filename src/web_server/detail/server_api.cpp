@@ -1,8 +1,9 @@
+#include "web_server/detail/path.hpp"
 #include "web_server/detail/server_impl.hpp"
 #include "web_server/payload_create.hpp"
 #include "web_server/payload_parse.hpp"
 
-#include <boost/url/pct_string_view.hpp>
+#include <boost/url/segments_view.hpp>
 #include <nlohmann/json.hpp>
 
 #include <exception>
@@ -12,16 +13,15 @@
 
 namespace {
 
-constexpr std::string_view HTTP_GET      = "GET";
-constexpr std::string_view HTTP_POST     = "POST";
-constexpr std::string_view HTTP_OPTIONS  = "OPTIONS";
-constexpr std::string_view NODES_PREFIX  = "nodes/";
-constexpr std::string_view STATUS_SUFFIX = "/status";
+constexpr std::string_view HTTP_GET     = "GET";
+constexpr std::string_view HTTP_HEAD    = "HEAD";
+constexpr std::string_view HTTP_POST    = "POST";
+constexpr std::string_view HTTP_OPTIONS = "OPTIONS";
 
 template <typename Connection>
 void handle_keyed_json_get(const Connection&                               connection,
                            const miximus::web_server::keyed_json_getter_t& getter,
-                           std::string_view                                encoded_id,
+                           std::string_view                                id,
                            std::string_view                                service_name)
 {
     using namespace websocketpp::http;
@@ -34,7 +34,6 @@ void handle_keyed_json_get(const Connection&                               conne
         return;
     }
 
-    const auto id     = boost::urls::pct_string_view(encoded_id.data(), encoded_id.size()).decode();
     const auto result = getter(id);
     if (!result.has_value()) {
         const auto error = miximus::web_server::create_error_payload(
@@ -54,38 +53,85 @@ namespace miximus::web_server::detail {
 
 void web_server_impl::handle_api_request(const server_t::connection_ptr& connection,
                                          const std::string&              method,
-                                         std::string_view                api_path)
+                                         boost::urls::segments_view      api_path)
 {
     using namespace websocketpp::http;
 
     connection->replace_header("Access-Control-Allow-Origin", "*");
-    connection->replace_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     connection->replace_header("Access-Control-Allow-Headers", "Content-Type");
+    connection->replace_header("Cache-Control", "no-store");
     connection->replace_header("Content-Type", "application/json");
 
-    if (method == HTTP_OPTIONS) {
-        connection->set_status(status_code::ok);
-        connection->set_body("{}");
+    if (!path_starts_with(api_path, {"v1"})) {
+        const auto error = create_error_payload("", error_e::not_found, "Invalid API endpoint");
+        connection->set_body(error.dump());
+        connection->set_status(status_code::not_found);
         return;
     }
+    api_path = consume_segments(api_path, 1);
+
+    const auto prepare_route = [&](std::string_view route_method) {
+        const bool             is_get          = route_method == HTTP_GET;
+        const bool             method_allowed  = method == route_method || (is_get && method == HTTP_HEAD);
+        const std::string_view allowed_methods = is_get ? "GET, HEAD, OPTIONS" : "POST, OPTIONS";
+
+        connection->replace_header("Allow", std::string(allowed_methods));
+        connection->replace_header("Access-Control-Allow-Methods", std::string(allowed_methods));
+
+        if (method == HTTP_OPTIONS) {
+            connection->remove_header("Content-Type");
+            connection->set_status(status_code::no_content);
+            return false;
+        }
+        if (!method_allowed) {
+            const auto error = create_error_payload("", error_e::internal_error, "Method not allowed");
+            connection->set_body(error.dump());
+            connection->set_status(status_code::method_not_allowed);
+            return false;
+        }
+        return true;
+    };
 
     try {
-        if (method == HTTP_GET && api_path == "config") {
-            handle_api_v1_get_config(connection);
-        } else if (method == HTTP_GET && api_path.starts_with(NODES_PREFIX)) {
-            const auto node_path = api_path.substr(NODES_PREFIX.size());
-            if (node_path.ends_with(STATUS_SUFFIX)) {
-                handle_api_v1_get_node_status(connection, node_path.substr(0, node_path.size() - STATUS_SUFFIX.size()));
-            } else {
-                handle_api_v1_get_node(connection, node_path);
+        if (path_matches(api_path, {"config"})) {
+            if (prepare_route(HTTP_GET)) {
+                handle_api_v1_get_config(connection);
             }
-        } else if (method == HTTP_POST && api_path == "control") {
-            handle_api_v1_post_control(connection);
-        } else {
-            const auto error = create_error_payload("", error_e::internal_error, "Invalid API endpoint or method");
-            connection->set_body(error.dump());
-            connection->set_status(status_code::not_found);
+            return;
         }
+
+        if (path_matches(api_path, {"control"})) {
+            if (prepare_route(HTTP_POST)) {
+                handle_api_v1_post_control(connection);
+            }
+            return;
+        }
+
+        if (path_starts_with(api_path, {"nodes"})) {
+            const auto node_path = consume_segments(api_path, 1);
+            if (!node_path.empty()) {
+                const auto node_id   = node_path.front();
+                const auto remaining = consume_segments(node_path, 1);
+
+                if (!node_id.empty() && remaining.empty()) {
+                    if (prepare_route(HTTP_GET)) {
+                        handle_api_v1_get_node(connection, node_id);
+                    }
+                    return;
+                }
+
+                if (!node_id.empty() && path_matches(remaining, {"status"})) {
+                    if (prepare_route(HTTP_GET)) {
+                        handle_api_v1_get_node_status(connection, node_id);
+                    }
+                    return;
+                }
+            }
+        }
+
+        const auto error = create_error_payload("", error_e::not_found, "Invalid API endpoint");
+        connection->set_body(error.dump());
+        connection->set_status(status_code::not_found);
     } catch (const std::exception& error) {
         const auto payload = create_error_payload("", error_e::internal_error, error.what());
         connection->set_body(payload.dump());
@@ -93,16 +139,15 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& connect
     }
 }
 
-void web_server_impl::handle_api_v1_get_node(const server_t::connection_ptr& connection,
-                                             std::string_view                encoded_id) const
+void web_server_impl::handle_api_v1_get_node(const server_t::connection_ptr& connection, std::string_view id) const
 {
-    handle_keyed_json_get(connection, config_getters_.node, encoded_id, "Node config");
+    handle_keyed_json_get(connection, config_getters_.node, id, "Node config");
 }
 
 void web_server_impl::handle_api_v1_get_node_status(const server_t::connection_ptr& connection,
-                                                    std::string_view                encoded_id) const
+                                                    std::string_view                id) const
 {
-    handle_keyed_json_get(connection, config_getters_.node_status, encoded_id, "Node status");
+    handle_keyed_json_get(connection, config_getters_.node_status, id, "Node status");
 }
 
 void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& connection) const
@@ -178,6 +223,7 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
         return;
     }
 
+    connection->remove_header("Content-Type");
     connection->set_status(status_code::no_content);
 }
 

@@ -12,6 +12,7 @@ add_library(web_server
     detail/headers.cpp
     detail/headers.hpp
     detail/html.hpp
+    detail/path.hpp
     detail/websocket_connection.hpp
     detail/custom-config.hpp
     detail/custom-logger.hpp

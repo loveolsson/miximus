@@ -17,6 +17,10 @@
 #include <string>
 #include <string_view>
 
+namespace boost::urls {
+class segments_view;
+}
+
 namespace miximus::web_server::detail {
 class web_server_impl : public server_s
 {
@@ -31,13 +35,16 @@ class web_server_impl : public server_s
 
     void terminate_and_log(const con_hdl_t& hdl, const std::string& message);
 
-    void        on_http(const con_hdl_t& hdl);
-    static void serve_static_file(const server_t::connection_ptr& con, std::string_view path);
-    void handle_api_request(const server_t::connection_ptr& con, const std::string& method, std::string_view api_path);
-    void handle_api_v1_get_config(const server_t::connection_ptr& con) const;
-    void handle_api_v1_get_node(const server_t::connection_ptr& con, std::string_view encoded_id) const;
-    void handle_api_v1_get_node_status(const server_t::connection_ptr& con, std::string_view encoded_id) const;
-    void handle_api_v1_post_control(const server_t::connection_ptr& con);
+    void on_http(const con_hdl_t& hdl);
+    static void
+    serve_static_file(const server_t::connection_ptr& con, std::string_view method, boost::urls::segments_view path);
+    void    handle_api_request(const server_t::connection_ptr& con,
+                               const std::string&              method,
+                               boost::urls::segments_view      api_path);
+    void    handle_api_v1_get_config(const server_t::connection_ptr& con) const;
+    void    handle_api_v1_get_node(const server_t::connection_ptr& con, std::string_view id) const;
+    void    handle_api_v1_get_node_status(const server_t::connection_ptr& con, std::string_view id) const;
+    void    handle_api_v1_post_control(const server_t::connection_ptr& con);
     error_e handle_user_command(nlohmann::json&& doc, int64_t connection_id);
     void    on_message(const con_hdl_t& hdl, const msg_ptr_t& msg);
     void    on_open(const con_hdl_t& hdl);
