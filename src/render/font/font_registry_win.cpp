@@ -5,6 +5,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Shlobj.h>
 #include <Windows.h>
+#include <filesystem>
 #include <string_view>
 #include <vector>
 
@@ -36,13 +37,11 @@ static std::string wchar_to_string(std::wstring_view wstr)
     return str;
 }
 
-static std::string fonts_path()
+static std::filesystem::path fonts_path()
 {
     wchar_t str[MAX_PATH] = {};
     SHGetSpecialFolderPathW(0, str, CSIDL_FONTS, FALSE);
-    auto res = wchar_to_string(str);
-    res += '\\';
-    return res;
+    return str;
 }
 
 static void read_registry_fonts(init_data_s* data)
@@ -105,7 +104,7 @@ static void read_registry_fonts(init_data_s* data)
 
             font_variant_s v{
                 .index = i++,
-                .path  = path + wchar_to_string(wsValueData),
+                .path  = path / std::filesystem::path(wsValueData),
             };
 
             data->files.emplace(wchar_to_string(val), std::move(v));

@@ -2,13 +2,13 @@
 #include "hex.hpp"
 #include "mime.hpp"
 #include "tab.hpp"
+#include "utils/filesystem.hpp"
 
 #include <boost/uuid/detail/sha1.hpp>
 
 #ifndef ZLIB_CONST
 #define ZLIB_CONST
 #endif
-#include <algorithm>
 #include <array>
 #include <exception>
 #include <filesystem>
@@ -164,9 +164,7 @@ int bundle(const std::filesystem::path& src,
     for (size_t fi = 0; fi < files.size(); ++fi) {
         const auto& filename  = files[fi];
         const auto  arr_name  = std::format("fileData{}", fi);
-        auto        unix_name = filename.string();
-
-        std::ranges::replace(unix_name, '\\', '/');
+        const auto  unix_name = miximus::utils::path_to_generic_utf8(filename);
 
         std::ifstream file(src / filename, std::ifstream::binary);
         if (!file.is_open()) {
@@ -275,7 +273,7 @@ int main(int argc, char* argv[])
             std::cout << "Using namespace " << nspace << '\n';
         }
 
-        return bundle(src, dst, nspace, mapname);
+        return bundle(miximus::utils::path_from_utf8(src), miximus::utils::path_from_utf8(dst), nspace, mapname);
     } catch (std::exception& e) {
         std::cout << "Exeption thrown: " << e.what() << '\n';
         return EXIT_FAILURE;

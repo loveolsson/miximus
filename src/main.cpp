@@ -10,6 +10,7 @@
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
 #include "nodes/system/register.hpp"
+#include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
@@ -19,11 +20,13 @@
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 using namespace miximus;
@@ -79,22 +82,13 @@ void publish_scheduler_status(core::app_state_s*                     app,
     writer.write("sustained_overload", metrics.sustained_overload);
 }
 
-} // namespace
-
-int main(int argc, char* argv[])
+int miximus_main(core::command_line_options_s command_line_options, std::string executable_name)
 {
     (void)std::signal(SIGINT, signal_handler);
     (void)std::signal(SIGTERM, signal_handler);
 
-    core::command_line_options_s command_line_options;
-    try {
-        command_line_options = core::parse_command_line_options(argc, argv);
-    } catch (const std::invalid_argument& error) {
-        std::cerr << "Invalid command line: " << error.what() << '\n';
-        return EXIT_FAILURE;
-    }
     if (command_line_options.show_help) {
-        std::cout << core::get_command_line_help(argv[0]);
+        std::cout << core::get_command_line_help(executable_name);
         return EXIT_SUCCESS;
     }
 
@@ -181,3 +175,28 @@ int main(int argc, char* argv[])
     spdlog::shutdown();
     return EXIT_SUCCESS;
 }
+
+} // namespace
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t* argv[])
+{
+    try {
+        return miximus_main(core::parse_command_line_options(argc, argv),
+                            utils::path_to_utf8(std::filesystem::path(argv[0])));
+    } catch (const std::invalid_argument& error) {
+        std::cerr << "Invalid command line: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+}
+#else
+int main(int argc, char* argv[])
+{
+    try {
+        return miximus_main(core::parse_command_line_options(argc, argv), argv[0]);
+    } catch (const std::invalid_argument& error) {
+        std::cerr << "Invalid command line: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+}
+#endif

@@ -1,29 +1,20 @@
 #pragma once
 
-#include <boost/locale/utf.hpp>
+#include <boost/locale/encoding_utf.hpp>
 
 #include <string>
 #include <string_view>
 
 namespace miximus::utils {
 
+inline std::string wide_to_utf8(std::wstring_view value)
+{
+    return boost::locale::conv::utf_to_utf<char>(value.data(), value.data() + value.size());
+}
+
 inline std::u32string utf8_to_utf32(std::string_view utf8_string)
 {
-    std::u32string result;
-    result.reserve(utf8_string.size());
-
-    using traits = boost::locale::utf::utf_traits<char>;
-    auto p       = utf8_string.cbegin();
-    auto end     = utf8_string.cend();
-
-    while (p != end) {
-        auto cp = traits::decode(p, end);
-        if (cp != boost::locale::utf::illegal && cp != boost::locale::utf::incomplete) {
-            result.push_back(static_cast<char32_t>(cp));
-        }
-    }
-
-    return result;
+    return boost::locale::conv::utf_to_utf<char32_t>(utf8_string.data(), utf8_string.data() + utf8_string.size());
 }
 
 } // namespace miximus::utils

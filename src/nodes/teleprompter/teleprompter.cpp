@@ -16,6 +16,7 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
+#include "utils/filesystem.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
 
@@ -367,7 +368,7 @@ class node_impl : public node_i
 
     static text_s load_file(const std::shared_ptr<render::font_loader_s>& loader,
                             const render::font_variant_s&                 font_info,
-                            const std::filesystem::path&                  path,
+                            std::string                                   path_utf8,
                             int                                           font_size,
                             int                                           width)
     {
@@ -375,7 +376,7 @@ class node_impl : public node_i
         std::u32string str;
 
         try {
-            std::ifstream file(path);
+            std::ifstream file(utils::path_from_utf8(path_utf8));
             if (!file.is_open()) {
                 return res;
             }

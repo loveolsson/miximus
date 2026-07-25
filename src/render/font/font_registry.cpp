@@ -1,6 +1,7 @@
 #include "font_registry.hpp"
 
 #include "logger/logger.hpp"
+#include "utils/filesystem.hpp"
 
 #include <memory>
 #include <mutex>
@@ -32,7 +33,7 @@ void font_registry_s::log_fonts(const font_map_t& fonts)
         log->debug("  \"{}\"", name);
 
         for (const auto& [v_name, variant] : font.variants) {
-            log->debug("   -- {}: \"{}\", {}", v_name, variant.path.string(), variant.index);
+            log->debug("   -- {}: \"{}\", {}", v_name, utils::path_to_utf8(variant.path), variant.index);
         }
     }
 }

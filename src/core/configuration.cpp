@@ -6,6 +6,7 @@
 #include "nodes/connection.hpp"
 #include "nodes/node.hpp"
 #include "nodes/system/register.hpp"
+#include "utils/filesystem.hpp"
 #include "utils/lookup.hpp"
 
 #include <nlohmann/json.hpp>
@@ -220,11 +221,11 @@ void configuration_s::load(json config)
 void configuration_s::load_file(const std::filesystem::path& path)
 {
     auto log = getlog("app");
-    log->info("Reading settings from {}", path.string());
+    log->info("Reading settings from {}", utils::path_to_utf8(path));
 
     std::ifstream file(path);
     if (!file.is_open()) {
-        log->error("Failed to open settings file {}", path.string());
+        log->error("Failed to open settings file {}", utils::path_to_utf8(path));
         return;
     }
 
@@ -232,7 +233,8 @@ void configuration_s::load_file(const std::filesystem::path& path)
     try {
         config = json::parse(file);
     } catch (const json::parse_error& error) {
-        throw std::runtime_error(std::format("Failed to parse settings file {}: {}", path.string(), error.what()));
+        throw std::runtime_error(
+            std::format("Failed to parse settings file {}: {}", utils::path_to_utf8(path), error.what()));
     }
 
     load(std::move(config));
@@ -306,16 +308,16 @@ std::optional<json> configuration_s::get_node_status(std::string_view id) const
 void configuration_s::save_file(const std::filesystem::path& path) const
 {
     auto log = getlog("app");
-    log->info("Writing settings to {}", path.string());
+    log->info("Writing settings to {}", utils::path_to_utf8(path));
 
     std::ofstream file(path);
     if (!file.is_open()) {
-        throw std::runtime_error(std::format("Failed to open settings file {} for writing", path.string()));
+        throw std::runtime_error(std::format("Failed to open settings file {} for writing", utils::path_to_utf8(path)));
     }
 
     file << std::setfill(' ') << std::setw(2) << get_config();
     if (!file) {
-        throw std::runtime_error(std::format("Failed to write settings file {}", path.string()));
+        throw std::runtime_error(std::format("Failed to write settings file {}", utils::path_to_utf8(path)));
     }
 }
 

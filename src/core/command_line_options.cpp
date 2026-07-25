@@ -1,8 +1,11 @@
 #include "command_line_options.hpp"
 
+#include "utils/filesystem.hpp"
+
 #include <boost/program_options.hpp>
 
 #include <cmath>
+#include <concepts>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -14,6 +17,7 @@ namespace {
 
 namespace program_options = boost::program_options;
 
+template <typename String>
 program_options::options_description make_options_description()
 {
     program_options::options_description description("Options");
@@ -21,7 +25,7 @@ program_options::options_description make_options_description()
     add_option("help,h", "Show this help message");
     add_option("log-debug", "Enable debug logging");
     add_option("log-trace", "Enable trace logging");
-    add_option("settings", program_options::value<std::string>(), "Path to the settings file");
+    add_option("settings", program_options::value<String>(), "Path to the settings file");
     add_option("stop-after", program_options::value<double>(), "Stop after a positive number of seconds");
     add_option("test-render-delay-ms",
                program_options::value<uint64_t>(),
@@ -34,17 +38,23 @@ program_options::options_description make_options_description()
 
 [[noreturn]] void throw_invalid_option(std::string message) { throw std::invalid_argument(std::move(message)); }
 
-} // namespace
-
-command_line_options_s parse_command_line_options(int argc, char* argv[])
+template <typename Character>
+command_line_options_s parse_command_line_options_impl(int argc, Character* argv[])
 {
-    command_line_options_s result;
-    result.settings_path = std::filesystem::path(argv[0]).parent_path() / "settings.json";
+    using string_t = std::basic_string<Character>;
 
-    const auto                     description = make_options_description();
+    command_line_options_s result;
+    if constexpr (std::same_as<Character, char>) {
+        result.settings_path = utils::path_from_utf8(argv[0]).parent_path() / "settings.json";
+    } else {
+        result.settings_path = std::filesystem::path(argv[0]).parent_path() / "settings.json";
+    }
+
+    const auto                     description = make_options_description<string_t>();
     program_options::variables_map values;
     try {
-        program_options::store(program_options::parse_command_line(argc, argv, description), values);
+        program_options::store(
+            program_options::basic_command_line_parser<Character>(argc, argv).options(description).run(), values);
         program_options::notify(values);
     } catch (const program_options::error& error) {
         throw_invalid_option(error.what());
@@ -62,7 +72,11 @@ command_line_options_s parse_command_line_options(int argc, char* argv[])
     }
 
     if (values.contains("settings")) {
-        result.settings_path = values["settings"].as<std::string>();
+        if constexpr (std::same_as<Character, char>) {
+            result.settings_path = utils::path_from_utf8(values["settings"].as<string_t>());
+        } else {
+            result.settings_path = values["settings"].as<string_t>();
+        }
     }
 
     if (values.contains("stop-after")) {
@@ -96,10 +110,24 @@ command_line_options_s parse_command_line_options(int argc, char* argv[])
     return result;
 }
 
+} // namespace
+
+command_line_options_s parse_command_line_options(int argc, char* argv[])
+{
+    return parse_command_line_options_impl(argc, argv);
+}
+
+#ifdef _WIN32
+command_line_options_s parse_command_line_options(int argc, wchar_t* argv[])
+{
+    return parse_command_line_options_impl(argc, argv);
+}
+#endif
+
 std::string get_command_line_help(std::string_view executable_name)
 {
     std::ostringstream output;
-    output << "Usage: " << executable_name << " [options]\n" << make_options_description();
+    output << "Usage: " << executable_name << " [options]\n" << make_options_description<std::string>();
     return std::move(output).str();
 }
 

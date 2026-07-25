@@ -26,6 +26,9 @@ struct command_line_options_s
 };
 
 command_line_options_s parse_command_line_options(int argc, char* argv[]);
-std::string            get_command_line_help(std::string_view executable_name);
+#ifdef _WIN32
+command_line_options_s parse_command_line_options(int argc, wchar_t* argv[]);
+#endif
+std::string get_command_line_help(std::string_view executable_name);
 
 } // namespace miximus::core

@@ -1,4 +1,6 @@
 #pragma once
+#include "utils/filesystem.hpp"
+
 #include <boost/algorithm/string.hpp>
 
 #include <algorithm>
@@ -103,7 +105,7 @@ static std::string_view get_mime(const std::filesystem::path& name)
         {".avi",     "video/x-msvideo"                         },
     });
 
-    auto ext = name.extension().string();
+    auto ext = miximus::utils::path_to_utf8(name.extension());
     boost::to_lower(ext);
 
     const auto it = std::ranges::find(mime_types, std::string_view{ext}, &mime_type_s::extension);

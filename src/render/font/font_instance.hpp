@@ -10,12 +10,14 @@
 #include <filesystem>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 namespace miximus::render {
 
 class font_instance_s
 {
     const std::shared_ptr<font_loader_s> loader_;
+    std::vector<FT_Byte>                 file_data_;
     bool                                 valid_{};
     FT_Face                              face_{};
 

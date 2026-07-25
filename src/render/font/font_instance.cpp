@@ -5,6 +5,8 @@
 
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -14,7 +16,26 @@ namespace miximus::render {
 font_instance_s::font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path& path, int index)
     : loader_(std::move(loader))
 {
-    auto error = FT_New_Face(loader_->library_, path.string().c_str(), index, &face_);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return;
+    }
+
+    const auto size = file.tellg();
+    if (size <= 0 || size > std::numeric_limits<FT_Long>::max()) {
+        return;
+    }
+
+    file_data_.resize(static_cast<size_t>(size));
+    file.seekg(0);
+    file.read(reinterpret_cast<char*>(file_data_.data()), static_cast<std::streamsize>(file_data_.size()));
+    if (!file) {
+        file_data_.clear();
+        return;
+    }
+
+    auto error = FT_New_Memory_Face(
+        loader_->library_, file_data_.data(), static_cast<FT_Long>(file_data_.size()), index, &face_);
     if (error == 0) {
         valid_ = true;
     }

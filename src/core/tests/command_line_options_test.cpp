@@ -1,5 +1,7 @@
 #include "core/app_state.hpp"
 #include "core/command_line_options.hpp"
+#include "utils/filesystem.hpp"
+#include "utils/string_utils.hpp"
 
 #include <chrono>
 #include <gtest/gtest.h>
@@ -58,6 +60,42 @@ TEST(CommandLineOptions, ParsesRuntimeAndTestOptions)
     EXPECT_EQ(options.render_thread_delay_test->delay, std::chrono::milliseconds{12});
     EXPECT_EQ(options.render_thread_delay_test->every_frames, 120);
 }
+
+TEST(CommandLineOptions, TreatsSettingsPathAsUtf8)
+{
+    char  executable[]   = "miximus";
+    char  settings[]     = "--settings";
+    char  settings_arg[] = "/tmp/r\xC3\xA4ksm\xC3\xB6rg\xC3\xA5s.json";
+    char* arguments[]    = {executable, settings, settings_arg};
+
+    const auto options = core::parse_command_line_options(static_cast<int>(std::size(arguments)), arguments);
+
+    EXPECT_EQ(utils::path_to_utf8(options.settings_path), settings_arg);
+}
+
+TEST(StringUtils, ConvertsWideStringsToUtf8)
+{
+    EXPECT_EQ(utils::wide_to_utf8(L"r\u00E4ksm\u00F6rg\u00E5s"), "r\xC3\xA4ksm\xC3\xB6rg\xC3\xA5s");
+}
+
+TEST(StringUtils, ConvertsUtf8ToUtf32)
+{
+    EXPECT_EQ(utils::utf8_to_utf32("r\xC3\xA4ksm\xC3\xB6rg\xC3\xA5s"), U"r\u00E4ksm\u00F6rg\u00E5s");
+}
+
+#ifdef _WIN32
+TEST(CommandLineOptions, PreservesNativeWindowsSettingsPath)
+{
+    wchar_t  executable[]   = L"miximus";
+    wchar_t  settings[]     = L"--settings";
+    wchar_t  settings_arg[] = L"C:\\r\u00E4ksm\u00F6rg\u00E5s.json";
+    wchar_t* arguments[]    = {executable, settings, settings_arg};
+
+    const auto options = core::parse_command_line_options(static_cast<int>(std::size(arguments)), arguments);
+
+    EXPECT_EQ(options.settings_path.native(), settings_arg);
+}
+#endif
 
 TEST(CommandLineOptions, RequiresCompleteRenderDelayConfiguration)
 {
