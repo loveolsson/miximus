@@ -4,6 +4,8 @@ add_library(app
     app_state.cpp
     clock_source.hpp
     clock_source.cpp
+    command_line_options.hpp
+    command_line_options.cpp
     configuration.hpp
     configuration_fwd.hpp
     configuration.cpp
@@ -17,6 +19,8 @@ add_library(app
     node_status_registry.hpp
     node_status_registry_fwd.hpp
     node_status_registry.cpp
+    test_instrumentation/render_thread_delay.hpp
+    test_instrumentation/render_thread_delay.cpp
 )
 
 add_subdirectory(adapters)
@@ -29,6 +33,7 @@ PRIVATE
     miximus_types
     magic_enum::magic_enum
     Boost::headers
+    Boost::program_options
 )
 
 if(MIXIMUS_USE_PRECOMPILED_HEADERS)
@@ -48,6 +53,7 @@ if(BUILD_TESTING)
         tests/frame_scheduler_test.cpp
         tests/output_timing_test.cpp
         tests/source_timing_test.cpp
+        tests/command_line_options_test.cpp
     )
     target_link_libraries(
         core_test

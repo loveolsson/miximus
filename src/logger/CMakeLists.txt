@@ -1,5 +1,5 @@
 add_library(logger
-    logger.hpp 
+    logger.hpp
     logger.cpp
 )
 

@@ -1,4 +1,5 @@
 #pragma once
+#include "core/command_line_options.hpp"
 #include "core/frame_context.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
@@ -53,6 +54,7 @@ class app_state_s
     using work_guard_t  = boost::asio::executor_work_guard<io_service_t::executor_type>;
     using thread_pool_t = FiberPool::FiberPool<true>;
 
+    const command_line_options_s   command_line_options_;
     io_service_t                   cfg_executor_;
     std::unique_ptr<work_guard_t>  cfg_work_;
     std::thread                    cfg_thread_;
@@ -79,7 +81,8 @@ class app_state_s
     };
 
     app_state_s();
-    explicit app_state_s(test_state_t);
+    explicit app_state_s(command_line_options_s command_line_options);
+    explicit app_state_s(test_state_t, command_line_options_s command_line_options = {});
     ~app_state_s();
 
     auto cfg_executor() { return &cfg_executor_; }
@@ -92,6 +95,8 @@ class app_state_s
     auto font_registry() { return font_registry_.get(); }
     auto thread_pool() { return thread_pool_.get(); }
     auto status_registry() { return status_registry_.get(); }
+
+    const command_line_options_s& command_line_options() const { return command_line_options_; }
 
     void begin_frame(frame_settings_s settings, frame_context_s frame_context);
 

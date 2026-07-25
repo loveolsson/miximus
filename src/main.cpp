@@ -1,10 +1,12 @@
 #include "core/adapters/adapter_websocket.hpp"
 #include "core/app_state.hpp"
 #include "core/clock_source.hpp"
+#include "core/command_line_options.hpp"
 #include "core/configuration.hpp"
 #include "core/frame_scheduler.hpp"
 #include "core/node_manager.hpp"
 #include "core/node_status_registry.hpp"
+#include "core/test_instrumentation/render_thread_delay.hpp"
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
 #include "nodes/system/register.hpp"
@@ -12,24 +14,19 @@
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
-#include <charconv>
 #include <chrono>
-#include <cmath>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
-#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
-#include <string>
-#include <string_view>
 #include <thread>
 
 using namespace miximus;
-using namespace std::filesystem;
 using namespace std::chrono_literals;
 namespace {
 
@@ -89,41 +86,25 @@ int main(int argc, char* argv[])
     (void)std::signal(SIGINT, signal_handler);
     (void)std::signal(SIGTERM, signal_handler);
 
-    auto                                         log_level     = spdlog::level::info;
-    auto                                         settings_path = path(argv[0]).parent_path() / "settings.json";
-    std::optional<std::chrono::duration<double>> stop_after;
-
-    {
-        const std::vector<std::string_view> arguments(argv + 1, argv + argc);
-
-        for (size_t i = 0; i < arguments.size(); ++i) {
-            if (arguments[i] == "--log-debug") {
-                log_level = spdlog::level::debug;
-            } else if (arguments[i] == "--log-trace") {
-                log_level = spdlog::level::trace;
-            } else if (arguments[i] == "--settings" && i + 1 < arguments.size()) {
-                settings_path = arguments[++i];
-            } else if (arguments[i] == "--stop-after" && i + 1 < arguments.size()) {
-                double     seconds{};
-                const auto value           = arguments[++i];
-                const auto [end, error]    = std::from_chars(value.data(), value.data() + value.size(), seconds);
-                const bool parsed_entirely = error == std::errc{} && end == value.data() + value.size();
-                if (!parsed_entirely || !std::isfinite(seconds) || seconds <= 0.0) {
-                    std::cerr << "--stop-after requires a positive number of seconds\n";
-                    return EXIT_FAILURE;
-                }
-                stop_after = std::chrono::duration<double>{seconds};
-            }
-        }
+    core::command_line_options_s command_line_options;
+    try {
+        command_line_options = core::parse_command_line_options(argc, argv);
+    } catch (const std::invalid_argument& error) {
+        std::cerr << "Invalid command line: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+    if (command_line_options.show_help) {
+        std::cout << core::get_command_line_help(argv[0]);
+        return EXIT_SUCCESS;
     }
 
-    logger::init_loggers(log_level);
+    logger::init_loggers(command_line_options.log_level);
     getlog("app")->info("Process ID: {}", utils::process_id());
     utils::set_max_thread_priority();
 
     try {
         {
-            core::app_state_s app;
+            core::app_state_s app(std::move(command_line_options));
             // web_server declared AFTER app so it is destroyed BEFORE app — the
             // websocketpp endpoint holds a raw pointer to cfg_executor_ and must
             // not outlive it.
@@ -132,7 +113,7 @@ int main(int argc, char* argv[])
 
             core::node_manager_s  node_manager;
             core::configuration_s configuration(node_manager);
-            configuration.load_file(settings_path);
+            configuration.load_file(app.command_line_options().settings_path);
 
             // Set up web server config getters
             web_server->set_config_getters({
@@ -146,13 +127,15 @@ int main(int argc, char* argv[])
             node_manager.add_adapter(std::make_unique<core::websocket_config_s>(
                 node_manager, configuration, *web_server, *app.font_registry()));
 
-            core::steady_clock_source_s frame_clock;
-            core::frame_scheduler_s     frame_scheduler(frame_clock);
+            core::steady_clock_source_s                            frame_clock;
+            core::frame_scheduler_s                                frame_scheduler(frame_clock);
+            core::test_instrumentation::render_thread_delay_test_s render_thread_delay_test(app);
 
             std::optional<std::chrono::steady_clock::time_point> stop_time;
-            if (stop_after.has_value()) {
-                stop_time = std::chrono::steady_clock::now() +
-                            std::chrono::duration_cast<std::chrono::steady_clock::duration>(*stop_after);
+            if (app.command_line_options().stop_after.has_value()) {
+                stop_time =
+                    std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                                           *app.command_line_options().stop_after);
             }
 
             uint64_t      status_epoch{};
@@ -160,6 +143,7 @@ int main(int argc, char* argv[])
 
             while (get_signal_status() == 0 &&
                    (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
+                render_thread_delay_test.inject_before_render_frame();
                 node_manager.tick_one_frame(&app, frame_scheduler);
 
                 gpu::context_s::poll();
@@ -168,6 +152,7 @@ int main(int argc, char* argv[])
                 const auto& context = app.frame_context();
                 if (context.epoch != status_epoch || context.pts >= next_status_pts) {
                     publish_scheduler_status(&app, frame_scheduler, metrics);
+                    render_thread_delay_test.publish_status(&app);
                     status_epoch    = context.epoch;
                     next_status_pts = context.pts + utils::k_flicks_one_second;
                 }
@@ -182,7 +167,7 @@ int main(int argc, char* argv[])
             web_server->stop();
             node_manager.clear_adapters();
             try {
-                configuration.save_file(settings_path);
+                configuration.save_file(app.command_line_options().settings_path);
             } catch (const std::exception& error) {
                 getlog("app")->error("Failed to save configuration: {}", error.what());
             }

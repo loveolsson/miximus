@@ -28,7 +28,13 @@ void app_state_s::begin_frame(frame_settings_s settings, frame_context_s frame_c
 }
 
 app_state_s::app_state_s()
-    : cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
+    : app_state_s(command_line_options_s{})
+{
+}
+
+app_state_s::app_state_s(command_line_options_s command_line_options)
+    : command_line_options_(std::move(command_line_options))
+    , cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
     , cfg_thread_([this] { cfg_executor_.run(); })
     //    , thread_pool_(std::make_unique<thread_pool_t>(std::max(std::thread::hardware_concurrency(), 3u) - 2u))
     , thread_pool_(std::make_unique<thread_pool_t>(4))
@@ -56,7 +62,10 @@ app_state_s::app_state_s()
     fallback_texture_ = std::move(fallback_texture);
 }
 
-app_state_s::app_state_s(test_state_t /*test_state*/) {}
+app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s command_line_options)
+    : command_line_options_(std::move(command_line_options))
+{
+}
 
 app_state_s::~app_state_s()
 {

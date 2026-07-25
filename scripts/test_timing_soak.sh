@@ -28,10 +28,11 @@ usage()
 Usage:
   $0 start [DURATION] [--decklink-output-buffer FRAMES]
                        [--decklink-display-mode MODE]
+                       [--render-delay-ms MS --render-delay-every FRAMES]
                           Start a detached soak (default: 8h)
   $0 restart [DURATION] [--decklink-output-buffer FRAMES]
                           Gracefully replace one live instance with a detached soak
-  $0 run DURATION DIR [FRAMES] [MODE]
+  $0 run DURATION DIR [FRAMES] [MODE] [DELAY_MS] [DELAY_EVERY]
                           Run the coordinator in the foreground
   $0 observe DURATION DIR
                           Sample an already-running Miximus without stopping it
@@ -101,6 +102,8 @@ start_run()
     local duration=8h
     local output_buffer_frames=''
     local display_mode=''
+    local render_delay_ms=''
+    local render_delay_every=''
     if (($# > 0)) && [[ $1 != --* ]]; then
         duration=$1
         shift
@@ -117,12 +120,27 @@ start_run()
                 display_mode=$2
                 shift 2
                 ;;
+            --render-delay-ms)
+                (($# >= 2)) && [[ $2 =~ ^[1-9][0-9]*$ ]] || { usage >&2; exit 2; }
+                render_delay_ms=$2
+                shift 2
+                ;;
+            --render-delay-every)
+                (($# >= 2)) && [[ $2 =~ ^[1-9][0-9]*$ ]] || { usage >&2; exit 2; }
+                render_delay_every=$2
+                shift 2
+                ;;
             *)
                 usage >&2
                 exit 2
                 ;;
         esac
     done
+    if { [[ -n ${render_delay_ms} ]] && [[ -z ${render_delay_every} ]]; } ||
+        { [[ -z ${render_delay_ms} ]] && [[ -n ${render_delay_every} ]]; }; then
+        printf '%s\n' '--render-delay-ms and --render-delay-every must be used together.' >&2
+        exit 2
+    fi
     local seconds
     seconds=$(duration_seconds "${duration}")
     require_commands
@@ -164,10 +182,11 @@ start_run()
         printf '%s\n' "${unit}" >"${run_dir}/systemd-unit"
         systemd-run --user --collect --quiet --unit "${unit}" --property="WorkingDirectory=${project_dir}" \
             "${environment[@]}" "${script_path}" run "${seconds}" "${run_dir}" \
-            "${output_buffer_frames}" "${display_mode}"
+            "${output_buffer_frames}" "${display_mode}" "${render_delay_ms}" "${render_delay_every}"
         printf 'Started timing soak %s for %ss (user service %s).\n' "${run_dir}" "${seconds}" "${unit}"
     else
         nohup "${script_path}" run "${seconds}" "${run_dir}" "${output_buffer_frames}" "${display_mode}" \
+            "${render_delay_ms}" "${render_delay_every}" \
             >"${run_dir}/bootstrap.log" 2>&1 &
         local runner_pid=$!
         printf '%s\n' "${runner_pid}" >"${run_dir}/runner.pid"
@@ -216,6 +235,8 @@ run_soak()
     local output_buffer_frames=${3:-}
     local display_mode=${4:-}
     soak_observe_existing=${5:-false}
+    local render_delay_ms=${6:-}
+    local render_delay_every=${7:-}
     require_commands
     mkdir -p "${run_dir}"
 
@@ -310,8 +331,12 @@ run_soak()
         done <"${soak_fifo}" &
         soak_logger_pid=$!
 
+        local -a app_arguments=(--settings "${settings_file}" --stop-after "$((seconds + 60))")
+        if [[ -n ${render_delay_ms} ]]; then
+            app_arguments+=(--test-render-delay-ms "${render_delay_ms}" --test-render-delay-every "${render_delay_every}")
+        fi
         log_event info "Starting Miximus for ${seconds}s with ${settings_file}"
-        "${build_dir}/miximus" --settings "${settings_file}" --stop-after "$((seconds + 60))" >"${soak_fifo}" 2>&1 &
+        "${build_dir}/miximus" "${app_arguments[@]}" >"${soak_fifo}" 2>&1 &
         soak_app_pid=$!
         printf '%s\n' "${soak_app_pid}" >"${run_dir}/app.pid"
     fi
@@ -474,6 +499,8 @@ run_soak()
         --argjson warmup_seconds "${warmup_seconds}" \
         --arg output_buffer_frames "${output_buffer_frames}" \
         --arg display_mode "${display_mode}" \
+        --arg render_delay_ms "${render_delay_ms}" \
+        --arg render_delay_every "${render_delay_every}" \
         --argjson elapsed_seconds "$(((end_epoch_ns - start_epoch_ns) / 1000000000))" \
         --argjson app_exit_code "${soak_exit_code}" '
         {
@@ -484,6 +511,15 @@ run_soak()
                 (if $output_buffer_frames == "" then null else ($output_buffer_frames | tonumber) end),
             decklink_display_mode_override:
                 (if $display_mode == "" then null else $display_mode end),
+            render_delay_ms:
+                (if $render_delay_ms == "" then null else ($render_delay_ms | tonumber) end),
+            render_delay_every:
+                (if $render_delay_every == "" then null else ($render_delay_every | tonumber) end),
+            test_render_delay_injections:
+                ([$samples[]
+                    | select(.elapsed_seconds >= $warmup_seconds and .node_type == "application_settings")
+                    | .status.test_render_delay_injections | select(type == "number")] as $values
+                    | if ($values | length) > 0 then $values[-1] - $values[0] else null end),
             warmup_seconds: $warmup_seconds,
             system: {
                 cpu_percent_max: ([$system[] | .cpu_percent // empty] | max // null),
@@ -1091,7 +1127,15 @@ show_brief_report()
                 "download_transfers_completed",
                 "download_transfer_failures",
                 "download_transfer_duration_max_us",
-                "download_allocation_failed"
+                "download_allocation_failed",
+                "frame_number",
+                "start_lateness_max_us",
+                "deadline_margin_min_us",
+                "deadline_misses_total",
+                "skipped_frames_total",
+                "test_render_delay_ms",
+                "test_render_delay_every",
+                "test_render_delay_injections"
             )));
         {
             requested_seconds,
@@ -1099,6 +1143,9 @@ show_brief_report()
             app_exit_code,
             decklink_output_buffer_frames_override,
             decklink_display_mode_override,
+            render_delay_ms,
+            render_delay_every,
+            test_render_delay_injections,
             system,
             steady_scheduler,
             nodes: [.nodes[] | {
@@ -1160,12 +1207,24 @@ case ${1:-} in
         restart_run "$@"
         ;;
     run)
-        (($# >= 3 && $# <= 5)) || { usage >&2; exit 2; }
+        (($# >= 3 && $# <= 7)) || { usage >&2; exit 2; }
         if (($# >= 4)) && [[ -n $4 ]] && [[ ! $4 =~ ^[1-8]$ ]]; then
             usage >&2
             exit 2
         fi
-        run_soak "$(duration_seconds "$2")" "$(resolve_run_dir "$3")" "${4:-}" "${5:-}"
+        if (($# >= 6)) && [[ -n $6 ]] && [[ ! $6 =~ ^[1-9][0-9]*$ ]]; then
+            usage >&2
+            exit 2
+        fi
+        if (($# >= 7)) && [[ -n $7 ]] && [[ ! $7 =~ ^[1-9][0-9]*$ ]]; then
+            usage >&2
+            exit 2
+        fi
+        if { [[ -n ${6:-} ]] && [[ -z ${7:-} ]]; } || { [[ -z ${6:-} ]] && [[ -n ${7:-} ]]; }; then
+            usage >&2
+            exit 2
+        fi
+        run_soak "$(duration_seconds "$2")" "$(resolve_run_dir "$3")" "${4:-}" "${5:-}" false "${6:-}" "${7:-}"
         ;;
     observe)
         (($# == 3)) || { usage >&2; exit 2; }

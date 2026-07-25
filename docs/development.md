@@ -24,7 +24,8 @@ is tracked in [frame-timing-and-synchronization.md](frame-timing-and-synchroniza
 
 ## Building and running
 
-Requirements include CMake 3.28+, a C++20 compiler, and Node.js 22+ for the web client.
+Requirements include CMake 3.28+, a C++20 compiler, Boost with the Fiber, Program_options, and URL development
+components, and Node.js 22+ for the web client.
 
 ```bash
 cmake -S . -B build
@@ -277,6 +278,18 @@ The private run settings and summary record the selected mode. When the program 
 on the looped input are expected cadence decisions, not automatically faults. Compare their rate with the exact
 rational cadence difference and separately require the hardware late/drop, starvation, overflow, transfer-failure,
 and buffer-underrun counters to remain stable.
+
+To verify that buffered outputs absorb an isolated late render and remain full while the scheduler catches up, inject a
+short render-thread stall at a fixed rendered-frame interval:
+
+```sh
+scripts/test_timing_soak.sh start 3m --render-delay-ms 12 --render-delay-every 120
+```
+
+Choose a delay that makes the affected frame miss its deadline but remains inside the scheduler's allowed-lateness
+window once the ordinary render time is included. A successful run records the injection count and deadline misses, no
+skipped program frames, and no output late/drop, starvation, refill-shortfall, or buffered-zero events. The injector is
+test-only process instrumentation and is inactive unless both arguments are supplied.
 
 Before a multi-day endurance soak, use a campaign to collect comparable outlier distributions from shorter runs:
 

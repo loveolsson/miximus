@@ -482,7 +482,10 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
     void consume_downloaded_frames()
     {
-        while (output_queue_->queued() < output_queue_->capacity()) {
+        // The timed queue owns its overflow policy. Drain every completed
+        // lease so obsolete queued frames are released instead of exhausting
+        // the download stream.
+        while (true) {
             auto frame = download_stream_->try_consume_oldest();
             if (!frame.has_value()) {
                 break;
