@@ -96,6 +96,25 @@ std::vector<settings_option_s> context_s::get_monitors()
     return monitors;
 }
 
+std::optional<int> context_s::get_monitor_refresh_rate(std::string_view monitor_id)
+{
+    GLFWmonitor* monitor{};
+    if (const auto it = monitors_.find(monitor_id); it != monitors_.end()) {
+        monitor = it->second.handle;
+    } else if (monitor_id.empty()) {
+        monitor = glfwGetPrimaryMonitor();
+    }
+
+    if (monitor == nullptr) {
+        return std::nullopt;
+    }
+    const auto* mode = glfwGetVideoMode(monitor);
+    if (mode == nullptr || mode->refreshRate <= 0) {
+        return std::nullopt;
+    }
+    return mode->refreshRate;
+}
+
 context_s::context_s(bool visible, context_s* parent)
 {
     static std::once_flag glfw_init;

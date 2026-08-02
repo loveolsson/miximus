@@ -14,9 +14,12 @@ export default [
       globals: {
         ResizeObserver: "readonly",
         MutationObserver: "readonly",
+        HTMLElement: "readonly",
+        KeyboardEvent: "readonly",
         setTimeout: "readonly",
         clearTimeout: "readonly",
         WebSocket: "readonly",
+        window: "readonly",
         console: "readonly",
       },
       parserOptions: {

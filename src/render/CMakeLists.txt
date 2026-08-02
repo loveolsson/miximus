@@ -1,5 +1,7 @@
 add_library(render)
 
+target_sources(render PRIVATE detail/color_lut.hpp)
+
 add_subdirectory(font)
 add_subdirectory(image_asset)
 add_subdirectory(surface)

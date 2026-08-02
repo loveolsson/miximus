@@ -17,7 +17,7 @@ static std::string_view get_mime(const std::filesystem::path& name)
     };
 
     // Stripped version of NGINX default types, with charset for applicable types
-    constexpr auto mime_types = std::to_array<mime_type_s>({
+    static constexpr auto mime_types = std::to_array<mime_type_s>({
         {".html",    "text/html;charset=UTF-8"                 },
         {".htm",     "text/html;charset=UTF-8"                 },
         {".shtml",   "text/html;charset=UTF-8"                 },

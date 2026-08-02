@@ -43,10 +43,10 @@ std::shared_ptr<const image_asset_s> create_image_asset(std::string_view resourc
         constexpr size_t channel_count = 4;
         const size_t     offset        = i * channel_count;
         asset->pixels[i]               = {
-            rec709_to_linear(image_pixels[offset]),
-            rec709_to_linear(image_pixels[offset + 1]),
-            rec709_to_linear(image_pixels[offset + 2]),
-            image_pixels[offset + 3],
+                          .r = rec709_to_linear(image_pixels[offset]),
+                          .g = rec709_to_linear(image_pixels[offset + 1]),
+                          .b = rec709_to_linear(image_pixels[offset + 2]),
+                          .a = image_pixels[offset + 3],
         };
     }
     return asset;

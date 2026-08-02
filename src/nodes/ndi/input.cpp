@@ -30,6 +30,18 @@ using namespace miximus::nodes::ndi::detail;
 
 auto log() { return getlog("ndi"); }
 
+template <typename T>
+nlohmann::json status_value(const std::optional<T>& value)
+{
+    return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
+}
+
+nlohmann::json status_microseconds(const std::optional<utils::flicks>& value)
+{
+    return value.has_value() ? nlohmann::json(std::chrono::duration_cast<std::chrono::microseconds>(*value).count())
+                             : nlohmann::json(nullptr);
+}
+
 class node_impl : public node_i
 {
     std::shared_ptr<input_capture_s> capture_;
@@ -78,29 +90,15 @@ class node_impl : public node_i
         writer.write("source_queue_discontinuities", metrics.source_queue.discontinuities);
         writer.write("source_queue_transfer_failures", metrics.source_queue.transfer_failures);
         writer.write("source_queue_transfer_cancellations", metrics.source_queue.transfer_cancellations);
-        if (metrics.source_queue.recovered_rate.has_value()) {
-            writer.write("source_recovered_rate", *metrics.source_queue.recovered_rate);
-        }
-        if (metrics.source_queue.observed_rate.has_value()) {
-            writer.write("source_observed_rate", *metrics.source_queue.observed_rate);
-        }
-        if (metrics.source_queue.phase_offset.has_value()) {
-            writer.write("source_phase_offset_us", metrics.source_queue.phase_offset->count() / 706);
-        }
-        if (metrics.source_queue.phase_error.has_value()) {
-            writer.write("source_phase_error_us", metrics.source_queue.phase_error->count() / 706);
-        }
-        if (metrics.source_queue.phase_adjustment.has_value()) {
-            writer.write("source_phase_adjustment_us", metrics.source_queue.phase_adjustment->count() / 706);
-        }
-        if (metrics.source_queue.repeat_next_frame_lead_min.has_value()) {
-            writer.write("source_repeat_next_frame_lead_min_us",
-                         metrics.source_queue.repeat_next_frame_lead_min->count() / 706);
-        }
-        if (metrics.source_queue.repeat_next_frame_lead_max.has_value()) {
-            writer.write("source_repeat_next_frame_lead_max_us",
-                         metrics.source_queue.repeat_next_frame_lead_max->count() / 706);
-        }
+        writer.write("source_recovered_rate", status_value(metrics.source_queue.recovered_rate));
+        writer.write("source_observed_rate", status_value(metrics.source_queue.observed_rate));
+        writer.write("source_phase_offset_us", status_microseconds(metrics.source_queue.phase_offset));
+        writer.write("source_phase_error_us", status_microseconds(metrics.source_queue.phase_error));
+        writer.write("source_phase_adjustment_us", status_microseconds(metrics.source_queue.phase_adjustment));
+        writer.write("source_repeat_next_frame_lead_min_us",
+                     status_microseconds(metrics.source_queue.repeat_next_frame_lead_min));
+        writer.write("source_repeat_next_frame_lead_max_us",
+                     status_microseconds(metrics.source_queue.repeat_next_frame_lead_max));
         next_metrics_status_ = now + 1s;
     }
 

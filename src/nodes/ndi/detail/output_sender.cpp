@@ -2,6 +2,7 @@
 
 #include "gpu/transfer/texture_download.hpp"
 #include "logger/logger.hpp"
+#include "media/output_timeline.hpp"
 #include "media/timed_output_queue.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
@@ -37,8 +38,8 @@ class output_sender_s::impl_s
         std::shared_ptr<gpu::transfer::texture_download_stream_s> stream;
         gpu::vec2i_t                                              dimensions{};
         frame_rate_s                                              frame_rate;
-        uint64_t                                                  epoch{};
         utils::flicks                                             frame_duration{};
+        utils::flicks                                             program_time_origin{};
         size_t                                                    buffer_frames{};
         uint64_t                                                  generation{};
     };
@@ -65,6 +66,8 @@ class output_sender_s::impl_s
     std::atomic_uint64_t output_intervals_skipped_;
     std::atomic_uint64_t frames_sent_;
     std::atomic_size_t   queued_frames_;
+    std::atomic_int64_t  output_latency_us_;
+    std::atomic_int64_t  program_selection_offset_us_;
 
     static int64_t to_ndi_timecode(utils::flicks pts)
     {
@@ -91,7 +94,12 @@ class output_sender_s::impl_s
         return std::chrono::duration_cast<std::chrono::steady_clock::duration>(duration);
     }
 
-    void send_frame(const stream_state_s& state, const sender_frame_s& frame, utils::flicks output_pts)
+    static std::chrono::steady_clock::time_point steady_time_point(utils::flicks time)
+    {
+        return std::chrono::steady_clock::time_point(steady_duration(time));
+    }
+
+    void send_frame(const stream_state_s& state, const sender_frame_s& frame, utils::flicks program_pts)
     {
         const auto bytes = frame.download->bytes();
 
@@ -104,7 +112,7 @@ class output_sender_s::impl_s
         ndi_frame.frame_rate_N         = static_cast<int>(state.frame_rate.numerator);
         ndi_frame.frame_rate_D         = static_cast<int>(state.frame_rate.denominator);
         ndi_frame.frame_format_type    = NDIlib_frame_format_type_progressive;
-        ndi_frame.timecode             = to_ndi_timecode(output_pts);
+        ndi_frame.timecode             = to_ndi_timecode(program_pts);
         ndi_frame.p_metadata           = COLOR_METADATA;
 
         NDIlib_send_send_video_async_v2(sender_, &ndi_frame);
@@ -119,7 +127,11 @@ class output_sender_s::impl_s
 
     static void collect_ready_downloads(const stream_state_s& state, media::timed_output_queue_s<sender_frame_s>& queue)
     {
-        while (queue.queued() < queue.capacity()) {
+        // Always release completed transfer leases into the bounded timing
+        // queue. If the sender falls behind, that queue discards obsolete
+        // frames here on the output worker instead of letting ready downloads
+        // exhaust the render thread's preallocated slots.
+        while (true) {
             auto download = state.stream->try_consume_oldest();
             if (!download.has_value()) {
                 break;
@@ -132,20 +144,14 @@ class output_sender_s::impl_s
             if (download->bytes().size() != expected_size) {
                 continue;
             }
-            const auto pts = utils::flicks(static_cast<utils::flicks::rep>(download->tag()));
+            const auto target_time = utils::flicks(static_cast<utils::flicks::rep>(download->tag()));
             queue.push({
-                .id =
-                    {
-                         .epoch    = state.epoch,
-                         .sequence = download->tag(),
-                         .pts      = pts,
-                         .duration = state.frame_duration,
-                         },
+                .target_time = target_time,
                 .value =
                     {
-                         .download   = std::make_shared<gpu::transfer::texture_download_frame_s>(std::move(*download)),
-                         .dimensions = state.dimensions,
-                         },
+                            .download   = std::make_shared<gpu::transfer::texture_download_frame_s>(std::move(*download)),
+                            .dimensions = state.dimensions,
+                            },
             });
         }
     }
@@ -156,8 +162,8 @@ class output_sender_s::impl_s
                          .capacity        = output_sender_s::get_queue_capacity(state.buffer_frames),
                          .early_tolerance = state.frame_duration / 2,
         });
-        utils::flicks                                            output_pts{};
-        std::chrono::steady_clock::time_point                    output_deadline{};
+        media::output_timeline_s                                 timeline;
+        utils::flicks                                            output_deadline{};
         std::shared_ptr<gpu::transfer::texture_download_frame_s> inflight;
         bool                                                     started{};
 
@@ -175,45 +181,51 @@ class output_sender_s::impl_s
                 continue;
             }
 
-            const auto now = std::chrono::steady_clock::now();
+            const auto now = utils::flicks_now();
             if (!started) {
-                const auto oldest_pts = queue.oldest_pts();
-                if (!oldest_pts.has_value()) {
+                const auto oldest_target_time = queue.oldest_target_time();
+                if (!oldest_target_time.has_value()) {
                     phase_ = phase_e::failed;
                     break;
                 }
-                output_pts      = *oldest_pts;
-                output_deadline = now;
-                started         = true;
+                output_deadline           = now;
+                const auto output_latency = timeline.align(output_deadline, *oldest_target_time);
+                output_latency_us_ = std::chrono::duration_cast<std::chrono::microseconds>(output_latency).count();
+                started            = true;
             }
             if (now < output_deadline) {
                 std::unique_lock lock(state_mutex_);
-                state_condition_.wait_until(lock, output_deadline);
+                state_condition_.wait_until(lock, steady_time_point(output_deadline));
                 continue;
             }
 
-            const auto duration = steady_duration(state.frame_duration);
-            if (duration <= std::chrono::steady_clock::duration::zero()) {
+            if (state.frame_duration <= utils::flicks::zero()) {
                 phase_ = phase_e::failed;
                 break;
             }
-            const auto obsolete_intervals = static_cast<uint64_t>((now - output_deadline) / duration);
+            const auto obsolete_intervals = static_cast<uint64_t>((now - output_deadline) / state.frame_duration);
             if (obsolete_intervals != 0) {
-                output_pts += state.frame_duration * static_cast<utils::flicks::rep>(obsolete_intervals);
-                output_deadline += duration * obsolete_intervals;
+                output_deadline += state.frame_duration * static_cast<utils::flicks::rep>(obsolete_intervals);
                 output_intervals_skipped_.fetch_add(obsolete_intervals);
             }
 
-            const auto selection = queue.select(state.epoch, output_pts);
+            const auto program_target = timeline.program_target_time(output_deadline);
+            if (!program_target.has_value()) {
+                phase_ = phase_e::failed;
+                break;
+            }
+            const auto selection = queue.select(*program_target);
             publish_queue_metrics(queue);
             if (selection.frame != nullptr) {
+                program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
+                                                   selection.frame->target_time - *program_target)
+                                                   .count();
                 auto next = selection.frame->value.download;
-                send_frame(state, selection.frame->value, output_pts);
+                send_frame(state, selection.frame->value, *program_target - state.program_time_origin);
                 inflight = std::move(next);
             }
 
-            output_pts += state.frame_duration;
-            output_deadline += duration;
+            output_deadline += state.frame_duration;
         }
 
         NDIlib_send_send_video_async_v2(sender_, nullptr);
@@ -328,26 +340,28 @@ class output_sender_s::impl_s
             .output_intervals_skipped     = output_intervals_skipped_.load(),
             .frames_sent                  = frames_sent_.load(),
             .queued_frames                = queued_frames_.load(),
+            .output_latency_us            = output_latency_us_.load(),
+            .program_selection_offset_us  = program_selection_offset_us_.load(),
         };
     }
 
     void set_stream(std::shared_ptr<gpu::transfer::texture_download_stream_s> stream,
                     gpu::vec2i_t                                              dimensions,
                     frame_rate_s                                              frame_rate,
-                    uint64_t                                                  epoch,
                     utils::flicks                                             frame_duration,
+                    utils::flicks                                             program_time_origin,
                     size_t                                                    buffer_frames)
     {
         {
             const std::scoped_lock lock(state_mutex_);
             stream_state_ = stream_state_s{
-                .stream         = std::move(stream),
-                .dimensions     = dimensions,
-                .frame_rate     = frame_rate,
-                .epoch          = epoch,
-                .frame_duration = frame_duration,
-                .buffer_frames  = buffer_frames,
-                .generation     = ++stream_generation_,
+                .stream              = std::move(stream),
+                .dimensions          = dimensions,
+                .frame_rate          = frame_rate,
+                .frame_duration      = frame_duration,
+                .program_time_origin = program_time_origin,
+                .buffer_frames       = buffer_frames,
+                .generation          = ++stream_generation_,
             };
         }
         state_condition_.notify_all();
@@ -394,11 +408,11 @@ output_sender_s::metrics_s output_sender_s::metrics() const { return impl_->metr
 void output_sender_s::set_stream(std::shared_ptr<gpu::transfer::texture_download_stream_s> stream,
                                  gpu::vec2i_t                                              dimensions,
                                  frame_rate_s                                              frame_rate,
-                                 uint64_t                                                  epoch,
                                  utils::flicks                                             frame_duration,
+                                 utils::flicks                                             program_time_origin,
                                  size_t                                                    buffer_frames)
 {
-    impl_->set_stream(std::move(stream), dimensions, frame_rate, epoch, frame_duration, buffer_frames);
+    impl_->set_stream(std::move(stream), dimensions, frame_rate, frame_duration, program_time_origin, buffer_frames);
 }
 
 void output_sender_s::clear_stream() { impl_->clear_stream(); }

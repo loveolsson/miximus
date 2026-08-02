@@ -2,6 +2,8 @@ target_sources(nodes
 PRIVATE
     register.hpp
     register.cpp
+    detail/output_presenter.hpp
+    detail/output_presenter.cpp
     screen_output.cpp
     screen_output_migrations.hpp
     screen_output_migrations.cpp

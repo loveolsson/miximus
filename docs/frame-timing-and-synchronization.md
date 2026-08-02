@@ -57,8 +57,9 @@ caches and potentially multiple graph evaluations for the same logical scene.
 The fixed loop-local timing arithmetic has been replaced by an anchor-based scheduler with an internal steady clock,
 explicit epochs, monotonic frame identities, coordinated PTS gaps, and a replaceable late-frame policy. The current
 provisional policy permits an evaluation up to one frame late and skips every older evaluation in one decision. Input
-selection is now PTS-aware for DeckLink capture, and DeckLink output performs deterministic PTS selection against its
-hardware cadence. The remaining source and output integrations are the important limitations addressed by later stages.
+selection is now PTS-aware for DeckLink capture, and DeckLink and NDI outputs select program frames by mapping their
+physical presentation times into the absolute program scheduling-clock domain. The remaining source and output
+integrations are the important limitations addressed by later stages.
 
 The current graph frame performs these operations:
 
@@ -351,8 +352,8 @@ normally because options, animations, other inputs, and output targets may still
 
 Source timing, fallback state, and transfer readiness therefore remain private to the input synchronizer and its
 prepared ticket. Program timing comes from the global frame context, while output queues associate the completed
-program result with that context's PTS. The existing texture and framebuffer interface types do not need to become
-frame-valued interfaces as part of this work.
+program result with that context's absolute target time. The existing texture and framebuffer interface types do not
+need to become frame-valued interfaces as part of this work.
 
 Textures and framebuffers may eventually carry separate descriptive source information, for example so a multiviewer
 can derive an input label. That is a media-metadata feature rather than a synchronization contract. It should be
@@ -425,15 +426,33 @@ Hardware-decoded surfaces should enter the same prepared-ticket and transfer con
 ## Output scheduling and buffering
 
 Outputs consume frames by intended presentation PTS rather than simply taking the latest completed transfer. Every
-output queue must be bounded and define overflow, underrun, repeat, and shutdown behavior.
+output queue must be bounded and define overflow, underrun, repeat, and shutdown behavior. Rendered frames retain the
+absolute scheduling-clock target from their `frame_context_s`. Each output establishes an
+intentional buffered latency at startup, maps each physical presentation slot into that same absolute clock domain,
+and selects the program frame for:
+
+```text
+program target time = physical presentation time - output latency
+```
+
+The physical clock observation is output-specific, but the target-time selection and latency mapping are shared. A
+nominal PTS cursor advanced independently on both sides is not sufficient: two free-running clocks can differ slightly
+and will eventually drift even when their declared rates are identical. Buffer occupancy remains an important safety
+and diagnostic signal, but bursty render completion makes it unsuitable as the primary clock measurement.
 
 ### DeckLink output
 
-Preserve scheduled playback and callback replenishment, but associate each rendered/downloaded frame with its intended
-DeckLink schedule time. Maintain explicit low, target, and high queue watermarks. On underrun, repeat the previous frame
-or schedule black according to policy; discard a rendered frame that arrives after its useful scheduling point.
+Preserve scheduled playback and callback replenishment, but associate each rendered/downloaded frame with its absolute
+program target time. Maintain an explicit scheduled-frame target. On underrun, repeat the
+previous frame or schedule black according to policy; discard a rendered frame that arrives after its useful scheduling point.
 Repetition must explicitly schedule the retained frame for each required output interval. Do not depend on undocumented
 behavior for gaps between DeckLink schedule timestamps.
+
+For every completed physical frame, obtain `GetFrameCompletionReferenceTimestamp()` while the SDK says the timestamp is
+valid, translate the SDK's platform reference clock into Miximus' steady-clock domain, and derive the absolute time of
+the next DeckLink schedule slot from its stream-time distance. This continually measures the relationship between the
+free-running DeckLink and program clocks. The DeckLink stream timestamp remains the device scheduling coordinate only;
+it must not become a second nominal program cursor.
 
 Each scheduled frame must retain the download lease that backs its `IDeckLinkVideoBuffer` until DeckLink reports frame
 completion. Do not copy completed downloads into a second DeckLink-owned frame buffer. The SDK completion callback may
@@ -453,9 +472,10 @@ bitmasks and resolve known modes to user-facing names, using `Unknown` when the 
 
 ### NDI output
 
-Keep `clock_video = false` while the Miximus scheduler owns cadence. The worker should request the frame for each NDI
-send PTS, not consume an arbitrary latest result. Missing frames should be repeated deliberately and counted. NDI
-timecode should be derived from program PTS, and future audio must use the same program timeline.
+Keep `clock_video = false` while the Miximus scheduler owns cadence. The worker's exact steady-clock deadline is the
+physical presentation time for each NDI send and uses the same buffered-latency mapping as other outputs; it must not
+maintain a separate nominal program-PTS cursor. Missing frames should be repeated deliberately and counted. NDI
+timecode should be derived from the mapped program PTS, and future audio must use the same program timeline.
 
 An enabled NDI output continues demanding upstream frame work even with no receivers. Receiver attachment must not
 cause a sudden change in render load or reveal a graph that cannot sustain its configured outputs. The sender may skip
@@ -465,8 +485,9 @@ the download and network send while no receiver is present, but the upstream gra
 
 Screen output is a scheduled, buffered output. Its presentation worker should derive its cadence from the selected
 monitor's refresh rate and, where the platform exposes it, actual presentation feedback. The render side should queue
-frames with their intended program PTS into a bounded set of shared render slots and maintain explicit preroll and
-queue watermarks. It must not simply draw whichever frame happens to be newest when the display thread wakes up.
+frames with their absolute program target time into a bounded set of shared render slots and maintain explicit preroll.
+Measured presentation timing drives frame selection; queue depth is only a capacity, startup, and diagnostic signal.
+The output must not simply draw whichever frame happens to be newest when the display thread wakes up.
 
 At each display presentation point, the output selects the queued program frame appropriate for that target. When the
 display and program rates differ or rendering misses a deadline, it deliberately repeats the retained frame or drops
@@ -691,15 +712,20 @@ Exit criteria:
 
 ### Stage 5: DeckLink scheduled output
 
-**Status:** PTS-aware cadence selection, program-frame preroll, and configurable buffering implemented; hardware stress
-verification remains
+**Status:** Absolute-time cadence selection, program-frame preroll, and configurable buffering implemented; long-running
+hardware stress verification remains
 
-Each completed GPU download now retains its program epoch and PTS until the DeckLink completion callback consumes it.
-The callback selects against an exact DeckLink-duration cursor, explicitly repeats the retained frame when the program
-cadence is slower, and drops superseded frames when it is faster. One global one-to-eight-frame DeckLink-output setting
-controls both startup and the steady scheduled-frame target for every output of that type; the SDK-reported minimum
-preroll raises the effective target when required. The output first exposes its bounded download stream, schedules
-actual completed program frames until that target is full, and only then starts scheduled playback. There is no
+Each completed GPU download now retains its absolute target time until the DeckLink completion
+callback consumes it. The callback uses the completed frame's hardware reference timestamp to map the next DeckLink
+schedule slot into Miximus' steady-clock domain. The shared clock estimator filters callback-delivery jitter and tracks
+the DeckLink clock's long-term rate; raw callback arrival variation must not directly drive cadence selection. The first
+actual completed frame establishes the fixed program-to-output latency. Each later slot selects against its filtered
+absolute presentation time minus that latency, explicitly repeats the retained frame when the program cadence is
+slower, and drops superseded frames when it is faster. One global one-to-eight-frame DeckLink-output setting controls
+both startup and the steady scheduled-frame target for every output of that type; the SDK-reported minimum preroll
+raises the effective target when required. The output first exposes its bounded download stream, schedules actual
+completed program frames until that target is full, retains one additional completed program frame as callback-jitter
+reserve, and only then starts scheduled playback. There is no
 separate generated black preroll or second startup-depth setting. A buffer-size change deliberately follows the
 existing asynchronous stop/restart path and recreates the affected stream; preserving output continuity across that
 change is not a requirement. The output control path waits off the render thread for the bounded initial download-slot
@@ -708,9 +734,10 @@ repeats.
 
 Deliverables:
 
-- Associate each rendered/downloaded result with program PTS and its DeckLink schedule interval.
-- Use one configurable output watermark for program-frame preroll and steady buffering, with cadence conversion from
-  program rate to output rate.
+- Associate each rendered/downloaded result with its absolute target time, and independently retain the
+  DeckLink stream time for every physically scheduled frame.
+- Use one configurable scheduled-frame target for program-frame preroll and steady buffering, with cadence conversion
+  from program rate to output rate.
 - Explicitly schedule retained-frame repeats; never create timestamp gaps expecting the SDK to fill them.
 - Preserve zero-copy download-lease-backed frames, completion ownership, device-control serialization, and asynchronous
   shutdown.
@@ -753,13 +780,13 @@ Exit criteria:
 
 ### Stage 7: NDI input and output
 
-**Status:** In progress; raw timed input and buffered output cadence implemented
+**Status:** In progress; raw timed input and absolute-time buffered output cadence implemented
 
 NDI input now drains raw SDK frames continuously, converts sender timestamps into relative source PTS, and passes them
 through the same templated clock estimator/timed-source queue used by DeckLink. It starts only the exact active-closure
 upload from submission, and execution awaits and consumes that upload. NDI output uses a bounded FIFO download stream
-and a worker-owned cadence cursor with configurable global preroll, explicit repeat/drop behavior, program-derived
-timecode, and correct asynchronous-send lease retention. Receiver and sender lifecycle runs through a serialized NDI
+and a worker-owned exact steady-clock deadline with configurable global preroll, explicit repeat/drop behavior,
+program-derived timecode, and correct asynchronous-send lease retention. Receiver and sender lifecycle runs through a serialized NDI
 control executor. Rate-mismatch and network-delay stress validation remain before this stage is complete.
 
 Deliverables:
@@ -767,7 +794,7 @@ Deliverables:
 - Keep every raw NDI receiver and bounded host queue hot independently of graph selection.
 - Feed source timestamps and arrival observations through the common timed-source queue; retain NDI timing metadata for
   diagnostics and discontinuity handling.
-- Make NDI output consume program-PTS results at its configured cadence, explicitly repeat missing frames, and derive
+- Make NDI output consume absolute-target-time results at its configured cadence, explicitly repeat missing frames, and derive
   timecode from the program timeline.
 - Keep enabled NDI outputs as demanding sinks even when no receiver is connected, so connecting a receiver cannot
   suddenly change graph workload or timing behavior.

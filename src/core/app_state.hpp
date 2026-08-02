@@ -44,9 +44,19 @@ class app_state_s
             int buffer_frames{DEFAULT_BUFFER_FRAMES};
         };
 
+        struct screen_output_settings_s
+        {
+            static constexpr int DEFAULT_BUFFER_FRAMES = 2;
+            static constexpr int MIN_BUFFER_FRAMES     = 1;
+            static constexpr int MAX_BUFFER_FRAMES     = 8;
+
+            int buffer_frames{DEFAULT_BUFFER_FRAMES};
+        };
+
         frame_rate_s               frame_rate{DEFAULT_FRAME_RATE};
         decklink_output_settings_s decklink_output;
         ndi_output_settings_s      ndi_output;
+        screen_output_settings_s   screen_output;
     };
 
   private:

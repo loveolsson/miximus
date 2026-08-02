@@ -3,6 +3,7 @@
 #include "platform_compat.hpp"
 
 #include <cstdlib>
+#include <ctime>
 
 namespace miximus::decklink_sdk {
 
@@ -48,6 +49,17 @@ REFIID input_video_buffer_iid() noexcept
         .byte14 = 0xC8,
         .byte15 = 0x09,
     };
+}
+
+BMDTimeScale reference_time_scale() noexcept { return 1'000'000'000; }
+
+BMDTimeValue reference_time_now() noexcept
+{
+    timespec time{};
+    if (clock_gettime(CLOCK_MONOTONIC_RAW, &time) != 0) {
+        return 0;
+    }
+    return static_cast<BMDTimeValue>(time.tv_sec) * reference_time_scale() + time.tv_nsec;
 }
 
 std::string get_device_display_name(IDeckLink* device)

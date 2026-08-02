@@ -76,12 +76,13 @@ export interface SettingsOption {
   readonly label: string;
 }
 
-export type NodeStatusFormat = "active" | "busy" | "integer" | "locked" | "temperature";
+export type NodeStatusFormat = "active" | "busy" | "failure" | "integer" | "locked" | "temperature";
 
 export interface NodeStatusField {
   readonly key: string;
   readonly label: string;
   readonly format?: NodeStatusFormat;
+  readonly precision?: number;
 }
 
 export interface NodeStatusSection {

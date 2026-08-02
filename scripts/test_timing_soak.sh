@@ -298,6 +298,7 @@ run_soak()
 
     printf 'starting\n' >"${run_dir}/state"
     printf '%s\n' "$$" >"${run_dir}/runner.pid"
+    rm -f "${run_dir}/summary.json" "${run_dir}/config.json" "${run_dir}/app.pid" "${soak_fifo}"
     : >"${events_file}"
     : >"${samples_file}"
     : >"${system_file}"
@@ -372,6 +373,7 @@ run_soak()
         skipped_frames_total
         frames_displayed_late
         frames_dropped
+        completion_time_failures
         program_queue_overflow_drops
         program_timing_drops
         program_starvation_repeats
@@ -391,6 +393,7 @@ run_soak()
         program_starvation_repeat_streak_max
         buffered_below_target_samples
         output_intervals_skipped
+        render_acquire_misses
         receiver_video_drops
         invalid_frames
     )
@@ -1115,6 +1118,14 @@ show_brief_report()
                 "buffered_below_target_samples",
                 "buffered_zero_samples",
                 "output_refill_shortfalls",
+                "swaps_completed",
+                "measured_refresh_hz",
+                "queued_frames",
+                "render_slots",
+                "render_slots_free",
+                "render_slots_retiring",
+                "render_acquire_misses",
+                "completion_interval_max_us",
                 "render_target_drops",
                 "download_slots",
                 "download_slots_free",
@@ -1198,6 +1209,10 @@ follow_campaign()
 }
 
 case ${1:-} in
+    '')
+        stop_live_instance
+        start_run 2h
+        ;;
     start)
         shift
         start_run "$@"

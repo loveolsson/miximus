@@ -2,6 +2,7 @@
 
 #include "platform_compat.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <limits>
 
@@ -51,6 +52,14 @@ REFIID input_video_buffer_iid() noexcept
         0x4005D928, 0xBA67, 0x4663, {0xA7, 0xFA, 0xF4, 0x4A, 0xB8, 0x25, 0xC8, 0x09}
     };
     return iid;
+}
+
+BMDTimeScale reference_time_scale() noexcept { return 1'000'000'000; }
+
+BMDTimeValue reference_time_now() noexcept
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 std::string get_device_display_name(IDeckLink* device)

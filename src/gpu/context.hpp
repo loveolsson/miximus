@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -62,6 +63,7 @@ class context_s
     static bool                           has_extension(const char* ext);
     static uint64_t                       get_monitor_list_version() noexcept;
     static std::vector<settings_option_s> get_monitors();
+    static std::optional<int>             get_monitor_refresh_rate(std::string_view monitor_id);
 
     shader_program_s* get_shader(shader_program_s::name_e name);
 

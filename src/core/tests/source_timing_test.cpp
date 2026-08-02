@@ -3,6 +3,7 @@
 #include "utils/flicks.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <future>
 #include <gtest/gtest.h>
 #include <optional>
@@ -297,6 +298,73 @@ TEST(TimedSourceQueue, DelayedExactRateSourceDoesNotOscillateAtTheHalfFrameBound
 
     EXPECT_EQ(queue.metrics().timing_repeats, 0);
     EXPECT_EQ(queue.metrics().overflow_drops, 0);
+}
+
+TEST(TimedSourceQueue, FasterNominalSourceDoesNotDevelopCompensatingRepeatsDuringLongRuns)
+{
+    constexpr auto SOURCE_FRAME_DURATION  = utils::flicks{11'760'000};
+    constexpr auto PROGRAM_FRAME_DURATION = utils::flicks{11'771'760};
+    constexpr auto TARGET_TIME            = utils::to_flicks(100.0);
+    constexpr auto SOURCE_ORIGIN          = utils::to_flicks(40.0);
+    constexpr auto CALLBACK_PHASE         = SOURCE_FRAME_DURATION / 2;
+    constexpr auto CALLBACK_JITTER        = utils::to_flicks(0.002);
+    constexpr auto PROGRAM_FRAME_COUNT    = 432'000ULL;
+    constexpr auto SOURCE_CLOCK_SCALE     = 1.000'010L;
+
+    media::timed_source_queue_s<int> queue({.capacity = 8, .playout_delay_frames = 3});
+    uint64_t                         next_source_frame = 0;
+
+    for (uint64_t program_frame = 0; program_frame < PROGRAM_FRAME_COUNT; ++program_frame) {
+        const auto program_pts = PROGRAM_FRAME_DURATION * static_cast<utils::flicks::rep>(program_frame);
+        const auto target_time = TARGET_TIME + program_pts;
+
+        while (true) {
+            const auto source_offset  = SOURCE_FRAME_DURATION * static_cast<utils::flicks::rep>(next_source_frame);
+            const auto arrival_offset = utils::flicks{static_cast<utils::flicks::rep>(
+                std::llround(static_cast<long double>(source_offset.count()) * SOURCE_CLOCK_SCALE))};
+            const auto jitter         = next_source_frame % 2 == 0 ? CALLBACK_JITTER : -CALLBACK_JITTER;
+            const auto arrival_time   = TARGET_TIME + CALLBACK_PHASE + arrival_offset + jitter;
+            if (arrival_time > target_time) {
+                break;
+            }
+
+            queue.push(queue.create_frame(
+                {
+                    .epoch    = 1,
+                    .sequence = next_source_frame + 1,
+                    .pts      = SOURCE_ORIGIN + source_offset,
+                    .duration = SOURCE_FRAME_DURATION,
+                },
+                arrival_time,
+                static_cast<int>(next_source_frame)));
+            ++next_source_frame;
+        }
+
+        queue.advance(program_pts, target_time);
+        const auto ticket = queue.select(program_pts, PROGRAM_FRAME_DURATION / 2);
+        if (ticket.selection() == media::prepared_frame_selection_e::missing) {
+            continue;
+        }
+        if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
+            ASSERT_TRUE(ticket.await());
+            ASSERT_TRUE(queue.commit(ticket));
+            continue;
+        }
+        ASSERT_EQ(ticket.selection(), media::prepared_frame_selection_e::new_frame) << "at frame " << program_frame;
+        ASSERT_NE(ticket.frame(), nullptr);
+        ASSERT_TRUE(ticket.frame()->mark_submitted());
+        ASSERT_TRUE(ticket.frame()->mark_ready());
+        ASSERT_TRUE(ticket.await());
+        ASSERT_TRUE(queue.commit(ticket));
+    }
+
+    const auto metrics = queue.metrics();
+    EXPECT_GE(metrics.selection_drops, 400);
+    EXPECT_LE(metrics.selection_drops, 450);
+    EXPECT_EQ(metrics.repeated, 0);
+    EXPECT_EQ(metrics.starvation_repeats, 0);
+    EXPECT_EQ(metrics.timing_repeats, 0);
+    EXPECT_EQ(metrics.overflow_drops, 0);
 }
 
 TEST(TimedSourceQueue, AwaitUsesTheExactSelectedFrameInsteadOfThePreviousFrame)

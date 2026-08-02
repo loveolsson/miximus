@@ -180,13 +180,15 @@ and releases its callback reference. Control tasks retain the callback and devic
 all capture buffers are returned, and transfer-stream destruction has been queued on the GL upload worker. Application
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
-DeckLink output renders packed 10-bit YUV into a PTS-tagged download target. The transfer worker completes readback,
-and ready leases drain in FIFO order into a bounded timed-output queue. Draining stops when that queue is full, leaving
-backpressure in the download stream instead of discarding the oldest due frame. Before playback starts, short
+DeckLink output renders packed 10-bit YUV into a download target tagged with the frame's absolute program target time.
+The transfer worker completes readback, and ready leases drain in FIFO order into a bounded timed-output queue. That
+queue releases superseded or overflowed frames according to its explicit selection policy. Before playback starts, short
 non-blocking control tasks collect actual program downloads. Once the configured buffer target is available, those
-program frames are scheduled as the SDK preroll and playback begins. The completion callback then selects the newest
-eligible program frame for each exact DeckLink interval. It explicitly retains frames for repeats and accounts for
-superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
+program frames are scheduled as the SDK preroll and playback begins. One additional completed program frame remains in
+the timed queue so bursty SDK completion callbacks do not make selection alternate between starvation and dropping a
+newly completed batch. The completion callback then selects the newest
+eligible program frame by mapping the next hardware presentation time into the absolute program clock. It explicitly
+retains frames for repeats and accounts for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
 frame keeps host memory reserved until DeckLink releases it.
 
 The single global DeckLink-output buffer target defaults to four frames and is adjustable from one to eight. The SDK's
@@ -224,14 +226,17 @@ for and consumes that same version before color conversion. Superseded, overflow
 host leases without starting GPU work. The SDK's frame-sync layer is intentionally not placed in front of this common
 timing path.
 
-NDI output renders program-PTS-tagged frames into a bounded RGBA download stream. Its worker consumes completed leases
-in FIFO order, prerolls to the globally configured NDI-output buffer depth, and advances an explicit steady-clock send
-cursor at the program rate. It deliberately drops superseded program frames, repeats the retained frame across missing
-intervals, skips obsolete output intervals rather than bursting to catch up, and derives NDI timecode from the output
-cursor. `clock_video` remains disabled. Potentially blocking asynchronous sends stay on the worker, and each download
+NDI output renders frames tagged with their absolute program target time into a bounded RGBA download stream. Its worker
+consumes completed leases in FIFO order, prerolls to the globally configured NDI-output buffer depth, and treats each
+exact steady-clock send deadline as a physical presentation time. It deliberately drops superseded program frames,
+repeats the retained frame across missing intervals, skips obsolete output intervals rather than bursting to catch up,
+and derives NDI timecode from the mapped program time. `clock_video` remains disabled. Potentially blocking asynchronous sends stay on the worker, and each download
 lease is retained until the following NDI async-send call releases the SDK's use of that memory. Enabled NDI outputs
 remain demanding graph sinks regardless of receiver count. Like DeckLink output, the bounded download stream queues its
-initial slot set before sending begins rather than growing one retained slot at a time during playout.
+initial slot set before sending begins rather than growing one retained slot at a time during playout. The sender worker
+always drains completed download leases into the bounded timed queue; when it falls behind, overflow disposal therefore
+happens on that worker rather than exhausting render-thread slots. Preallocated pipeline headroom covers the two
+consecutive evaluations possible under the current one-frame-late scheduler policy.
 
 ## Font registry and CPU surfaces
 

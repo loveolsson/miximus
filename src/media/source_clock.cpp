@@ -80,11 +80,11 @@ source_clock_observation_e source_clock_estimator_s::observe(const media_frame_i
 
     if (id.sequence - rate_reference_sequence_ >= config_.rate_observation_frames) {
         const auto sample_count = static_cast<long double>(rate_sample_count_);
-        const auto denominator  = sample_count * rate_source_squared_sum_ - rate_source_sum_ * rate_source_sum_;
+        const auto denominator  = (sample_count * rate_source_squared_sum_) - (rate_source_sum_ * rate_source_sum_);
         if (denominator > 0.0L) {
-            const auto numerator     = sample_count * rate_source_program_sum_ - rate_source_sum_ * rate_program_sum_;
-            const auto observed_rate = static_cast<double>(numerator / denominator);
-            observed_rate_           = observed_rate;
+            const auto numerator = (sample_count * rate_source_program_sum_) - (rate_source_sum_ * rate_program_sum_);
+            const auto observed_rate     = static_cast<double>(numerator / denominator);
+            observed_rate_               = observed_rate;
             const auto maximum_deviation = config_.maximum_rate_deviation_ppm / 1'000'000.0;
             const auto bounded_rate      = std::clamp(observed_rate, 1.0 - maximum_deviation, 1.0 + maximum_deviation);
             source_anchor_               = id.pts;

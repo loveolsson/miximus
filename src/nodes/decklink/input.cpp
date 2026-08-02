@@ -39,6 +39,12 @@ nlohmann::json status_value(const std::optional<T>& value)
     return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
 }
 
+nlohmann::json status_microseconds(const std::optional<utils::flicks>& value)
+{
+    return value.has_value() ? nlohmann::json(std::chrono::duration_cast<std::chrono::microseconds>(*value).count())
+                             : nlohmann::json(nullptr);
+}
+
 void write_device_status(core::node_status_registry_s::writer_s& writer, const device_status_s& status)
 {
     writer.write("signal_locked", status_value(status.input_signal_locked));
@@ -129,36 +135,13 @@ class node_impl : public node_i
         writer.write("source_queue_transfer_cancellations", metrics.source_queue.transfer_cancellations);
         writer.write("source_recovered_rate", status_value(metrics.source_queue.recovered_rate));
         writer.write("source_observed_rate", status_value(metrics.source_queue.observed_rate));
-        writer.write(
-            "source_phase_offset_us",
-            metrics.source_queue.phase_offset.has_value()
-                ? nlohmann::json(
-                      std::chrono::duration_cast<std::chrono::microseconds>(*metrics.source_queue.phase_offset).count())
-                : nlohmann::json(nullptr));
-        writer.write(
-            "source_phase_error_us",
-            metrics.source_queue.phase_error.has_value()
-                ? nlohmann::json(
-                      std::chrono::duration_cast<std::chrono::microseconds>(*metrics.source_queue.phase_error).count())
-                : nlohmann::json(nullptr));
-        writer.write("source_phase_adjustment_us",
-                     metrics.source_queue.phase_adjustment.has_value()
-                         ? nlohmann::json(std::chrono::duration_cast<std::chrono::microseconds>(
-                                              *metrics.source_queue.phase_adjustment)
-                                              .count())
-                         : nlohmann::json(nullptr));
+        writer.write("source_phase_offset_us", status_microseconds(metrics.source_queue.phase_offset));
+        writer.write("source_phase_error_us", status_microseconds(metrics.source_queue.phase_error));
+        writer.write("source_phase_adjustment_us", status_microseconds(metrics.source_queue.phase_adjustment));
         writer.write("source_repeat_next_frame_lead_min_us",
-                     metrics.source_queue.repeat_next_frame_lead_min.has_value()
-                         ? nlohmann::json(std::chrono::duration_cast<std::chrono::microseconds>(
-                                              *metrics.source_queue.repeat_next_frame_lead_min)
-                                              .count())
-                         : nlohmann::json(nullptr));
+                     status_microseconds(metrics.source_queue.repeat_next_frame_lead_min));
         writer.write("source_repeat_next_frame_lead_max_us",
-                     metrics.source_queue.repeat_next_frame_lead_max.has_value()
-                         ? nlohmann::json(std::chrono::duration_cast<std::chrono::microseconds>(
-                                              *metrics.source_queue.repeat_next_frame_lead_max)
-                                              .count())
-                         : nlohmann::json(nullptr));
+                     status_microseconds(metrics.source_queue.repeat_next_frame_lead_max));
         next_metrics_status_ = now + std::chrono::seconds(1);
     }
 

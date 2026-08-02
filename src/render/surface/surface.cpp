@@ -1,5 +1,7 @@
 #include "surface.hpp"
 
+#include "render/detail/color_lut.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -195,20 +197,6 @@ void composite_source_over(surface_s::pixel_t source, surface_s::pixel_t* destin
     destination->a = composite_channel(source.a, destination->a);
 }
 
-const std::array<uint8_t, 256>& srgb_to_linear_lut() noexcept
-{
-    static const auto lut = [] {
-        std::array<uint8_t, 256> result{};
-        for (size_t i = 0; i < result.size(); ++i) {
-            const double encoded = static_cast<double>(i) / 255.0;
-            const double linear  = encoded <= 0.04045 ? encoded / 12.92 : std::pow((encoded + 0.055) / 1.055, 2.4);
-            result[i]            = static_cast<uint8_t>(std::lround(std::clamp(linear, 0.0, 1.0) * 255.0));
-        }
-        return result;
-    }();
-    return lut;
-}
-
 uint8_t unpremultiply_channel(uint8_t channel, uint8_t alpha) noexcept
 {
     if (alpha == 0) {
@@ -220,11 +208,14 @@ uint8_t unpremultiply_channel(uint8_t channel, uint8_t alpha) noexcept
 
 surface_s::pixel_t convert_srgb_premultiplied_bgra(srgb_premultiplied_bgra_pixel_s source) noexcept
 {
-    const auto& lut = srgb_to_linear_lut();
+    const auto lookup = [](uint8_t value) noexcept {
+        // Every uint8_t value is a valid index into the 256-entry LUT.
+        return detail::SRGB_TO_LINEAR_U8[value]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    };
     return {
-        multiply_channel(lut[unpremultiply_channel(source.r, source.a)], source.a),
-        multiply_channel(lut[unpremultiply_channel(source.g, source.a)], source.a),
-        multiply_channel(lut[unpremultiply_channel(source.b, source.a)], source.a),
+        multiply_channel(lookup(unpremultiply_channel(source.r, source.a)), source.a),
+        multiply_channel(lookup(unpremultiply_channel(source.g, source.a)), source.a),
+        multiply_channel(lookup(unpremultiply_channel(source.b, source.a)), source.a),
         source.a,
     };
 }

@@ -107,14 +107,28 @@ function formatValue(field: NodeStatusField, value: unknown): string {
   if (field.format === "locked") return value === true ? "Locked" : "Unlocked";
   if (field.format === "active") return value === true ? "Active" : "Idle";
   if (field.format === "busy") return value === true ? "Busy" : "Idle";
-  if (field.format === "integer") {
-    return typeof value === "number" ? value.toLocaleString() : String(value);
-  }
+  if (field.format === "failure") return value === true ? "Failed" : "Healthy";
+  if (typeof value !== "number") return String(value);
+
+  if (field.format === "integer")
+    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
   if (field.format === "temperature") {
-    const temperature = typeof value === "number" ? value.toLocaleString() : String(value);
+    const precision = field.precision ?? 1;
+    const temperature = value.toLocaleString(undefined, {
+      minimumFractionDigits: precision,
+      maximumFractionDigits: precision,
+    });
     return `${temperature} °C`;
   }
-  return String(value);
+
+  if (field.precision !== undefined) {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: field.precision,
+      maximumFractionDigits: field.precision,
+    });
+  }
+
+  return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
 const sections = computed(() =>
@@ -226,7 +240,7 @@ function hideTooltip(): void {
   position: fixed;
   z-index: 1000;
   display: grid;
-  width: min(560px, calc(100vw - 16px));
+  width: min(840px, calc(100vw - 16px));
   padding: 0.6em 0.75em;
   color: var(--baklava-node-interface-port-tooltip-color-foreground);
   background: var(--baklava-node-interface-port-tooltip-color-background);
@@ -245,15 +259,16 @@ function hideTooltip(): void {
 }
 
 .status-tooltip__sections {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8em 1.25em;
+  column-count: 3;
+  column-gap: 1.25em;
 }
 
 .status-tooltip__section {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   align-content: start;
+  margin-bottom: 0.8em;
+  break-inside: avoid;
 }
 
 .status-tooltip__section-title {
@@ -283,13 +298,23 @@ function hideTooltip(): void {
   font-style: italic;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
+  .status-tooltip {
+    width: min(560px, calc(100vw - 16px));
+  }
+
+  .status-tooltip__sections {
+    column-count: 2;
+  }
+}
+
+@media (max-width: 600px) {
   .status-tooltip {
     width: min(320px, calc(100vw - 16px));
   }
 
   .status-tooltip__sections {
-    grid-template-columns: 1fr;
+    column-count: 1;
   }
 }
 </style>

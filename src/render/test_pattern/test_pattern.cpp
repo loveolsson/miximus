@@ -1,6 +1,7 @@
 #include "test_pattern.hpp"
 
 #include "gpu/types.hpp"
+#include "render/detail/color_lut.hpp"
 #include "render/image_asset/image_asset.hpp"
 #include "render/surface/surface.hpp"
 
@@ -20,28 +21,26 @@ using pixel_t = surface_s::pixel_t;
 constexpr pixel_t BLACK{0, 0, 0, 255};
 constexpr pixel_t WHITE{255, 255, 255, 255};
 // Logo border #2C86B0 converted from its Rec.709-encoded PNG value to linear surface bytes.
-constexpr straight_rgba_pixel_s LOGO_BORDER{11, 73, 122, 191};
+constexpr straight_rgba_pixel_s LOGO_BORDER{.r = 11, .g = 73, .b = 122, .a = 191};
 constexpr std::array            LOGO_PATHS{
     std::string_view{"images/miximus_128x128.png"},
     std::string_view{"images/miximus_64x64.png"},
     std::string_view{"images/miximus_32x32.png"},
 };
 
-uint8_t rec709_to_linear(double encoded)
+constexpr uint8_t rec709_to_linear(double encoded) noexcept
 {
     encoded             = std::clamp(encoded, 0.0, 1.0);
-    const double linear = encoded < 0.081 ? encoded / 4.5 : std::pow((encoded + 0.099) / 1.099, 1.0 / 0.45);
-    return static_cast<uint8_t>(std::lround(std::clamp(linear, 0.0, 1.0) * 255.0));
+    const double linear = detail::rec709_to_linear(encoded);
+    return detail::normalized_to_u8(linear);
 }
 
-pixel_t video_rgb(uint8_t red, uint8_t green, uint8_t blue)
+constexpr pixel_t video_rgb(uint8_t red, uint8_t green, uint8_t blue) noexcept
 {
-    constexpr double black = 16.0;
-    constexpr double range = 219.0;
     return {
-        rec709_to_linear((red - black) / range),
-        rec709_to_linear((green - black) / range),
-        rec709_to_linear((blue - black) / range),
+        detail::VIDEO_REC709_TO_LINEAR_U8[red],   // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+        detail::VIDEO_REC709_TO_LINEAR_U8[green], // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+        detail::VIDEO_REC709_TO_LINEAR_U8[blue],  // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
         255,
     };
 }
@@ -68,9 +67,9 @@ void draw_bars(surface_s* surface, std::span<const pixel_t> colors, int top, int
 
 void draw_ebu_color_bars(surface_s* surface)
 {
-    const auto       low  = uint8_t{16};
-    const auto       high = uint8_t{180};
-    const std::array colors{
+    constexpr auto              low  = uint8_t{16};
+    constexpr auto              high = uint8_t{180};
+    static constexpr std::array colors{
         video_rgb(high, high, high),
         video_rgb(high, high, low),
         video_rgb(low, high, high),
@@ -85,13 +84,13 @@ void draw_ebu_color_bars(surface_s* surface)
 
 void draw_smpte_color_bars(surface_s* surface)
 {
-    const auto dimensions = surface->dimensions();
-    const auto low        = uint8_t{16};
-    const auto high       = uint8_t{180};
-    const int  upper_end  = dimensions.y * 2 / 3;
-    const int  middle_end = dimensions.y * 3 / 4;
+    const auto     dimensions = surface->dimensions();
+    constexpr auto low        = uint8_t{16};
+    constexpr auto high       = uint8_t{180};
+    const int      upper_end  = dimensions.y * 2 / 3;
+    const int      middle_end = dimensions.y * 3 / 4;
 
-    const std::array upper{
+    static constexpr std::array upper{
         video_rgb(high, high, high),
         video_rgb(high, high, low),
         video_rgb(low, high, high),
@@ -100,7 +99,7 @@ void draw_smpte_color_bars(surface_s* surface)
         video_rgb(high, low, low),
         video_rgb(low, low, high),
     };
-    const std::array middle{
+    static constexpr std::array middle{
         video_rgb(low, low, high),
         video_rgb(low, low, low),
         video_rgb(high, low, high),
@@ -121,7 +120,7 @@ void draw_smpte_color_bars(surface_s* surface)
     surface->fill(make_rect({second_end, middle_end}, {third_end - second_end, dimensions.y - middle_end}),
                   video_rgb(50, 16, 75));
 
-    const std::array pluge{
+    static constexpr std::array pluge{
         video_rgb(16, 16, 16),
         video_rgb(7, 7, 7),
         video_rgb(16, 16, 16),
@@ -220,7 +219,7 @@ void draw_zone_plate(surface_s* surface)
             const double phase = (nx * nx + ny * ny) * std::min(dimensions.x, dimensions.y) * std::numbers::pi;
             const auto   value = rec709_to_linear((std::cos(phase) * 0.5) + 0.5);
             pixels[(static_cast<size_t>(y) * static_cast<size_t>(dimensions.x)) + static_cast<size_t>(x)] = {
-                value, value, value, 255};
+                .r = value, .g = value, .b = value, .a = 255};
         }
     }
 }

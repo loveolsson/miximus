@@ -262,7 +262,7 @@ an immediate native configuration/status view, optionally filtered by exact node
 replace one running instance for hardware validation, `restart` first requests a graceful shutdown and then starts a
 normal owned soak; it refuses to stop anything if more than one Miximus process exists.
 
-For an A/B soak of the DeckLink output watermark without editing the developer settings, pass
+For an A/B soak of the DeckLink output buffer depth without editing the developer settings, pass
 `--decklink-output-buffer 4` (or another value from 1 through 8) to `start`. The override is applied only to the run's
 private settings copy and is recorded in `summary.json`.
 
@@ -301,7 +301,7 @@ scripts/test_timing_soak.sh campaign-report
 
 The standard campaign alternates DeckLink output buffer depths in a 5/4/4/5 sequence to reduce time-order bias. Every
 run has independent raw artifacts under `timing-campaign-*`, while the campaign summary groups late frames, drops,
-starvation repeats, input transfer-slot waits and failures, buffer-watermark samples, callback intervals, scheduler
+starvation repeats, input transfer-slot waits and failures, hardware-buffer samples, callback intervals, scheduler
 outliers, and memory maxima by buffer depth. Counter totals and sampled scheduler extrema exclude the initial warm-up;
 each run summary retains first, warm-up, and final status snapshots so startup behavior remains independently auditable.
 

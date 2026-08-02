@@ -82,6 +82,8 @@ class node_impl : public node_i
         writer.write("output_intervals_skipped", metrics.output_intervals_skipped);
         writer.write("frames_sent", metrics.frames_sent);
         writer.write("queued_frames", metrics.queued_frames);
+        writer.write("output_latency_us", metrics.output_latency_us);
+        writer.write("program_selection_offset_us", metrics.program_selection_offset_us);
         if (download_stream_) {
             const auto download_metrics = download_stream_->metrics();
             writer.write("download_slots", download_metrics.slots);
@@ -162,8 +164,8 @@ class node_impl : public node_i
         sender_->set_stream(download_stream_,
                             dimensions,
                             settings.frame_rate,
-                            app->frame_context().epoch,
                             app->frame_context().duration,
+                            app->frame_context().target_time - app->frame_context().pts,
                             static_cast<size_t>(settings.ndi_output.buffer_frames));
     }
 
@@ -238,7 +240,7 @@ class node_impl : public node_i
         textured_quad_->draw(texture);
         gpu::framebuffer_s::end_render();
 
-        target->set_tag(static_cast<uint64_t>(app->frame_context().pts.count()));
+        target->set_tag(static_cast<uint64_t>(app->frame_context().target_time.count()));
         target->submit();
     }
 

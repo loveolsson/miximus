@@ -58,6 +58,7 @@ const sectionDefinitions = [
     keys: ["decklink_output_buffer_frames"],
   },
   { title: "NDI Output", keys: ["ndi_output_buffer_frames"] },
+  { title: "Screen Output", keys: ["screen_output_buffer_frames"] },
 ] as const;
 
 interface SettingsField {

@@ -34,9 +34,14 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
         uint64_t output_intervals_skipped{};
         uint64_t frames_sent{};
         size_t   queued_frames{};
+        int64_t  output_latency_us{};
+        int64_t  program_selection_offset_us{};
     };
 
   private:
+    static constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
+    static constexpr size_t DOWNLOAD_PIPELINE_HEADROOM   = 2;
+
     class impl_s;
     std::unique_ptr<impl_s> impl_;
 
@@ -46,9 +51,10 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
     static constexpr size_t get_queue_capacity(size_t buffer_frames) noexcept { return buffer_frames + 3; }
     static constexpr size_t get_download_slot_count(size_t buffer_frames) noexcept
     {
-        // In addition to the queued frames, retain space for the current
-        // asynchronous send and the render/download pipeline.
-        return get_queue_capacity(buffer_frames) + 3;
+        // The timing queue retains its current frame separately from queued(),
+        // while the pipeline headroom covers two consecutive render
+        // evaluations permitted by the current one-frame-late policy.
+        return get_queue_capacity(buffer_frames) + RETAINED_PROGRAM_FRAME_COUNT + DOWNLOAD_PIPELINE_HEADROOM;
     }
 
     static std::shared_ptr<output_sender_s> create(utils::serial_executor_s* control_executor, std::string sender_name);
@@ -69,8 +75,8 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
     void set_stream(std::shared_ptr<gpu::transfer::texture_download_stream_s> stream,
                     gpu::vec2i_t                                              dimensions,
                     frame_rate_s                                              frame_rate,
-                    uint64_t                                                  epoch,
                     utils::flicks                                             frame_duration,
+                    utils::flicks                                             program_time_origin,
                     size_t                                                    buffer_frames);
     void clear_stream();
     void notify_frame();

@@ -10,6 +10,8 @@ std::string                      get_device_display_name(IDeckLink* device);
 std::string                      get_display_mode_name(IDeckLinkDisplayMode* mode);
 bool                             decklink_iid_equal(REFIID lhs, REFIID rhs) noexcept;
 REFIID                           input_video_buffer_iid() noexcept;
+BMDTimeScale                     reference_time_scale() noexcept;
+BMDTimeValue                     reference_time_now() noexcept;
 
 template <typename T>
 [[nodiscard]] bool decklink_iid_matches(REFIID iid) noexcept
