@@ -36,11 +36,11 @@ class ndi_registry_s
     ndi_registry_s(ndi_registry_s&&)                 = delete;
     ndi_registry_s& operator=(ndi_registry_s&&)      = delete;
 
-    uint64_t get_source_list_version() const { return source_list_version_.load(std::memory_order_relaxed); }
+    uint64_t get_source_list_version() const noexcept { return source_list_version_.load(std::memory_order_relaxed); }
 
     std::vector<settings_option_s> get_source_options() const;
 
-    utils::serial_executor_s* control_executor() { return control_executor_.get(); }
+    utils::serial_executor_s* control_executor() noexcept { return control_executor_.get(); }
 
     static std::unique_ptr<ndi_registry_s> create_ndi_registry();
 };

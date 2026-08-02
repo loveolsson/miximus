@@ -49,11 +49,11 @@ class source_frame_s
     source_frame_s& operator=(const source_frame_s&) = delete;
     source_frame_s& operator=(source_frame_s&&)      = delete;
 
-    source_frame_readiness_e readiness() const { return readiness_.load(std::memory_order_acquire); }
-    const T&                 value() const { return value_; }
-    T&                       value() { return value_; }
+    source_frame_readiness_e readiness() const noexcept { return readiness_.load(std::memory_order_acquire); }
+    const T&                 value() const noexcept { return value_; }
+    T&                       value() noexcept { return value_; }
 
-    bool mark_submitted()
+    bool mark_submitted() noexcept
     {
         auto       expected = source_frame_readiness_e::reserved;
         const bool changed  = readiness_.compare_exchange_strong(
@@ -64,7 +64,7 @@ class source_frame_s
         return changed;
     }
 
-    bool mark_ready()
+    bool mark_ready() noexcept
     {
         auto       expected = source_frame_readiness_e::submitted;
         const bool changed  = readiness_.compare_exchange_strong(
@@ -75,7 +75,7 @@ class source_frame_s
         return changed;
     }
 
-    bool mark_failed()
+    bool mark_failed() noexcept
     {
         auto state = readiness();
         while (state != source_frame_readiness_e::ready && state != source_frame_readiness_e::failed) {
@@ -88,7 +88,7 @@ class source_frame_s
         return false;
     }
 
-    bool await() const
+    bool await() const noexcept
     {
         auto state = readiness();
         while (state != source_frame_readiness_e::ready && state != source_frame_readiness_e::failed) {
@@ -123,7 +123,7 @@ class prepared_frame_ticket_s
     prepared_frame_selection_e selection_{prepared_frame_selection_e::missing};
     bool                       discontinuity_{};
 
-    prepared_frame_ticket_s(frame_ptr_t frame, prepared_frame_selection_e selection, bool discontinuity)
+    prepared_frame_ticket_s(frame_ptr_t frame, prepared_frame_selection_e selection, bool discontinuity) noexcept
         : frame_(std::move(frame))
         , selection_(selection)
         , discontinuity_(discontinuity)
@@ -133,10 +133,10 @@ class prepared_frame_ticket_s
   public:
     prepared_frame_ticket_s() = default;
 
-    const frame_ptr_t&         frame() const { return frame_; }
-    prepared_frame_selection_e selection() const { return selection_; }
-    bool                       discontinuity() const { return discontinuity_; }
-    bool                       await() const { return frame_ != nullptr && frame_->await(); }
+    const frame_ptr_t&         frame() const noexcept { return frame_; }
+    prepared_frame_selection_e selection() const noexcept { return selection_; }
+    bool                       discontinuity() const noexcept { return discontinuity_; }
+    bool                       await() const noexcept { return frame_ != nullptr && frame_->await(); }
 };
 
 struct timed_source_queue_config_s
@@ -226,21 +226,21 @@ class timed_source_queue_s
         return true;
     }
 
-    static void cancel_frame(const frame_ptr_t& frame)
+    static void cancel_frame(const frame_ptr_t& frame) noexcept
     {
         if (frame != nullptr) {
             (void)frame->mark_failed();
         }
     }
 
-    void release_queued_frames(size_t count)
+    void release_queued_frames(size_t count) noexcept
     {
         if (count != 0) {
             queued_frames_.fetch_sub(count, std::memory_order_relaxed);
         }
     }
 
-    static utils::flicks get_arrival_phase(utils::flicks offset, utils::flicks frame_duration)
+    static utils::flicks get_arrival_phase(utils::flicks offset, utils::flicks frame_duration) noexcept
     {
         if (frame_duration <= utils::flicks::zero()) {
             return offset;
@@ -501,7 +501,7 @@ class timed_source_queue_s
         clear_for_discontinuity(true);
     }
 
-    timed_source_queue_metrics_s metrics() const
+    timed_source_queue_metrics_s metrics() const noexcept
     {
         return {
             .pushed                     = pushed_.load(std::memory_order_relaxed),

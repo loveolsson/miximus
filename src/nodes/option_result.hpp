@@ -10,7 +10,7 @@ enum class option_result_e
     invalid,
 };
 
-constexpr option_result_e combine_option_results(option_result_e lhs, option_result_e rhs)
+constexpr option_result_e combine_option_results(option_result_e lhs, option_result_e rhs) noexcept
 {
     if (lhs == option_result_e::invalid || rhs == option_result_e::invalid) {
         return option_result_e::invalid;

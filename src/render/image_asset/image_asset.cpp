@@ -15,8 +15,8 @@ namespace miximus::render {
 class image_asset_s
 {
   public:
-    gpu::vec2i_t                         dimensions;
-    std::vector<surface_s::rgba_pixel_t> pixels;
+    gpu::vec2i_t                       dimensions;
+    std::vector<straight_rgba_pixel_s> pixels;
 };
 
 namespace {
@@ -37,7 +37,7 @@ std::shared_ptr<const image_asset_s> create_image_asset(std::string_view resourc
 
     auto asset = std::make_shared<image_asset_s>(image_asset_s{
         .dimensions = dimensions,
-        .pixels     = std::vector<surface_s::rgba_pixel_t>(pixel_count),
+        .pixels     = std::vector<straight_rgba_pixel_s>(pixel_count),
     });
     for (size_t i = 0; i < pixel_count; ++i) {
         constexpr size_t channel_count = 4;
@@ -62,8 +62,7 @@ gpu::vec2i_t image_asset_dimensions(const image_asset_s& asset) { return asset.d
 
 void draw_image_asset(surface_s& surface, const image_asset_s& asset, gpu::vec2i_t position)
 {
-    surface.source_over(strided_image_view_s<surface_s::rgba_pixel_t>::packed(asset.pixels, asset.dimensions),
-                        position);
+    surface.source_over(strided_image_view_s<straight_rgba_pixel_s>::packed(asset.pixels, asset.dimensions), position);
 }
 
 } // namespace miximus::render

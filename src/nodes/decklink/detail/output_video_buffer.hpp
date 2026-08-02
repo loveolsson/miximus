@@ -23,7 +23,7 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
     {
     }
 
-    HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) final
+    HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) noexcept final
     {
         if (buffer == nullptr) {
             return E_POINTER;
@@ -33,7 +33,7 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
         return bytes.empty() ? E_FAIL : S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE GetSize(uint64_t* size) final
+    HRESULT STDMETHODCALLTYPE GetSize(uint64_t* size) noexcept final
     {
         if (size == nullptr) {
             return E_POINTER;
@@ -42,10 +42,10 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags /*flags*/) final { return S_OK; }
-    HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) final { return S_OK; }
+    HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags /*flags*/) noexcept final { return S_OK; }
+    HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) noexcept final { return S_OK; }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept final
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -61,8 +61,8 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
-    ULONG STDMETHODCALLTYPE Release() final
+    ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const ULONG count = --ref_count_;
         if (count == 0) {

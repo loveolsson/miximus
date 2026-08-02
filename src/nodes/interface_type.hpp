@@ -16,34 +16,34 @@ enum class interface_type_e
 };
 
 template <typename T>
-interface_type_e get_interface_type();
+interface_type_e get_interface_type() noexcept;
 
 template <>
-inline interface_type_e get_interface_type<double>()
+inline interface_type_e get_interface_type<double>() noexcept
 {
     return interface_type_e::f64;
 }
 
 template <>
-inline interface_type_e get_interface_type<gpu::vec2_t>()
+inline interface_type_e get_interface_type<gpu::vec2_t>() noexcept
 {
     return interface_type_e::vec2;
 }
 
 template <>
-inline interface_type_e get_interface_type<gpu::rect_s>()
+inline interface_type_e get_interface_type<gpu::rect_s>() noexcept
 {
     return interface_type_e::rect;
 }
 
 template <>
-inline interface_type_e get_interface_type<gpu::texture_s*>()
+inline interface_type_e get_interface_type<gpu::texture_s*>() noexcept
 {
     return interface_type_e::texture;
 }
 
 template <>
-inline interface_type_e get_interface_type<gpu::framebuffer_s*>()
+inline interface_type_e get_interface_type<gpu::framebuffer_s*>() noexcept
 {
     return interface_type_e::framebuffer;
 }

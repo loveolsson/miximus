@@ -61,7 +61,7 @@ class timed_output_queue_s
     std::optional<uint64_t>      epoch_;
     timed_output_queue_metrics_s metrics_;
 
-    static bool precedes(const frame_t& lhs, const frame_t& rhs)
+    static bool precedes(const frame_t& lhs, const frame_t& rhs) noexcept
     {
         if (lhs.id.epoch != rhs.id.epoch) {
             return lhs.id.epoch < rhs.id.epoch;
@@ -148,10 +148,10 @@ class timed_output_queue_s
         ++metrics_.discontinuities;
     }
 
-    const timed_output_queue_metrics_s& metrics() const { return metrics_; }
-    size_t                              queued() const { return frames_.size(); }
-    size_t                              capacity() const { return config_.capacity; }
-    std::optional<utils::flicks>        oldest_pts() const
+    const timed_output_queue_metrics_s& metrics() const noexcept { return metrics_; }
+    size_t                              queued() const noexcept { return frames_.size(); }
+    size_t                              capacity() const noexcept { return config_.capacity; }
+    std::optional<utils::flicks>        oldest_pts() const noexcept
     {
         if (frames_.empty()) {
             return std::nullopt;

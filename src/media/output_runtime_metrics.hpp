@@ -51,7 +51,7 @@ class output_runtime_metrics_s
     bool                               buffered_frames_observed_{};
 
   public:
-    void observe_completion(clock_t::time_point time, uint64_t sequence)
+    void observe_completion(clock_t::time_point time, uint64_t sequence) noexcept
     {
         if (last_completion_.has_value()) {
             const auto interval = std::chrono::duration_cast<utils::flicks>(time - *last_completion_);
@@ -64,7 +64,7 @@ class output_runtime_metrics_s
         last_completion_ = time;
     }
 
-    void observe_selection(output_frame_selection_e selection, bool has_queued_frames)
+    void observe_selection(output_frame_selection_e selection, bool has_queued_frames) noexcept
     {
         if (selection != output_frame_selection_e::repeat) {
             starvation_repeat_streak_ = 0;
@@ -82,20 +82,20 @@ class output_runtime_metrics_s
         starvation_repeat_streak_max_ = std::max(starvation_repeat_streak_max_, starvation_repeat_streak_);
     }
 
-    void observe_refill(size_t requested, size_t scheduled)
+    void observe_refill(size_t requested, size_t scheduled) noexcept
     {
         if (scheduled < requested) {
             ++refill_shortfalls_;
         }
     }
 
-    void observe_output_queue_depth(size_t depth)
+    void observe_output_queue_depth(size_t depth) noexcept
     {
         output_queue_depth_     = depth;
         output_queue_depth_max_ = std::max(output_queue_depth_max_, depth);
     }
 
-    void observe_buffered_frames(uint32_t frames, uint32_t target)
+    void observe_buffered_frames(uint32_t frames, uint32_t target) noexcept
     {
         buffered_frames_ = frames;
         if (!buffered_frames_observed_) {
@@ -109,7 +109,7 @@ class output_runtime_metrics_s
         buffered_zero_samples_ += frames == 0 ? 1 : 0;
     }
 
-    output_runtime_metrics_snapshot_s snapshot() const
+    output_runtime_metrics_snapshot_s snapshot() const noexcept
     {
         return {
             .completion_intervals             = completion_intervals_,

@@ -15,13 +15,13 @@
 
 namespace miximus::render {
 namespace {
-using pixel_t = surface_s::rgba_pixel_t;
+using pixel_t = surface_s::pixel_t;
 
 constexpr pixel_t BLACK{0, 0, 0, 255};
 constexpr pixel_t WHITE{255, 255, 255, 255};
 // Logo border #2C86B0 converted from its Rec.709-encoded PNG value to linear surface bytes.
-constexpr pixel_t    LOGO_BORDER{11, 73, 122, 191};
-constexpr std::array LOGO_PATHS{
+constexpr straight_rgba_pixel_s LOGO_BORDER{11, 73, 122, 191};
+constexpr std::array            LOGO_PATHS{
     std::string_view{"images/miximus_128x128.png"},
     std::string_view{"images/miximus_64x64.png"},
     std::string_view{"images/miximus_32x32.png"},

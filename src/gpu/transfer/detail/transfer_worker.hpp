@@ -127,8 +127,8 @@ class transfer_worker_s : public std::enable_shared_from_this<Derived>
         }
     }
 
-    size_t memory_usage() const { return memory_usage_.load(std::memory_order_relaxed); }
-    size_t memory_budget() const { return memory_budget_; }
+    size_t memory_usage() const noexcept { return memory_usage_.load(std::memory_order_relaxed); }
+    size_t memory_budget() const noexcept { return memory_budget_; }
 };
 
 } // namespace miximus::gpu::transfer::detail

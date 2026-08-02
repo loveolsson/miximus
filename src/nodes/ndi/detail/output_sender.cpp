@@ -156,8 +156,8 @@ class output_sender_s::impl_s
                          .capacity        = output_sender_s::get_queue_capacity(state.buffer_frames),
                          .early_tolerance = state.frame_duration / 2,
         });
-        std::optional<utils::flicks>                             output_pts;
-        std::optional<std::chrono::steady_clock::time_point>     output_deadline;
+        utils::flicks                                            output_pts{};
+        std::chrono::steady_clock::time_point                    output_deadline{};
         std::shared_ptr<gpu::transfer::texture_download_frame_s> inflight;
         bool                                                     started{};
 
@@ -177,13 +177,18 @@ class output_sender_s::impl_s
 
             const auto now = std::chrono::steady_clock::now();
             if (!started) {
-                output_pts      = queue.oldest_pts();
+                const auto oldest_pts = queue.oldest_pts();
+                if (!oldest_pts.has_value()) {
+                    phase_ = phase_e::failed;
+                    break;
+                }
+                output_pts      = *oldest_pts;
                 output_deadline = now;
                 started         = true;
             }
-            if (now < *output_deadline) {
+            if (now < output_deadline) {
                 std::unique_lock lock(state_mutex_);
-                state_condition_.wait_until(lock, *output_deadline);
+                state_condition_.wait_until(lock, output_deadline);
                 continue;
             }
 
@@ -192,23 +197,23 @@ class output_sender_s::impl_s
                 phase_ = phase_e::failed;
                 break;
             }
-            const auto obsolete_intervals = static_cast<uint64_t>((now - *output_deadline) / duration);
+            const auto obsolete_intervals = static_cast<uint64_t>((now - output_deadline) / duration);
             if (obsolete_intervals != 0) {
-                *output_pts += state.frame_duration * static_cast<utils::flicks::rep>(obsolete_intervals);
-                *output_deadline += duration * obsolete_intervals;
+                output_pts += state.frame_duration * static_cast<utils::flicks::rep>(obsolete_intervals);
+                output_deadline += duration * obsolete_intervals;
                 output_intervals_skipped_.fetch_add(obsolete_intervals);
             }
 
-            const auto selection = queue.select(state.epoch, *output_pts);
+            const auto selection = queue.select(state.epoch, output_pts);
             publish_queue_metrics(queue);
             if (selection.frame != nullptr) {
                 auto next = selection.frame->value.download;
-                send_frame(state, selection.frame->value, *output_pts);
+                send_frame(state, selection.frame->value, output_pts);
                 inflight = std::move(next);
             }
 
-            *output_pts += state.frame_duration;
-            *output_deadline += duration;
+            output_pts += state.frame_duration;
+            output_deadline += duration;
         }
 
         NDIlib_send_send_video_async_v2(sender_, nullptr);

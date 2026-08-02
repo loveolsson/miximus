@@ -15,3 +15,12 @@ PRIVATE
 )
 
 add_sanitizers(render)
+
+if(BUILD_TESTING)
+    add_executable(render_test
+        tests/surface_test.cpp
+    )
+    target_link_libraries(render_test PRIVATE render GTest::gtest_main)
+    add_sanitizers(render_test)
+    gtest_discover_tests(render_test)
+endif()

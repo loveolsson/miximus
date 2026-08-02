@@ -21,7 +21,7 @@ namespace {
 constexpr int FALLBACK_TEXTURE_DIMENSION = 16;
 }
 
-void app_state_s::begin_frame(frame_settings_s settings, frame_context_s frame_context)
+void app_state_s::begin_frame(frame_settings_s settings, frame_context_s frame_context) noexcept
 {
     frame_settings_ = settings;
     frame_context_  = frame_context;

@@ -49,27 +49,31 @@ stb::decoded_image_s load_image(std::string_view filename)
 
 namespace miximus::gpu {
 
-void context_s::monitor_config_callback(GLFWmonitor* monitor, int event)
+void context_s::monitor_config_callback(GLFWmonitor* monitor, int event) noexcept
 {
-    bool changed = false;
-    if (event == GLFW_CONNECTED) {
-        const auto* raw_label = glfwGetMonitorName(monitor);
-        const auto  id        = detail::get_monitor_id(monitor);
-        const auto  label     = raw_label != nullptr ? std::string(raw_label) : id;
-        changed               = monitors_.emplace(id, monitor_record_s{.label = label, .handle = monitor}).second;
-        _log()->info("Monitor connected: {} ({})", label, id);
-    } else {
-        const auto it =
-            std::ranges::find_if(monitors_, [monitor](const auto& entry) { return entry.second.handle == monitor; });
-        if (it != monitors_.end()) {
-            _log()->info("Monitor disconnected: {} ({})", it->second.label, it->first);
-            monitors_.erase(it);
-            changed = true;
+    try {
+        bool changed = false;
+        if (event == GLFW_CONNECTED) {
+            const auto* raw_label = glfwGetMonitorName(monitor);
+            const auto  id        = detail::get_monitor_id(monitor);
+            const auto  label     = raw_label != nullptr ? std::string(raw_label) : id;
+            changed               = monitors_.emplace(id, monitor_record_s{.label = label, .handle = monitor}).second;
+            _log()->info("Monitor connected: {} ({})", label, id);
+        } else {
+            const auto it = std::ranges::find_if(
+                monitors_, [monitor](const auto& entry) { return entry.second.handle == monitor; });
+            if (it != monitors_.end()) {
+                _log()->info("Monitor disconnected: {} ({})", it->second.label, it->first);
+                monitors_.erase(it);
+                changed = true;
+            }
         }
-    }
 
-    if (changed) {
-        monitor_list_version_.fetch_add(1, std::memory_order_relaxed);
+        if (changed) {
+            monitor_list_version_.fetch_add(1, std::memory_order_relaxed);
+        }
+    } catch (...) {
+        logger::log_error_noexcept("gpu", "GLFW monitor callback failed");
     }
 }
 
@@ -77,7 +81,10 @@ context_scope_s::context_scope_s(context_s& context) { context.make_current(); }
 
 context_scope_s::~context_scope_s() { context_s::rewind_current(); }
 
-uint64_t context_s::get_monitor_list_version() { return monitor_list_version_.load(std::memory_order_relaxed); }
+uint64_t context_s::get_monitor_list_version() noexcept
+{
+    return monitor_list_version_.load(std::memory_order_relaxed);
+}
 
 std::vector<settings_option_s> context_s::get_monitors()
 {
@@ -297,7 +304,7 @@ void context_s::rewind_current()
     current_stack_.pop_back();
 }
 
-bool context_s::has_current() { return !current_stack_.empty(); }
+bool context_s::has_current() noexcept { return !current_stack_.empty(); }
 
 bool context_s::require_current()
 {

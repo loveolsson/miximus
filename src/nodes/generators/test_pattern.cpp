@@ -74,13 +74,13 @@ class node_impl : public node_i
     static std::shared_ptr<gpu::transfer::texture_upload_stream_s> create_stream(core::app_state_s* app,
                                                                                  gpu::vec2i_t       dimensions)
     {
-        const auto row_stride = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(dimensions.x);
+        const auto row_stride = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(dimensions.x);
         const gpu::transfer::texture_transfer_requirements_s requirements{
             .dimensions        = dimensions,
             .format            = gpu::texture_s::format_e::rgba_f16,
             .row_stride        = row_stride,
             .byte_size         = row_stride * static_cast<size_t>(dimensions.y),
-            .address_alignment = render::surface_s::DATA_ALIGNMENT,
+            .address_alignment = render::surface_s::PREFERRED_DATA_ALIGNMENT,
             .host_access       = gpu::transfer::host_access_e::overwrite,
         };
         return app->texture_upload_service()->create_stream({

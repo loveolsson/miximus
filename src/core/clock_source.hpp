@@ -16,17 +16,17 @@ class clock_source_i
     clock_source_i& operator=(const clock_source_i&) = delete;
     clock_source_i& operator=(clock_source_i&&)      = delete;
 
-    virtual utils::flicks    now() const                    = 0;
+    virtual utils::flicks    now() const noexcept           = 0;
     virtual void             wait_until(utils::flicks time) = 0;
-    virtual std::string_view name() const                   = 0;
+    virtual std::string_view name() const noexcept          = 0;
 };
 
 class steady_clock_source_s final : public clock_source_i
 {
   public:
-    utils::flicks    now() const final;
+    utils::flicks    now() const noexcept final;
     void             wait_until(utils::flicks time) final;
-    std::string_view name() const final;
+    std::string_view name() const noexcept final;
 };
 
 } // namespace miximus::core

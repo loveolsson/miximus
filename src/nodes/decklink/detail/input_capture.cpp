@@ -352,37 +352,37 @@ class callback_s
                                                       uint32_t                        height,
                                                       uint32_t                        rowBytes,
                                                       BMDPixelFormat                  pixelFormat,
-                                                      IDeckLinkVideoBufferAllocator** outAllocator) final
+                                                      IDeckLinkVideoBufferAllocator** outAllocator) noexcept final
     {
-        if (outAllocator == nullptr) {
-            return E_POINTER;
-        }
-        *outAllocator = nullptr;
-
-        if (stop_requested_.load()) {
-            return E_FAIL;
-        }
-
-        // Only hand over our allocator for the primary capture format.
-        // Conversion frames (different pixel format) use DeckLink's default.
-        if (pixelFormat != bmdFormat10BitYUV) {
-            return E_NOTIMPL;
-        }
-
-        {
-            const std::scoped_lock lock(upload_mutex_);
-            if (allocator_) {
-                if (allocator_->buffer_size() != bufferSize) {
-                    log()->error("DeckLink requested two differently sized allocator pools for one capture mode");
-                    return E_FAIL;
-                }
-                allocator_->AddRef();
-                *outAllocator = allocator_.get();
-                return S_OK;
-            }
-        }
-
         try {
+            if (outAllocator == nullptr) {
+                return E_POINTER;
+            }
+            *outAllocator = nullptr;
+
+            if (stop_requested_.load()) {
+                return E_FAIL;
+            }
+
+            // Only hand over our allocator for the primary capture format.
+            // Conversion frames (different pixel format) use DeckLink's default.
+            if (pixelFormat != bmdFormat10BitYUV) {
+                return E_NOTIMPL;
+            }
+
+            {
+                const std::scoped_lock lock(upload_mutex_);
+                if (allocator_) {
+                    if (allocator_->buffer_size() != bufferSize) {
+                        log()->error("DeckLink requested two differently sized allocator pools for one capture mode");
+                        return E_FAIL;
+                    }
+                    allocator_->AddRef();
+                    *outAllocator = allocator_.get();
+                    return S_OK;
+                }
+            }
+
             const gpu::transfer::texture_transfer_requirements_s requirements{
                 .dimensions        = {static_cast<int>(rowBytes / 4), static_cast<int>(height)},
                 .format            = gpu::texture_s::format_e::uyuv_u10,
@@ -416,9 +416,9 @@ class callback_s
             *outAllocator = allocator_.get();
             return S_OK;
         } catch (const std::exception& error) {
-            log()->error("Failed to create DeckLink input transfer stream: {}", error.what());
+            logger::log_error_noexcept("decklink", "Failed to create DeckLink input transfer stream: {}", error.what());
         } catch (...) {
-            log()->error("Failed to create DeckLink input transfer stream");
+            logger::log_error_noexcept("decklink", "Failed to create DeckLink input transfer stream");
         }
         return E_OUTOFMEMORY;
     }
@@ -426,7 +426,7 @@ class callback_s
     // ── IDeckLinkInputCallback ───────────────────────────────────────────────
 
     HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame,
-                                                     IDeckLinkAudioInputPacket* /*audioPacket*/) final
+                                                     IDeckLinkAudioInputPacket* /*audioPacket*/) noexcept final
     {
         if (phase_.load() != phase_e::running) {
             return S_OK;
@@ -435,9 +435,9 @@ class callback_s
         try {
             return video_input_frame_arrived(videoFrame);
         } catch (const std::exception& error) {
-            log()->error("DeckLink input frame callback failed: {}", error.what());
+            logger::log_error_noexcept("decklink", "DeckLink input frame callback failed: {}", error.what());
         } catch (...) {
-            log()->error("DeckLink input frame callback failed");
+            logger::log_error_noexcept("decklink", "DeckLink input frame callback failed");
         }
         if (!stop_requested_.exchange(true)) {
             terminal_phase_ = phase_e::failed;
@@ -447,6 +447,63 @@ class callback_s
     }
 
   private:
+    bool
+    read_frame_timing(IDeckLinkVideoInputFrame* video_frame, BMDTimeValue* stream_time, BMDTimeValue* frame_duration)
+    {
+        constexpr auto time_scale = static_cast<BMDTimeScale>(utils::k_flicks_one_second.count());
+
+        if (reset_stream_time_.exchange(false)) {
+            has_stream_time_        = false;
+            has_hardware_reference_ = false;
+        }
+        if (video_frame->GetStreamTime(stream_time, frame_duration, time_scale) != S_OK || *frame_duration <= 0) {
+            return false;
+        }
+        if (has_stream_time_ && *stream_time > last_stream_time_ + *frame_duration) {
+            const auto missing = ((*stream_time - last_stream_time_) / *frame_duration) - 1;
+            if (missing < 100) {
+                frames_missing_.fetch_add(static_cast<uint64_t>(missing));
+            }
+        }
+        last_stream_time_ = *stream_time;
+        has_stream_time_  = true;
+        return true;
+    }
+
+    utils::flicks get_frame_observation(IDeckLinkVideoInputFrame* video_frame, utils::flicks arrival_time)
+    {
+        constexpr auto time_scale = static_cast<BMDTimeScale>(utils::k_flicks_one_second.count());
+
+        BMDTimeValue hardware_reference_time{};
+        BMDTimeValue hardware_reference_duration{};
+        if (video_frame->GetHardwareReferenceTimestamp(
+                time_scale, &hardware_reference_time, &hardware_reference_duration) != S_OK ||
+            hardware_reference_duration <= 0) {
+            return arrival_time;
+        }
+
+        const auto frame_start = hardware_reference_time - hardware_reference_duration;
+        if (!has_hardware_reference_) {
+            hardware_reference_origin_ = frame_start;
+            local_reference_origin_    = arrival_time;
+            has_hardware_reference_    = true;
+        }
+        return local_reference_origin_ + utils::flicks{frame_start - hardware_reference_origin_};
+    }
+
+    void sample_available_video_frames(std::chrono::steady_clock::time_point now)
+    {
+        if (now < next_queue_poll_) {
+            return;
+        }
+
+        uint32_t available{};
+        if (device_->GetAvailableVideoFrameCount(&available) == S_OK) {
+            available_video_frames_ = available;
+        }
+        next_queue_poll_ = now + std::chrono::seconds(1);
+    }
+
     HRESULT video_input_frame_arrived(IDeckLinkVideoInputFrame* videoFrame)
     {
         const auto frame_arrival_time = utils::flicks_now();
@@ -461,56 +518,21 @@ class callback_s
             ++no_input_source_frames_;
         }
 
-        constexpr auto FLICK_TIME_SCALE = static_cast<BMDTimeScale>(utils::k_flicks_one_second.count());
-        BMDTimeValue   stream_time{};
-        BMDTimeValue   frame_duration{};
-        if (reset_stream_time_.exchange(false)) {
-            has_stream_time_        = false;
-            has_hardware_reference_ = false;
-        }
-        if (videoFrame->GetStreamTime(&stream_time, &frame_duration, FLICK_TIME_SCALE) == S_OK && frame_duration > 0) {
-            if (has_stream_time_ && stream_time > last_stream_time_ + frame_duration) {
-                const auto missing = ((stream_time - last_stream_time_) / frame_duration) - 1;
-                if (missing < 100) {
-                    frames_missing_.fetch_add(static_cast<uint64_t>(missing));
-                }
-            }
-            last_stream_time_ = stream_time;
-            has_stream_time_  = true;
-        }
-
-        if (frame_duration <= 0) {
+        BMDTimeValue stream_time{};
+        BMDTimeValue frame_duration{};
+        if (!read_frame_timing(videoFrame, &stream_time, &frame_duration)) {
             ++upload_slot_drops_;
             return S_OK;
         }
 
-        auto         frame_observation = frame_arrival_time;
-        BMDTimeValue hardware_reference_time{};
-        BMDTimeValue hardware_reference_duration{};
-        if (videoFrame->GetHardwareReferenceTimestamp(
-                FLICK_TIME_SCALE, &hardware_reference_time, &hardware_reference_duration) == S_OK &&
-            hardware_reference_duration > 0) {
-            const auto frame_start = hardware_reference_time - hardware_reference_duration;
-            if (!has_hardware_reference_) {
-                hardware_reference_origin_ = frame_start;
-                local_reference_origin_    = frame_arrival_time;
-                has_hardware_reference_    = true;
-            }
-            frame_observation = local_reference_origin_ + utils::flicks{frame_start - hardware_reference_origin_};
-        }
+        const auto frame_observation = get_frame_observation(videoFrame, frame_arrival_time);
 
         if (has_no_input_source) {
             return S_OK;
         }
 
         const auto now = std::chrono::steady_clock::now();
-        if (now >= next_queue_poll_) {
-            uint32_t available{};
-            if (device_->GetAvailableVideoFrameCount(&available) == S_OK) {
-                available_video_frames_ = available;
-            }
-            next_queue_poll_ = now + std::chrono::seconds(1);
-        }
+        sample_available_video_frames(now);
 
         const gpu::vec2i_t src_dim{videoFrame->GetWidth(), videoFrame->GetHeight()};
         auto               video_buffer  = query_decklink_interface<IDeckLinkVideoBuffer>(videoFrame);
@@ -566,9 +588,10 @@ class callback_s
     }
 
   public:
-    HRESULT STDMETHODCALLTYPE VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
-                                                      IDeckLinkDisplayMode*            newDisplayMode,
-                                                      BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) final
+    HRESULT STDMETHODCALLTYPE
+    VideoInputFormatChanged(BMDVideoInputFormatChangedEvents notificationEvents,
+                            IDeckLinkDisplayMode*            newDisplayMode,
+                            BMDDetectedVideoInputFormatFlags /*detectedSignalFlags*/) noexcept final
     {
         if (stop_requested_.load()) {
             return S_OK;
@@ -756,7 +779,7 @@ class callback_s
 
     // ── IUnknown ─────────────────────────────────────────────────────────────
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept final
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -776,8 +799,8 @@ class callback_s
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
-    ULONG STDMETHODCALLTYPE Release() final
+    ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const ULONG count = --ref_count_;
         if (count == 0) {

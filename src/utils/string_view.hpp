@@ -9,7 +9,7 @@ constexpr auto ASCII_WHITESPACES = " \n\r\t\f\v";
  * Trim leading ASCII whitespaces from a string_view.
  * Returns a new more narrow string_view window.
  */
-constexpr std::string_view ltrim_view(std::string_view str)
+constexpr std::string_view ltrim_view(std::string_view str) noexcept
 {
     auto index = str.find_first_not_of(ASCII_WHITESPACES);
 
@@ -24,7 +24,7 @@ constexpr std::string_view ltrim_view(std::string_view str)
  * Trim trailing ASCII whitespaces from a string_view.
  * Returns a new more narrow string_view window.
  */
-constexpr std::string_view rtrim_view(std::string_view str)
+constexpr std::string_view rtrim_view(std::string_view str) noexcept
 {
     auto index = str.find_last_not_of(ASCII_WHITESPACES);
 
@@ -39,12 +39,12 @@ constexpr std::string_view rtrim_view(std::string_view str)
  * Trim leading and trailing ASCII whitespaces from a string_view.
  * Returns a new more narrow string_view window.
  */
-constexpr std::string_view trim_view(std::string_view str) { return rtrim_view(ltrim_view(str)); }
+constexpr std::string_view trim_view(std::string_view str) noexcept { return rtrim_view(ltrim_view(str)); }
 
 /**
  * Convert an ASCII character to lower case
  */
-constexpr char ascii_to_lower(char c)
+constexpr char ascii_to_lower(char c) noexcept
 {
     if (c >= 'A' && c <= 'Z')
         c += 32;
@@ -56,7 +56,7 @@ constexpr char ascii_to_lower(char c)
  * The token being static allows the compiler to unroll the loop properly.
  */
 template <size_t S>
-constexpr bool ascii_ieq_view(std::string_view a, const char (&b)[S])
+constexpr bool ascii_ieq_view(std::string_view a, const char (&b)[S]) noexcept
 {
     auto len = S - 1;
 
@@ -76,7 +76,7 @@ constexpr bool ascii_ieq_view(std::string_view a, const char (&b)[S])
 /**
  * Case insensitive compare two ASCII string_views.
  */
-constexpr bool ascii_ieq_view(std::string_view a, std::string_view b)
+constexpr bool ascii_ieq_view(std::string_view a, std::string_view b) noexcept
 {
     if (a.size() != b.size()) {
         return false;

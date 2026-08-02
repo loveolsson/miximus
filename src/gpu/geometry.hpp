@@ -8,7 +8,7 @@
 namespace miximus::gpu {
 
 /** Linearly interpolate both components of a rectangle. */
-[[nodiscard]] inline rect_s interpolate(rect_s from, rect_s to, double amount)
+[[nodiscard]] inline rect_s interpolate(rect_s from, rect_s to, double amount) noexcept
 {
     return {
         .pos  = from.pos + ((to.pos - from.pos) * amount),
@@ -17,7 +17,7 @@ namespace miximus::gpu {
 }
 
 /** Round a floating-point vector to integer coordinates. */
-[[nodiscard]] inline vec2i_t round_to_integer(vec2_t value)
+[[nodiscard]] inline vec2i_t round_to_integer(vec2_t value) noexcept
 {
     return {
         static_cast<int>(std::round(value.x)),
@@ -26,7 +26,7 @@ namespace miximus::gpu {
 }
 
 /** Round a floating-point rectangle to integer coordinates. */
-[[nodiscard]] inline recti_s round_to_integer(rect_s rect)
+[[nodiscard]] inline recti_s round_to_integer(rect_s rect) noexcept
 {
     return {
         .pos  = round_to_integer(rect.pos),

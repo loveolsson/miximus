@@ -49,14 +49,14 @@ class source_clock_estimator_s
   public:
     explicit source_clock_estimator_s(source_clock_config_s config = {});
 
-    source_clock_observation_e   observe(const media_frame_id_s& id, utils::flicks program_observation);
-    std::optional<utils::flicks> map(utils::flicks source_pts) const;
-    std::optional<double>        recovered_rate() const;
-    std::optional<double>        observed_rate() const;
-    std::optional<utils::flicks> phase_offset() const;
-    std::optional<utils::flicks> phase_error() const;
-    std::optional<utils::flicks> phase_adjustment() const;
-    void                         reset();
+    source_clock_observation_e   observe(const media_frame_id_s& id, utils::flicks program_observation) noexcept;
+    std::optional<utils::flicks> map(utils::flicks source_pts) const noexcept;
+    std::optional<double>        recovered_rate() const noexcept;
+    std::optional<double>        observed_rate() const noexcept;
+    std::optional<utils::flicks> phase_offset() const noexcept;
+    std::optional<utils::flicks> phase_error() const noexcept;
+    std::optional<utils::flicks> phase_adjustment() const noexcept;
+    void                         reset() noexcept;
 };
 
 } // namespace miximus::media

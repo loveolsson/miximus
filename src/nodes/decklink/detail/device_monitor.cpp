@@ -268,7 +268,7 @@ class notification_callback_s final : public IDeckLinkNotificationCallback
     {
     }
 
-    HRESULT STDMETHODCALLTYPE Notify(BMDNotifications topic, uint64_t param1, uint64_t /*param2*/) final
+    HRESULT STDMETHODCALLTYPE Notify(BMDNotifications topic, uint64_t param1, uint64_t /*param2*/) noexcept final
     {
         if (topic != bmdStatusChanged) {
             return S_OK;
@@ -276,13 +276,13 @@ class notification_callback_s final : public IDeckLinkNotificationCallback
         try {
             refresh_status(state_, static_cast<BMDDeckLinkStatusID>(param1));
         } catch (...) {
-            getlog("decklink")->error("DeckLink status notification callback failed");
+            logger::log_error_noexcept("decklink", "DeckLink status notification callback failed");
             return E_FAIL;
         }
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept final
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -296,8 +296,8 @@ class notification_callback_s final : public IDeckLinkNotificationCallback
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
-    ULONG STDMETHODCALLTYPE Release() final
+    ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const auto count = --ref_count_;
         if (count == 0) {

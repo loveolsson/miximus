@@ -22,7 +22,7 @@ source_clock_estimator_s::source_clock_estimator_s(source_clock_config_s config)
 }
 
 source_clock_observation_e source_clock_estimator_s::observe(const media_frame_id_s& id,
-                                                             utils::flicks           program_observation)
+                                                             utils::flicks           program_observation) noexcept
 {
     const auto initialize = [&] {
         epoch_                   = id.epoch;
@@ -115,7 +115,7 @@ source_clock_observation_e source_clock_estimator_s::observe(const media_frame_i
     return source_clock_observation_e::updated;
 }
 
-std::optional<utils::flicks> source_clock_estimator_s::map(utils::flicks source_pts) const
+std::optional<utils::flicks> source_clock_estimator_s::map(utils::flicks source_pts) const noexcept
 {
     if (!epoch_.has_value()) {
         return std::nullopt;
@@ -131,24 +131,24 @@ std::optional<utils::flicks> source_clock_estimator_s::map(utils::flicks source_
     return utils::flicks{static_cast<utils::flicks::rep>(mapped_count)};
 }
 
-std::optional<double> source_clock_estimator_s::recovered_rate() const
+std::optional<double> source_clock_estimator_s::recovered_rate() const noexcept
 {
     return epoch_.has_value() ? std::optional(rate_) : std::nullopt;
 }
 
-std::optional<double> source_clock_estimator_s::observed_rate() const { return observed_rate_; }
+std::optional<double> source_clock_estimator_s::observed_rate() const noexcept { return observed_rate_; }
 
-std::optional<utils::flicks> source_clock_estimator_s::phase_offset() const
+std::optional<utils::flicks> source_clock_estimator_s::phase_offset() const noexcept
 {
     const auto mapped = map(source_pts_);
     return mapped.has_value() ? std::optional(*mapped - source_pts_) : std::nullopt;
 }
 
-std::optional<utils::flicks> source_clock_estimator_s::phase_error() const { return phase_error_; }
+std::optional<utils::flicks> source_clock_estimator_s::phase_error() const noexcept { return phase_error_; }
 
-std::optional<utils::flicks> source_clock_estimator_s::phase_adjustment() const { return phase_adjustment_; }
+std::optional<utils::flicks> source_clock_estimator_s::phase_adjustment() const noexcept { return phase_adjustment_; }
 
-void source_clock_estimator_s::reset()
+void source_clock_estimator_s::reset() noexcept
 {
     epoch_.reset();
     sequence_                = 0;

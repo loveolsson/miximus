@@ -58,7 +58,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
     {
     }
 
-    HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) final
+    HRESULT DeckLinkDeviceArrived(IDeckLink* deckLinkDevice) noexcept final
     {
         if (deckLinkDevice == nullptr) {
             return E_INVALIDARG;
@@ -67,14 +67,14 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         try {
             return device_arrived(deckLinkDevice);
         } catch (const std::exception& error) {
-            getlog("decklink")->error("DeckLink device arrival callback failed: {}", error.what());
+            logger::log_error_noexcept("decklink", "DeckLink device arrival callback failed: {}", error.what());
         } catch (...) {
-            getlog("decklink")->error("DeckLink device arrival callback failed");
+            logger::log_error_noexcept("decklink", "DeckLink device arrival callback failed");
         }
         return E_FAIL;
     }
 
-    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) final
+    HRESULT DeckLinkDeviceRemoved(IDeckLink* deckLinkDevice) noexcept final
     {
         if (deckLinkDevice == nullptr) {
             return E_INVALIDARG;
@@ -83,9 +83,9 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         try {
             return device_removed(deckLinkDevice);
         } catch (const std::exception& error) {
-            getlog("decklink")->error("DeckLink device removal callback failed: {}", error.what());
+            logger::log_error_noexcept("decklink", "DeckLink device removal callback failed: {}", error.what());
         } catch (...) {
-            getlog("decklink")->error("DeckLink device removal callback failed");
+            logger::log_error_noexcept("decklink", "DeckLink device removal callback failed");
         }
         return E_FAIL;
     }
@@ -165,7 +165,7 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
     }
 
   public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept final
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -180,8 +180,8 @@ class discovery_callback : public IDeckLinkDeviceNotificationCallback
         return E_NOINTERFACE;
     }
 
-    ULONG AddRef() final { return ++ref_count_; }
-    ULONG Release() final
+    ULONG AddRef() noexcept final { return ++ref_count_; }
+    ULONG Release() noexcept final
     {
         const auto count = --ref_count_;
         if (count == 0) {

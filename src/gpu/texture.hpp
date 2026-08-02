@@ -56,12 +56,12 @@ class texture_s
     static format_info_s format_info(format_e format);
     static size_t        host_row_byte_size(vec2i_t dimensions, format_e format);
     static size_t        estimate_storage_byte_size(vec2i_t dimensions, format_e format);
-    vec2i_t              display_dimensions() { return display_dimensions_; }
-    vec2i_t              texture_dimensions() { return texture_dimensions_; }
-    GLenum               format() { return format_; }
-    GLenum               type() { return type_; }
-    format_e             color_type() { return colorspace_; }
-    GLuint               id() { return id_; }
+    vec2i_t              display_dimensions() const noexcept { return display_dimensions_; }
+    vec2i_t              texture_dimensions() const noexcept { return texture_dimensions_; }
+    GLenum               format() const noexcept { return format_; }
+    GLenum               type() const noexcept { return type_; }
+    format_e             color_type() const noexcept { return colorspace_; }
+    GLuint               id() const noexcept { return id_; }
 
     void        bind(GLuint sampler) const;
     static void unbind(GLuint sampler);

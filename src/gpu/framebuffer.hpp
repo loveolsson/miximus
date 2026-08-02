@@ -31,8 +31,8 @@ class framebuffer_s
     void        blit(framebuffer_s* target) const;
     static void end_render();
     static void unbind();
-    texture_s*  texture() { return texture_; }
-    GLuint      id() { return id_; }
+    texture_s*  texture() const noexcept { return texture_; }
+    GLuint      id() const noexcept { return id_; }
 };
 
 } // namespace miximus::gpu

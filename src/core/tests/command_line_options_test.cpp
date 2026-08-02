@@ -3,21 +3,32 @@
 #include "utils/filesystem.hpp"
 #include "utils/string_utils.hpp"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <gtest/gtest.h>
-#include <iterator>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace {
 using namespace miximus;
 
+template <typename Character, std::size_t Size>
+auto make_arguments(std::array<std::basic_string<Character>, Size>& values)
+{
+    std::array<Character*, Size> result{};
+    std::ranges::transform(values, result.begin(), [](auto& value) { return value.data(); });
+    return result;
+}
+
 TEST(CommandLineOptions, DefaultsSettingsPathRelativeToExecutable)
 {
-    char  executable[] = "/opt/miximus/bin/miximus";
-    char* arguments[]  = {executable};
+    auto argument_values = std::array{std::string{"/opt/miximus/bin/miximus"}};
+    auto arguments       = make_arguments(argument_values);
 
-    const auto options = core::parse_command_line_options(1, arguments);
+    const auto options = core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data());
 
     EXPECT_EQ(options.settings_path, "/opt/miximus/bin/settings.json");
     EXPECT_EQ(options.log_level, spdlog::level::info);
@@ -27,50 +38,44 @@ TEST(CommandLineOptions, DefaultsSettingsPathRelativeToExecutable)
 
 TEST(CommandLineOptions, ParsesRuntimeAndTestOptions)
 {
-    char  executable[]   = "miximus";
-    char  log_trace[]    = "--log-trace";
-    char  settings[]     = "--settings";
-    char  settings_arg[] = "/tmp/test settings.json";
-    char  stop_after[]   = "--stop-after";
-    char  stop_arg[]     = "2.5";
-    char  delay[]        = "--test-render-delay-ms";
-    char  delay_arg[]    = "12";
-    char  period[]       = "--test-render-delay-every";
-    char  period_arg[]   = "120";
-    char* arguments[]    = {
-        executable,
-        log_trace,
-        settings,
-        settings_arg,
-        stop_after,
-        stop_arg,
-        delay,
-        delay_arg,
-        period,
-        period_arg,
+    auto argument_values = std::array{
+        std::string{"miximus"},
+        std::string{"--log-trace"},
+        std::string{"--settings"},
+        std::string{"/tmp/test settings.json"},
+        std::string{"--stop-after"},
+        std::string{"2.5"},
+        std::string{"--test-render-delay-ms"},
+        std::string{"12"},
+        std::string{"--test-render-delay-every"},
+        std::string{"120"},
     };
+    auto arguments = make_arguments(argument_values);
 
-    const auto options = core::parse_command_line_options(static_cast<int>(std::size(arguments)), arguments);
+    const auto options = core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data());
 
     EXPECT_EQ(options.log_level, spdlog::level::trace);
     EXPECT_EQ(options.settings_path, "/tmp/test settings.json");
     ASSERT_TRUE(options.stop_after.has_value());
-    EXPECT_DOUBLE_EQ(options.stop_after->count(), 2.5);
+    EXPECT_DOUBLE_EQ(options.stop_after.value_or(std::chrono::duration<double>{}).count(), 2.5);
     ASSERT_TRUE(options.render_thread_delay_test.has_value());
-    EXPECT_EQ(options.render_thread_delay_test->delay, std::chrono::milliseconds{12});
-    EXPECT_EQ(options.render_thread_delay_test->every_frames, 120);
+    const auto delay_test = options.render_thread_delay_test.value_or(core::render_thread_delay_test_options_s{});
+    EXPECT_EQ(delay_test.delay, std::chrono::milliseconds{12});
+    EXPECT_EQ(delay_test.every_frames, 120);
 }
 
 TEST(CommandLineOptions, TreatsSettingsPathAsUtf8)
 {
-    char  executable[]   = "miximus";
-    char  settings[]     = "--settings";
-    char  settings_arg[] = "/tmp/r\xC3\xA4ksm\xC3\xB6rg\xC3\xA5s.json";
-    char* arguments[]    = {executable, settings, settings_arg};
+    auto argument_values = std::array{
+        std::string{"miximus"},
+        std::string{"--settings"},
+        std::string{"/tmp/r\xC3\xA4ksm\xC3\xB6rg\xC3\xA5s.json"},
+    };
+    auto arguments = make_arguments(argument_values);
 
-    const auto options = core::parse_command_line_options(static_cast<int>(std::size(arguments)), arguments);
+    const auto options = core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data());
 
-    EXPECT_EQ(utils::path_to_utf8(options.settings_path), settings_arg);
+    EXPECT_EQ(utils::path_to_utf8(options.settings_path), argument_values[2]);
 }
 
 TEST(StringUtils, ConvertsWideStringsToUtf8)
@@ -86,25 +91,25 @@ TEST(StringUtils, ConvertsUtf8ToUtf32)
 #ifdef _WIN32
 TEST(CommandLineOptions, PreservesNativeWindowsSettingsPath)
 {
-    wchar_t  executable[]   = L"miximus";
-    wchar_t  settings[]     = L"--settings";
-    wchar_t  settings_arg[] = L"C:\\r\u00E4ksm\u00F6rg\u00E5s.json";
-    wchar_t* arguments[]    = {executable, settings, settings_arg};
+    auto argument_values = std::array{
+        std::wstring{L"miximus"},
+        std::wstring{L"--settings"},
+        std::wstring{L"C:\\r\u00E4ksm\u00F6rg\u00E5s.json"},
+    };
+    auto arguments = make_arguments(argument_values);
 
-    const auto options = core::parse_command_line_options(static_cast<int>(std::size(arguments)), arguments);
+    const auto options = core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data());
 
-    EXPECT_EQ(options.settings_path.native(), settings_arg);
+    EXPECT_EQ(options.settings_path.native(), argument_values[2]);
 }
 #endif
 
 TEST(CommandLineOptions, RequiresCompleteRenderDelayConfiguration)
 {
-    char  executable[] = "miximus";
-    char  delay[]      = "--test-render-delay-ms";
-    char  delay_arg[]  = "12";
-    char* arguments[]  = {executable, delay, delay_arg};
+    auto argument_values = std::array{std::string{"miximus"}, std::string{"--test-render-delay-ms"}, std::string{"12"}};
+    auto arguments       = make_arguments(argument_values);
 
-    EXPECT_THROW((void)core::parse_command_line_options(static_cast<int>(std::size(arguments)), arguments),
+    EXPECT_THROW((void)core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data()),
                  std::invalid_argument);
 }
 
@@ -119,8 +124,10 @@ TEST(CommandLineOptions, AreAvailableFromApplicationState)
     const core::app_state_s app(core::app_state_s::test_state_t{}, std::move(options));
 
     ASSERT_TRUE(app.command_line_options().render_thread_delay_test.has_value());
-    EXPECT_EQ(app.command_line_options().render_thread_delay_test->delay, std::chrono::milliseconds{12});
-    EXPECT_EQ(app.command_line_options().render_thread_delay_test->every_frames, 120);
+    const auto delay_test =
+        app.command_line_options().render_thread_delay_test.value_or(core::render_thread_delay_test_options_s{});
+    EXPECT_EQ(delay_test.delay, std::chrono::milliseconds{12});
+    EXPECT_EQ(delay_test.every_frames, 120);
 }
 
 } // namespace

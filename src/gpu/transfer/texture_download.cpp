@@ -144,7 +144,7 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
                     stream->allocation_failed      = false;
                     stream->retry_allocation_after = {};
                     stream->slots.emplace_back(slot);
-                    stream->free_slots.emplace_back(std::move(slot));
+                    stream->free_slots.emplace_back(slot);
                 }
             }
             stream->initial_slots_condition.notify_all();
@@ -310,9 +310,9 @@ texture_download_target_s& texture_download_target_s::operator=(texture_download
     return *this;
 }
 
-framebuffer_s* texture_download_target_s::framebuffer() const { return framebuffer_.get(); }
+framebuffer_s* texture_download_target_s::framebuffer() const noexcept { return framebuffer_.get(); }
 
-void texture_download_target_s::set_tag(uint64_t tag)
+void texture_download_target_s::set_tag(uint64_t tag) noexcept
 {
     if (slot_) {
         slot_->tag = tag;
@@ -368,7 +368,7 @@ texture_download_frame_s& texture_download_frame_s::operator=(texture_download_f
     return *this;
 }
 
-std::span<const std::byte> texture_download_frame_s::bytes() const
+std::span<const std::byte> texture_download_frame_s::bytes() const noexcept
 {
     if (!slot_) {
         return {};
@@ -376,7 +376,7 @@ std::span<const std::byte> texture_download_frame_s::bytes() const
     return {static_cast<const std::byte*>(slot_->backend->data()), slot_->backend->size()};
 }
 
-uint64_t texture_download_frame_s::tag() const { return slot_ ? slot_->tag : 0; }
+uint64_t texture_download_frame_s::tag() const noexcept { return slot_ ? slot_->tag : 0; }
 
 texture_download_stream_s::texture_download_stream_s(std::shared_ptr<detail::texture_download_stream_state_s> state)
     : state_(std::move(state))
@@ -532,7 +532,7 @@ texture_download_stream_metrics_s texture_download_stream_s::metrics() const
     return result;
 }
 
-texture_download_desc_s texture_download_stream_s::desc() const { return state_->desc; }
+texture_download_desc_s texture_download_stream_s::desc() const noexcept { return state_->desc; }
 
 texture_download_service_s::texture_download_service_s(context_s* parent, size_t memory_budget)
     : state_(std::make_shared<detail::texture_download_service_state_s>(parent, memory_budget))
@@ -564,8 +564,8 @@ std::shared_ptr<texture_download_stream_s> texture_download_service_s::create_st
     return result;
 }
 
-size_t texture_download_service_s::memory_usage() const { return state_->memory_usage(); }
+size_t texture_download_service_s::memory_usage() const noexcept { return state_->memory_usage(); }
 
-size_t texture_download_service_s::memory_budget() const { return state_->memory_budget(); }
+size_t texture_download_service_s::memory_budget() const noexcept { return state_->memory_budget(); }
 
 } // namespace miximus::gpu::transfer

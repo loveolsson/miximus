@@ -36,10 +36,10 @@ program_options::options_description make_options_description()
     return description;
 }
 
-[[noreturn]] void throw_invalid_option(std::string message) { throw std::invalid_argument(std::move(message)); }
+[[noreturn]] void throw_invalid_option(std::string_view message) { throw std::invalid_argument(std::string(message)); }
 
 template <typename Character>
-command_line_options_s parse_command_line_options_impl(int argc, Character* argv[])
+command_line_options_s parse_command_line_options_impl(int argc, Character** argv)
 {
     using string_t = std::basic_string<Character>;
 
@@ -112,13 +112,13 @@ command_line_options_s parse_command_line_options_impl(int argc, Character* argv
 
 } // namespace
 
-command_line_options_s parse_command_line_options(int argc, char* argv[])
+command_line_options_s parse_command_line_options(int argc, char** argv)
 {
     return parse_command_line_options_impl(argc, argv);
 }
 
 #ifdef _WIN32
-command_line_options_s parse_command_line_options(int argc, wchar_t* argv[])
+command_line_options_s parse_command_line_options(int argc, wchar_t** argv)
 {
     return parse_command_line_options_impl(argc, argv);
 }

@@ -135,17 +135,15 @@ gpu::vec2i_t font_instance_s::render_string(std::u32string_view str, surface_s* 
         const gpu::vec2i_t offset{slot->bitmap_left + (kerning.x / div), -slot->bitmap_top + (kerning.y / div)};
 
         if (bitmap.pixel_mode == FT_PIXEL_MODE_BGRA) {
-            const auto source = strided_image_view_s<surface_s::rgba_pixel_t>::from_rows(
-                reinterpret_cast<const surface_s::rgba_pixel_t*>(bitmap.buffer),
+            const auto source = strided_image_view_s<srgb_premultiplied_bgra_pixel_s>::from_rows(
+                reinterpret_cast<const srgb_premultiplied_bgra_pixel_s*>(bitmap.buffer),
                 {bitmap.width, bitmap.rows},
                 bitmap.pitch);
-            surface->alpha_blend(source, pos + offset);
+            surface->source_over(source, pos + offset);
         } else if (bitmap.pixel_mode == FT_PIXEL_MODE_GRAY) {
-            const auto source = strided_image_view_s<surface_s::mono_pixel_t>::from_rows(
-                reinterpret_cast<const surface_s::mono_pixel_t*>(bitmap.buffer),
-                {bitmap.width, bitmap.rows},
-                bitmap.pitch);
-            surface->alpha_blend(source, pos + offset);
+            const auto source = strided_image_view_s<coverage_pixel_t>::from_rows(
+                reinterpret_cast<const coverage_pixel_t*>(bitmap.buffer), {bitmap.width, bitmap.rows}, bitmap.pitch);
+            surface->source_over(source, pos + offset);
         }
 
         pos.x += static_cast<int>((slot->advance.x + kerning.x) / div);

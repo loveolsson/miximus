@@ -22,7 +22,7 @@ class fake_clock_source_s final : public core::clock_source_i
     {
     }
 
-    utils::flicks now() const final { return time_; }
+    utils::flicks now() const noexcept final { return time_; }
 
     void wait_until(utils::flicks time) final
     {
@@ -31,7 +31,7 @@ class fake_clock_source_s final : public core::clock_source_i
         }
     }
 
-    std::string_view name() const final { return "Fake"; }
+    std::string_view name() const noexcept final { return "Fake"; }
 
     void advance(utils::flicks duration) { time_ += duration; }
     void set(utils::flicks time) { time_ = time; }

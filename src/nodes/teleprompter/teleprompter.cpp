@@ -263,14 +263,14 @@ class node_impl : public node_i
 
             if (rl->line_no != txt_line_index && !rl->ready.valid()) {
                 if (!rl->upload_stream || rl->upload_stream->desc().requirements.dimensions != tx_dim) {
-                    const auto byte_size = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(tx_dim.x) *
+                    const auto byte_size = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x) *
                                            static_cast<size_t>(tx_dim.y);
                     const gpu::transfer::texture_transfer_requirements_s requirements{
                         .dimensions        = tx_dim,
                         .format            = gpu::texture_s::format_e::rgba_f16,
-                        .row_stride        = sizeof(render::surface_s::rgba_pixel_t) * static_cast<size_t>(tx_dim.x),
+                        .row_stride        = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x),
                         .byte_size         = byte_size,
-                        .address_alignment = render::surface_s::DATA_ALIGNMENT,
+                        .address_alignment = render::surface_s::PREFERRED_DATA_ALIGNMENT,
                         .host_access       = gpu::transfer::host_access_e::read_write,
                     };
                     rl->upload_stream = app->texture_upload_service()->create_stream({
@@ -368,7 +368,7 @@ class node_impl : public node_i
 
     static text_s load_file(const std::shared_ptr<render::font_loader_s>& loader,
                             const render::font_variant_s&                 font_info,
-                            std::string                                   path_utf8,
+                            const std::string&                            path_utf8,
                             int                                           font_size,
                             int                                           width)
     {

@@ -41,9 +41,9 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
     {
         return std::exchange(upload_, std::nullopt);
     }
-    input_video_buffer_allocator_s* allocator() const { return allocator_; }
+    input_video_buffer_allocator_s* allocator() const noexcept { return allocator_; }
 
-    HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) override
+    HRESULT STDMETHODCALLTYPE GetBytes(void** buffer) noexcept override
     {
         if (buffer == nullptr) {
             return E_POINTER;
@@ -56,7 +56,7 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE GetSize(uint64_t* size) override
+    HRESULT STDMETHODCALLTYPE GetSize(uint64_t* size) noexcept override
     {
         if (size == nullptr) {
             return E_POINTER;
@@ -65,10 +65,10 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags flags) override;
-    HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags flags) noexcept override;
+    HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) noexcept override { return S_OK; }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept override
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -89,8 +89,8 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_count_; }
-    ULONG STDMETHODCALLTYPE Release() override;
+    ULONG STDMETHODCALLTYPE AddRef() noexcept override { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() noexcept override;
 };
 
 class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocator
@@ -131,15 +131,15 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
     ~input_video_buffer_allocator_s();
 
     auto     acquire_upload(bool first_access) -> std::optional<gpu::transfer::texture_upload_lease_s>;
-    auto     buffer_size() const { return buffer_size_; }
-    uint64_t upload_acquire_slow_count() const { return upload_acquire_slow_count_.load(); }
-    uint64_t upload_acquire_failures() const { return upload_acquire_failures_.load(); }
-    uint64_t upload_acquire_wait_max_us() const { return upload_acquire_wait_max_us_.load(); }
+    auto     buffer_size() const noexcept { return buffer_size_; }
+    uint64_t upload_acquire_slow_count() const noexcept { return upload_acquire_slow_count_.load(); }
+    uint64_t upload_acquire_failures() const noexcept { return upload_acquire_failures_.load(); }
+    uint64_t upload_acquire_wait_max_us() const noexcept { return upload_acquire_wait_max_us_.load(); }
 
-    HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) override;
+    HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) noexcept override;
     void                      return_buffer(input_video_buffer_s* buffer);
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept override
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -155,8 +155,8 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_count_; }
-    ULONG STDMETHODCALLTYPE Release() override
+    ULONG STDMETHODCALLTYPE AddRef() noexcept override { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() noexcept override
     {
         ULONG count = --ref_count_;
         if (count == 0) {

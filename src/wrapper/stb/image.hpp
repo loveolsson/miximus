@@ -43,10 +43,10 @@ class decoded_image_s
     decoded_image_s& operator=(decoded_image_s&&)      = default;
     ~decoded_image_s()                                 = default;
 
-    int                width() const { return width_; }
-    int                height() const { return height_; }
-    int                source_channels() const { return source_channels_; }
-    image_channels_e   channels() const { return channels_; }
+    int                width() const noexcept { return width_; }
+    int                height() const noexcept { return height_; }
+    int                source_channels() const noexcept { return source_channels_; }
+    image_channels_e   channels() const noexcept { return channels_; }
     std::span<uint8_t> pixels() noexcept
     {
         if (!data_) {

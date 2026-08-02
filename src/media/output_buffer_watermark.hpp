@@ -19,9 +19,9 @@ class output_buffer_watermark_s
         }
     }
 
-    void frame_scheduled() { ++scheduled_; }
+    void frame_scheduled() noexcept { ++scheduled_; }
 
-    bool frame_completed()
+    bool frame_completed() noexcept
     {
         if (scheduled_ == 0) {
             return false;
@@ -30,9 +30,9 @@ class output_buffer_watermark_s
         return true;
     }
 
-    size_t refill_count() const { return target_ > scheduled_ ? target_ - scheduled_ : 0; }
-    size_t scheduled_frames() const { return scheduled_; }
-    size_t target() const { return target_; }
+    size_t refill_count() const noexcept { return target_ > scheduled_ ? target_ - scheduled_ : 0; }
+    size_t scheduled_frames() const noexcept { return scheduled_; }
+    size_t target() const noexcept { return target_; }
 };
 
 } // namespace miximus::media

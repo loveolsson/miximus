@@ -66,10 +66,10 @@ class texture_download_target_s
     texture_download_target_s(texture_download_target_s&&) noexcept;
     texture_download_target_s& operator=(texture_download_target_s&&) noexcept;
 
-    framebuffer_s* framebuffer() const;
-    void           set_tag(uint64_t tag);
+    framebuffer_s* framebuffer() const noexcept;
+    void           set_tag(uint64_t tag) noexcept;
     void           submit();
-    explicit       operator bool() const { return slot_ != nullptr; }
+    explicit       operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_download_frame_s
@@ -90,9 +90,9 @@ class texture_download_frame_s
     texture_download_frame_s(texture_download_frame_s&&) noexcept;
     texture_download_frame_s& operator=(texture_download_frame_s&&) noexcept;
 
-    std::span<const std::byte> bytes() const;
-    uint64_t                   tag() const;
-    explicit                   operator bool() const { return slot_ != nullptr; }
+    std::span<const std::byte> bytes() const noexcept;
+    uint64_t                   tag() const noexcept;
+    explicit                   operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_download_stream_s
@@ -122,7 +122,7 @@ class texture_download_stream_s
     bool initial_slots_pending() const;
     bool wait_for_initial_slots(std::chrono::milliseconds timeout) const;
     auto metrics() const -> texture_download_stream_metrics_s;
-    auto desc() const -> texture_download_desc_s;
+    auto desc() const noexcept -> texture_download_desc_s;
 };
 
 class texture_download_service_s
@@ -142,8 +142,8 @@ class texture_download_service_s
 
     std::shared_ptr<texture_download_stream_s> create_stream(texture_download_desc_s desc);
 
-    size_t memory_usage() const;
-    size_t memory_budget() const;
+    size_t memory_usage() const noexcept;
+    size_t memory_budget() const noexcept;
 };
 
 } // namespace miximus::gpu::transfer

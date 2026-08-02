@@ -35,7 +35,7 @@ uint32_t parse_component(const nlohmann::json& json, std::string_view name)
 }
 } // namespace
 
-std::optional<utils::flicks> get_frame_duration(frame_rate_s frame_rate)
+std::optional<utils::flicks> get_frame_duration(frame_rate_s frame_rate) noexcept
 {
     if (frame_rate.numerator == 0 || frame_rate.denominator == 0) {
         return std::nullopt;

@@ -36,15 +36,15 @@ class interface_i
     interface_i& operator=(interface_i&&)      = delete;
 
     bool add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
-    void set_max_connection_count(int count) { max_connection_count_ = count; }
+    void set_max_connection_count(int count) noexcept { max_connection_count_ = count; }
 
     std::span<const connection_s> connections(const node_state_s& state) const;
     void                          submit_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
 
-    dir_e            direction() const { return direction_; }
-    interface_type_e type() const { return type_; }
-    virtual bool     accepts(interface_type_e /*type*/) const { return false; }
-    std::string_view name() const { return name_; }
+    dir_e            direction() const noexcept { return direction_; }
+    interface_type_e type() const noexcept { return type_; }
+    virtual bool     accepts(interface_type_e /*type*/) const noexcept { return false; }
+    std::string_view name() const noexcept { return name_; }
 
   protected:
     resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
@@ -70,7 +70,7 @@ class input_interface_s : public interface_i
     }
     ~input_interface_s() = default;
 
-    bool accepts(interface_type_e type) const final;
+    bool accepts(interface_type_e type) const noexcept final;
 
     static T cast_iface_to_value(const interface_i* iface, T const& fallback);
 

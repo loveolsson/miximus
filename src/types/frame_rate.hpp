@@ -18,7 +18,7 @@ struct frame_rate_s
 
 constexpr frame_rate_s DEFAULT_FRAME_RATE{};
 
-std::optional<utils::flicks> get_frame_duration(frame_rate_s frame_rate);
+std::optional<utils::flicks> get_frame_duration(frame_rate_s frame_rate) noexcept;
 frame_rate_s                 canonicalize_frame_rate(frame_rate_s frame_rate);
 
 void to_json(nlohmann::json& json, const frame_rate_s& frame_rate);

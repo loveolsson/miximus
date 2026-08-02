@@ -73,7 +73,7 @@ interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes
 }
 
 template <>
-bool input_interface_s<double>::accepts(interface_type_e type) const
+bool input_interface_s<double>::accepts(interface_type_e type) const noexcept
 {
     switch (type) {
         case interface_type_e::f64:
@@ -85,7 +85,7 @@ bool input_interface_s<double>::accepts(interface_type_e type) const
 }
 
 template <>
-bool input_interface_s<gpu::vec2_t>::accepts(interface_type_e type) const
+bool input_interface_s<gpu::vec2_t>::accepts(interface_type_e type) const noexcept
 {
     switch (type) {
         case interface_type_e::f64:
@@ -98,7 +98,7 @@ bool input_interface_s<gpu::vec2_t>::accepts(interface_type_e type) const
 }
 
 template <>
-bool input_interface_s<gpu::rect_s>::accepts(interface_type_e type) const
+bool input_interface_s<gpu::rect_s>::accepts(interface_type_e type) const noexcept
 {
     switch (type) {
         case interface_type_e::rect:
@@ -110,7 +110,7 @@ bool input_interface_s<gpu::rect_s>::accepts(interface_type_e type) const
 }
 
 template <>
-bool input_interface_s<gpu::texture_s*>::accepts(interface_type_e type) const
+bool input_interface_s<gpu::texture_s*>::accepts(interface_type_e type) const noexcept
 {
     switch (type) {
         case interface_type_e::texture:
@@ -122,7 +122,7 @@ bool input_interface_s<gpu::texture_s*>::accepts(interface_type_e type) const
 }
 
 template <>
-bool input_interface_s<gpu::framebuffer_s*>::accepts(interface_type_e type) const
+bool input_interface_s<gpu::framebuffer_s*>::accepts(interface_type_e type) const noexcept
 {
     switch (type) {
         case interface_type_e::framebuffer:

@@ -56,10 +56,10 @@ class texture_upload_lease_s
     texture_upload_lease_s(texture_upload_lease_s&&) noexcept;
     texture_upload_lease_s& operator=(texture_upload_lease_s&&) noexcept;
 
-    std::span<std::byte> bytes() const;
-    uint64_t             version() const;
+    std::span<std::byte> bytes() const noexcept;
+    uint64_t             version() const noexcept;
     bool                 submit();
-    explicit             operator bool() const { return slot_ != nullptr; }
+    explicit             operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_upload_stream_s
@@ -102,7 +102,7 @@ class texture_upload_stream_s
     uint64_t                     current_version() const;
 
     bool allocation_failed() const;
-    auto desc() const -> texture_upload_desc_s;
+    auto desc() const noexcept -> texture_upload_desc_s;
 };
 
 class texture_upload_service_s
@@ -122,8 +122,8 @@ class texture_upload_service_s
 
     std::shared_ptr<texture_upload_stream_s> create_stream(texture_upload_desc_s desc);
 
-    size_t memory_usage() const;
-    size_t memory_budget() const;
+    size_t memory_usage() const noexcept;
+    size_t memory_budget() const noexcept;
 };
 
 } // namespace miximus::gpu::transfer

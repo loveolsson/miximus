@@ -35,13 +35,13 @@ namespace {
 
 constexpr int HTTP_PORT = 7351;
 
-auto& get_signal_status()
+auto& get_signal_status() noexcept
 {
     static volatile std::sig_atomic_t signal_status = 0;
     return signal_status;
 }
 
-void signal_handler(int /*signal*/) { get_signal_status() = 1; }
+void signal_handler(int /*signal*/) noexcept { get_signal_status() = 1; }
 
 void start_shutdown_watchdog()
 {
@@ -82,7 +82,7 @@ void publish_scheduler_status(core::app_state_s*                     app,
     writer.write("sustained_overload", metrics.sustained_overload);
 }
 
-int miximus_main(core::command_line_options_s command_line_options, std::string executable_name)
+int miximus_main(core::command_line_options_s command_line_options, std::string_view executable_name)
 {
     (void)std::signal(SIGINT, signal_handler);
     (void)std::signal(SIGTERM, signal_handler);

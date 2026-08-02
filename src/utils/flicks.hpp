@@ -94,14 +94,14 @@ constexpr flicks k_flicks_min_time{std::numeric_limits<flicks::rep>::min()};
 
 //! Convert flicks to seconds as doubles
 //!
-constexpr double to_seconds(const flicks ns)
+constexpr double to_seconds(const flicks ns) noexcept
 {
     return std::chrono::duration_cast<std::chrono::duration<double>>(ns).count();
 }
 
 //! Convert doubles (as seconds) to flicks
 //!
-constexpr flicks to_flicks(const double s)
+constexpr flicks to_flicks(const double s) noexcept
 {
     return std::chrono::duration_cast<flicks>(std::chrono::duration<double>{s});
 }
@@ -109,12 +109,12 @@ constexpr flicks to_flicks(const double s)
 //! Convert a regular duration to flicks
 //!
 template <class Rep, class Period>
-constexpr flicks flicks_cast(const std::chrono::duration<Rep, Period> in_duration)
+constexpr flicks flicks_cast(const std::chrono::duration<Rep, Period> in_duration) noexcept
 {
     return std::chrono::duration_cast<flicks>(in_duration);
 }
 
-inline flicks flicks_now() { return flicks_cast(std::chrono::steady_clock::now().time_since_epoch()); }
+inline flicks flicks_now() noexcept { return flicks_cast(std::chrono::steady_clock::now().time_since_epoch()); }
 
 //! This is a std::hash-esque hash functor
 //!
@@ -122,7 +122,7 @@ struct flicks_hash
 {
     using argument_type = flicks;
     using result_type   = size_t;
-    result_type operator()(argument_type const& s) const { return std::hash<flicks::rep>{}(s.count()); }
+    result_type operator()(argument_type const& s) const noexcept { return std::hash<flicks::rep>{}(s.count()); }
 };
 
 } // namespace miximus::utils

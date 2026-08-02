@@ -1,9 +1,9 @@
 #include "surface.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
-#include <glm/glm.hpp>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -29,48 +29,22 @@ surface_s::surface_s(gpu::vec2i_t dimensions, std::span<std::byte> storage)
         throw std::length_error("surface pixel count overflows size_t");
     }
     const auto pixel_count = static_cast<size_t>(dimensions_.x) * static_cast<size_t>(dimensions_.y);
-    if (pixel_count > std::numeric_limits<size_t>::max() / sizeof(rgba_pixel_t) ||
-        storage.size() < pixel_count * sizeof(rgba_pixel_t)) {
+    if (pixel_count > std::numeric_limits<size_t>::max() / sizeof(pixel_t) ||
+        storage.size() < pixel_count * sizeof(pixel_t)) {
         throw std::invalid_argument("surface storage is smaller than its dimensions");
     }
     if (pixel_count > 0 && storage.data() == nullptr) {
         throw std::invalid_argument("surface storage must not be null");
     }
-    if (reinterpret_cast<std::uintptr_t>(storage.data()) % DATA_ALIGNMENT != 0) {
-        throw std::invalid_argument("surface pointer does not meet the required alignment");
-    }
-    pixels_ = {reinterpret_cast<rgba_pixel_t*>(storage.data()), pixel_count};
+    pixels_ = {reinterpret_cast<pixel_t*>(storage.data()), pixel_count};
 }
 
-surface_s::surface_s(gpu::vec2i_t dimensions, std::span<rgba_pixel_t> pixels)
+surface_s::surface_s(gpu::vec2i_t dimensions, std::span<pixel_t> pixels)
     : surface_s(dimensions, std::as_writable_bytes(pixels))
 {
 }
 
-bool surface_s::contains(gpu::vec2i_t position) const
-{
-    return position.x >= 0 && position.y >= 0 && position.x < dimensions_.x && position.y < dimensions_.y;
-}
-
-surface_s::rgba_pixel_t& surface_s::pixel(gpu::vec2i_t position)
-{
-    if (!contains(position)) {
-        throw std::out_of_range("surface pixel is outside its dimensions");
-    }
-    return pixels_[(static_cast<size_t>(position.y) * static_cast<size_t>(dimensions_.x)) +
-                   static_cast<size_t>(position.x)];
-}
-
-const surface_s::rgba_pixel_t& surface_s::pixel(gpu::vec2i_t position) const
-{
-    if (!contains(position)) {
-        throw std::out_of_range("surface pixel is outside its dimensions");
-    }
-    return pixels_[(static_cast<size_t>(position.y) * static_cast<size_t>(dimensions_.x)) +
-                   static_cast<size_t>(position.x)];
-}
-
-void surface_s::clear(const rgba_pixel_t& color) { std::ranges::fill(pixels_, color); }
+void surface_s::clear(pixel_t color) noexcept { std::ranges::fill(pixels_, color); }
 
 namespace {
 struct clipped_rect_s
@@ -79,12 +53,12 @@ struct clipped_rect_s
     gpu::vec2i_t end;
 };
 
-gpu::recti_s make_rect(gpu::vec2i_t position, gpu::vec2i_t size) { return {.pos = position, .size = size}; }
+gpu::recti_s make_rect(gpu::vec2i_t position, gpu::vec2i_t size) noexcept { return {.pos = position, .size = size}; }
 
-std::optional<clipped_rect_s> clip_rect(gpu::recti_s rect, gpu::vec2i_t dimensions)
+std::optional<clipped_rect_s> clip_rect(gpu::recti_s rect, gpu::vec2i_t dimensions) noexcept
 {
-    if (rect.size.x < 0 || rect.size.y < 0) {
-        throw std::invalid_argument("rectangle size must not be negative");
+    if (rect.size.x <= 0 || rect.size.y <= 0) {
+        return std::nullopt;
     }
 
     const auto end_x = static_cast<int64_t>(rect.pos.x) + rect.size.x;
@@ -102,7 +76,7 @@ std::optional<clipped_rect_s> clip_rect(gpu::recti_s rect, gpu::vec2i_t dimensio
 }
 
 template <typename Op>
-void raster_operation(surface_s::rgba_pixel_t* dst_ptr, gpu::vec2i_t dst_dim, gpu::recti_s rect, Op op)
+void raster_operation(surface_s::pixel_t* dst_ptr, gpu::vec2i_t dst_dim, gpu::recti_s rect, Op op) noexcept
 {
     const auto clipped = clip_rect(rect, dst_dim);
     if (!clipped.has_value()) {
@@ -119,11 +93,11 @@ void raster_operation(surface_s::rgba_pixel_t* dst_ptr, gpu::vec2i_t dst_dim, gp
 }
 
 template <typename CoverageOp, typename PixelOp>
-void coverage_operation(surface_s::rgba_pixel_t* dst_ptr,
-                        gpu::vec2i_t             dst_dim,
-                        gpu::recti_s             bounds,
-                        CoverageOp               coverage_op,
-                        PixelOp                  pixel_op)
+void coverage_operation(surface_s::pixel_t* dst_ptr,
+                        gpu::vec2i_t        dst_dim,
+                        gpu::recti_s        bounds,
+                        CoverageOp          coverage_op,
+                        PixelOp             pixel_op) noexcept
 {
     raster_operation(dst_ptr, dst_dim, bounds, [coverage_op, pixel_op](auto position, auto* pixel) {
         const double coverage = coverage_op(position);
@@ -135,10 +109,10 @@ void coverage_operation(surface_s::rgba_pixel_t* dst_ptr,
 
 template <typename SrcT, typename Op>
 void copy_operation(const strided_image_view_s<SrcT>& source,
-                    surface_s::rgba_pixel_t*          dst_ptr,
+                    surface_s::pixel_t*               dst_ptr,
                     gpu::vec2i_t                      dst_dim,
                     gpu::vec2i_t                      pos,
-                    Op                                op)
+                    Op                                op) noexcept
 {
     const auto src_dim = source.dimensions();
 
@@ -169,48 +143,97 @@ void copy_operation(const strided_image_view_s<SrcT>& source,
     }
 }
 
-surface_s::rgba_pixel_t interpolate(const surface_s::rgba_pixel_t& from,
-                                    const surface_s::rgba_pixel_t& to,
-                                    int64_t                        numerator,
-                                    int64_t                        denominator)
+uint8_t interpolate_channel(uint8_t from, uint8_t to, int64_t numerator, int64_t denominator) noexcept
 {
     if (denominator <= 0) {
         return from;
     }
-
-    glm::i64vec4 value = glm::i64vec4(from) * (denominator - numerator);
-    value += glm::i64vec4(to) * numerator;
-    value += denominator / 2;
-    return {value / denominator};
+    const auto value = (static_cast<int64_t>(from) * (denominator - numerator)) +
+                       (static_cast<int64_t>(to) * numerator) + (denominator / 2);
+    return static_cast<uint8_t>(value / denominator);
 }
 
-void composite_source_over(const surface_s::rgba_pixel_t& source, surface_s::rgba_pixel_t* destination)
+surface_s::pixel_t
+interpolate(surface_s::pixel_t from, surface_s::pixel_t to, int64_t numerator, int64_t denominator) noexcept
 {
-    constexpr int channel_max       = 255;
-    const int     source_alpha      = source.a;
-    const int     inverse           = channel_max - source_alpha;
-    const int     destination_red   = destination->r;
-    const int     destination_green = destination->g;
-    const int     destination_blue  = destination->b;
-    const int     destination_alpha = destination->a;
+    return {
+        interpolate_channel(from.r, to.r, numerator, denominator),
+        interpolate_channel(from.g, to.g, numerator, denominator),
+        interpolate_channel(from.b, to.b, numerator, denominator),
+        interpolate_channel(from.a, to.a, numerator, denominator),
+    };
+}
 
-    const auto blend_channel = [source_alpha, inverse](int source_channel, int destination_channel) {
-        return static_cast<uint8_t>(
-            ((source_channel * source_alpha) + (destination_channel * inverse) + (channel_max / 2)) / channel_max);
+uint8_t multiply_channel(uint8_t lhs, uint8_t rhs) noexcept
+{
+    constexpr uint32_t channel_max = 255;
+    return static_cast<uint8_t>(((static_cast<uint32_t>(lhs) * rhs) + (channel_max / 2)) / channel_max);
+}
+
+surface_s::pixel_t premultiply(straight_rgba_pixel_s source) noexcept
+{
+    return {
+        multiply_channel(source.r, source.a),
+        multiply_channel(source.g, source.a),
+        multiply_channel(source.b, source.a),
+        source.a,
+    };
+}
+
+void composite_source_over(surface_s::pixel_t source, surface_s::pixel_t* destination) noexcept
+{
+    constexpr uint8_t channel_max = 255;
+    const uint8_t     inverse     = channel_max - source.a;
+
+    const auto composite_channel = [inverse](uint8_t source_channel, uint8_t destination_channel) {
+        return static_cast<uint8_t>(source_channel + multiply_channel(destination_channel, inverse));
     };
 
-    destination->r = blend_channel(source.r, destination_red);
-    destination->g = blend_channel(source.g, destination_green);
-    destination->b = blend_channel(source.b, destination_blue);
-    destination->a =
-        static_cast<uint8_t>(source_alpha + (((destination_alpha * inverse) + (channel_max / 2)) / channel_max));
+    destination->r = composite_channel(source.r, destination->r);
+    destination->g = composite_channel(source.g, destination->g);
+    destination->b = composite_channel(source.b, destination->b);
+    destination->a = composite_channel(source.a, destination->a);
+}
+
+const std::array<uint8_t, 256>& srgb_to_linear_lut() noexcept
+{
+    static const auto lut = [] {
+        std::array<uint8_t, 256> result{};
+        for (size_t i = 0; i < result.size(); ++i) {
+            const double encoded = static_cast<double>(i) / 255.0;
+            const double linear  = encoded <= 0.04045 ? encoded / 12.92 : std::pow((encoded + 0.055) / 1.055, 2.4);
+            result[i]            = static_cast<uint8_t>(std::lround(std::clamp(linear, 0.0, 1.0) * 255.0));
+        }
+        return result;
+    }();
+    return lut;
+}
+
+uint8_t unpremultiply_channel(uint8_t channel, uint8_t alpha) noexcept
+{
+    if (alpha == 0) {
+        return 0;
+    }
+    return static_cast<uint8_t>(
+        std::min<uint32_t>(255, ((static_cast<uint32_t>(channel) * 255) + (alpha / 2)) / alpha));
+}
+
+surface_s::pixel_t convert_srgb_premultiplied_bgra(srgb_premultiplied_bgra_pixel_s source) noexcept
+{
+    const auto& lut = srgb_to_linear_lut();
+    return {
+        multiply_channel(lut[unpremultiply_channel(source.r, source.a)], source.a),
+        multiply_channel(lut[unpremultiply_channel(source.g, source.a)], source.a),
+        multiply_channel(lut[unpremultiply_channel(source.b, source.a)], source.a),
+        source.a,
+    };
 }
 
 struct replace_coverage_s
 {
-    surface_s::rgba_pixel_t color;
+    surface_s::pixel_t color;
 
-    MIXIMUS_SURFACE_FORCE_INLINE void operator()(double coverage, surface_s::rgba_pixel_t* destination) const
+    MIXIMUS_SURFACE_FORCE_INLINE void operator()(double coverage, surface_s::pixel_t* destination) const noexcept
     {
         if (coverage >= 1.0) {
             *destination = color;
@@ -229,22 +252,17 @@ struct replace_coverage_s
 
 struct source_over_coverage_s
 {
-    surface_s::rgba_pixel_t color;
+    straight_rgba_pixel_s color;
 
-    void operator()(double coverage, surface_s::rgba_pixel_t* destination) const
+    void operator()(double coverage, surface_s::pixel_t* destination) const noexcept
     {
-        if (coverage >= 1.0) {
-            composite_source_over(color, destination);
-            return;
-        }
-
-        auto covered_source = color;
-        covered_source.a    = static_cast<uint8_t>(std::lround(color.a * coverage));
-        composite_source_over(covered_source, destination);
+        auto source = color;
+        source.a    = static_cast<uint8_t>(std::lround(color.a * coverage));
+        composite_source_over(premultiply(source), destination);
     }
 };
 
-bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to)
+bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to) noexcept
 {
     if (dimensions.x <= 0 || dimensions.y <= 0) {
         return false;
@@ -294,7 +312,7 @@ bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to)
     return true;
 }
 
-double normalized_ellipse_distance_squared(double x, double y, double radius_x, double radius_y)
+double normalized_ellipse_distance_squared(double x, double y, double radius_x, double radius_y) noexcept
 {
     return ((x * x) / (radius_x * radius_x)) + ((y * y) / (radius_y * radius_y));
 }
@@ -322,9 +340,12 @@ struct ellipse_coverage_s
     {
     }
 
-    ellipse_coverage_s inset(double amount) const { return {center_x, center_y, radius_x - amount, radius_y - amount}; }
+    ellipse_coverage_s inset(double amount) const noexcept
+    {
+        return {center_x, center_y, radius_x - amount, radius_y - amount};
+    }
 
-    MIXIMUS_SURFACE_FORCE_INLINE double operator()(gpu::vec2i_t position) const
+    MIXIMUS_SURFACE_FORCE_INLINE double operator()(gpu::vec2i_t position) const noexcept
     {
         const double x = position.x + 0.5 - center_x;
         const double y = position.y + 0.5 - center_y;
@@ -354,7 +375,7 @@ struct pill_coverage_s
 {
     gpu::recti_s bounds;
 
-    MIXIMUS_SURFACE_FORCE_INLINE double operator()(gpu::vec2i_t position) const
+    MIXIMUS_SURFACE_FORCE_INLINE double operator()(gpu::vec2i_t position) const noexcept
     {
         const double pixel_x = position.x + 0.5;
         const double pixel_y = position.y + 0.5;
@@ -397,90 +418,71 @@ struct difference_coverage_s
     OuterCoverage outer;
     InnerCoverage inner;
 
-    double operator()(gpu::vec2i_t position) const { return std::clamp(outer(position) - inner(position), 0.0, 1.0); }
+    double operator()(gpu::vec2i_t position) const noexcept
+    {
+        return std::clamp(outer(position) - inner(position), 0.0, 1.0);
+    }
 };
 } // namespace
 
 #undef MIXIMUS_SURFACE_FORCE_INLINE
 
-void surface_s::copy(const strided_image_view_s<rgba_pixel_t>& source, gpu::vec2i_t position)
+void surface_s::source_over(const strided_image_view_s<straight_rgba_pixel_s>& source, gpu::vec2i_t position) noexcept
 {
-    auto op = [](const auto& src, auto dst) { *dst = src; };
-    copy_operation(source, aligned_data(), dimensions_, position, op);
-}
-
-void surface_s::copy(const strided_image_view_s<mono_pixel_t>& source, gpu::vec2i_t position)
-{
-    auto op = [](const auto& src, auto dst) { *dst = {src, src, src, src}; };
-    copy_operation(source, aligned_data(), dimensions_, position, op);
-}
-
-void surface_s::alpha_blend(const strided_image_view_s<rgba_pixel_t>& source, gpu::vec2i_t position)
-{
-    auto op = [](const auto& src, auto dst) {
-        const int destination_red   = dst->r;
-        const int destination_green = dst->g;
-        const int destination_blue  = dst->b;
-        const int destination_alpha = dst->a;
-        const int source_alpha      = src.a;
-
-        dst->r = static_cast<uint8_t>(std::max(destination_red - source_alpha, 0) + src.r);
-        dst->g = static_cast<uint8_t>(std::max(destination_green - source_alpha, 0) + src.g);
-        dst->b = static_cast<uint8_t>(std::max(destination_blue - source_alpha, 0) + src.b);
-        dst->a = static_cast<uint8_t>(std::max(destination_alpha - source_alpha, 0) + source_alpha);
-    };
-    copy_operation(source, aligned_data(), dimensions_, position, op);
-}
-
-void surface_s::alpha_blend(const strided_image_view_s<mono_pixel_t>& source, gpu::vec2i_t position)
-{
-    auto op = [](const auto& src, auto dst) {
-        dst->r = std::max(dst->r, src);
-        dst->g = std::max(dst->g, src);
-        dst->b = std::max(dst->b, src);
-        dst->a = std::max(dst->a, src);
-    };
-    copy_operation(source, aligned_data(), dimensions_, position, op);
-}
-
-void surface_s::source_over(const strided_image_view_s<rgba_pixel_t>& source, gpu::vec2i_t position)
-{
-    copy_operation(source, aligned_data(), dimensions_, position, [](const auto& source_pixel, auto* destination) {
-        composite_source_over(source_pixel, destination);
+    copy_operation(source, data(), dimensions_, position, [](const auto& source_pixel, auto* destination) {
+        composite_source_over(premultiply(source_pixel), destination);
     });
 }
 
-void surface_s::source_over(gpu::recti_s rect, const rgba_pixel_t& color)
+void surface_s::source_over(const strided_image_view_s<srgb_premultiplied_bgra_pixel_s>& source,
+                            gpu::vec2i_t                                                 position) noexcept
 {
-    raster_operation(aligned_data(), dimensions_, rect, [&color](gpu::vec2i_t, auto* destination) {
-        composite_source_over(color, destination);
+    copy_operation(source, data(), dimensions_, position, [](const auto& source_pixel, auto* destination) {
+        composite_source_over(convert_srgb_premultiplied_bgra(source_pixel), destination);
     });
 }
 
-void surface_s::source_over_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color)
+void surface_s::source_over(const strided_image_view_s<coverage_pixel_t>& source,
+                            gpu::vec2i_t                                  position,
+                            straight_rgba_pixel_s                         color) noexcept
+{
+    copy_operation(source, data(), dimensions_, position, [color](auto coverage, auto* destination) {
+        source_over_coverage_s{color}(static_cast<double>(coverage) / 255.0, destination);
+    });
+}
+
+void surface_s::source_over(gpu::recti_s rect, straight_rgba_pixel_s color) noexcept
+{
+    const auto source = premultiply(color);
+    raster_operation(data(), dimensions_, rect, [source](gpu::vec2i_t, auto* destination) {
+        composite_source_over(source, destination);
+    });
+}
+
+void surface_s::source_over_ellipse(gpu::recti_s bounds, straight_rgba_pixel_s color) noexcept
 {
     if (bounds.size.x <= 0 || bounds.size.y <= 0) {
         return;
     }
 
-    coverage_operation(aligned_data(), dimensions_, bounds, ellipse_coverage_s{bounds}, source_over_coverage_s{color});
+    coverage_operation(data(), dimensions_, bounds, ellipse_coverage_s{bounds}, source_over_coverage_s{color});
 }
 
-void surface_s::fill(gpu::recti_s rect, const rgba_pixel_t& color)
+void surface_s::fill(gpu::recti_s rect, pixel_t color) noexcept
 {
     const auto clipped = clip_rect(rect, dimensions_);
     if (!clipped.has_value()) {
         return;
     }
 
-    auto* row = aligned_data() + (static_cast<size_t>(clipped->begin.y) * static_cast<size_t>(dimensions_.x));
+    auto* row = data() + (static_cast<size_t>(clipped->begin.y) * static_cast<size_t>(dimensions_.x));
     for (int y = clipped->begin.y; y < clipped->end.y; ++y) {
         std::fill(row + clipped->begin.x, row + clipped->end.x, color);
         row += dimensions_.x;
     }
 }
 
-void surface_s::draw_rect(gpu::recti_s rect, const rgba_pixel_t& color, int thickness)
+void surface_s::draw_rect(gpu::recti_s rect, pixel_t color, int thickness) noexcept
 {
     if (thickness <= 0 || rect.size.x <= 0 || rect.size.y <= 0) {
         return;
@@ -494,7 +496,7 @@ void surface_s::draw_rect(gpu::recti_s rect, const rgba_pixel_t& color, int thic
     fill(make_rect({rect.pos.x + rect.size.x - vertical, rect.pos.y}, {vertical, rect.size.y}), color);
 }
 
-void surface_s::draw_line(gpu::vec2i_t from, gpu::vec2i_t to, const rgba_pixel_t& color, int thickness)
+void surface_s::draw_line(gpu::vec2i_t from, gpu::vec2i_t to, pixel_t color, int thickness) noexcept
 {
     if (thickness <= 0 || !clip_line(dimensions_, &from, &to)) {
         return;
@@ -524,16 +526,16 @@ void surface_s::draw_line(gpu::vec2i_t from, gpu::vec2i_t to, const rgba_pixel_t
     }
 }
 
-void surface_s::fill_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color)
+void surface_s::fill_ellipse(gpu::recti_s bounds, pixel_t color) noexcept
 {
     if (bounds.size.x <= 0 || bounds.size.y <= 0) {
         return;
     }
 
-    coverage_operation(aligned_data(), dimensions_, bounds, ellipse_coverage_s{bounds}, replace_coverage_s{color});
+    coverage_operation(data(), dimensions_, bounds, ellipse_coverage_s{bounds}, replace_coverage_s{color});
 }
 
-void surface_s::draw_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color, int thickness)
+void surface_s::draw_ellipse(gpu::recti_s bounds, pixel_t color, int thickness) noexcept
 {
     if (thickness <= 0 || bounds.size.x <= 0 || bounds.size.y <= 0) {
         return;
@@ -546,14 +548,14 @@ void surface_s::draw_ellipse(gpu::recti_s bounds, const rgba_pixel_t& color, int
     }
 
     const auto outer = ellipse_coverage_s{bounds};
-    coverage_operation(aligned_data(),
+    coverage_operation(data(),
                        dimensions_,
                        bounds,
                        difference_coverage_s{.outer = outer, .inner = outer.inset(thickness)},
                        replace_coverage_s{color});
 }
 
-void surface_s::fill_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t& color)
+void surface_s::fill_circle(gpu::vec2i_t center, int radius, pixel_t color) noexcept
 {
     if (radius <= 0) {
         return;
@@ -561,7 +563,7 @@ void surface_s::fill_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t&
     fill_ellipse(make_rect(center - gpu::vec2i_t{radius}, gpu::vec2i_t{radius * 2}), color);
 }
 
-void surface_s::draw_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t& color, int thickness)
+void surface_s::draw_circle(gpu::vec2i_t center, int radius, pixel_t color, int thickness) noexcept
 {
     if (radius <= 0) {
         return;
@@ -569,16 +571,16 @@ void surface_s::draw_circle(gpu::vec2i_t center, int radius, const rgba_pixel_t&
     draw_ellipse(make_rect(center - gpu::vec2i_t{radius}, gpu::vec2i_t{radius * 2}), color, thickness);
 }
 
-void surface_s::fill_pill(gpu::recti_s bounds, const rgba_pixel_t& color)
+void surface_s::fill_pill(gpu::recti_s bounds, pixel_t color) noexcept
 {
     if (bounds.size.x <= 0 || bounds.size.y <= 0) {
         return;
     }
 
-    coverage_operation(aligned_data(), dimensions_, bounds, pill_coverage_s{bounds}, replace_coverage_s{color});
+    coverage_operation(data(), dimensions_, bounds, pill_coverage_s{bounds}, replace_coverage_s{color});
 }
 
-void surface_s::draw_pill(gpu::recti_s bounds, const rgba_pixel_t& color, int thickness)
+void surface_s::draw_pill(gpu::recti_s bounds, pixel_t color, int thickness) noexcept
 {
     if (thickness <= 0 || bounds.size.x <= 0 || bounds.size.y <= 0) {
         return;
@@ -594,7 +596,7 @@ void surface_s::draw_pill(gpu::recti_s bounds, const rgba_pixel_t& color, int th
         .pos  = bounds.pos + gpu::vec2i_t{thickness},
         .size = bounds.size - gpu::vec2i_t{thickness * 2},
     };
-    coverage_operation(aligned_data(),
+    coverage_operation(data(),
                        dimensions_,
                        bounds,
                        difference_coverage_s{
@@ -604,52 +606,49 @@ void surface_s::draw_pill(gpu::recti_s bounds, const rgba_pixel_t& color, int th
                        replace_coverage_s{color});
 }
 
-void surface_s::horizontal_gradient(gpu::recti_s rect, const rgba_pixel_t& left, const rgba_pixel_t& right)
+void surface_s::horizontal_gradient(gpu::recti_s rect, pixel_t left, pixel_t right) noexcept
 {
-    raster_operation(aligned_data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
+    raster_operation(data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
         *dst = interpolate(left, right, pos.x - rect.pos.x, std::max(rect.size.x - 1, 1));
     });
 }
 
-void surface_s::vertical_gradient(gpu::recti_s rect, const rgba_pixel_t& top, const rgba_pixel_t& bottom)
+void surface_s::vertical_gradient(gpu::recti_s rect, pixel_t top, pixel_t bottom) noexcept
 {
-    raster_operation(aligned_data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
+    raster_operation(data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
         *dst = interpolate(top, bottom, pos.y - rect.pos.y, std::max(rect.size.y - 1, 1));
     });
 }
 
-void surface_s::bilinear_gradient(gpu::recti_s        rect,
-                                  const rgba_pixel_t& top_left,
-                                  const rgba_pixel_t& top_right,
-                                  const rgba_pixel_t& bottom_left,
-                                  const rgba_pixel_t& bottom_right)
+void surface_s::bilinear_gradient(gpu::recti_s rect,
+                                  pixel_t      top_left,
+                                  pixel_t      top_right,
+                                  pixel_t      bottom_left,
+                                  pixel_t      bottom_right) noexcept
 {
-    raster_operation(aligned_data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
+    raster_operation(data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
         const auto top    = interpolate(top_left, top_right, pos.x - rect.pos.x, std::max(rect.size.x - 1, 1));
         const auto bottom = interpolate(bottom_left, bottom_right, pos.x - rect.pos.x, std::max(rect.size.x - 1, 1));
         *dst              = interpolate(top, bottom, pos.y - rect.pos.y, std::max(rect.size.y - 1, 1));
     });
 }
 
-void surface_s::checkerboard(gpu::recti_s        rect,
-                             gpu::vec2i_t        cell_size,
-                             const rgba_pixel_t& first,
-                             const rgba_pixel_t& second)
+void surface_s::checkerboard(gpu::recti_s rect, gpu::vec2i_t cell_size, pixel_t first, pixel_t second) noexcept
 {
     if (cell_size.x <= 0 || cell_size.y <= 0) {
-        throw std::invalid_argument("checkerboard cell size must be positive");
+        return;
     }
-    raster_operation(aligned_data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
+    raster_operation(data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
         const int cell_x = (pos.x - rect.pos.x) / cell_size.x;
         const int cell_y = (pos.y - rect.pos.y) / cell_size.y;
         *dst             = ((cell_x + cell_y) & 1) == 0 ? first : second;
     });
 }
 
-void surface_s::draw_grid(gpu::recti_s rect, gpu::vec2i_t spacing, const rgba_pixel_t& color, int thickness)
+void surface_s::draw_grid(gpu::recti_s rect, gpu::vec2i_t spacing, pixel_t color, int thickness) noexcept
 {
     if (spacing.x <= 0 || spacing.y <= 0) {
-        throw std::invalid_argument("grid spacing must be positive");
+        return;
     }
     if (thickness <= 0) {
         return;

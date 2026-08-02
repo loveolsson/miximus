@@ -68,38 +68,46 @@ void GLAPIENTRY opengl_error_callback(GLenum        source,
                                       GLenum        severity,
                                       GLsizei       length,
                                       const GLchar* message,
-                                      const void*   userParam)
+                                      const void*   userParam) noexcept
 {
-    (void)id;
-    (void)userParam;
+    try {
+        (void)id;
+        (void)userParam;
 
-    if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) {
-        return;
-    }
+        if (severity == GL_DEBUG_SEVERITY_NOTIFICATION) {
+            return;
+        }
 
-    const auto source_str   = get_opengl_string_from_enum(source);
-    const auto type_str     = get_opengl_string_from_enum(type);
-    const auto severity_str = get_opengl_string_from_enum(severity);
-    const auto message_str  = std::string_view(message, length);
+        const auto source_str   = get_opengl_string_from_enum(source);
+        const auto type_str     = get_opengl_string_from_enum(type);
+        const auto severity_str = get_opengl_string_from_enum(severity);
+        const auto message_str  = std::string_view(message, length);
 
-    if (type == GL_DEBUG_TYPE_ERROR) {
-        _log()->error("OpenGL error: source = {}, type = '{}', severity = '{}', message = '{}'",
-                      source_str,
-                      type_str,
-                      severity_str,
-                      message_str);
-    } else {
-        _log()->warn("OpenGL warning: source = {}, type = '{}', severity = '{}', message = '{}'",
-                     source_str,
-                     type_str,
-                     severity_str,
-                     message_str);
+        if (type == GL_DEBUG_TYPE_ERROR) {
+            _log()->error("OpenGL error: source = {}, type = '{}', severity = '{}', message = '{}'",
+                          source_str,
+                          type_str,
+                          severity_str,
+                          message_str);
+        } else {
+            _log()->warn("OpenGL warning: source = {}, type = '{}', severity = '{}', message = '{}'",
+                         source_str,
+                         type_str,
+                         severity_str,
+                         message_str);
+        }
+    } catch (...) { // NOLINT(bugprone-empty-catch) -- exceptions must not cross the OpenGL callback boundary
+        // Exceptions must not cross the OpenGL callback boundary.
     }
 }
 
-void glfw_error_callback(int error, const char* description)
+void glfw_error_callback(int error, const char* description) noexcept
 {
-    _log()->error("GLFW error: [{}]:{}", error, description);
+    try {
+        _log()->error("GLFW error: [{}]:{}", error, description);
+    } catch (...) { // NOLINT(bugprone-empty-catch) -- exceptions must not cross the GLFW callback boundary
+        // Exceptions must not cross the GLFW callback boundary.
+    }
 }
 
 } // namespace miximus::gpu

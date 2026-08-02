@@ -85,23 +85,23 @@ class app_state_s
     explicit app_state_s(test_state_t, command_line_options_s command_line_options = {});
     ~app_state_s();
 
-    auto cfg_executor() { return &cfg_executor_; }
-    auto ctx() { return ctx_.get(); }
-    auto fallback_texture() { return fallback_texture_.get(); }
-    auto texture_upload_service() { return texture_upload_service_.get(); }
-    auto texture_download_service() { return texture_download_service_.get(); }
-    auto decklink_registry() { return decklink_registry_.get(); }
-    auto ndi_registry() { return ndi_registry_.get(); }
-    auto font_registry() { return font_registry_.get(); }
-    auto thread_pool() { return thread_pool_.get(); }
-    auto status_registry() { return status_registry_.get(); }
+    auto cfg_executor() noexcept { return &cfg_executor_; }
+    auto ctx() noexcept { return ctx_.get(); }
+    auto fallback_texture() noexcept { return fallback_texture_.get(); }
+    auto texture_upload_service() noexcept { return texture_upload_service_.get(); }
+    auto texture_download_service() noexcept { return texture_download_service_.get(); }
+    auto decklink_registry() noexcept { return decklink_registry_.get(); }
+    auto ndi_registry() noexcept { return ndi_registry_.get(); }
+    auto font_registry() noexcept { return font_registry_.get(); }
+    auto thread_pool() noexcept { return thread_pool_.get(); }
+    auto status_registry() noexcept { return status_registry_.get(); }
 
-    const command_line_options_s& command_line_options() const { return command_line_options_; }
+    const command_line_options_s& command_line_options() const noexcept { return command_line_options_; }
 
-    void begin_frame(frame_settings_s settings, frame_context_s frame_context);
+    void begin_frame(frame_settings_s settings, frame_context_s frame_context) noexcept;
 
-    const frame_settings_s& frame_settings() const { return frame_settings_; }
-    const frame_context_s&  frame_context() const { return frame_context_; }
+    const frame_settings_s& frame_settings() const noexcept { return frame_settings_; }
+    const frame_context_s&  frame_context() const noexcept { return frame_context_; }
 
     struct
     {

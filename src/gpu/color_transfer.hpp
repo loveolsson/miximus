@@ -18,7 +18,7 @@ struct color_conversion_s
     vec3_t offset;
 };
 
-constexpr std::array<float, 2> get_white_point(color_transfer_e c)
+constexpr std::array<float, 2> get_white_point(color_transfer_e c) noexcept
 {
     switch (c) {
         case color_transfer_e::Rec601:
@@ -33,7 +33,7 @@ constexpr std::array<float, 2> get_white_point(color_transfer_e c)
     }
 }
 
-constexpr mat3 get_gamut_transfer_from_rec709(color_transfer_e c)
+constexpr mat3 get_gamut_transfer_from_rec709(color_transfer_e c) noexcept
 {
     if (c != color_transfer_e::Rec2020) {
         return {1.0f};
@@ -47,7 +47,7 @@ constexpr mat3 get_gamut_transfer_from_rec709(color_transfer_e c)
     };
 }
 
-constexpr mat3 get_gamut_transfer_to_rec709(color_transfer_e c)
+constexpr mat3 get_gamut_transfer_to_rec709(color_transfer_e c) noexcept
 {
     if (c != color_transfer_e::Rec2020) {
         return {1.0f};
@@ -61,7 +61,7 @@ constexpr mat3 get_gamut_transfer_to_rec709(color_transfer_e c)
     };
 }
 
-constexpr color_conversion_s get_color_transfer_from_yuv(color_transfer_e c)
+constexpr color_conversion_s get_color_transfer_from_yuv(color_transfer_e c) noexcept
 {
     auto [wr, wb] = get_white_point(c);
 
@@ -85,7 +85,7 @@ constexpr color_conversion_s get_color_transfer_from_yuv(color_transfer_e c)
     };
 }
 
-constexpr color_conversion_s get_color_transfer_to_yuv(color_transfer_e c)
+constexpr color_conversion_s get_color_transfer_to_yuv(color_transfer_e c) noexcept
 {
     auto [wr, wb] = get_white_point(c);
 

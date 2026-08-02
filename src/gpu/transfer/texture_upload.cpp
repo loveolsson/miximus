@@ -330,7 +330,7 @@ texture_upload_lease_s& texture_upload_lease_s::operator=(texture_upload_lease_s
     return *this;
 }
 
-std::span<std::byte> texture_upload_lease_s::bytes() const
+std::span<std::byte> texture_upload_lease_s::bytes() const noexcept
 {
     if (!slot_) {
         return {};
@@ -338,7 +338,7 @@ std::span<std::byte> texture_upload_lease_s::bytes() const
     return {static_cast<std::byte*>(slot_->backend->data()), slot_->backend->size()};
 }
 
-uint64_t texture_upload_lease_s::version() const { return slot_ ? slot_->version : 0; }
+uint64_t texture_upload_lease_s::version() const noexcept { return slot_ ? slot_->version : 0; }
 
 bool texture_upload_lease_s::submit()
 {
@@ -604,7 +604,7 @@ bool texture_upload_stream_s::allocation_failed() const
     return state_->allocation_failed;
 }
 
-texture_upload_desc_s texture_upload_stream_s::desc() const { return state_->desc; }
+texture_upload_desc_s texture_upload_stream_s::desc() const noexcept { return state_->desc; }
 
 texture_upload_service_s::texture_upload_service_s(context_s* parent, size_t memory_budget)
     : state_(std::make_shared<detail::texture_upload_service_state_s>(parent, memory_budget))
@@ -636,8 +636,8 @@ std::shared_ptr<texture_upload_stream_s> texture_upload_service_s::create_stream
     return result;
 }
 
-size_t texture_upload_service_s::memory_usage() const { return state_->memory_usage(); }
+size_t texture_upload_service_s::memory_usage() const noexcept { return state_->memory_usage(); }
 
-size_t texture_upload_service_s::memory_budget() const { return state_->memory_budget(); }
+size_t texture_upload_service_s::memory_budget() const noexcept { return state_->memory_budget(); }
 
 } // namespace miximus::gpu::transfer

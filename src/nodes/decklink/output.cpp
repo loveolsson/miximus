@@ -482,6 +482,11 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
     void consume_downloaded_frames()
     {
+        if (!output_queue_.has_value()) {
+            return;
+        }
+        auto& output_queue = *output_queue_;
+
         // The timed queue owns its overflow policy. Drain every completed
         // lease so obsolete queued frames are released instead of exhausting
         // the download stream.
@@ -511,7 +516,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             ++content_frames_sampled_;
             last_content_fingerprint_ = fingerprint;
             auto buffer               = make_decklink_ptr<output_video_buffer_s>(std::move(*frame));
-            output_queue_->push({
+            output_queue.push({
                 .id =
                     {
                          .epoch    = program_epoch_,
@@ -526,8 +531,12 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
     bool schedule_program_frame(utils::flicks program_pts)
     {
-        const auto selection = output_queue_->select(program_epoch_, program_pts);
-        runtime_metrics_.observe_selection(selection.selection, output_queue_->queued() != 0);
+        if (!output_queue_.has_value()) {
+            return false;
+        }
+        auto&      output_queue = *output_queue_;
+        const auto selection    = output_queue.select(program_epoch_, program_pts);
+        runtime_metrics_.observe_selection(selection.selection, output_queue.queued() != 0);
         if (selection.frame != nullptr) {
             last_buffer_ = selection.frame->value;
         }
@@ -555,18 +564,24 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         bool started{};
         {
             const std::scoped_lock lock(frame_mutex_);
+            if (!output_queue_.has_value()) {
+                request_failure();
+                return;
+            }
+            auto& output_queue = *output_queue_;
             consume_downloaded_frames();
-            runtime_metrics_.observe_output_queue_depth(output_queue_->queued());
-            if (output_queue_->queued() < output_watermark_.target()) {
+            runtime_metrics_.observe_output_queue_depth(output_queue.queued());
+            if (output_queue.queued() < output_watermark_.target()) {
                 return;
             }
 
-            next_program_pts_ = output_queue_->oldest_pts();
+            next_program_pts_ = output_queue.oldest_pts();
             for (size_t i = 0; i < output_watermark_.target(); ++i) {
-                if (!next_program_pts_.has_value() || !schedule_program_frame(*next_program_pts_)) {
+                const auto program_pts = next_program_pts_.value_or(utils::flicks{});
+                if (!next_program_pts_.has_value() || !schedule_program_frame(program_pts)) {
                     break;
                 }
-                *next_program_pts_ += mode_info_.frame_duration_flicks;
+                next_program_pts_ = program_pts + mode_info_.frame_duration_flicks;
             }
             if (output_watermark_.scheduled_frames() != output_watermark_.target()) {
                 runtime_metrics_.observe_refill(output_watermark_.target(), output_watermark_.scheduled_frames());
@@ -598,6 +613,11 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         if (phase_.load() != phase_e::running) {
             return S_OK;
         }
+        if (!output_queue_.has_value()) {
+            request_failure();
+            return E_FAIL;
+        }
+        auto& output_queue = *output_queue_;
 
         if (!output_watermark_.frame_completed()) {
             log()->error("DeckLink reported an output completion with no scheduled frame");
@@ -611,14 +631,15 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         const auto refill_count = output_watermark_.refill_count();
         size_t     scheduled{};
         for (size_t i = 0; i < refill_count; ++i) {
-            if (!next_program_pts_.has_value() || !schedule_program_frame(*next_program_pts_)) {
+            const auto program_pts = next_program_pts_.value_or(utils::flicks{});
+            if (!next_program_pts_.has_value() || !schedule_program_frame(program_pts)) {
                 break;
             }
-            *next_program_pts_ += mode_info_.frame_duration_flicks;
+            next_program_pts_ = program_pts + mode_info_.frame_duration_flicks;
             ++scheduled;
         }
         runtime_metrics_.observe_refill(refill_count, scheduled);
-        runtime_metrics_.observe_output_queue_depth(output_queue_->queued());
+        runtime_metrics_.observe_output_queue_depth(output_queue.queued());
         if (scheduled != refill_count) {
             request_failure();
             return E_FAIL;
@@ -738,7 +759,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     }
 
     HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame* /*completedFrame*/,
-                                                      BMDOutputFrameCompletionResult result) final
+                                                      BMDOutputFrameCompletionResult result) noexcept final
     {
         switch (result) {
             case bmdOutputFrameCompleted:
@@ -763,25 +784,30 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         try {
             return scheduled_frame_completed();
         } catch (const std::exception& error) {
-            log()->error("DeckLink output callback failed: {}", error.what());
+            logger::log_error_noexcept("decklink", "DeckLink output callback failed: {}", error.what());
         } catch (...) {
-            log()->error("DeckLink output callback failed");
+            logger::log_error_noexcept("decklink", "DeckLink output callback failed");
         }
         request_failure();
         return E_FAIL;
     }
 
-    HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped() final
+    HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped() noexcept final
     {
-        {
-            const std::scoped_lock lock(stop_mutex_);
-            playback_stopped_ = true;
+        try {
+            {
+                const std::scoped_lock lock(stop_mutex_);
+                playback_stopped_ = true;
+            }
+            stop_condition_.notify_all();
+            return S_OK;
+        } catch (...) {
+            logger::log_error_noexcept("decklink", "DeckLink playback-stopped callback failed");
+            return E_FAIL;
         }
-        stop_condition_.notify_all();
-        return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) final
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept final
     {
         if (ppv == nullptr) {
             return E_POINTER;
@@ -796,8 +822,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         return E_NOINTERFACE;
     }
 
-    ULONG STDMETHODCALLTYPE AddRef() final { return ++ref_count_; }
-    ULONG STDMETHODCALLTYPE Release() final
+    ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+    ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const ULONG count = --ref_count_;
         if (count == 0) {

@@ -16,25 +16,34 @@ namespace {
 constexpr auto initial_upload_timeout = std::chrono::seconds(2);
 } // namespace
 
-HRESULT input_video_buffer_s::StartAccess(BMDBufferAccessFlags flags)
+HRESULT input_video_buffer_s::StartAccess(BMDBufferAccessFlags flags) noexcept
 {
-    if ((flags & bmdBufferAccessWrite) == 0) {
-        return S_OK;
-    }
+    try {
+        if ((flags & bmdBufferAccessWrite) == 0) {
+            return S_OK;
+        }
 
-    upload_.reset();
-    upload_ = allocator_->acquire_upload(first_access_);
-    if (upload_.has_value()) {
-        first_access_ = false;
+        upload_.reset();
+        upload_ = allocator_->acquire_upload(first_access_);
+        if (upload_.has_value()) {
+            first_access_ = false;
+        }
+        return upload_.has_value() ? S_OK : E_OUTOFMEMORY;
+    } catch (...) {
+        logger::log_error_noexcept("decklink", "DeckLink buffer access failed");
+        return E_OUTOFMEMORY;
     }
-    return upload_.has_value() ? S_OK : E_OUTOFMEMORY;
 }
 
-ULONG input_video_buffer_s::Release()
+ULONG input_video_buffer_s::Release() noexcept
 {
     const ULONG count = --ref_count_;
     if (count == 0) {
-        allocator_->return_buffer(this);
+        try {
+            allocator_->return_buffer(this);
+        } catch (...) {
+            logger::log_error_noexcept("decklink", "DeckLink buffer release failed");
+        }
     }
     return count;
 }
@@ -69,7 +78,7 @@ auto input_video_buffer_allocator_s::acquire_upload(bool first_access)
     return upload;
 }
 
-HRESULT input_video_buffer_allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer)
+HRESULT input_video_buffer_allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) noexcept
 {
     if (allocatedBuffer == nullptr) {
         return E_POINTER;
@@ -97,9 +106,9 @@ HRESULT input_video_buffer_allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer
         *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(slot->buffer.get());
         return S_OK;
     } catch (const std::exception& error) {
-        getlog("decklink")->error("DeckLink buffer allocation failed: {}", error.what());
+        logger::log_error_noexcept("decklink", "DeckLink buffer allocation failed: {}", error.what());
     } catch (...) {
-        getlog("decklink")->error("DeckLink buffer allocation failed");
+        logger::log_error_noexcept("decklink", "DeckLink buffer allocation failed");
     }
     return E_OUTOFMEMORY;
 }

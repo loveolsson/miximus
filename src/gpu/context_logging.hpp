@@ -18,13 +18,13 @@ void GLAPIENTRY opengl_error_callback(GLenum        source,
                                       GLenum        severity,
                                       GLsizei       length,
                                       const GLchar* message,
-                                      const void*   userParam);
+                                      const void*   userParam) noexcept;
 
 /**
  * @brief GLFW error callback for framework-level error reporting
  * @param error GLFW error code
  * @param description Human-readable error description
  */
-void glfw_error_callback(int error, const char* description);
+void glfw_error_callback(int error, const char* description) noexcept;
 
 } // namespace miximus::gpu

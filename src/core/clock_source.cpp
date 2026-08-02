@@ -5,7 +5,7 @@
 
 namespace miximus::core {
 
-utils::flicks steady_clock_source_s::now() const { return utils::flicks_now(); }
+utils::flicks steady_clock_source_s::now() const noexcept { return utils::flicks_now(); }
 
 void steady_clock_source_s::wait_until(utils::flicks time)
 {
@@ -14,6 +14,6 @@ void steady_clock_source_s::wait_until(utils::flicks time)
     std::this_thread::sleep_until(target);
 }
 
-std::string_view steady_clock_source_s::name() const { return "Internal"; }
+std::string_view steady_clock_source_s::name() const noexcept { return "Internal"; }
 
 } // namespace miximus::core

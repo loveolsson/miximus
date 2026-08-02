@@ -76,9 +76,9 @@ class decklink_registry_s
     decklink_sdk::decklink_ptr<IDeckLinkInput>  get_input(std::string_view name);
     decklink_sdk::decklink_ptr<IDeckLinkOutput> get_output(std::string_view name);
     std::shared_ptr<const device_status_s>      get_device_status(std::string_view name);
-    utils::serial_executor_s*                   control_executor() { return control_executor_.get(); }
+    utils::serial_executor_s*                   control_executor() noexcept { return control_executor_.get(); }
 
-    uint64_t get_device_list_version() { return device_list_version_.load(std::memory_order_relaxed); }
+    uint64_t get_device_list_version() const noexcept { return device_list_version_.load(std::memory_order_relaxed); }
 
     std::vector<settings_option_s> get_input_options();
     std::vector<settings_option_s> get_output_options();

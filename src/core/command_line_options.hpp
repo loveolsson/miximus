@@ -25,9 +25,9 @@ struct command_line_options_s
     bool                                              show_help{};
 };
 
-command_line_options_s parse_command_line_options(int argc, char* argv[]);
+command_line_options_s parse_command_line_options(int argc, char** argv);
 #ifdef _WIN32
-command_line_options_s parse_command_line_options(int argc, wchar_t* argv[]);
+command_line_options_s parse_command_line_options(int argc, wchar_t** argv);
 #endif
 std::string get_command_line_help(std::string_view executable_name);
 

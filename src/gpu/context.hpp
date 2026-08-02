@@ -38,7 +38,7 @@ class context_s
     shader_map_t shaders_;
     void         make_current();
     static void  rewind_current();
-    static void  monitor_config_callback(GLFWmonitor* monitor, int event);
+    static void  monitor_config_callback(GLFWmonitor* monitor, int event) noexcept;
 
   public:
     context_s(bool visible, context_s* parent);
@@ -50,7 +50,7 @@ class context_s
     void set_window_rect(recti_s rect);
     void set_fullscreen_monitor(std::string_view monitor_id, recti_s rect);
 
-    static bool has_current();
+    static bool has_current() noexcept;
     static bool require_current();
 
     void swap_buffers();
@@ -60,7 +60,7 @@ class context_s
     static void                           poll();
     static void                           terminate();
     static bool                           has_extension(const char* ext);
-    static uint64_t                       get_monitor_list_version();
+    static uint64_t                       get_monitor_list_version() noexcept;
     static std::vector<settings_option_s> get_monitors();
 
     shader_program_s* get_shader(shader_program_s::name_e name);

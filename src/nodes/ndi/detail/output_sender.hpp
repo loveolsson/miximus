@@ -43,8 +43,8 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
     output_sender_s(utils::serial_executor_s* control_executor, std::string sender_name);
 
   public:
-    static constexpr size_t get_queue_capacity(size_t buffer_frames) { return buffer_frames + 3; }
-    static constexpr size_t get_download_slot_count(size_t buffer_frames)
+    static constexpr size_t get_queue_capacity(size_t buffer_frames) noexcept { return buffer_frames + 3; }
+    static constexpr size_t get_download_slot_count(size_t buffer_frames) noexcept
     {
         // In addition to the queued frames, retain space for the current
         // asynchronous send and the render/download pipeline.

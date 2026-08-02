@@ -14,7 +14,7 @@
 
 namespace miximus::render {
 
-constexpr std::string_view get_default_font_name()
+constexpr std::string_view get_default_font_name() noexcept
 {
 #ifdef __linux__
     return "Liberation Sans";
@@ -40,7 +40,7 @@ class font_registry_s
 
     void refresh();
 
-    uint64_t get_font_list_version() const { return font_list_version_.load(std::memory_order_relaxed); }
+    uint64_t get_font_list_version() const noexcept { return font_list_version_.load(std::memory_order_relaxed); }
 
     std::optional<font_info_s>     find_font(std::string_view name) const;
     std::optional<font_variant_s>  find_font_variant(std::string_view name, std::string_view variant) const;

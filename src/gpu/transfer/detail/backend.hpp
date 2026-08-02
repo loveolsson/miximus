@@ -24,8 +24,8 @@ class backend_i
     backend_i& operator=(const backend_i&) = delete;
     backend_i& operator=(backend_i&&)      = delete;
 
-    size_t size() const { return size_; }
-    void*  data() const { return data_; }
+    size_t size() const noexcept { return size_; }
+    void*  data() const noexcept { return data_; }
 
     bool bind_texture(texture_s* texture);
     bool unbind_texture();
@@ -38,7 +38,7 @@ class backend_i
   protected:
     backend_i(size_t size, direction_e direction);
 
-    texture_s* texture() const
+    texture_s* texture() const noexcept
     {
         assert(texture_ != nullptr);
         return texture_;
