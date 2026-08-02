@@ -57,9 +57,10 @@ caches and potentially multiple graph evaluations for the same logical scene.
 The fixed loop-local timing arithmetic has been replaced by an anchor-based scheduler with an internal steady clock,
 explicit epochs, monotonic frame identities, coordinated PTS gaps, and a replaceable late-frame policy. The current
 provisional policy permits an evaluation up to one frame late and skips every older evaluation in one decision. Input
-selection is now PTS-aware for DeckLink capture, and DeckLink and NDI outputs select program frames by mapping their
-physical presentation times into the absolute program scheduling-clock domain. The remaining source and output
-integrations are the important limitations addressed by later stages.
+selection is now PTS-aware for DeckLink and NDI capture. DeckLink, NDI, and screen outputs select program frames by
+mapping their physical presentation times into the absolute program scheduling-clock domain. Source-policy tuning,
+extended hardware/network validation, and future FFmpeg integration are the important limitations addressed by later
+stages.
 
 The current graph frame performs these operations:
 
@@ -72,8 +73,8 @@ The current graph frame performs these operations:
 7. call `complete()` on every node.
 
 This preserves a stable graph, advances every node through `prepare()`, gives active sources an opportunity to submit
-work before painting, and keeps render-thread GL destruction. DeckLink input now uses the submission pass to select and
-start a PTS-aligned transfer ticket that execution subsequently awaits. Other media inputs have not migrated yet.
+work before painting, and keeps render-thread GL destruction. DeckLink and NDI inputs use the submission pass to select
+and start a PTS-aligned transfer ticket that execution subsequently awaits. Future media inputs have not migrated yet.
 `prepare()` also still combines configuration maintenance, device lifecycle, status updates, queue advancement,
 allocation, and per-frame acquisition in several existing nodes.
 
@@ -712,8 +713,7 @@ Exit criteria:
 
 ### Stage 5: DeckLink scheduled output
 
-**Status:** Absolute-time cadence selection, program-frame preroll, and configurable buffering implemented; long-running
-hardware stress verification remains
+**Status:** Implementation and targeted hardware stress validation complete; multi-day endurance validation remains
 
 Each completed GPU download now retains its absolute target time until the DeckLink completion
 callback consumes it. The callback uses the completed frame's hardware reference timestamp to map the next DeckLink
@@ -731,6 +731,12 @@ existing asynchronous stop/restart path and recreates the affected stream; prese
 change is not a requirement. The output control path waits off the render thread for the bounded initial download-slot
 set before exposing the stream. This prevents asynchronous pool growth from appearing as avoidable program-frame
 repeats.
+
+Deterministic tests cover absolute-time selection, cadence conversion, callback jitter, starvation, and bounded queue
+behavior. Hardware loopback has been exercised at matching and 60-versus-60000/1001 rates, through repeated mode
+changes, under ordinary desktop load, and with controlled render-thread stalls. Those runs verified recovery without
+render-thread frame loss and drove the removal of the former watermark-based timing path. They do not replace the
+planned multi-day soak or independent-device testing.
 
 Deliverables:
 
@@ -780,7 +786,7 @@ Exit criteria:
 
 ### Stage 7: NDI input and output
 
-**Status:** In progress; raw timed input and absolute-time buffered output cadence implemented
+**Status:** Implementation complete and loopback-verified; rate-mismatch and network-delay stress validation remains
 
 NDI input now drains raw SDK frames continuously, converts sender timestamps into relative source PTS, and passes them
 through the same templated clock estimator/timed-source queue used by DeckLink. It starts only the exact active-closure
@@ -808,7 +814,16 @@ Exit criteria:
 
 ### Stage 8: screen output
 
-**Status:** Pending
+**Status:** Buffered absolute-time presentation implemented and hardware-verified; compositor-stall and extended
+rate-mismatch validation remains
+
+Screen output now owns a presentation thread, a bounded set of shared render slots, explicit preroll, and an
+absolute-time output timeline. The render thread acquires a free slot without waiting, renders the program frame, and
+submits it with the frame context's target time. The presentation thread estimates the physical swap cadence, selects
+the corresponding program target, explicitly repeats or discards frames, and retires slots only after their GL sync
+has completed. Status exposes queue, slot, repeat/drop, acquire-miss, latency, completion-interval, and measured-refresh
+metrics. Physical presentation was verified smooth alongside DeckLink and NDI loopback, including a controlled
+render-delay run; longer compositor-stall and non-matching-refresh tests remain.
 
 Deliverables:
 
