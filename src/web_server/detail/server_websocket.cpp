@@ -1,12 +1,14 @@
 #include "logger/logger.hpp"
 #include "static_files/files.hpp"
+#include "types/web_message_json.hpp"
+#include "types/web_message_request.hpp"
 #include "web_server/detail/server_impl.hpp"
-#include "web_server/payload_create.hpp"
 #include "web_server/payload_parse.hpp"
 
 #include <boost/asio/post.hpp>
 #include <nlohmann/json.hpp>
 
+#include <exception>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -71,50 +73,51 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
 
     switch (*action) {
         case action_e::ping:
-            send(hdl, create_ping_response_payload());
+            send(hdl, web_message::ping_response_s{});
             break;
 
         case action_e::subscribe: {
-            nlohmann::json response;
-            const auto     topic = get_topic_from_payload(doc);
-            const auto     token = get_token_from_payload(doc);
-
-            if (topic.has_value()) {
-                connection->second.set_subscription(*topic, true);
-                get_connections_by_topic(*topic).emplace(hdl);
-                response = create_result_payload(token);
-            } else {
-                response = create_error_payload(token, error_e::invalid_topic);
+            const std::string                token(get_token_from_payload(doc));
+            web_message::subscribe_request_s request;
+            try {
+                request = doc.get<web_message::subscribe_request_s>();
+            } catch (const std::exception&) {
+                send(hdl, web_message::error_s{.token = token, .error = error_e::invalid_topic});
+                break;
             }
 
-            send(hdl, response);
+            connection->second.set_subscription(request.topic, true);
+            get_connections_by_topic(request.topic).emplace(hdl);
+            send(hdl, web_message::result_s{.token = token});
             break;
         }
 
         case action_e::unsubscribe: {
-            const auto topic = get_topic_from_payload(doc);
-            const auto token = get_token_from_payload(doc);
-
-            if (!topic.has_value()) {
-                send(hdl, create_error_payload(token, error_e::invalid_topic));
-                break;
-            }
-            if (!connection->second.has_subscription(*topic)) {
-                send(hdl, create_error_payload(token, error_e::not_found));
+            const std::string                  token(get_token_from_payload(doc));
+            web_message::unsubscribe_request_s request;
+            try {
+                request = doc.get<web_message::unsubscribe_request_s>();
+            } catch (const std::exception&) {
+                send(hdl, web_message::error_s{.token = token, .error = error_e::invalid_topic});
                 break;
             }
 
-            connection->second.set_subscription(*topic, false);
-            get_connections_by_topic(*topic).erase(hdl);
-            send(hdl, create_result_payload(token));
+            if (!connection->second.has_subscription(request.topic)) {
+                send(hdl, web_message::error_s{.token = token, .error = error_e::not_found});
+                break;
+            }
+
+            connection->second.set_subscription(request.topic, false);
+            get_connections_by_topic(request.topic).erase(hdl);
+            send(hdl, web_message::result_s{.token = token});
             break;
         }
 
         case action_e::command: {
-            const auto token      = get_token_from_payload(doc);
-            const auto error_code = handle_user_command(std::move(doc), connection->second.id);
+            const std::string token(get_token_from_payload(doc));
+            const auto        error_code = handle_user_command(std::move(doc), connection->second.id);
             if (error_code != error_e::no_error) {
-                send(hdl, create_error_payload(token, error_code));
+                send(hdl, web_message::error_s{.token = token, .error = error_code});
             }
             break;
         }
@@ -133,7 +136,11 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
     const auto id = next_connection_id_++;
     connections_.emplace(hdl, websocket_connection{.id = id, .topics = {}});
     connections_by_id_.emplace(id, hdl);
-    send(hdl, create_socket_info_payload(id, static_files::get_web_files().bundle_hash));
+    send(hdl,
+         web_message::socket_info_s{
+             .id          = id,
+             .bundle_hash = std::string(static_files::get_web_files().bundle_hash),
+         });
 }
 
 void web_server_impl::on_fail(const con_hdl_t& hdl)

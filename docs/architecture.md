@@ -157,21 +157,41 @@ The embedded server and protocol are implemented in:
 
 Commands use request tokens for result/error correlation. Broadcast mutations include `origin_id`; clients normally ignore their own echo. Connection removal is deliberately processed even for the originating client because the server may remove an older connection as a side effect of enforcing connection limits.
 
+WebSocket payload contracts live in `src/types/web_message.hpp`. The transport parses the common action/topic envelope,
+then typed subscriptions deserialize each command into an owning request struct before dispatch. Dynamic node options
+remain `nlohmann::json` members because their shape is selected by node type. Outgoing producers pass described message
+structs directly to the existing JSON send and broadcast functions; nlohmann ADL conversion happens at that boundary
+before asynchronous posting. The base `server.hpp` remains lightweight, while producers include
+`web_server/typed_server.hpp` for typed subscription parsing. HTTP responses use the same typed contracts, including the
+configuration envelope; heterogeneous option and node-status values remain JSON inside those envelopes.
+
 The browser graph is never authoritative. Update native validation/defaults first, then mirror the accepted shape in TypeScript.
 
 ## Runtime status and registry versions
 
-Nodes publish runtime information with:
+Status payloads are C++-defined JSON contracts described with Boost.Describe. Nodes publish a complete logical batch
+with designated initialization:
 
 ```cpp
-status_registry->write(node_id, key, value);
+status_registry->write(
+    node_id,
+    status::connected_status_s{
+        .connected = true,
+    });
 ```
 
-Writes are thread-safe and ignored when the stored value is unchanged. Nodes publishing several related values use a
-scoped per-node writer so the registry is locked and the node ID is looked up only once. Changed values are accumulated
-directly into one pending delta object per node, which is moved into the WebSocket broadcast at frame end;
+The described struct converts to JSON through nlohmann ADL at the call boundary. The registry updates the flat
+node-status object one member at a time; writes are thread-safe and unchanged values are ignored. Changed values are
+accumulated into one pending delta object per node, which is moved into the WebSocket broadcast at frame end;
 `web/src/nodes/status_store.ts` shallow-merges it. Initial config and explicit `node_status` requests return full
-snapshots.
+snapshots. Optional status members serialize as `null` when absent so a later update can explicitly clear an earlier
+value.
+
+The native `miximus_typescript_generator` traverses the same descriptions and maintains
+`web/src/generated/json_contracts.ts`. It also exports the native protocol enums. The generated `node_status_s` type is
+used by WebSocket messages, the client store, status layouts, and status-backed dropdown keys, so native and web status
+names cannot drift silently. Normal native builds run the generator before checking whether the web client needs to be
+rebuilt. Cross-compilation uses the committed generated file because target executables cannot run on the host.
 
 Long lists must not be rebuilt every frame. DeckLink, NDI, and font registries expose atomic version counters. Nodes remember the last version and regenerate lists only after a change. Dependent lists also track their selection; for example, changing a font family regenerates `font_variants` without rebuilding `font_names`.
 

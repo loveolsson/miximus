@@ -11,19 +11,20 @@ import { shallowReactive, watch } from "vue";
 import type { AbstractNode, NodeInterface } from "@baklavajs/core";
 import NumericComponent from "./NumericOption.vue";
 import { NumericInterface, type NumericOptions } from "../numeric";
+import type { vec2_t } from "@/generated/json_contracts";
 
-type Vec2NodeInterface = NodeInterface<[number, number]> & {
+type Vec2NodeInterface = NodeInterface<vec2_t> & {
   numericOptions: NumericOptions;
 };
 
 const props = defineProps<{
-  modelValue: [number, number];
+  modelValue: vec2_t;
   node: AbstractNode;
   intf: Vec2NodeInterface;
 }>();
 
 const emit = defineEmits<{
-  (e: "update:modelValue", value: [number, number]): void;
+  (e: "update:modelValue", value: vec2_t): void;
 }>();
 
 const xInterface = shallowReactive(

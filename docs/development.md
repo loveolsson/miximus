@@ -128,6 +128,11 @@ A complete node generally requires native and web changes.
 8. Add sources to the group's `CMakeLists.txt`.
 9. Ensure the group is invoked from `nodes::register_all_nodes()`.
 
+Define runtime status batches in `src/types/node_status.hpp`, describe every field with `BOOST_DESCRIBE_STRUCT`, and
+publish them through the typed node-status writer. Do not add raw string-key status writes or `nlohmann::json` members
+to a status contract. The native build regenerates `web/src/generated/json_contracts.ts`; unsupported member types stop
+generation at compile time.
+
 Node registration also owns persisted schema evolution. Version 1 is implicit for a factory-only registration. `node_definition_s::migrations` is an append-only vector: element 0 migrates version 1 to 2, element 1 migrates version 2 to 3, and so on. The current schema version is derived from the vector length, so every schema bump necessarily has one ordered migration. Keep each node's migration chain in a separate `<node>_migrations.hpp/.cpp` pair; a shared file is appropriate for a templated node family with one shared schema. Option migrations mutate the options object; input/output interface migrations rename the corresponding endpoint of saved connections. Migrations must throw if their claimed source data cannot be converted safely. Do not bump the schema for implementation-only changes.
 
 ### Web side
@@ -149,6 +154,7 @@ Protocol actions/topics and payloads span:
 
 - `src/types/action.hpp`
 - `src/types/topic.hpp`
+- `src/types/web_message.hpp`
 - `src/web_server/`
 - `src/core/adapters/adapter_websocket.cpp`
 - `web/src/messages.ts`
@@ -156,6 +162,16 @@ Protocol actions/topics and payloads span:
 - `web/src/server_sync.ts`
 
 Update all applicable layers together. Preserve request token handling, `origin_id` feedback suppression, and the special handling of server-side connection displacement.
+The TypeScript `action_e`, `topic_e`, and `error_e` declarations are generated from their native enums; change the C++
+definition and let `miximus_typescript_generator` update the client contract rather than editing those declarations in
+`messages.ts`.
+
+Define fixed WebSocket envelopes and payload fields as described structs in `src/types/web_message.hpp`. Include
+`web_server/typed_server.hpp`, then pass those structs directly to the existing JSON send and broadcast methods;
+nlohmann ADL conversion keeps serialization at the transport boundary. Incoming typed commands deserialize to owning
+request structs before dispatch. Keep node options and individual node-status values as JSON members where their schemas
+are intentionally selected at runtime. The generator writes the complete shared client contracts to
+`web/src/generated/json_contracts.ts`; `web/src/messages.ts` only re-exports them.
 
 ## CMake and external libraries
 

@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
-import type { SettingsOption, StatusDropdownInterface } from "../interfaces";
+import type { settings_option_s, StatusDropdownInterface } from "../interfaces";
 import { get_node_status } from "../status_store";
 import { vNodeOptionTab } from "./node_option_tab";
 
@@ -36,14 +36,14 @@ const emit = defineEmits<{
 
 const localValue = ref(props.modelValue);
 
-const availableList = computed((): SettingsOption[] => {
+const availableList = computed((): settings_option_s[] => {
   const status = get_node_status(props.intf.nodeData.node_id);
   const list = status[props.intf.list_key];
   if (!Array.isArray(list)) {
     return [];
   }
   return list.filter(
-    (item): item is SettingsOption =>
+    (item): item is settings_option_s =>
       typeof item === "object" &&
       item !== null &&
       typeof (item as Record<string, unknown>).id === "string" &&

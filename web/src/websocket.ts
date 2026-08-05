@@ -1,7 +1,7 @@
 import EventEmitter from "eventemitter3";
 import type { InjectionKey } from "vue";
 import { action_e, topic_e } from "./messages";
-import type { command_s, error_s, message_s, socket_info_s, subscribe_s } from "./messages";
+import type { command_s, error_s, message_s, socket_info_s, subscribe_request_s } from "./messages";
 
 interface ws_events {
   on_connected: [number];
@@ -112,7 +112,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.info = info;
 
     for (const topic of this.subscriptions.keys()) {
-      const payload: subscribe_s = {
+      const payload: subscribe_request_s = {
         action: action_e.subscribe,
         topic: topic,
       };
@@ -183,17 +183,18 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       return false;
     }
 
+    let payload: message_s = msg;
     if (cb) {
       const token = String(this.next_token++);
       this.callbacks.set(token, cb as message_callback_t<message_s>);
-      msg.token = token;
+      payload = { ...msg, token };
     }
 
-    if (msg.action !== action_e.ping) {
-      console.log("Sent", msg);
+    if (payload.action !== action_e.ping) {
+      console.log("Sent", payload);
     }
 
-    this.ws?.send(JSON.stringify(msg));
+    this.ws?.send(JSON.stringify(payload));
     return true;
   }
 

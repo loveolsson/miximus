@@ -1,11 +1,11 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture, t_framebuffer, t_f64, t_rect } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { DropdownInterface, NumericInterface } from "./interfaces";
 
 export const DrawBoxNode = defineNode({
-  type: type_e.draw_box,
+  type: node_type_e.draw_box,
   title: "Draw Box",
   inputs: {
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
@@ -23,7 +23,7 @@ export const DrawBoxNode = defineNode({
 });
 
 export const InfiniteMultiviewerNode = defineNode({
-  type: type_e.infinite_multiviewer,
+  type: node_type_e.infinite_multiviewer,
   title: "Infinite Multiviewer",
   inputs: {
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
@@ -35,7 +35,7 @@ export const InfiniteMultiviewerNode = defineNode({
 });
 
 export const MixTex2Node = defineNode({
-  type: type_e.mix_tex_2,
+  type: node_type_e.mix_tex_2,
   title: "Mix A/B",
   inputs: {
     fb_in: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),

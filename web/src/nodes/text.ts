@@ -1,7 +1,7 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
 import { t_framebuffer, t_vec2 } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import {
   FocusTrackingStringInterface,
   FontRegistryRefreshInterface,
@@ -11,7 +11,7 @@ import {
 } from "./interfaces";
 
 const TextNode = defineNode({
-  type: type_e.text,
+  type: node_type_e.text,
   title: "Text",
   inputs: {
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),

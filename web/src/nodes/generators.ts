@@ -1,7 +1,7 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
 import { CheckboxInterface } from "@baklavajs/renderer-vue";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { t_texture, t_vec2 } from "./interface_types";
 import { DropdownInterface, Vec2Interface } from "./interfaces";
 
@@ -23,7 +23,7 @@ const patterns = [
 ] as const;
 
 export const TestPatternNode = defineNode({
-  type: type_e.test_pattern,
+  type: node_type_e.test_pattern,
   title: "Test pattern",
   inputs: {
     resolution: () =>

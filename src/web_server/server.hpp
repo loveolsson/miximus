@@ -41,6 +41,9 @@ class server_s
     virtual void send_message_sync(const nlohmann::json& msg, int64_t connection_id) = 0;
     virtual void broadcast_message(const nlohmann::json& msg)                        = 0;
     virtual void broadcast_message_sync(const nlohmann::json& msg)                   = 0;
+
+    template <typename Message, typename Callback>
+    void subscribe(topic_e topic, Callback&& callback);
 };
 
 std::unique_ptr<server_s> create_web_server();

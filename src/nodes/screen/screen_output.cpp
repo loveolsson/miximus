@@ -11,6 +11,7 @@
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
+#include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
 #include <chrono>
@@ -56,25 +57,27 @@ class node_impl : public node_i
         }
 
         const auto metrics = presenter_->metrics();
-        auto       writer  = status_registry->write_node(id_);
-        writer.write("clock_quality",
-                     metrics.uses_nominal_cadence ? "Nominal monitor cadence" : "Swap completion estimate");
-        writer.write("frames_submitted", metrics.frames_submitted);
-        writer.write("program_queue_overflow_drops", metrics.program_queue_overflow_drops);
-        writer.write("program_timing_drops", metrics.program_timing_drops);
-        writer.write("program_frames_repeated", metrics.program_frames_repeated);
-        writer.write("program_frames_missing", metrics.program_frames_missing);
-        writer.write("output_intervals_skipped", metrics.output_intervals_skipped);
-        writer.write("swaps_completed", metrics.swaps_completed);
-        writer.write("render_acquire_misses", metrics.render_acquire_misses);
-        writer.write("queued_frames", metrics.queued_frames);
-        writer.write("render_slots", metrics.slots);
-        writer.write("render_slots_free", metrics.free_slots);
-        writer.write("render_slots_retiring", metrics.retiring_slots);
-        writer.write("output_latency_us", metrics.output_latency_us);
-        writer.write("program_selection_offset_us", metrics.program_selection_offset_us);
-        writer.write("completion_interval_max_us", metrics.completion_interval_max_us);
-        writer.write("measured_refresh_hz", metrics.measured_refresh_hz);
+        status_registry->write(
+            id_,
+            status::screen_output_metrics_status_s{
+                .clock_quality = metrics.uses_nominal_cadence ? "Nominal monitor cadence" : "Swap completion estimate",
+                .frames_submitted             = metrics.frames_submitted,
+                .program_queue_overflow_drops = metrics.program_queue_overflow_drops,
+                .program_timing_drops         = metrics.program_timing_drops,
+                .program_frames_repeated      = metrics.program_frames_repeated,
+                .program_frames_missing       = metrics.program_frames_missing,
+                .output_intervals_skipped     = metrics.output_intervals_skipped,
+                .swaps_completed              = metrics.swaps_completed,
+                .render_acquire_misses        = metrics.render_acquire_misses,
+                .queued_frames                = metrics.queued_frames,
+                .render_slots                 = metrics.slots,
+                .render_slots_free            = metrics.free_slots,
+                .render_slots_retiring        = metrics.retiring_slots,
+                .output_latency_us            = metrics.output_latency_us,
+                .program_selection_offset_us  = metrics.program_selection_offset_us,
+                .completion_interval_max_us   = metrics.completion_interval_max_us,
+                .measured_refresh_hz          = metrics.measured_refresh_hz,
+            });
         next_metrics_status_ = now + 1s;
     }
 
@@ -92,7 +95,8 @@ class node_impl : public node_i
     {
         const auto monitor_version = gpu::context_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
-            app->status_registry()->write(id_, "monitors", gpu::context_s::get_monitors());
+            app->status_registry()->write(id_,
+                                          status::monitor_options_status_s{.monitors = gpu::context_s::get_monitors()});
         }
 
         const auto enabled                = state.get_option<bool>("enabled", false);
@@ -112,7 +116,7 @@ class node_impl : public node_i
         }
 
         if (!enabled) {
-            app->status_registry()->write(id_, "connected", false);
+            app->status_registry()->write(id_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -145,7 +149,7 @@ class node_impl : public node_i
             presenter_->start();
         }
 
-        app->status_registry()->write(id_, "connected", true);
+        app->status_registry()->write(id_, status::connected_status_s{.connected = true});
         publish_metrics(app->status_registry());
     }
 

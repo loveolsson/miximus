@@ -54,6 +54,8 @@ if(BUILD_TESTING)
         tests/output_timing_test.cpp
         tests/source_timing_test.cpp
         tests/command_line_options_test.cpp
+        tests/node_status_registry_test.cpp
+        tests/web_message_test.cpp
     )
     target_link_libraries(
         core_test

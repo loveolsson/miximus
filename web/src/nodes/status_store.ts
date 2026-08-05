@@ -1,12 +1,13 @@
 import { reactive } from "vue";
+import type { node_status_s } from "@/generated/json_contracts";
 
-export type NodeStatus = Record<string, unknown>;
+export type { node_status_s } from "@/generated/json_contracts";
 
 const store = reactive({
-  statuses: {} as Record<string, NodeStatus>,
+  statuses: {} as Record<string, node_status_s>,
 });
 
-export function update_node_status(node_id: string, status: NodeStatus): void {
+export function update_node_status(node_id: string, status: node_status_s): void {
   store.statuses[node_id] = {
     ...(store.statuses[node_id] ?? {}),
     ...status,
@@ -17,7 +18,7 @@ export function remove_node_status(node_id: string): void {
   delete store.statuses[node_id];
 }
 
-export function get_node_status(node_id: string): NodeStatus {
+export function get_node_status(node_id: string): node_status_s {
   return store.statuses[node_id] ?? {};
 }
 

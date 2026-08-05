@@ -1,12 +1,13 @@
+#include "types/web_message_json.hpp"
 #include "web_server/detail/path.hpp"
 #include "web_server/detail/server_impl.hpp"
-#include "web_server/payload_create.hpp"
 #include "web_server/payload_parse.hpp"
 
 #include <boost/url/segments_view.hpp>
 #include <nlohmann/json.hpp>
 
 #include <exception>
+#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -27,18 +28,24 @@ void handle_keyed_json_get(const Connection&                               conne
     using namespace websocketpp::http;
 
     if (!getter) {
-        const auto error = miximus::web_server::create_error_payload(
-            "", miximus::error_e::internal_error, std::format("{} service not available", service_name));
-        connection->set_body(error.dump());
+        const miximus::web_message::error_s error{
+            .token   = "",
+            .error   = miximus::error_e::internal_error,
+            .message = std::format("{} service not available", service_name),
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::service_unavailable);
         return;
     }
 
     const auto result = getter(id);
     if (!result.has_value()) {
-        const auto error = miximus::web_server::create_error_payload(
-            "", miximus::error_e::not_found, std::format("Node {} not found", id));
-        connection->set_body(error.dump());
+        const miximus::web_message::error_s error{
+            .token   = "",
+            .error   = miximus::error_e::not_found,
+            .message = std::format("Node {} not found", id),
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::not_found);
         return;
     }
@@ -65,9 +72,12 @@ bool prepare_api_route(const Connection& connection, std::string_view method, st
         return false;
     }
     if (!method_allowed) {
-        const auto error =
-            miximus::web_server::create_error_payload("", miximus::error_e::internal_error, "Method not allowed");
-        connection->set_body(error.dump());
+        const miximus::web_message::error_s error{
+            .token   = "",
+            .error   = miximus::error_e::internal_error,
+            .message = "Method not allowed",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::method_not_allowed);
         return false;
     }
@@ -90,8 +100,12 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& connect
     connection->replace_header("Content-Type", "application/json");
 
     if (!path_starts_with(api_path, {"v1"})) {
-        const auto error = create_error_payload("", error_e::not_found, "Invalid API endpoint");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::not_found,
+            .message = "Invalid API endpoint",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::not_found);
         return;
     }
@@ -124,12 +138,20 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& connect
             return;
         }
 
-        const auto error = create_error_payload("", error_e::not_found, "Invalid API endpoint");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::not_found,
+            .message = "Invalid API endpoint",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::not_found);
     } catch (const std::exception& error) {
-        const auto payload = create_error_payload("", error_e::internal_error, error.what());
-        connection->set_body(payload.dump());
+        const web_message::error_s payload{
+            .token   = "",
+            .error   = error_e::internal_error,
+            .message = error.what(),
+        };
+        connection->set_body(nlohmann::json(payload).dump());
         connection->set_status(status_code::internal_server_error);
     }
 }
@@ -159,8 +181,12 @@ void web_server_impl::handle_api_node_request(const server_t::connection_ptr& co
         }
     }
 
-    const auto error = create_error_payload("", error_e::not_found, "Invalid API endpoint");
-    connection->set_body(error.dump());
+    const web_message::error_s error{
+        .token   = "",
+        .error   = error_e::not_found,
+        .message = "Invalid API endpoint",
+    };
+    connection->set_body(nlohmann::json(error).dump());
     connection->set_status(status_code::not_found);
 }
 
@@ -180,8 +206,12 @@ void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& c
     using namespace websocketpp::http;
 
     if (!config_getters_.node_config) {
-        const auto error = create_error_payload("", error_e::internal_error, "Config service not available");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::internal_error,
+            .message = "Config service not available",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::service_unavailable);
         return;
     }
@@ -191,8 +221,12 @@ void web_server_impl::handle_api_v1_get_config(const server_t::connection_ptr& c
         connection->set_body(config.dump());
         connection->set_status(status_code::ok);
     } catch (const std::exception& error) {
-        const auto payload = create_error_payload("", error_e::internal_error, error.what());
-        connection->set_body(payload.dump());
+        const web_message::error_s payload{
+            .token   = "",
+            .error   = error_e::internal_error,
+            .message = error.what(),
+        };
+        connection->set_body(nlohmann::json(payload).dump());
         connection->set_status(status_code::internal_server_error);
     }
 }
@@ -202,8 +236,12 @@ void web_server_impl::handle_api_v1_get_status(const server_t::connection_ptr& c
     using namespace websocketpp::http;
 
     if (!config_getters_.node_statuses) {
-        const auto error = create_error_payload("", error_e::internal_error, "Node status service not available");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::internal_error,
+            .message = "Node status service not available",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::service_unavailable);
         return;
     }
@@ -212,8 +250,12 @@ void web_server_impl::handle_api_v1_get_status(const server_t::connection_ptr& c
         connection->set_body(config_getters_.node_statuses().dump());
         connection->set_status(status_code::ok);
     } catch (const std::exception& error) {
-        const auto payload = create_error_payload("", error_e::internal_error, error.what());
-        connection->set_body(payload.dump());
+        const web_message::error_s payload{
+            .token   = "",
+            .error   = error_e::internal_error,
+            .message = error.what(),
+        };
+        connection->set_body(nlohmann::json(payload).dump());
         connection->set_status(status_code::internal_server_error);
     }
 }
@@ -224,48 +266,72 @@ void web_server_impl::handle_api_v1_post_control(const server_t::connection_ptr&
 
     const std::string& body = connection->get_request_body();
     if (body.empty()) {
-        const auto error = create_error_payload("", error_e::malformed_payload, "Request body is required");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::malformed_payload,
+            .message = "Request body is required",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::bad_request);
         return;
     }
 
     auto doc = nlohmann::json::parse(body, nullptr, false);
     if (doc.is_discarded() || !doc.is_object()) {
-        const auto error = create_error_payload("", error_e::malformed_payload, "Invalid JSON in request body");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::malformed_payload,
+            .message = "Invalid JSON in request body",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::bad_request);
         return;
     }
 
     const auto action = get_action_from_payload(doc);
     if (!action.has_value()) {
-        const auto error = create_error_payload("", error_e::malformed_payload, "Invalid action");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::malformed_payload,
+            .message = "Invalid action",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::bad_request);
         return;
     }
     if (*action != action_e::command) {
-        const auto error =
-            create_error_payload("", error_e::malformed_payload, "Only command actions are supported via HTTP API");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::malformed_payload,
+            .message = "Only command actions are supported via HTTP API",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::bad_request);
         return;
     }
 
     if (!get_topic_from_payload(doc).has_value()) {
-        const auto error = create_error_payload("", error_e::invalid_topic, "Invalid topic");
-        connection->set_body(error.dump());
+        const web_message::error_s error{
+            .token   = "",
+            .error   = error_e::invalid_topic,
+            .message = "Invalid topic",
+        };
+        connection->set_body(nlohmann::json(error).dump());
         connection->set_status(status_code::bad_request);
         return;
     }
 
     const auto error_code = handle_user_command(std::move(doc), -1);
     if (error_code != error_e::no_error) {
-        const bool             invalid_topic = error_code == error_e::invalid_topic;
-        const std::string_view message       = invalid_topic ? "Invalid topic" : "Topic service not available";
+        const bool invalid_topic = error_code == error_e::invalid_topic;
         connection->set_status(invalid_topic ? status_code::bad_request : status_code::service_unavailable);
-        connection->set_body(create_error_payload("", error_code, message).dump());
+        connection->set_body(
+            nlohmann::json(web_message::error_s{
+                               .token   = "",
+                               .error   = error_code,
+                               .message = invalid_topic ? "Invalid topic" : "Topic service not available",
+                           })
+                .dump());
         return;
     }
 

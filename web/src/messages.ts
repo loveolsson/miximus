@@ -1,175 +1,32 @@
-export const enum action_e {
-  subscribe = "subscribe",
-  unsubscribe = "unsubscribe",
-  ping = "ping",
-  socket_info = "socket_info",
-  command = "command",
-  result = "result",
-  error = "error",
-}
-
-export const enum topic_e {
-  add_node = "add_node",
-  remove_node = "remove_node",
-  add_connection = "add_connection",
-  remove_connection = "remove_connection",
-  update_node = "update_node",
-  font_registry = "font_registry",
-  config = "config",
-  node_status = "node_status",
-}
-
-export const enum type_e {
-  application_settings = "application_settings",
-  vec2 = "vec2",
-  rect = "rect",
-  math_f64 = "math_f64",
-  math_vec2 = "math_vec2",
-  lerp_f64 = "lerp_f64",
-  lerp_vec2 = "lerp_vec2",
-  lerp_rect = "lerp_rect",
-  easing_f64 = "easing_f64",
-  clamp_f64 = "clamp_f64",
-  clamp_vec2 = "clamp_vec2",
-  clamp_rect = "clamp_rect",
-  screen_output = "screen_output",
-  decklink_input = "decklink_input",
-  decklink_output = "decklink_output",
-  ndi_input = "ndi_input",
-  ndi_output = "ndi_output",
-  framebuffer = "framebuffer",
-  framebuffer_to_texture = "framebuffer_to_texture",
-  teleprompter = "teleprompter",
-  text = "text",
-  sinus_source = "sinus_source",
-  circle_source = "circle_source",
-  test_pattern = "test_pattern",
-  draw_box = "draw_box",
-  infinite_multiviewer = "infinite_multiviewer",
-  mix_tex_2 = "mix_tex_2",
-  switch_f64_4 = "switch_f64_4",
-  switch_f64_8 = "switch_f64_8",
-  switch_vec2_4 = "switch_vec2_4",
-  switch_vec2_8 = "switch_vec2_8",
-  switch_rect_4 = "switch_rect_4",
-  switch_rect_8 = "switch_rect_8",
-  switch_tex_4 = "switch_tex_4",
-  switch_tex_8 = "switch_tex_8",
-}
-
-export type position_t = [number, number];
-
-export interface options_s {
-  node_visual_position?: position_t;
-  name?: string;
-  [index: string]: unknown;
-}
-
-export interface node_s {
-  id: string;
-  type: type_e;
-  schema_version?: number;
-  options: options_s;
-}
-
-export interface connection_s {
-  from_node: string;
-  from_interface: string;
-  to_node: string;
-  to_interface: string;
-}
-
-export interface message_s {
-  action: action_e;
-  token?: string;
-}
-
-export interface socket_info_s extends message_s {
-  action: action_e.socket_info;
-  id: number;
-  bundle_hash: string;
-}
-
-export interface subscribe_s extends message_s {
-  action: action_e.subscribe;
-  topic: topic_e;
-}
-
-export interface unsubscribe_s extends message_s {
-  action: action_e.unsubscribe;
-  topic: topic_e;
-}
-
-export interface command_s extends message_s {
-  action: action_e.command;
-  topic: topic_e;
-  origin_id?: number;
-}
-
-export interface command_add_node_s extends command_s {
-  topic: topic_e.add_node;
-  node: node_s;
-}
-
-export interface command_update_node_s extends command_s {
-  topic: topic_e.update_node;
-  id: string;
-  options: options_s;
-  /** Present on server broadcasts; client update commands do not set it. */
-  has_corrected_values?: boolean;
-}
-
-export interface command_remove_node_s extends command_s {
-  topic: topic_e.remove_node;
-  id: string;
-}
-
-export interface command_add_connection_s extends command_s {
-  topic: topic_e.add_connection;
-  connection: connection_s;
-}
-
-export interface command_remove_connection_s extends command_s {
-  topic: topic_e.remove_connection;
-  connection: connection_s;
-}
-
-export interface command_config_s extends command_s {
-  topic: topic_e.config;
-}
-
-export interface command_font_registry_s extends command_s {
-  topic: topic_e.font_registry;
-  command: "refresh";
-}
-
-export interface result_s extends message_s {
-  action: action_e.result;
-}
-
-interface config_s {
-  schema_version: number;
-  nodes: node_s[];
-  connections: connection_s[];
-  status?: Record<string, Record<string, unknown>>;
-}
-
-export interface result_config_s extends result_s {
-  config: config_s;
-}
-
-export interface command_node_status_s extends command_s {
-  topic: topic_e.node_status;
-  id: string;
-  status: Record<string, unknown>;
-}
-
-export interface result_node_status_s extends result_s {
-  id: string;
-  status: Record<string, unknown>;
-}
-
-export interface error_s extends message_s {
-  action: action_e.error;
-  error: string;
-}
+export { action_e, error_e, font_registry_command_e, topic_e } from "@/generated/json_contracts";
+export type {
+  add_connection_command_s,
+  add_connection_request_s,
+  add_node_command_s,
+  add_node_request_s,
+  command_s,
+  config_request_s,
+  config_result_s,
+  config_s,
+  connection_s,
+  error_s,
+  font_registry_request_s,
+  message_s,
+  node_s,
+  node_status_command_s,
+  node_status_request_s,
+  node_status_result_s,
+  node_status_s,
+  options_s,
+  remove_connection_command_s,
+  remove_connection_request_s,
+  remove_node_command_s,
+  remove_node_request_s,
+  result_s,
+  socket_info_s,
+  subscribe_request_s,
+  unsubscribe_request_s,
+  update_node_command_s,
+  update_node_request_s,
+  vec2_t,
+} from "@/generated/json_contracts";

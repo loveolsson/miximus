@@ -11,7 +11,12 @@
 import { computed, inject, ref } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
 import type { FontRegistryRefreshInterface } from "../interfaces";
-import { action_e, topic_e, type command_font_registry_s } from "@/messages";
+import {
+  action_e,
+  font_registry_command_e,
+  topic_e,
+  type font_registry_request_s,
+} from "@/messages";
 import { websocket_key } from "@/websocket";
 
 defineProps<{
@@ -32,11 +37,11 @@ function refreshFonts(): void {
   pending.value = true;
   result.value = "";
 
-  const sent = ws.send<command_font_registry_s>(
+  const sent = ws.send<font_registry_request_s>(
     {
       action: action_e.command,
       topic: topic_e.font_registry,
-      command: "refresh",
+      command: font_registry_command_e.refresh,
     },
     (response) => {
       pending.value = false;

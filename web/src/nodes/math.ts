@@ -2,8 +2,9 @@ import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
 import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { t_f64, t_vec2, t_rect } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { DropdownInterface, NumericInterface, Vec2Interface } from "./interfaces";
+import type { vec2_t } from "@/generated/json_contracts";
 
 const scalarOptions = { precision: 2, step: 0.1 } as const;
 const factorOptions = { precision: 2, step: 0.05, min: 0, max: 1 } as const;
@@ -43,7 +44,7 @@ const easingOptions = [
 ] as const;
 
 export const F64MathNode = defineNode({
-  type: type_e.math_f64,
+  type: node_type_e.math_f64,
   title: "F64 Math",
   inputs: {
     a: () => new NumericInterface("A", 0, scalarOptions).use(setType, t_f64),
@@ -56,20 +57,20 @@ export const F64MathNode = defineNode({
 });
 
 export const Vec2MathNode = defineNode({
-  type: type_e.math_vec2,
+  type: node_type_e.math_vec2,
   title: "Vec2 Math",
   inputs: {
-    a: () => new NodeInterface<[number, number]>("A", [0, 0]).use(setType, t_vec2),
-    b: () => new NodeInterface<[number, number]>("B", [0, 0]).use(setType, t_vec2),
+    a: () => new NodeInterface<vec2_t>("A", [0, 0]).use(setType, t_vec2),
+    b: () => new NodeInterface<vec2_t>("B", [0, 0]).use(setType, t_vec2),
     operation: () => new DropdownInterface("Operation", "add", ["add", "sub", "mul", "min", "max"]),
   },
   outputs: {
-    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+    res: () => new NodeInterface<vec2_t>("Result", [0, 0]).use(setType, t_vec2),
   },
 });
 
 export const F64LerpNode = defineNode({
-  type: type_e.lerp_f64,
+  type: node_type_e.lerp_f64,
   title: "F64 Lerp",
   inputs: {
     a: () => new NumericInterface("A", 0, scalarOptions).use(setType, t_f64),
@@ -83,21 +84,21 @@ export const F64LerpNode = defineNode({
 });
 
 export const Vec2LerpNode = defineNode({
-  type: type_e.lerp_vec2,
+  type: node_type_e.lerp_vec2,
   title: "Vec2 Lerp",
   inputs: {
-    a: () => new NodeInterface<[number, number]>("A", [0, 0]).use(setType, t_vec2),
-    b: () => new NodeInterface<[number, number]>("B", [0, 0]).use(setType, t_vec2),
+    a: () => new NodeInterface<vec2_t>("A", [0, 0]).use(setType, t_vec2),
+    b: () => new NodeInterface<vec2_t>("B", [0, 0]).use(setType, t_vec2),
     t: () => new NumericInterface("T", 0, factorOptions).use(setType, t_f64),
     allow_overshoot: () => new CheckboxInterface("Allow overshoot", false).setPort(false),
   },
   outputs: {
-    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+    res: () => new NodeInterface<vec2_t>("Result", [0, 0]).use(setType, t_vec2),
   },
 });
 
 export const RectLerpNode = defineNode({
-  type: type_e.lerp_rect,
+  type: node_type_e.lerp_rect,
   title: "Rect Lerp",
   inputs: {
     a: () => new NodeInterface<null>("A", null).use(setType, t_rect),
@@ -111,7 +112,7 @@ export const RectLerpNode = defineNode({
 });
 
 export const F64EasingNode = defineNode({
-  type: type_e.easing_f64,
+  type: node_type_e.easing_f64,
   title: "Easing",
   inputs: {
     t: () => new NumericInterface("T", 0, factorOptions).use(setType, t_f64),
@@ -123,7 +124,7 @@ export const F64EasingNode = defineNode({
 });
 
 export const F64ClampNode = defineNode({
-  type: type_e.clamp_f64,
+  type: node_type_e.clamp_f64,
   title: "F64 Clamp",
   inputs: {
     value: () => new NumericInterface("Value", 0, scalarOptions).use(setType, t_f64),
@@ -136,7 +137,7 @@ export const F64ClampNode = defineNode({
 });
 
 export const Vec2ClampNode = defineNode({
-  type: type_e.clamp_vec2,
+  type: node_type_e.clamp_vec2,
   title: "Vec2 Clamp",
   inputs: {
     value: () => new Vec2Interface("Value", [0, 0], scalarOptions).use(setType, t_vec2),
@@ -144,12 +145,12 @@ export const Vec2ClampNode = defineNode({
     max: () => new Vec2Interface("Max", [1, 1], scalarOptions).use(setType, t_vec2),
   },
   outputs: {
-    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+    res: () => new NodeInterface<vec2_t>("Result", [0, 0]).use(setType, t_vec2),
   },
 });
 
 export const RectClampNode = defineNode({
-  type: type_e.clamp_rect,
+  type: node_type_e.clamp_rect,
   title: "Rect Clamp",
   inputs: {
     value: () => new NodeInterface<null>("Value", null).use(setType, t_rect),

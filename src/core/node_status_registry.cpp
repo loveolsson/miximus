@@ -4,41 +4,23 @@
 
 namespace miximus::core {
 
-node_status_registry_s::writer_s::writer_s(node_status_registry_s*      registry,
-                                           std::unique_lock<std::mutex> lock,
-                                           const std::string*           node_id,
-                                           nlohmann::json*              state)
-    : registry_(registry)
-    , lock_(std::move(lock))
-    , node_id_(node_id)
-    , state_(state)
+void node_status_registry_s::write(std::string_view node_id, nlohmann::json status)
 {
-}
+    std::scoped_lock lock(mutex_);
+    auto [state, _]         = states_.try_emplace(std::string(node_id), nlohmann::json::object());
+    nlohmann::json* pending = nullptr;
 
-void node_status_registry_s::writer_s::write(std::string_view key, nlohmann::json value)
-{
-    if (auto it = state_->find(key); it != state_->end() && *it == value) {
-        return;
+    for (auto& [name, value] : status.items()) {
+        if (const auto current = state->second.find(name); current != state->second.end() && *current == value) {
+            continue;
+        }
+
+        state->second[name] = value;
+        if (pending == nullptr) {
+            pending = &pending_.try_emplace(state->first, nlohmann::json::object()).first->second;
+        }
+        (*pending)[name] = std::move(value);
     }
-
-    (*state_)[std::string(key)] = value;
-    if (pending_ == nullptr) {
-        pending_ = &registry_->pending_.try_emplace(*node_id_, nlohmann::json::object()).first->second;
-    }
-    (*pending_)[std::string(key)] = std::move(value);
-}
-
-void node_status_registry_s::write(std::string_view node_id, std::string_view key, nlohmann::json value)
-{
-    auto writer = write_node(node_id);
-    writer.write(key, std::move(value));
-}
-
-node_status_registry_s::writer_s node_status_registry_s::write_node(std::string_view node_id)
-{
-    std::unique_lock lock(mutex_);
-    auto [it, _] = states_.try_emplace(std::string(node_id), nlohmann::json::object());
-    return {this, std::move(lock), &it->first, &it->second};
 }
 
 void node_status_registry_s::remove_node(std::string_view node_id)

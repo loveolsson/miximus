@@ -2,6 +2,7 @@ import { markRaw, reactive } from "vue";
 import { NodeInterface } from "@baklavajs/core";
 import type { NodeData } from "./status_store";
 import type { NumericOptions } from "./numeric";
+import type { node_status_s, settings_option_s, vec2_t } from "@/generated/json_contracts";
 
 export { NumericInterface, type NumericOptions } from "./numeric";
 
@@ -28,14 +29,10 @@ export class FocusTrackingStringInterface extends NodeInterface<string> {
  * Two-component vector input.  Has a port by default so it can also
  * receive a connection; the component shows when unconnected.
  */
-export class Vec2Interface extends NodeInterface<[number, number]> {
+export class Vec2Interface extends NodeInterface<vec2_t> {
   readonly numericOptions: NumericOptions;
 
-  constructor(
-    name: string,
-    defaultValue: [number, number] = [0, 0],
-    numericOptions: NumericOptions = {},
-  ) {
+  constructor(name: string, defaultValue: vec2_t = [0, 0], numericOptions: NumericOptions = {}) {
     super(name, defaultValue);
     this.numericOptions = numericOptions;
     this.setComponent(markRaw(Vec2Component));
@@ -48,9 +45,9 @@ export class Vec2Interface extends NodeInterface<[number, number]> {
  */
 export class StatusDropdownInterface extends NodeInterface<string> {
   readonly nodeData: NodeData;
-  readonly list_key: string;
+  readonly list_key: StatusOptionKey;
 
-  constructor(name: string, listKey: string, defaultValue = "") {
+  constructor(name: string, listKey: StatusOptionKey, defaultValue = "") {
     super(name, defaultValue);
     this.list_key = listKey;
     this.nodeData = reactive({ node_id: "" });
@@ -61,9 +58,9 @@ export class StatusDropdownInterface extends NodeInterface<string> {
 
 /** Dropdown with a fixed list of values declared by the node definition. */
 export class DropdownInterface extends NodeInterface<string> {
-  readonly items: readonly SettingsOption[];
+  readonly items: readonly settings_option_s[];
 
-  constructor(name: string, defaultValue: string, items: readonly (string | SettingsOption)[]) {
+  constructor(name: string, defaultValue: string, items: readonly (string | settings_option_s)[]) {
     super(name, defaultValue);
     this.items = items.map((item) => (typeof item === "string" ? { id: item, label: item } : item));
     this.setComponent(markRaw(DropdownComponent));
@@ -71,15 +68,20 @@ export class DropdownInterface extends NodeInterface<string> {
   }
 }
 
-export interface SettingsOption {
-  readonly id: string;
-  readonly label: string;
-}
+export type { settings_option_s } from "@/generated/json_contracts";
+
+type StatusOptionKey = {
+  [Key in keyof node_status_s]-?: NonNullable<
+    node_status_s[Key]
+  > extends readonly settings_option_s[]
+    ? Key
+    : never;
+}[keyof node_status_s];
 
 export type NodeStatusFormat = "active" | "busy" | "failure" | "integer" | "locked" | "temperature";
 
 export interface NodeStatusField {
-  readonly key: string;
+  readonly key: keyof node_status_s;
   readonly label: string;
   readonly format?: NodeStatusFormat;
   readonly precision?: number;

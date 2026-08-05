@@ -2,7 +2,7 @@ import { defineNode, NodeInterface } from "@baklavajs/core";
 import { TextInputInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_framebuffer, t_f64, t_rect } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import {
   FontRegistryRefreshInterface,
   NumericInterface,
@@ -10,7 +10,7 @@ import {
 } from "./interfaces";
 
 export const TeleprompterNode = defineNode({
-  type: type_e.teleprompter,
+  type: node_type_e.teleprompter,
   title: "Teleprompter",
   inputs: {
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),

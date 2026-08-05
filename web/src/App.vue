@@ -42,14 +42,14 @@ import { useServerSync } from "./server_sync";
 import {
   action_e,
   topic_e,
-  type command_add_node_s,
-  type command_remove_node_s,
-  type command_update_node_s,
-  type command_add_connection_s,
-  type command_remove_connection_s,
-  type command_config_s,
-  type command_node_status_s,
-  type result_config_s,
+  type add_node_command_s,
+  type remove_node_command_s,
+  type update_node_command_s,
+  type add_connection_command_s,
+  type remove_connection_command_s,
+  type config_request_s,
+  type node_status_command_s,
+  type config_result_s,
 } from "./messages";
 
 const OPEN_SETTINGS_COMMAND = "OPEN_APPLICATION_SETTINGS";
@@ -111,7 +111,7 @@ const {
 // ---------------------------------------------------------------------------
 
 // --- add_node ---
-ws.subscribe<command_add_node_s>(topic_e.add_node, (msg, is_origin) => {
+ws.subscribe<add_node_command_s>(topic_e.add_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
   if (msg.node.id === SETTINGS_NODE_ID) return;
   if (is_origin) {
@@ -124,7 +124,7 @@ ws.subscribe<command_add_node_s>(topic_e.add_node, (msg, is_origin) => {
 });
 
 // --- remove_node ---
-ws.subscribe<command_remove_node_s>(topic_e.remove_node, (msg, is_origin) => {
+ws.subscribe<remove_node_command_s>(topic_e.remove_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
   if (msg.id === SETTINGS_NODE_ID) return;
   if (is_origin) return;
@@ -132,7 +132,7 @@ ws.subscribe<command_remove_node_s>(topic_e.remove_node, (msg, is_origin) => {
 });
 
 // --- update_node ---
-ws.subscribe<command_update_node_s>(topic_e.update_node, (msg, is_origin) => {
+ws.subscribe<update_node_command_s>(topic_e.update_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
   if (msg.id === SETTINGS_NODE_ID) {
     applyApplicationSettings(msg.options);
@@ -143,7 +143,7 @@ ws.subscribe<command_update_node_s>(topic_e.update_node, (msg, is_origin) => {
 });
 
 // --- add_connection ---
-ws.subscribe<command_add_connection_s>(topic_e.add_connection, (msg, is_origin) => {
+ws.subscribe<add_connection_command_s>(topic_e.add_connection, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
   if (is_origin) return;
   handle_server_add_connection(msg.connection);
@@ -156,13 +156,13 @@ ws.subscribe<command_add_connection_s>(topic_e.add_connection, (msg, is_origin) 
 // that side-effect. handle_server_remove_connection is idempotent (returns
 // early when the connection is already gone), so echoes of our own explicit
 // removals are also safe.
-ws.subscribe<command_remove_connection_s>(topic_e.remove_connection, (msg, _is_origin) => {
+ws.subscribe<remove_connection_command_s>(topic_e.remove_connection, (msg, _is_origin) => {
   if (msg.action !== action_e.command) return;
   handle_server_remove_connection(msg.connection);
 });
 
 // --- node_status (push broadcasts) ---
-ws.subscribe<command_node_status_s>(topic_e.node_status, (msg) => {
+ws.subscribe<node_status_command_s>(topic_e.node_status, (msg) => {
   if (msg.action !== action_e.command) return;
   update_node_status(msg.id, msg.status);
   handle_server_init_node_status(msg.id);
@@ -170,14 +170,14 @@ ws.subscribe<command_node_status_s>(topic_e.node_status, (msg) => {
 
 // --- on_connected: request config via one-shot send (action:result response) ---
 ws.on("on_connected", () => {
-  const payload: command_config_s = {
+  const payload: config_request_s = {
     action: action_e.command,
     topic: topic_e.config,
   };
 
-  ws.send<command_config_s, result_config_s>(payload, (msg) => {
+  ws.send<config_request_s, config_result_s>(payload, (msg) => {
     if (msg.action !== action_e.result) return;
-    const config = (msg as result_config_s).config;
+    const config = (msg as config_result_s).config;
 
     // Clear existing graph first.
     for (const node of [...baklava.editor.graph.nodes]) {

@@ -48,7 +48,7 @@
 import { computed, nextTick, reactive, ref } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
 import type { NodeStatusField, NodeStatusInterface } from "../interfaces";
-import { get_node_status, type NodeStatus } from "../status_store";
+import { get_node_status, type node_status_s } from "../status_store";
 
 const props = defineProps<{
   modelValue: null;
@@ -80,7 +80,7 @@ interface StatusDetail {
   reported: boolean;
 }
 
-const status = computed<NodeStatus>(() => get_node_status(props.intf.nodeData.node_id));
+const status = computed<node_status_s>(() => get_node_status(props.intf.nodeData.node_id));
 
 const isConnected = computed((): boolean | null => {
   if ("connected" in status.value) return status.value["connected"] as boolean;

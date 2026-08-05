@@ -1,8 +1,8 @@
 add_library(web_server
     server.hpp
     server_fwd.hpp
+    typed_server.hpp
     server.cpp
-    payload_create.hpp
     payload_parse.hpp
     detail/server_impl.cpp
     detail/server_api.cpp
@@ -29,6 +29,7 @@ PRIVATE
     Threads::Threads
     websocketpp::websocketpp
     logger
+    miximus_types
 PUBLIC
     nlohmann_json::nlohmann_json
     magic_enum::magic_enum

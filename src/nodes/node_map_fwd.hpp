@@ -1,6 +1,6 @@
 #pragma once
-#include "nodes/connection.hpp"
 #include "nodes/interface_fwd.hpp"
+#include "types/connection.hpp"
 #include "utils/transparent_string_hash.hpp"
 
 #include <functional>

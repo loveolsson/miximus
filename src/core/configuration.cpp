@@ -3,9 +3,9 @@
 #include "core/node_manager.hpp"
 #include "core/node_status_registry.hpp"
 #include "logger/logger.hpp"
-#include "nodes/connection.hpp"
 #include "nodes/node.hpp"
 #include "nodes/system/register.hpp"
+#include "types/connection.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/lookup.hpp"
 
@@ -212,7 +212,7 @@ void configuration_s::load(json config)
     }
 
     for (const auto& connection : connections) {
-        const auto parsed = connection.get<nodes::connection_s>();
+        const auto parsed = connection.get<connection_s>();
         require_no_error(
             node_manager_.handle_add_connection(parsed, -1), "create connection from node", parsed.from_node);
     }

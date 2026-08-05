@@ -1,6 +1,6 @@
 import { reactive } from "vue";
 import type { Reactive } from "vue";
-import { action_e, topic_e, type command_update_node_s, type options_s } from "./messages";
+import { action_e, topic_e, type update_node_request_s, type options_s } from "./messages";
 import { ApplicationSettingsNode } from "./nodes/system";
 import type { ws_wrapper } from "./websocket";
 
@@ -19,7 +19,7 @@ export function useApplicationSettings(ws: ws_wrapper) {
   for (const [key, intf] of Object.entries(node.inputs)) {
     intf.events.setValue.subscribe(eventToken, (value) => {
       if (serverUpdates.has(intf)) return;
-      ws.send<command_update_node_s>({
+      ws.send<update_node_request_s>({
         action: action_e.command,
         topic: topic_e.update_node,
         id: SETTINGS_NODE_ID,

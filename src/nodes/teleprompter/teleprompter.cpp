@@ -16,6 +16,7 @@
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
+#include "types/node_status_json.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
@@ -106,11 +107,15 @@ class node_impl : public node_i
         const bool font_name_changed = status_font_name_.observe(font_name);
 
         if (font_list_changed) {
-            app->status_registry()->write(id_, "font_names", app->font_registry()->get_font_options());
+            app->status_registry()->write(
+                id_, status::font_names_status_s{.font_names = app->font_registry()->get_font_options()});
         }
         if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
-                id_, "font_variants", app->font_registry()->get_font_variant_options(font_name));
+                id_,
+                status::font_variants_status_s{
+                    .font_variants = app->font_registry()->get_font_variant_options(font_name),
+                });
         }
 
         if (!textured_quad_) {

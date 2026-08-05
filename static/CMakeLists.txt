@@ -24,6 +24,10 @@ add_custom_target(build_web_if_changed ALL
   VERBATIM
 )
 
+if(TARGET generate_typescript_contracts)
+  add_dependencies(build_web_if_changed generate_typescript_contracts)
+endif()
+
 # Step 2: hash web/dist; remove web_files.cpp if the bundled output needs refreshing
 add_custom_target(check_web_files_hash ALL
   COMMAND ${CMAKE_COMMAND} 

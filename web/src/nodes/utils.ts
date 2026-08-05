@@ -1,27 +1,28 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture, t_framebuffer, t_f64, t_vec2, t_rect } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { NumericInterface, Vec2Interface } from "./interfaces";
+import type { vec2_t } from "@/generated/json_contracts";
 
 const scalarOptions = { precision: 2, step: 0.1 } as const;
 const normalizedOptions = { precision: 2, step: 0.05 } as const;
 const framebufferSizeOptions = { precision: 0, step: 1, min: 256, max: 4096 } as const;
 
 export const Vec2Node = defineNode({
-  type: type_e.vec2,
+  type: node_type_e.vec2,
   title: "Vec2",
   inputs: {
     x: () => new NumericInterface("X", 0, scalarOptions).use(setType, t_f64),
     y: () => new NumericInterface("Y", 0, scalarOptions).use(setType, t_f64),
   },
   outputs: {
-    res: () => new NodeInterface<[number, number]>("Result", [0, 0]).use(setType, t_vec2),
+    res: () => new NodeInterface<vec2_t>("Result", [0, 0]).use(setType, t_vec2),
   },
 });
 
 export const RectNode = defineNode({
-  type: type_e.rect,
+  type: node_type_e.rect,
   title: "Rect",
   inputs: {
     pos: () => new Vec2Interface("Pos", [0, 0], normalizedOptions).use(setType, t_vec2),
@@ -33,7 +34,7 @@ export const RectNode = defineNode({
 });
 
 export const FrameBufferNode = defineNode({
-  type: type_e.framebuffer,
+  type: node_type_e.framebuffer,
   title: "Framebuffer",
   inputs: {
     size: () =>
@@ -45,7 +46,7 @@ export const FrameBufferNode = defineNode({
 });
 
 export const FramebufferToTextureNode = defineNode({
-  type: type_e.framebuffer_to_texture,
+  type: node_type_e.framebuffer_to_texture,
   title: "FB → Texture",
   inputs: {
     fb: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),

@@ -4,6 +4,7 @@
 #include "core/node_status_registry.hpp"
 #include "logger/logger.hpp"
 #include "nodes/system/register.hpp"
+#include "types/node_status_json.hpp"
 
 #include <thread>
 
@@ -38,10 +39,12 @@ void render_thread_delay_test_s::publish_status(app_state_s* app) const
         return;
     }
 
-    auto writer = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
-    writer.write("test_render_delay_ms", delay_->count());
-    writer.write("test_render_delay_every", every_frames_);
-    writer.write("test_render_delay_injections", injections_);
+    app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+                                  status::render_delay_test_status_s{
+                                      .test_render_delay_ms         = delay_->count(),
+                                      .test_render_delay_every      = every_frames_,
+                                      .test_render_delay_injections = injections_,
+                                  });
 }
 
 } // namespace miximus::core::test_instrumentation

@@ -1,11 +1,12 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { NumericInterface } from "./interfaces";
 import { t_f64, t_rect, t_texture, t_vec2 } from "./interface_types";
+import type { vec2_t } from "@/generated/json_contracts";
 
 function createSwitchNode<T>(
-  type: type_e,
+  type: node_type_e,
   title: string,
   slotCount: 4 | 8,
   outputKey: string,
@@ -59,63 +60,63 @@ function createSwitchNode<T>(
 const createNumberInterface = (label: string) =>
   new NodeInterface<number>(label, 0).use(setType, t_f64);
 const createVec2Interface = (label: string) =>
-  new NodeInterface<[number, number]>(label, [0, 0]).use(setType, t_vec2);
+  new NodeInterface<vec2_t>(label, [0, 0]).use(setType, t_vec2);
 const createRectInterface = (label: string) =>
   new NodeInterface<null>(label, null).use(setType, t_rect);
 const createTextureInterface = (label: string) =>
   new NodeInterface<null>(label, null).use(setType, t_texture);
 
 export const SwitchF64_4Node = createSwitchNode(
-  type_e.switch_f64_4,
+  node_type_e.switch_f64_4,
   "Switch Number 4",
   4,
   "res",
   createNumberInterface,
 );
 export const SwitchF64_8Node = createSwitchNode(
-  type_e.switch_f64_8,
+  node_type_e.switch_f64_8,
   "Switch Number 8",
   8,
   "res",
   createNumberInterface,
 );
 export const SwitchVec2_4Node = createSwitchNode(
-  type_e.switch_vec2_4,
+  node_type_e.switch_vec2_4,
   "Switch Vec2 4",
   4,
   "res",
   createVec2Interface,
 );
 export const SwitchVec2_8Node = createSwitchNode(
-  type_e.switch_vec2_8,
+  node_type_e.switch_vec2_8,
   "Switch Vec2 8",
   8,
   "res",
   createVec2Interface,
 );
 export const SwitchRect_4Node = createSwitchNode(
-  type_e.switch_rect_4,
+  node_type_e.switch_rect_4,
   "Switch Rect 4",
   4,
   "res",
   createRectInterface,
 );
 export const SwitchRect_8Node = createSwitchNode(
-  type_e.switch_rect_8,
+  node_type_e.switch_rect_8,
   "Switch Rect 8",
   8,
   "res",
   createRectInterface,
 );
 export const SwitchTex_4Node = createSwitchNode(
-  type_e.switch_tex_4,
+  node_type_e.switch_tex_4,
   "Switch Texture 4",
   4,
   "tex",
   createTextureInterface,
 );
 export const SwitchTex_8Node = createSwitchNode(
-  type_e.switch_tex_8,
+  node_type_e.switch_tex_8,
   "Switch Texture 8",
   8,
   "tex",

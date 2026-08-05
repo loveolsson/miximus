@@ -10,6 +10,7 @@
 #include "gpu/context.hpp"
 #include "logger/logger.hpp"
 #include "nodes/system/register.hpp"
+#include "types/node_status_json.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"
 #include "utils/thread_priority.hpp"
@@ -63,23 +64,25 @@ void publish_scheduler_status(core::app_state_s*                     app,
     };
 
     const auto& context = app->frame_context();
-    auto        writer  = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
-    writer.write("clock_source", std::string(scheduler.clock_name()));
-    writer.write("frame_number", context.frame_number);
-    writer.write("pts_flicks", context.pts.count());
-    writer.write("render_duration_us", to_microseconds(metrics.render_duration));
-    writer.write("render_duration_max_us", to_microseconds(metrics.render_duration_max));
-    writer.write("render_duration_max_frame", metrics.render_duration_max_frame);
-    writer.write("start_lateness_us", to_microseconds(metrics.start_lateness));
-    writer.write("start_lateness_max_us", to_microseconds(metrics.start_lateness_max));
-    writer.write("start_lateness_max_frame", metrics.start_lateness_max_frame);
-    writer.write("deadline_margin_us", to_microseconds(metrics.deadline_margin));
-    writer.write("deadline_margin_min_us", to_microseconds(metrics.deadline_margin_min));
-    writer.write("deadline_margin_min_frame", metrics.deadline_margin_min_frame);
-    writer.write("deadline_misses_total", metrics.deadline_misses_total);
-    writer.write("skipped_frames_last", metrics.skipped_frames);
-    writer.write("skipped_frames_total", metrics.skipped_frames_total);
-    writer.write("sustained_overload", metrics.sustained_overload);
+    app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+                                  status::application_scheduler_status_s{
+                                      .clock_source              = std::string(scheduler.clock_name()),
+                                      .frame_number              = context.frame_number,
+                                      .pts_flicks                = context.pts.count(),
+                                      .render_duration_us        = to_microseconds(metrics.render_duration),
+                                      .render_duration_max_us    = to_microseconds(metrics.render_duration_max),
+                                      .render_duration_max_frame = metrics.render_duration_max_frame,
+                                      .start_lateness_us         = to_microseconds(metrics.start_lateness),
+                                      .start_lateness_max_us     = to_microseconds(metrics.start_lateness_max),
+                                      .start_lateness_max_frame  = metrics.start_lateness_max_frame,
+                                      .deadline_margin_us        = to_microseconds(metrics.deadline_margin),
+                                      .deadline_margin_min_us    = to_microseconds(metrics.deadline_margin_min),
+                                      .deadline_margin_min_frame = metrics.deadline_margin_min_frame,
+                                      .deadline_misses_total     = metrics.deadline_misses_total,
+                                      .skipped_frames_last       = metrics.skipped_frames,
+                                      .skipped_frames_total      = metrics.skipped_frames_total,
+                                      .sustained_overload        = metrics.sustained_overload,
+                                  });
 }
 
 int miximus_main(core::command_line_options_s command_line_options, std::string_view executable_name)

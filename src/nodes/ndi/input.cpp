@@ -13,6 +13,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
 #include <chrono>
@@ -29,18 +30,6 @@ using namespace miximus::nodes::ndi;
 using namespace miximus::nodes::ndi::detail;
 
 auto log() { return getlog("ndi"); }
-
-template <typename T>
-nlohmann::json status_value(const std::optional<T>& value)
-{
-    return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
-}
-
-nlohmann::json status_microseconds(const std::optional<utils::flicks>& value)
-{
-    return value.has_value() ? nlohmann::json(std::chrono::duration_cast<std::chrono::microseconds>(*value).count())
-                             : nlohmann::json(nullptr);
-}
 
 class node_impl : public node_i
 {
@@ -73,32 +62,36 @@ class node_impl : public node_i
         }
 
         const auto metrics = capture_->metrics();
-        auto       writer  = status_registry->write_node(id_);
-        writer.write("frames_received", metrics.frames_received);
-        writer.write("invalid_frames", metrics.invalid_frames);
-        writer.write("receiver_video_drops", metrics.receiver_video_drops);
-        writer.write("receiver_queue_depth", metrics.receiver_queue_depth);
-        writer.write("upload_slot_drops", metrics.upload_slot_drops);
-        writer.write("source_queue_pushed", metrics.source_queue.pushed);
-        writer.write("source_queue_depth", metrics.source_queue.queued);
-        writer.write("source_queue_overflow_drops", metrics.source_queue.overflow_drops);
-        writer.write("source_queue_selection_drops", metrics.source_queue.selection_drops);
-        writer.write("source_queue_repeated", metrics.source_queue.repeated);
-        writer.write("source_queue_starvation_repeats", metrics.source_queue.starvation_repeats);
-        writer.write("source_queue_timing_repeats", metrics.source_queue.timing_repeats);
-        writer.write("source_queue_missing", metrics.source_queue.missing);
-        writer.write("source_queue_discontinuities", metrics.source_queue.discontinuities);
-        writer.write("source_queue_transfer_failures", metrics.source_queue.transfer_failures);
-        writer.write("source_queue_transfer_cancellations", metrics.source_queue.transfer_cancellations);
-        writer.write("source_recovered_rate", status_value(metrics.source_queue.recovered_rate));
-        writer.write("source_observed_rate", status_value(metrics.source_queue.observed_rate));
-        writer.write("source_phase_offset_us", status_microseconds(metrics.source_queue.phase_offset));
-        writer.write("source_phase_error_us", status_microseconds(metrics.source_queue.phase_error));
-        writer.write("source_phase_adjustment_us", status_microseconds(metrics.source_queue.phase_adjustment));
-        writer.write("source_repeat_next_frame_lead_min_us",
-                     status_microseconds(metrics.source_queue.repeat_next_frame_lead_min));
-        writer.write("source_repeat_next_frame_lead_max_us",
-                     status_microseconds(metrics.source_queue.repeat_next_frame_lead_max));
+        status_registry->write(id_,
+                               status::ndi_input_metrics_status_s{
+                                   .frames_received      = metrics.frames_received,
+                                   .invalid_frames       = metrics.invalid_frames,
+                                   .receiver_video_drops = metrics.receiver_video_drops,
+                                   .receiver_queue_depth = metrics.receiver_queue_depth,
+                                   .upload_slot_drops    = metrics.upload_slot_drops,
+                               });
+        status_registry->write(
+            id_,
+            status::source_timing_status_s{
+                .source_queue_pushed                  = metrics.source_queue.pushed,
+                .source_queue_depth                   = metrics.source_queue.queued,
+                .source_queue_overflow_drops          = metrics.source_queue.overflow_drops,
+                .source_queue_selection_drops         = metrics.source_queue.selection_drops,
+                .source_queue_repeated                = metrics.source_queue.repeated,
+                .source_queue_starvation_repeats      = metrics.source_queue.starvation_repeats,
+                .source_queue_timing_repeats          = metrics.source_queue.timing_repeats,
+                .source_queue_missing                 = metrics.source_queue.missing,
+                .source_queue_discontinuities         = metrics.source_queue.discontinuities,
+                .source_queue_transfer_failures       = metrics.source_queue.transfer_failures,
+                .source_queue_transfer_cancellations  = metrics.source_queue.transfer_cancellations,
+                .source_recovered_rate                = metrics.source_queue.recovered_rate,
+                .source_observed_rate                 = metrics.source_queue.observed_rate,
+                .source_phase_offset_us               = metrics.source_queue.phase_offset,
+                .source_phase_error_us                = metrics.source_queue.phase_error,
+                .source_phase_adjustment_us           = metrics.source_queue.phase_adjustment,
+                .source_repeat_next_frame_lead_min_us = metrics.source_queue.repeat_next_frame_lead_min,
+                .source_repeat_next_frame_lead_max_us = metrics.source_queue.repeat_next_frame_lead_max,
+            });
         next_metrics_status_ = now + 1s;
     }
 
@@ -125,7 +118,7 @@ class node_impl : public node_i
         stop_capture();
         if (!selection.second || selection.first.empty()) {
             capture_selection_.commit(selection);
-            status_registry->write(id_, "connected", false);
+            status_registry->write(id_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -151,7 +144,8 @@ class node_impl : public node_i
 
         const auto current_version = app->ndi_registry()->get_source_list_version();
         if (source_version_.observe(current_version)) {
-            status_registry->write(id_, "source_names", app->ndi_registry()->get_source_options());
+            status_registry->write(
+                id_, status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()});
         }
 
         const auto selection =
@@ -164,7 +158,10 @@ class node_impl : public node_i
             capture_->advance_frames(frame.pts, frame.target_time, frame.discontinuity);
         }
 
-        status_registry->write(id_, "connected", capture_ && capture_->phase() == input_capture_s::phase_e::running);
+        status_registry->write(id_,
+                               status::connected_status_s{
+                                   .connected = capture_ && capture_->phase() == input_capture_s::phase_e::running,
+                               });
     }
 
     void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final

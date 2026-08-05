@@ -8,15 +8,14 @@ import { ws_wrapper } from "./websocket";
 import {
   action_e,
   topic_e,
-  type_e,
-  type command_add_connection_s,
-  type command_add_node_s,
-  type command_remove_connection_s,
-  type command_remove_node_s,
-  type command_update_node_s,
+  type add_connection_request_s,
+  type add_node_request_s,
+  type remove_connection_request_s,
+  type remove_node_request_s,
+  type update_node_request_s,
   type connection_s,
   type options_s,
-  type position_t,
+  type vec2_t,
 } from "./messages";
 import {
   find_connection,
@@ -106,13 +105,13 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
     positionTimers.delete(nodeId);
   }
 
-  function debouncePosition(nodeId: string, position: position_t): void {
+  function debouncePosition(nodeId: string, position: vec2_t): void {
     clearPositionTimer(nodeId);
     positionTimers.set(
       nodeId,
       setTimeout(() => {
         positionTimers.delete(nodeId);
-        ws.send<command_update_node_s>({
+        ws.send<update_node_request_s>({
           action: action_e.command,
           topic: topic_e.update_node,
           id: nodeId,
@@ -129,7 +128,7 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
     for (const [key, intf] of Object.entries(node.inputs)) {
       intf.events.setValue.subscribe(nodeToken, (value) => {
         if (serverMutations.contains("set_value", intf)) return;
-        ws.send<command_update_node_s>({
+        ws.send<update_node_request_s>({
           action: action_e.command,
           topic: topic_e.update_node,
           id: node.id,
@@ -154,7 +153,7 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
         () => node.title,
         (title) => {
           if (serverMutations.contains("set_title", node.id)) return;
-          ws.send<command_update_node_s>({
+          ws.send<update_node_request_s>({
             action: action_e.command,
             topic: topic_e.update_node,
             id: node.id,
@@ -181,12 +180,12 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
 
   function sendAddNode(node: AbstractNode): void {
     const position = node.position;
-    ws.send<command_add_node_s>(
+    ws.send<add_node_request_s>(
       {
         action: action_e.command,
         topic: topic_e.add_node,
         node: {
-          type: node.type as type_e,
+          type: node.type,
           id: node.id,
           options: { node_visual_position: position ? [position.x, position.y] : [0, 0] },
         },
@@ -211,7 +210,7 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
   graph.events.removeNode.subscribe(eventToken, (node) => {
     removeNodeSubscriptions(node.id);
     if (!serverMutations.contains("remove_node", node.id)) {
-      ws.send<command_remove_node_s>({
+      ws.send<remove_node_request_s>({
         action: action_e.command,
         topic: topic_e.remove_node,
         id: node.id,
@@ -224,7 +223,7 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
     const payload = connection_payload(graph, connection.from, connection.to);
     if (!payload) return;
 
-    ws.send<command_add_connection_s>(
+    ws.send<add_connection_request_s>(
       {
         action: action_e.command,
         topic: topic_e.add_connection,
@@ -246,7 +245,7 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
     const payload = connection_payload(graph, connection.from, connection.to);
     if (!payload) return;
 
-    ws.send<command_remove_connection_s>({
+    ws.send<remove_connection_request_s>({
       action: action_e.command,
       topic: topic_e.remove_connection,
       connection: payload,
@@ -279,7 +278,7 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
 
     for (const [key, value] of Object.entries(options)) {
       if (key === "node_visual_position" && Array.isArray(value)) {
-        const [x, y] = value as [number, number];
+        const [x, y] = value as vec2_t;
         clearPositionTimer(id);
         serverMutations.run("set_position", id, () => {
           node.position = { x, y };

@@ -2,7 +2,7 @@ import { defineNode, NodeInterface } from "@baklavajs/core";
 import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { StatusDropdownInterface, NodeStatusInterface, type NodeStatusSection } from "./interfaces";
 
 const decklinkInputStatus: readonly NodeStatusSection[] = [
@@ -202,7 +202,7 @@ const decklinkOutputStatus: readonly NodeStatusSection[] = [
 ];
 
 export const DeckLinkInputNode = defineNode({
-  type: type_e.decklink_input,
+  type: node_type_e.decklink_input,
   title: "DeckLink Input",
   inputs: {
     status: () => new NodeStatusInterface(decklinkInputStatus),
@@ -215,7 +215,7 @@ export const DeckLinkInputNode = defineNode({
 });
 
 export const DeckLinkOutputNode = defineNode({
-  type: type_e.decklink_output,
+  type: node_type_e.decklink_output,
   title: "DeckLink Output",
   inputs: {
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),

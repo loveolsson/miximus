@@ -10,6 +10,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/system/register.hpp"
+#include "types/node_status_json.hpp"
 #include "utils/flicks.hpp"
 #include "web_server/server.hpp"
 
@@ -28,9 +29,9 @@
 namespace {
 auto _log() { return getlog("app"); };
 
-bool is_connection_circular(const miximus::nodes::node_map_t&   nodes,
-                            std::string_view                    target_node_id,
-                            const miximus::nodes::connection_s& initial_con)
+bool is_connection_circular(const miximus::nodes::node_map_t& nodes,
+                            std::string_view                  target_node_id,
+                            const miximus::connection_s&      initial_con)
 {
     std::vector<std::string_view> stack;
     std::set<std::string_view>    visited;
@@ -214,7 +215,7 @@ node_manager_s::handle_update_node(std::string_view id, const json& options, int
     return result;
 }
 
-error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t client_id)
+error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_id)
 {
     using dir_e = nodes::interface_i::dir_e;
     const std::unique_lock lock(nodes_mutex_);
@@ -299,7 +300,7 @@ error_e node_manager_s::handle_add_connection(nodes::connection_s con, int64_t c
     return error_e::no_error;
 }
 
-error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con, int64_t client_id)
+error_e node_manager_s::remove_connection_locked(const connection_s& con, int64_t client_id)
 {
     _log()->info(
         "Removing connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
@@ -346,7 +347,7 @@ error_e node_manager_s::remove_connection_locked(const nodes::connection_s& con,
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_remove_connection(const nodes::connection_s& con, int64_t client_id)
+error_e node_manager_s::handle_remove_connection(const connection_s& con, int64_t client_id)
 {
     const std::unique_lock lock(nodes_mutex_);
     return remove_connection_locked(con, client_id);
@@ -427,11 +428,13 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         app->begin_frame(frame_settings, scheduler.begin_frame(frame_rate));
 
         {
-            auto        writer        = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
             const auto& frame_context = app->frame_context();
-            writer.write("frame_rate", app->frame_settings().frame_rate);
-            writer.write("frame_duration_flicks", frame_context.duration.count());
-            writer.write("epoch", frame_context.epoch);
+            app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+                                          status::application_frame_status_s{
+                                              .frame_rate            = app->frame_settings().frame_rate,
+                                              .frame_duration_flicks = frame_context.duration.count(),
+                                              .epoch                 = frame_context.epoch,
+                                          });
         }
 
         const auto prepare_start   = utils::flicks_now();
@@ -459,15 +462,17 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             const auto to_microseconds = [](utils::flicks duration) {
                 return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
             };
-            auto writer = app->status_registry()->write_node(nodes::system::SETTINGS_NODE_ID);
-            writer.write("prepare_duration_us", to_microseconds(prepare_end - prepare_start));
-            writer.write("submit_duration_us", to_microseconds(submit_end - prepare_end));
-            writer.write("execute_duration_us", to_microseconds(execute_end - submit_end));
-            writer.write("gpu_finish_duration_us", to_microseconds(finish_end - execute_end));
-            writer.write("complete_duration_us", to_microseconds(complete_end - finish_end));
-            writer.write("demanding_node_count", demanding_nodes.size());
-            writer.write("submitted_node_count", app->frame_info.submitted_nodes.size());
-            writer.write("executed_node_count", app->frame_info.executed_nodes.size());
+            app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+                                          status::application_lifecycle_status_s{
+                                              .prepare_duration_us    = to_microseconds(prepare_end - prepare_start),
+                                              .submit_duration_us     = to_microseconds(submit_end - prepare_end),
+                                              .execute_duration_us    = to_microseconds(execute_end - submit_end),
+                                              .gpu_finish_duration_us = to_microseconds(finish_end - execute_end),
+                                              .complete_duration_us   = to_microseconds(complete_end - finish_end),
+                                              .demanding_node_count   = demanding_nodes.size(),
+                                              .submitted_node_count   = app->frame_info.submitted_nodes.size(),
+                                              .executed_node_count    = app->frame_info.executed_nodes.size(),
+                                          });
             next_lifecycle_status_ = now + 1s;
         }
     }

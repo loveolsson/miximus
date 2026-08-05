@@ -110,7 +110,7 @@ void add_registered_node(nodes::node_map_t*                  nodes,
 
 void connect(nodes::node_map_t* nodes, std::string_view from, std::string_view to, std::string_view input_name)
 {
-    nodes::connection_s connection{
+    connection_s connection{
         .from_node      = std::string(from),
         .from_interface = "out",
         .to_node        = std::string(to),

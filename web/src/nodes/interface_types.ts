@@ -4,6 +4,7 @@
  * Conversions are registered once at module-load time.
  */
 import { NodeInterfaceType } from "@baklavajs/interface-types";
+import type { vec2_t } from "@/generated/json_contracts";
 
 /**
  * Color-blind optimized palette (https://personal.sron.nl/~pault/#fig:scheme_muted)
@@ -20,7 +21,7 @@ export const connectionColorMap = new Map<string, string>([
 export const t_texture = new NodeInterfaceType<null>("texture");
 export const t_framebuffer = new NodeInterfaceType<null>("framebuffer");
 export const t_f64 = new NodeInterfaceType<number>("f64");
-export const t_vec2 = new NodeInterfaceType<[number, number]>("vec2");
+export const t_vec2 = new NodeInterfaceType<vec2_t>("vec2");
 export const t_rect = new NodeInterfaceType<null>("rect");
 
 // Allowed implicit conversions for connections.

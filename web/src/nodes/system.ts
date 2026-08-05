@@ -1,17 +1,15 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { markRaw } from "vue";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import { NumericInterface } from "./interfaces";
 import FrameRateOption from "./options/FrameRateOption.vue";
+import type { frame_rate_s } from "@/generated/json_contracts";
 
-export interface FrameRate {
-  numerator: number;
-  denominator: number;
-}
+export type { frame_rate_s } from "@/generated/json_contracts";
 
 export interface FrameRateChoice {
   readonly label: string;
-  readonly value: FrameRate;
+  readonly value: frame_rate_s;
 }
 
 const frameRates: readonly FrameRateChoice[] = [
@@ -25,7 +23,7 @@ const frameRates: readonly FrameRateChoice[] = [
   { label: "60 fps", value: { numerator: 60, denominator: 1 } },
 ];
 
-export class FrameRateInterface extends NodeInterface<FrameRate> {
+export class FrameRateInterface extends NodeInterface<frame_rate_s> {
   readonly choices = frameRates;
 
   constructor() {
@@ -36,7 +34,7 @@ export class FrameRateInterface extends NodeInterface<FrameRate> {
 }
 
 export const ApplicationSettingsNode = defineNode({
-  type: type_e.application_settings,
+  type: node_type_e.application_settings,
   title: "Application Settings",
   inputs: {
     frame_rate: () => new FrameRateInterface(),

@@ -13,6 +13,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
 #include <chrono>
@@ -72,35 +73,43 @@ class node_impl : public node_i
             return;
         }
 
-        const auto metrics = sender_->metrics();
-        auto       writer  = status_registry->write_node(id_);
-        writer.write("program_frames_received", metrics.program_frames_received);
-        writer.write("program_queue_overflow_drops", metrics.program_queue_overflow_drops);
-        writer.write("program_timing_drops", metrics.program_timing_drops);
-        writer.write("program_frames_repeated", metrics.program_frames_repeated);
-        writer.write("program_frames_missing", metrics.program_frames_missing);
-        writer.write("output_intervals_skipped", metrics.output_intervals_skipped);
-        writer.write("frames_sent", metrics.frames_sent);
-        writer.write("queued_frames", metrics.queued_frames);
-        writer.write("output_latency_us", metrics.output_latency_us);
-        writer.write("program_selection_offset_us", metrics.program_selection_offset_us);
+        const auto metrics       = sender_->metrics();
+        const auto output_status = status::ndi_output_metrics_status_s{
+            .program_frames_received      = metrics.program_frames_received,
+            .program_queue_overflow_drops = metrics.program_queue_overflow_drops,
+            .program_timing_drops         = metrics.program_timing_drops,
+            .program_frames_repeated      = metrics.program_frames_repeated,
+            .program_frames_missing       = metrics.program_frames_missing,
+            .output_intervals_skipped     = metrics.output_intervals_skipped,
+            .frames_sent                  = metrics.frames_sent,
+            .queued_frames                = metrics.queued_frames,
+            .output_latency_us            = metrics.output_latency_us,
+            .program_selection_offset_us  = metrics.program_selection_offset_us,
+            .render_target_drops          = render_target_drops_,
+        };
         if (download_stream_) {
             const auto download_metrics = download_stream_->metrics();
-            writer.write("download_slots", download_metrics.slots);
-            writer.write("download_slots_free", download_metrics.free_slots);
-            writer.write("download_slots_rendering", download_metrics.rendering_slots);
-            writer.write("download_slots_queued", download_metrics.queued_slots);
-            writer.write("download_slots_ready", download_metrics.ready_slots);
-            writer.write("download_slots_cpu_reading", download_metrics.cpu_reading_slots);
-            writer.write("download_pending_allocations", download_metrics.pending_allocations);
-            writer.write("download_acquire_misses", download_metrics.acquire_misses);
-            writer.write("download_transfers_completed", download_metrics.transfers_completed);
-            writer.write("download_transfer_failures", download_metrics.transfer_failures);
-            writer.write("download_transfer_duration_total_us", download_metrics.transfer_duration_total_us);
-            writer.write("download_transfer_duration_max_us", download_metrics.transfer_duration_max_us);
-            writer.write("download_allocation_failed", download_metrics.allocation_failed);
+            status_registry->write(id_, output_status);
+            status_registry->write(
+                id_,
+                status::download_stream_status_s{
+                    .download_slots                      = download_metrics.slots,
+                    .download_slots_free                 = download_metrics.free_slots,
+                    .download_slots_rendering            = download_metrics.rendering_slots,
+                    .download_slots_queued               = download_metrics.queued_slots,
+                    .download_slots_ready                = download_metrics.ready_slots,
+                    .download_slots_cpu_reading          = download_metrics.cpu_reading_slots,
+                    .download_pending_allocations        = download_metrics.pending_allocations,
+                    .download_acquire_misses             = download_metrics.acquire_misses,
+                    .download_transfers_completed        = download_metrics.transfers_completed,
+                    .download_transfer_failures          = download_metrics.transfer_failures,
+                    .download_transfer_duration_total_us = download_metrics.transfer_duration_total_us,
+                    .download_transfer_duration_max_us   = download_metrics.transfer_duration_max_us,
+                    .download_allocation_failed          = download_metrics.allocation_failed,
+                });
+        } else {
+            status_registry->write(id_, output_status);
         }
-        writer.write("render_target_drops", render_target_drops_);
         next_metrics_status_ = now + 1s;
     }
 
@@ -128,7 +137,7 @@ class node_impl : public node_i
         render_target_drops_ = 0;
         if (!selection.second) {
             sender_selection_.commit(selection);
-            status_registry->write(id_, "connected", false);
+            status_registry->write(id_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -205,7 +214,10 @@ class node_impl : public node_i
         }
 
         publish_metrics(status_registry);
-        status_registry->write(id_, "connected", sender_ && sender_->phase() == output_sender_s::phase_e::running);
+        status_registry->write(id_,
+                               status::connected_status_s{
+                                   .connected = sender_ && sender_->phase() == output_sender_s::phase_e::running,
+                               });
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

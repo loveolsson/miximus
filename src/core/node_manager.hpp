@@ -34,8 +34,8 @@ class node_manager_s
                                       const nlohmann::json& options,
                                       bool                  has_corrected_values,
                                       int64_t               client_id)                                                            = 0;
-        virtual void emit_add_connection(const nodes::connection_s& con, int64_t client_id)                         = 0;
-        virtual void emit_remove_connection(const nodes::connection_s& con, int64_t client_id)                      = 0;
+        virtual void emit_add_connection(const connection_s& con, int64_t client_id)                                = 0;
+        virtual void emit_remove_connection(const connection_s& con, int64_t client_id)                             = 0;
         virtual void emit_node_status(std::string_view id, const nlohmann::json& status)                            = 0;
 
       public:
@@ -61,7 +61,7 @@ class node_manager_s
     node_status_registry_s*               status_registry_{nullptr};
     std::chrono::steady_clock::time_point next_lifecycle_status_{};
 
-    error_e remove_connection_locked(const nodes::connection_s& con, int64_t client_id);
+    error_e remove_connection_locked(const connection_s& con, int64_t client_id);
 
   public:
     node_manager_s();
@@ -72,8 +72,8 @@ class node_manager_s
     error_e handle_remove_node(std::string_view id, int64_t client_id);
     nodes::set_options_result_s
             handle_update_node(std::string_view id, const nlohmann::json& options, int64_t client_id);
-    error_e handle_add_connection(nodes::connection_s con, int64_t client_id);
-    error_e handle_remove_connection(const nodes::connection_s& con, int64_t client_id);
+    error_e handle_add_connection(connection_s con, int64_t client_id);
+    error_e handle_remove_connection(const connection_s& con, int64_t client_id);
 
     nlohmann::json get_node_status(std::string_view id) const;
 

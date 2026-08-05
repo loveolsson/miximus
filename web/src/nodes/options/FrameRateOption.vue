@@ -20,20 +20,20 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
-import type { FrameRate, FrameRateInterface } from "../system";
+import type { frame_rate_s, FrameRateInterface } from "../system";
 import { vNodeOptionTab } from "./node_option_tab";
 
 const props = defineProps<{
-  modelValue: FrameRate;
+  modelValue: frame_rate_s;
   node: AbstractNode;
   intf: FrameRateInterface;
 }>();
 
 const emit = defineEmits<{
-  (event: "update:modelValue", value: FrameRate): void;
+  (event: "update:modelValue", value: frame_rate_s): void;
 }>();
 
-function keyOf(value: FrameRate): string {
+function keyOf(value: frame_rate_s): string {
   return `${value.numerator}/${value.denominator}`;
 }
 

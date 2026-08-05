@@ -20,6 +20,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "types/node_status_json.hpp"
 #include "types/settings_option.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/serial_executor.hpp"
@@ -69,22 +70,18 @@ constexpr size_t get_download_slot_count(size_t scheduled_frames, size_t program
 
 auto log() { return getlog("decklink"); }
 
-template <typename T>
-nlohmann::json status_value(const std::optional<T>& value)
+status::decklink_output_device_status_s make_device_status(const device_status_s& status)
 {
-    return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
-}
-
-void write_device_status(core::node_status_registry_s::writer_s& writer, const device_status_s& status)
-{
-    writer.write("reference_locked", status_value(status.reference_signal_locked));
-    writer.write("playback_busy", status_value(status.playback_busy));
-    writer.write("pcie_link_width", status_value(status.pcie_link_width));
-    writer.write("pcie_link_speed", status_value(status.pcie_link_speed));
-    writer.write("temperature_c", status_value(status.temperature_c));
-    writer.write("active_format", status_value(status.current_output_mode));
-    writer.write("output_pixel_format", status_value(status.last_output_pixel_format));
-    writer.write("reference_format", status_value(status.reference_signal_mode));
+    return {
+        .reference_locked    = status.reference_signal_locked,
+        .playback_busy       = status.playback_busy,
+        .pcie_link_width     = status.pcie_link_width,
+        .pcie_link_speed     = status.pcie_link_speed,
+        .temperature_c       = status.temperature_c,
+        .active_format       = status.current_output_mode,
+        .output_pixel_format = status.last_output_pixel_format,
+        .reference_format    = status.reference_signal_mode,
+    };
 }
 
 struct mode_info_s
@@ -973,8 +970,7 @@ class node_impl : public node_i
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
         const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
         if (device_status_version_.observe(status_key)) {
-            auto writer = app->status_registry()->write_node(id_);
-            write_device_status(writer, device_status ? *device_status : device_status_s{});
+            app->status_registry()->write(id_, make_device_status(device_status ? *device_status : device_status_s{}));
         }
     }
 
@@ -986,7 +982,7 @@ class node_impl : public node_i
 
         const auto options_key = std::pair(std::string(device_name), callback_->mode_options_version());
         if (mode_options_version_.observe(options_key)) {
-            status_registry->write(id_, "display_modes", callback_->mode_options());
+            status_registry->write(id_, status::display_modes_status_s{.display_modes = callback_->mode_options()});
         }
 
         const auto now = std::chrono::steady_clock::now();
@@ -994,51 +990,57 @@ class node_impl : public node_i
             return;
         }
         const auto metrics = callback_->metrics();
-        auto       writer  = status_registry->write_node(id_);
-        writer.write("frames_completed", metrics.frames_completed);
-        writer.write("frames_displayed_late", metrics.frames_displayed_late);
-        writer.write("frames_dropped", metrics.frames_dropped);
-        writer.write("frames_flushed", metrics.frames_flushed);
-        writer.write("program_frames_received", metrics.program_frames_received);
-        writer.write("program_queue_overflow_drops", metrics.program_queue_overflow_drops);
-        writer.write("program_timing_drops", metrics.program_timing_drops);
-        writer.write("program_frames_repeated", metrics.program_frames_repeated);
-        writer.write("program_frames_missing", metrics.program_frames_missing);
-        writer.write("program_cadence_repeats", metrics.program_cadence_repeats);
-        writer.write("program_starvation_repeats", metrics.program_starvation_repeats);
-        writer.write("program_starvation_repeat_streak", metrics.program_starvation_repeat_streak);
-        writer.write("program_starvation_repeat_streak_max", metrics.program_starvation_repeat_streak_max);
-        writer.write("output_refill_shortfalls", metrics.output_refill_shortfalls);
-        writer.write("content_frames_sampled", metrics.content_frames_sampled);
-        writer.write("content_frame_repeats", metrics.content_frame_repeats);
-        writer.write("content_repeat_streak", metrics.content_repeat_streak);
-        writer.write("content_repeat_streak_max", metrics.content_repeat_streak_max);
-        writer.write("completion_intervals", metrics.completion_intervals);
-        writer.write("completion_interval_max_us", metrics.completion_interval_max_us);
-        writer.write("program_queue_depth", metrics.program_queue_depth);
-        writer.write("program_queue_depth_max", metrics.program_queue_depth_max);
-        writer.write("buffered_video_frames", metrics.buffered_video_frames);
-        writer.write("buffered_video_frames_min", metrics.buffered_video_frames_min);
-        writer.write("buffered_video_frames_max", metrics.buffered_video_frames_max);
-        writer.write("buffered_below_target_samples", metrics.buffered_below_target_samples);
-        writer.write("buffered_zero_samples", metrics.buffered_zero_samples);
-        writer.write("output_latency_us", metrics.output_latency_us);
-        writer.write("program_selection_offset_us", metrics.program_selection_offset_us);
-        writer.write("completion_time_failures", metrics.completion_time_failures);
-        writer.write("download_slots", metrics.download_stream.slots);
-        writer.write("download_slots_free", metrics.download_stream.free_slots);
-        writer.write("download_slots_rendering", metrics.download_stream.rendering_slots);
-        writer.write("download_slots_queued", metrics.download_stream.queued_slots);
-        writer.write("download_slots_ready", metrics.download_stream.ready_slots);
-        writer.write("download_slots_cpu_reading", metrics.download_stream.cpu_reading_slots);
-        writer.write("download_pending_allocations", metrics.download_stream.pending_allocations);
-        writer.write("download_acquire_misses", metrics.download_stream.acquire_misses);
-        writer.write("download_transfers_completed", metrics.download_stream.transfers_completed);
-        writer.write("download_transfer_failures", metrics.download_stream.transfer_failures);
-        writer.write("download_transfer_duration_total_us", metrics.download_stream.transfer_duration_total_us);
-        writer.write("download_transfer_duration_max_us", metrics.download_stream.transfer_duration_max_us);
-        writer.write("download_allocation_failed", metrics.download_stream.allocation_failed);
-        writer.write("render_target_drops", render_target_drops_);
+        status_registry->write(id_,
+                               status::decklink_output_metrics_status_s{
+                                   .frames_completed                     = metrics.frames_completed,
+                                   .frames_displayed_late                = metrics.frames_displayed_late,
+                                   .frames_dropped                       = metrics.frames_dropped,
+                                   .frames_flushed                       = metrics.frames_flushed,
+                                   .program_frames_received              = metrics.program_frames_received,
+                                   .program_queue_overflow_drops         = metrics.program_queue_overflow_drops,
+                                   .program_timing_drops                 = metrics.program_timing_drops,
+                                   .program_frames_repeated              = metrics.program_frames_repeated,
+                                   .program_frames_missing               = metrics.program_frames_missing,
+                                   .program_cadence_repeats              = metrics.program_cadence_repeats,
+                                   .program_starvation_repeats           = metrics.program_starvation_repeats,
+                                   .program_starvation_repeat_streak     = metrics.program_starvation_repeat_streak,
+                                   .program_starvation_repeat_streak_max = metrics.program_starvation_repeat_streak_max,
+                                   .output_refill_shortfalls             = metrics.output_refill_shortfalls,
+                                   .content_frames_sampled               = metrics.content_frames_sampled,
+                                   .content_frame_repeats                = metrics.content_frame_repeats,
+                                   .content_repeat_streak                = metrics.content_repeat_streak,
+                                   .content_repeat_streak_max            = metrics.content_repeat_streak_max,
+                                   .completion_intervals                 = metrics.completion_intervals,
+                                   .completion_interval_max_us           = metrics.completion_interval_max_us,
+                                   .program_queue_depth                  = metrics.program_queue_depth,
+                                   .program_queue_depth_max              = metrics.program_queue_depth_max,
+                                   .buffered_video_frames                = metrics.buffered_video_frames,
+                                   .buffered_video_frames_min            = metrics.buffered_video_frames_min,
+                                   .buffered_video_frames_max            = metrics.buffered_video_frames_max,
+                                   .buffered_below_target_samples        = metrics.buffered_below_target_samples,
+                                   .buffered_zero_samples                = metrics.buffered_zero_samples,
+                                   .output_latency_us                    = metrics.output_latency_us,
+                                   .program_selection_offset_us          = metrics.program_selection_offset_us,
+                                   .completion_time_failures             = metrics.completion_time_failures,
+                                   .render_target_drops                  = render_target_drops_,
+                               });
+        status_registry->write(
+            id_,
+            status::download_stream_status_s{
+                .download_slots                      = metrics.download_stream.slots,
+                .download_slots_free                 = metrics.download_stream.free_slots,
+                .download_slots_rendering            = metrics.download_stream.rendering_slots,
+                .download_slots_queued               = metrics.download_stream.queued_slots,
+                .download_slots_ready                = metrics.download_stream.ready_slots,
+                .download_slots_cpu_reading          = metrics.download_stream.cpu_reading_slots,
+                .download_pending_allocations        = metrics.download_stream.pending_allocations,
+                .download_acquire_misses             = metrics.download_stream.acquire_misses,
+                .download_transfers_completed        = metrics.download_stream.transfers_completed,
+                .download_transfer_failures          = metrics.download_stream.transfer_failures,
+                .download_transfer_duration_total_us = metrics.download_stream.transfer_duration_total_us,
+                .download_transfer_duration_max_us   = metrics.download_stream.transfer_duration_max_us,
+                .download_allocation_failed          = metrics.download_stream.allocation_failed,
+            });
         next_metrics_status_ = now + 1s;
     }
 
@@ -1058,7 +1060,8 @@ class node_impl : public node_i
         const auto device_list_version = app->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(device_list_version);
         if (device_list_changed) {
-            status->write(id_, "device_names", app->decklink_registry()->get_output_options());
+            status->write(
+                id_, status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()});
         }
 
         const auto device_name    = state.get_option<std::string>("device_name");
@@ -1096,7 +1099,7 @@ class node_impl : public node_i
                 if (phase == callback_s::phase_e::prerolling) {
                     callback_->request_preroll_pump();
                 }
-                status->write(id_, "connected", render_state_.has_value());
+                status->write(id_, status::connected_status_s{.connected = render_state_.has_value()});
                 return;
             }
             if (phase == callback_s::phase_e::failed || phase == callback_s::phase_e::stopped) {
@@ -1110,12 +1113,12 @@ class node_impl : public node_i
             } else {
                 render_state_.reset();
                 framebuffer_scale_.reset();
-                status->write(id_, "connected", false);
+                status->write(id_, status::connected_status_s{.connected = false});
                 return;
             }
         }
 
-        status->write(id_, "connected", false);
+        status->write(id_, status::connected_status_s{.connected = false});
         if (!enabled || std::chrono::steady_clock::now() < next_start_attempt_) {
             return;
         }

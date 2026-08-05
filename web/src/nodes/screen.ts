@@ -2,7 +2,7 @@ import { defineNode, NodeInterface } from "@baklavajs/core";
 import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture } from "./interface_types";
-import { type_e } from "@/messages";
+import { node_type_e } from "./node_type";
 import {
   StatusDropdownInterface,
   NodeStatusInterface,
@@ -50,7 +50,7 @@ const pixelPositionOptions = { precision: 0, step: 1 } as const;
 const pixelSizeOptions = { precision: 0, step: 1, min: 100 } as const;
 
 export const ScreenOutputNode = defineNode({
-  type: type_e.screen_output,
+  type: node_type_e.screen_output,
   title: "Screen Output",
   inputs: {
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
