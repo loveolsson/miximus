@@ -121,8 +121,8 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
             });
 
             // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            node_manager.add_adapter(std::make_unique<core::websocket_config_s>(
-                node_manager, configuration, *web_server, *app.font_registry()));
+            node_manager.add_adapter(
+                core::create_websocket_adapter(node_manager, configuration, *web_server, *app.font_registry()));
 
             core::steady_clock_source_s                            frame_clock;
             core::frame_scheduler_s                                frame_scheduler(frame_clock);

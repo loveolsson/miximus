@@ -12,7 +12,6 @@ add_library(miximus_types
     settings_option.hpp
     settings_option.cpp
     web_message.hpp
-    web_message_fwd.hpp
     web_message_json.hpp
     web_message_request.hpp
 )
