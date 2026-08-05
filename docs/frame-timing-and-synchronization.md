@@ -224,6 +224,9 @@ Every selection should produce a result that distinguishes at least:
 
 ## Clock sources
 
+The detailed implementation plan for selecting DeckLink nodes as program-clock providers is maintained in
+[frame clock synchronization](frame-clock-synchronization.md).
+
 The frame scheduler should depend on a clock-source interface rather than sleeping directly in `main.cpp`. The initial
 implementation uses only an internal free-running `steady_clock`. The interface must not assume that implementation so
 external clocks can be added later, but DeckLink reference/input clocking and automatic clock switching are outside the
