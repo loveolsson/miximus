@@ -42,14 +42,23 @@ class context_s
     static void  monitor_config_callback(GLFWmonitor* monitor, int event) noexcept;
 
   public:
+    struct window_settings_s
+    {
+        bool             visible{};
+        bool             fullscreen{};
+        std::string_view monitor_id{};
+        recti_s          rect{
+                     {0,   0  },
+                     {640, 480}
+        };
+    };
+
     context_s(bool visible, context_s* parent);
+    context_s(const window_settings_s& settings, context_s* parent);
     ~context_s();
 
     vec2i_t get_framebuffer_size();
     recti_s get_window_rect();
-
-    void set_window_rect(recti_s rect);
-    void set_fullscreen_monitor(std::string_view monitor_id, recti_s rect);
 
     static bool has_current() noexcept;
     static bool require_current();
@@ -68,6 +77,8 @@ class context_s
     shader_program_s* get_shader(shader_program_s::name_e name);
 
     static std::unique_ptr<context_s> create_unique_context(bool visible = false, context_s* parent = nullptr);
+    static std::unique_ptr<context_s> create_unique_context(const window_settings_s& settings,
+                                                            context_s*               parent = nullptr);
 };
 
 class context_scope_s

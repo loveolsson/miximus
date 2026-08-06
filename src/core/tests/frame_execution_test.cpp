@@ -57,7 +57,7 @@ class test_node_s final : public nodes::node_i
         record("submit");
         for (const auto* iface :
              {static_cast<const nodes::interface_i*>(&source_), static_cast<const nodes::interface_i*>(&input_)}) {
-            iface->submit_connections(app, nodes, state);
+            iface->submit_dependencies(app, nodes, iface->connections(state));
         }
     }
 

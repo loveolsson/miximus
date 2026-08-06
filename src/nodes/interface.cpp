@@ -1,6 +1,5 @@
 #include "nodes/interface.hpp"
 
-#include "core/app_state.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "nodes/frame_execution.hpp"
@@ -8,35 +7,8 @@
 #include "nodes/node_map.hpp"
 
 #include <stdexcept>
-#include <utility>
 
 namespace miximus::nodes {
-namespace detail {
-
-default_value_provider_s<gpu::framebuffer_s*>::default_value_provider_s()  = default;
-default_value_provider_s<gpu::framebuffer_s*>::~default_value_provider_s() = default;
-
-void default_value_provider_s<gpu::framebuffer_s*>::connected() noexcept { framebuffer_.reset(); }
-
-std::optional<gpu::framebuffer_s*>
-default_value_provider_s<gpu::framebuffer_s*>::get_default_value(core::app_state_s* app)
-{
-    if (app == nullptr) {
-        return std::nullopt;
-    }
-
-    const auto& dimensions = app->frame_settings().framebuffer.default_size;
-    if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dimensions) {
-        framebuffer_ = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::format_e::rgba_f16);
-    }
-
-    framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-    gpu::framebuffer_s::end_render();
-
-    return framebuffer_.get();
-}
-
-} // namespace detail
 
 interface_i::interface_i(node_i& owner, std::string_view name, dir_e direction, interface_type_e type)
     : name_(name)
@@ -46,15 +18,14 @@ interface_i::interface_i(node_i& owner, std::string_view name, dir_e direction, 
     owner.register_interface(*this);
 }
 
-bool interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const
+void interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const
 {
-    if (connections->size() == static_cast<size_t>(max_connection_count_)) {
+    if (connections->size() == max_connection_count_) {
         // This causes a remove_connection action at a later stage
         removed->emplace(removed->end(), connections->front());
     }
 
     connections->emplace_back(con);
-    return true;
 }
 
 std::span<const connection_s> interface_i::connections(const node_state_s& state) const
@@ -65,11 +36,28 @@ std::span<const connection_s> interface_i::connections(const node_state_s& state
     return state.get_connection_set(name_);
 }
 
-void interface_i::submit_connections(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) const
+void interface_i::submit_dependencies(core::app_state_s*            app,
+                                      const node_map_t&             nodes,
+                                      std::span<const connection_s> connected) const
 {
-    for (const auto& connection : connections(state)) {
+    for (const auto& connection : connected) {
         submit_node_once(app, nodes, connection.from_node);
     }
+}
+
+const interface_i*
+interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes, const connection_s& connection) const
+{
+    const auto record = nodes.find(connection.from_node);
+    if (record == nodes.end()) {
+        return nullptr;
+    }
+
+    const auto* iface = record->second.node->find_interface(connection.from_interface);
+    if (iface != nullptr) {
+        execute_node_once(app, nodes, record->first);
+    }
+    return iface;
 }
 
 interface_i::resolved_cons_t
@@ -162,7 +150,7 @@ bool input_interface_s<gpu::framebuffer_s*>::accepts(interface_type_e type) cons
 template <>
 double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, const double& fallback)
 {
-    if (const auto cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
+    if (const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
         return cast->get_value();
     }
 
@@ -172,22 +160,32 @@ double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, 
 template <>
 gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_i* iface, const gpu::vec2_t& fallback)
 {
-    if (const auto cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface)) {
-        return cast->get_value();
+    if (iface == nullptr) {
+        return fallback;
     }
 
-    if (const auto cast = dynamic_cast<const output_interface_s<double>*>(iface)) {
-        auto val = cast->get_value();
-        return {val, val};
+    switch (iface->type()) {
+        case interface_type_e::vec2: {
+            const auto* cast = dynamic_cast<const output_interface_s<gpu::vec2_t>*>(iface);
+            return cast != nullptr ? cast->get_value() : fallback;
+        }
+        case interface_type_e::f64: {
+            const auto* cast = dynamic_cast<const output_interface_s<double>*>(iface);
+            if (cast == nullptr) {
+                return fallback;
+            }
+            const auto value = cast->get_value();
+            return {value, value};
+        }
+        default:
+            return fallback;
     }
-
-    return fallback;
 }
 
 template <>
 gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback)
 {
-    if (const auto cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface)) {
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::rect_s>*>(iface)) {
         return cast->get_value();
     }
 
@@ -198,28 +196,42 @@ template <>
 gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
                                                                         gpu::texture_s* const& fallback)
 {
-    if (const auto cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface)) {
-        auto* texture = cast->get_value();
-        return texture != nullptr ? texture : fallback;
+    if (iface == nullptr) {
+        return fallback;
     }
 
-    if (const auto cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
-        if (auto fb = cast->get_value()) {
-            if (auto texture = fb->texture()) {
+    switch (iface->type()) {
+        case interface_type_e::texture: {
+            const auto* cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface);
+            if (cast == nullptr) {
+                return fallback;
+            }
+            auto* texture = cast->get_value();
+            return texture != nullptr ? texture : fallback;
+        }
+        case interface_type_e::framebuffer: {
+            const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface);
+            if (cast == nullptr) {
+                return fallback;
+            }
+            auto* framebuffer = cast->get_value();
+            auto* texture     = framebuffer != nullptr ? framebuffer->texture() : nullptr;
+            if (texture != nullptr) {
                 texture->generate_mip_maps();
                 return texture;
             }
+            return fallback;
         }
+        default:
+            return fallback;
     }
-
-    return fallback;
 }
 
 template <>
 gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*         iface,
                                                                                 gpu::framebuffer_s* const& fallback)
 {
-    if (const auto cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
+    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::framebuffer_s*>*>(iface)) {
         return cast->get_value();
     }
 

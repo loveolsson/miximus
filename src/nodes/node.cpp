@@ -23,7 +23,7 @@ void node_i::submit(core::app_state_s* app, const node_map_t& nodes, const node_
 {
     for (const auto& [_, iface] : interfaces_) {
         if (iface->direction() == interface_i::dir_e::input) {
-            iface->submit_connections(app, nodes, state);
+            iface->submit_dependencies(app, nodes, iface->connections(state));
         }
     }
 }

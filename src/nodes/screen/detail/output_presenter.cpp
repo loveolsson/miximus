@@ -477,9 +477,21 @@ class output_presenter_s::impl_s
     }
 
   public:
-    impl_s(gpu::context_s* root_context, size_t buffer_frames, utils::flicks nominal_frame_duration)
+    impl_s(gpu::context_s*     root_context,
+           size_t              buffer_frames,
+           utils::flicks       nominal_frame_duration,
+           bool                fullscreen,
+           std::string_view    monitor_id,
+           const gpu::recti_s& window_rect)
         : slots_(get_slot_count(buffer_frames))
-        , context_(gpu::context_s::create_unique_context(true, root_context))
+        , context_(gpu::context_s::create_unique_context(
+              {
+                  .visible    = true,
+                  .fullscreen = fullscreen,
+                  .monitor_id = monitor_id,
+                  .rect       = window_rect,
+              },
+              root_context))
         , buffer_frames_(buffer_frames)
         , nominal_frame_duration_(nominal_frame_duration)
     {
@@ -497,8 +509,6 @@ class output_presenter_s::impl_s
     impl_s& operator=(const impl_s&) = delete;
     impl_s(impl_s&&)                 = delete;
     impl_s& operator=(impl_s&&)      = delete;
-
-    gpu::context_s* context() noexcept { return context_.get(); }
 
     void start()
     {
@@ -645,16 +655,22 @@ void output_presenter_s::render_frame_s::submit(utils::flicks target_time)
     impl->submit(slot_index_, target_time);
 }
 
-output_presenter_s::output_presenter_s(gpu::context_s* root_context,
-                                       size_t          buffer_frames,
-                                       utils::flicks   nominal_frame_duration)
-    : impl_(std::make_unique<impl_s>(root_context, buffer_frames, nominal_frame_duration))
+output_presenter_s::output_presenter_s(gpu::context_s*     root_context,
+                                       size_t              buffer_frames,
+                                       utils::flicks       nominal_frame_duration,
+                                       bool                fullscreen,
+                                       std::string_view    monitor_id,
+                                       const gpu::recti_s& window_rect)
+    : impl_(std::make_unique<impl_s>(root_context,
+                                     buffer_frames,
+                                     nominal_frame_duration,
+                                     fullscreen,
+                                     monitor_id,
+                                     window_rect))
 {
 }
 
 output_presenter_s::~output_presenter_s() = default;
-
-gpu::context_s* output_presenter_s::context() noexcept { return impl_->context(); }
 
 void output_presenter_s::start() { impl_->start(); }
 

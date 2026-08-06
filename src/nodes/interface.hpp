@@ -1,7 +1,7 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
-#include "gpu/framebuffer_fwd.hpp"
 #include "gpu/types.hpp"
+#include "nodes/disconnected_value_provider.hpp"
 #include "nodes/interface_type.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
@@ -9,44 +9,13 @@
 
 #include <boost/container/small_vector.hpp>
 
-#include <climits>
-#include <memory>
-#include <optional>
+#include <cassert>
+#include <cstddef>
+#include <limits>
 #include <span>
-#include <stdexcept>
 #include <string_view>
 
 namespace miximus::nodes {
-
-namespace detail {
-
-template <typename T>
-struct default_value_provider_s
-{
-    void             connected() noexcept {}
-    std::optional<T> get_default_value(core::app_state_s* /*app*/) { return std::nullopt; }
-};
-
-template <>
-struct default_value_provider_s<gpu::framebuffer_s*>
-{
-  private:
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
-
-  public:
-    default_value_provider_s();
-    ~default_value_provider_s();
-
-    default_value_provider_s(const default_value_provider_s&)            = delete;
-    default_value_provider_s(default_value_provider_s&&)                 = delete;
-    default_value_provider_s& operator=(const default_value_provider_s&) = delete;
-    default_value_provider_s& operator=(default_value_provider_s&&)      = delete;
-
-    void                               connected() noexcept;
-    std::optional<gpu::framebuffer_s*> get_default_value(core::app_state_s* app);
-};
-
-} // namespace detail
 
 class interface_i
 {
@@ -67,11 +36,11 @@ class interface_i
     interface_i& operator=(const interface_i&) = delete;
     interface_i& operator=(interface_i&&)      = delete;
 
-    bool add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
-    void set_max_connection_count(int count) noexcept { max_connection_count_ = count; }
+    void add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
+    void set_max_connection_count(size_t count) noexcept { max_connection_count_ = count; }
 
     std::span<const connection_s> connections(const node_state_s& state) const;
-    void                          submit_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
+    void submit_dependencies(core::app_state_s*, const node_map_t&, std::span<const connection_s>) const;
 
     dir_e            direction() const noexcept { return direction_; }
     interface_type_e type() const noexcept { return type_; }
@@ -79,9 +48,10 @@ class interface_i
     std::string_view name() const noexcept { return name_; }
 
   protected:
-    resolved_cons_t resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
+    const interface_i* resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&) const;
+    resolved_cons_t    resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
 
-    int              max_connection_count_{1};
+    size_t           max_connection_count_{1};
     std::string_view name_;
 
   private:
@@ -95,7 +65,7 @@ class input_interface_s : public interface_i
     template <size_t S>
     using resolved_values_t = boost::container::small_vector<T, S>;
 
-    [[no_unique_address]] mutable detail::default_value_provider_s<T> default_value_provider_;
+    [[no_unique_address]] mutable detail::disconnected_value_provider_s<T> disconnected_value_provider_;
 
   public:
     input_interface_s(node_i& owner, std::string_view name)
@@ -104,32 +74,26 @@ class input_interface_s : public interface_i
     }
     ~input_interface_s() = default;
 
-    bool accepts(interface_type_e type) const noexcept final;
-
-    static T cast_iface_to_value(const interface_i* iface, T const& fallback);
+    bool     accepts(interface_type_e type) const noexcept final;
+    static T cast_iface_to_value(const interface_i* iface, const T& fallback);
 
     T resolve_value(core::app_state_s*  app,
                     const node_map_t&   nodes,
                     const node_state_s& state,
                     T const&            fallback = T{}) const
     {
-        auto ifaces = resolve_connections(app, nodes, state);
-
-        assert(ifaces.size() <= 1);
         assert(max_connection_count_ == 1); // Should only be called on interfaces expecting a single value
 
-        if (!ifaces.empty()) {
-            default_value_provider_.connected();
+        const auto connected = connections(state);
+        assert(connected.size() <= 1);
 
-            if (ifaces.front() != nullptr) {
-                return cast_iface_to_value(ifaces.front(), fallback);
-            }
-
-            return fallback;
+        if (!connected.empty()) {
+            disconnected_value_provider_.release();
+            const auto* iface = resolve_connection(app, nodes, connected.front());
+            return iface != nullptr ? cast_iface_to_value(iface, fallback) : fallback;
         }
 
-        const auto default_value = default_value_provider_.get_default_value(app);
-        return default_value.has_value() ? *default_value : fallback;
+        return disconnected_value_provider_.get(app, fallback);
     }
 
     template <size_t S = 4>
@@ -174,7 +138,7 @@ class output_interface_s : public interface_i
          * framebuffer-to-texture adapter node.
          */
         if (type() != interface_type_e::framebuffer) {
-            set_max_connection_count(INT_MAX);
+            set_max_connection_count(std::numeric_limits<size_t>::max());
         }
     }
     ~output_interface_s() = default;

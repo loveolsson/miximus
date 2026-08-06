@@ -10,25 +10,34 @@
 #include <array>
 #include <cmath>
 #include <memory>
-#include <optional>
 #include <string_view>
+#include <utility>
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 
-constexpr std::array<std::string_view, 8> INPUT_NAMES{"a", "b", "c", "d", "e", "f", "g", "h"};
+constexpr std::array INPUT_NAMES{"a", "b", "c", "d", "e", "f", "g", "h"};
 
 template <typename T, size_t SlotCount>
 class node_impl : public node_i
 {
     static_assert(SlotCount <= INPUT_NAMES.size());
 
-    input_interface_s<double>                                  active_{*this, "active"};
-    std::array<std::optional<input_interface_s<T>>, SlotCount> inputs_;
-    output_interface_s<T>                                      output_;
-    std::string_view                                           type_;
-    std::string_view                                           name_;
+    template <size_t... Indices>
+    static auto make_inputs(node_i& owner, std::index_sequence<Indices...> /*indices*/)
+    {
+        return std::array<input_interface_s<T>, SlotCount>{
+            input_interface_s<T>{owner, INPUT_NAMES.at(Indices)}
+            ...
+        };
+    }
+
+    input_interface_s<double>                   active_{*this, "active"};
+    std::array<input_interface_s<T>, SlotCount> inputs_{make_inputs(*this, std::make_index_sequence<SlotCount>{})};
+    output_interface_s<T>                       output_;
+    std::string_view                            type_;
+    std::string_view                            name_;
 
     static size_t active_index(double active)
     {
@@ -42,9 +51,6 @@ class node_impl : public node_i
         , type_(type)
         , name_(name)
     {
-        for (size_t index = 0; index < inputs_.size(); ++index) {
-            inputs_.at(index).emplace(*this, INPUT_NAMES.at(index));
-        }
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
@@ -53,31 +59,23 @@ class node_impl : public node_i
         const double active_value  = active_.resolve_value(app, nodes, state, static_cast<double>(active_option));
         const auto   index         = active_index(active_value);
         const auto&  input         = inputs_.at(index);
-        if (!input.has_value()) {
-            output_.set_value({});
-            return;
-        }
-
-        output_.set_value(input->resolve_value(app, nodes, state));
+        output_.set_value(input.resolve_value(app, nodes, state));
     }
 
     void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        active_.submit_connections(app, nodes, state);
-        if (!active_.connections(state).empty()) {
+        const auto active_connections = active_.connections(state);
+        active_.submit_dependencies(app, nodes, active_connections);
+        if (!active_connections.empty()) {
             for (const auto& input : inputs_) {
-                if (input.has_value()) {
-                    input->submit_connections(app, nodes, state);
-                }
+                input.submit_dependencies(app, nodes, input.connections(state));
             }
             return;
         }
 
         const auto  index = active_index(static_cast<double>(state.get_option<int>("active", 1)));
         const auto& input = inputs_.at(index);
-        if (input.has_value()) {
-            input->submit_connections(app, nodes, state);
-        }
+        input.submit_dependencies(app, nodes, input.connections(state));
     }
 
     nlohmann::json get_default_options() const final

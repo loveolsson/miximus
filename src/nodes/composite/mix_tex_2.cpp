@@ -36,21 +36,23 @@ class node_impl : public node_i
   public:
     void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        iface_fb_in_.submit_connections(app, nodes, state);
-        iface_t_.submit_connections(app, nodes, state);
+        iface_fb_in_.submit_dependencies(app, nodes, iface_fb_in_.connections(state));
 
-        if (!iface_t_.connections(state).empty()) {
-            iface_a_.submit_connections(app, nodes, state);
-            iface_b_.submit_connections(app, nodes, state);
+        const auto t_connections = iface_t_.connections(state);
+        iface_t_.submit_dependencies(app, nodes, t_connections);
+
+        if (!t_connections.empty()) {
+            iface_a_.submit_dependencies(app, nodes, iface_a_.connections(state));
+            iface_b_.submit_dependencies(app, nodes, iface_b_.connections(state));
             return;
         }
 
         const auto t = state.get_option<double>("t");
         if (t < 1.0) {
-            iface_a_.submit_connections(app, nodes, state);
+            iface_a_.submit_dependencies(app, nodes, iface_a_.connections(state));
         }
         if (t > 0.0) {
-            iface_b_.submit_connections(app, nodes, state);
+            iface_b_.submit_dependencies(app, nodes, iface_b_.connections(state));
         }
     }
 

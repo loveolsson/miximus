@@ -26,10 +26,8 @@
 namespace {
 using namespace miximus;
 
-constexpr int GL_VERSION_MAJOR   = 4;
-constexpr int GL_VERSION_MINOR   = 6;
-constexpr int DEFAULT_CTX_WIDTH  = 640;
-constexpr int DEFAULT_CTX_HEIGHT = 480;
+constexpr int GL_VERSION_MAJOR = 4;
+constexpr int GL_VERSION_MINOR = 6;
 
 const auto _log = [] { return getlog("gpu"); };
 
@@ -43,6 +41,13 @@ stb::decoded_image_s load_image(std::string_view filename)
     }
 
     return image;
+}
+
+gpu::context_s::window_settings_s default_window_settings(bool visible)
+{
+    auto settings    = gpu::context_s::window_settings_s{};
+    settings.visible = visible;
+    return settings;
 }
 
 } // namespace
@@ -116,6 +121,11 @@ std::optional<int> context_s::get_monitor_refresh_rate(std::string_view monitor_
 }
 
 context_s::context_s(bool visible, context_s* parent)
+    : context_s(default_window_settings(visible), parent)
+{
+}
+
+context_s::context_s(const window_settings_s& settings, context_s* parent)
 {
     static std::once_flag glfw_init;
 
@@ -140,7 +150,6 @@ context_s::context_s(bool visible, context_s* parent)
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, GL_VERSION_MAJOR);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, GL_VERSION_MINOR);
         glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-        glfwWindowHint(GLFW_SAMPLES, 4);
         // glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
         glfwWindowHint(GLFW_FOCUSED, GLFW_FALSE);
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
@@ -161,16 +170,59 @@ context_s::context_s(bool visible, context_s* parent)
         monitor_list_version_.fetch_add(1, std::memory_order_relaxed);
     });
 
-    const int visible_flag = visible ? GLFW_TRUE : GLFW_FALSE;
+    const int visible_flag = settings.visible ? GLFW_TRUE : GLFW_FALSE;
     glfwWindowHint(GLFW_SRGB_CAPABLE, visible_flag);
     glfwWindowHint(GLFW_VISIBLE, visible_flag);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
+    // Miximus renders into its own framebuffer objects. The only visible
+    // default framebuffer receives a full-screen textured quad, so GLFW-level
+    // multisampling adds memory pressure without improving image quality.
+    glfwWindowHint(GLFW_SAMPLES, 0);
+    glfwWindowHint(GLFW_RED_BITS, GLFW_DONT_CARE);
+    glfwWindowHint(GLFW_GREEN_BITS, GLFW_DONT_CARE);
+    glfwWindowHint(GLFW_BLUE_BITS, GLFW_DONT_CARE);
+    glfwWindowHint(GLFW_REFRESH_RATE, GLFW_DONT_CARE);
+
+    GLFWmonitor*       monitor{};
+    const GLFWvidmode* mode{};
+    if (settings.fullscreen) {
+        auto it = monitors_.find(settings.monitor_id);
+        if (it == monitors_.end()) {
+            // Compatibility for settings saved before monitor IDs and labels were separated.
+            it = std::ranges::find_if(
+                monitors_, [&settings](const auto& entry) { return entry.second.label == settings.monitor_id; });
+        }
+        if (it != monitors_.end()) {
+            monitor = it->second.handle;
+        } else if (settings.monitor_id.empty()) {
+            monitor = glfwGetPrimaryMonitor();
+        }
+
+        if (monitor != nullptr) {
+            mode = glfwGetVideoMode(monitor);
+            if (mode != nullptr) {
+                glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+                glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+                glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+                glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+            }
+        }
+    }
+
+    const auto dimensions = mode != nullptr ? vec2i_t{mode->width, mode->height} : settings.rect.size;
 
     auto parent_window = (parent != nullptr) ? parent->window_ : nullptr;
-    window_            = glfwCreateWindow(DEFAULT_CTX_WIDTH, DEFAULT_CTX_HEIGHT, "Miximus", nullptr, parent_window);
+    window_ =
+        glfwCreateWindow(dimensions.x, dimensions.y, "Miximus", mode != nullptr ? monitor : nullptr, parent_window);
 
     if (window_ == nullptr) {
         throw std::runtime_error("Failed to create GLFW window");
+    }
+
+    if (settings.visible) {
+        if (mode == nullptr) {
+            glfwSetWindowPos(window_, settings.rect.pos.x, settings.rect.pos.y);
+        }
     }
 
     glfwSetWindowUserPointer(window_, this);
@@ -187,7 +239,7 @@ context_s::context_s(bool visible, context_s* parent)
         glDebugMessageCallback(opengl_error_callback, nullptr);
     });
 
-    if (visible) {
+    if (settings.visible) {
         glfwSwapInterval(1);
 
         // glfwSetWindowIcon is not supported on Wayland (GLFW_FEATURE_UNAVAILABLE).
@@ -242,50 +294,6 @@ recti_s context_s::get_window_rect()
     glfwGetWindowPos(window_, &res.pos.x, &res.pos.y);
     glfwGetWindowSize(window_, &res.size.x, &res.size.y);
     return res;
-}
-
-void context_s::set_window_rect(recti_s rect)
-{
-    glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
-}
-
-void context_s::set_fullscreen_monitor(std::string_view monitor_id, recti_s rect)
-{
-    auto it = monitors_.find(monitor_id);
-    if (it == monitors_.end()) {
-        // Compatibility for settings saved before monitor IDs and labels were separated.
-        it = std::ranges::find_if(monitors_,
-                                  [monitor_id](const auto& entry) { return entry.second.label == monitor_id; });
-    }
-
-    if (it != monitors_.end()) {
-        auto* monitor = it->second.handle;
-        if (monitor == glfwGetWindowMonitor(window_)) {
-            return;
-        }
-
-        const auto mode = glfwGetVideoMode(monitor);
-        if (mode == nullptr) {
-            _log()->error("Unable to query video mode for monitor '{}'", monitor_id);
-            glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
-            return;
-        }
-
-        if (glfwGetPlatform() == GLFW_PLATFORM_X11) {
-            // Mutter under XWayland may choose the output containing the window
-            // instead of honoring _NET_WM_FULLSCREEN_MONITORS. Move the window
-            // onto the requested output before asking the WM to fullscreen it.
-            int monitor_x{};
-            int monitor_y{};
-            glfwGetMonitorPos(monitor, &monitor_x, &monitor_y);
-            glfwSetWindowMonitor(window_, nullptr, monitor_x, monitor_y, mode->width, mode->height, GLFW_DONT_CARE);
-        }
-
-        glfwSetWindowMonitor(window_, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
-
-    } else {
-        glfwSetWindowMonitor(window_, nullptr, rect.pos.x, rect.pos.y, rect.size.x, rect.size.y, GLFW_DONT_CARE);
-    }
 }
 
 void context_s::make_current()
@@ -385,6 +393,11 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 std::unique_ptr<context_s> context_s::create_unique_context(bool visible, context_s* parent)
 {
     return std::make_unique<context_s>(visible, parent);
+}
+
+std::unique_ptr<context_s> context_s::create_unique_context(const window_settings_s& settings, context_s* parent)
+{
+    return std::make_unique<context_s>(settings, parent);
 }
 
 } // namespace miximus::gpu

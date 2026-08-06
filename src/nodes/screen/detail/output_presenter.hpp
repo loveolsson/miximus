@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string_view>
 
 namespace miximus::gpu {
 class context_s;
@@ -65,7 +66,12 @@ class output_presenter_s
     std::unique_ptr<impl_s> impl_;
 
   public:
-    output_presenter_s(gpu::context_s* root_context, size_t buffer_frames, utils::flicks nominal_frame_duration);
+    output_presenter_s(gpu::context_s*     root_context,
+                       size_t              buffer_frames,
+                       utils::flicks       nominal_frame_duration,
+                       bool                fullscreen,
+                       std::string_view    monitor_id,
+                       const gpu::recti_s& window_rect);
     ~output_presenter_s();
 
     output_presenter_s(const output_presenter_s&)            = delete;
@@ -73,11 +79,10 @@ class output_presenter_s
     output_presenter_s(output_presenter_s&&)                 = delete;
     output_presenter_s& operator=(output_presenter_s&&)      = delete;
 
-    gpu::context_s* context() noexcept;
-    void            start();
-    void            request_stop() noexcept;
-    bool            stopped() const noexcept;
-    void            stop();
+    void start();
+    void request_stop() noexcept;
+    bool stopped() const noexcept;
+    void stop();
 
     std::optional<render_frame_s> try_acquire(gpu::vec2i_t dimensions);
     output_presenter_metrics_s    metrics() const;

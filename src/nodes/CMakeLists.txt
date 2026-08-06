@@ -7,6 +7,8 @@ add_library(nodes
     interface_fwd.hpp
     interface.cpp
     interface_type.hpp
+    disconnected_value_provider.hpp
+    disconnected_value_provider.cpp
     frame_execution.hpp
     frame_execution_fwd.hpp
     frame_execution.cpp

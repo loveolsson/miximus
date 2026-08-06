@@ -145,12 +145,10 @@ class node_impl : public node_i
             presenter_ = std::make_unique<output_presenter_s>(
                 app->ctx(),
                 static_cast<size_t>(app->frame_settings().screen_output.buffer_frames),
-                nominal_frame_duration);
-            if (fullscreen) {
-                presenter_->context()->set_fullscreen_monitor(monitor_id, rect);
-            } else {
-                presenter_->context()->set_window_rect(rect);
-            }
+                nominal_frame_duration,
+                fullscreen,
+                monitor_id,
+                rect);
             presenter_->start();
         }
 

@@ -51,20 +51,14 @@ class node_impl : public node_i
     output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
 
     std::unique_ptr<gpu::textured_quad_s>    textured_quad_;
-    std::shared_ptr<render::font_loader_s>   font_loader_;
-    std::unique_ptr<text_render_info_s>      text_info_;
+    std::shared_ptr<render::font_loader_s>   font_loader_{std::make_shared<render::font_loader_s>()};
+    std::unique_ptr<text_render_info_s>      text_info_{std::make_unique<text_render_info_s>()};
     ::mutex                                  font_mtx_;
     std::unique_ptr<render::font_instance_s> font_instance_;
     utils::observed_value_s<uint64_t>        font_version_;
     utils::observed_value_s<std::string>     status_font_name_;
 
   public:
-    explicit node_impl()
-    {
-        text_info_   = std::make_unique<text_render_info_s>();
-        font_loader_ = std::make_shared<render::font_loader_s>();
-    }
-
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
     {
         const auto font_version      = app->font_registry()->get_font_list_version();
