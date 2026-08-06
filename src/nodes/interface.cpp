@@ -8,8 +8,35 @@
 #include "nodes/node_map.hpp"
 
 #include <stdexcept>
+#include <utility>
 
 namespace miximus::nodes {
+namespace detail {
+
+default_value_provider_s<gpu::framebuffer_s*>::default_value_provider_s()  = default;
+default_value_provider_s<gpu::framebuffer_s*>::~default_value_provider_s() = default;
+
+void default_value_provider_s<gpu::framebuffer_s*>::connected() noexcept { framebuffer_.reset(); }
+
+std::optional<gpu::framebuffer_s*>
+default_value_provider_s<gpu::framebuffer_s*>::get_default_value(core::app_state_s* app)
+{
+    if (app == nullptr) {
+        return std::nullopt;
+    }
+
+    const auto& dimensions = app->frame_settings().framebuffer.default_size;
+    if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dimensions) {
+        framebuffer_ = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::format_e::rgba_f16);
+    }
+
+    framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
+    gpu::framebuffer_s::end_render();
+
+    return framebuffer_.get();
+}
+
+} // namespace detail
 
 interface_i::interface_i(node_i& owner, std::string_view name, dir_e direction, interface_type_e type)
     : name_(name)

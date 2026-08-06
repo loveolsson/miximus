@@ -75,6 +75,8 @@ class output_presenter_s
 
     gpu::context_s* context() noexcept;
     void            start();
+    void            request_stop() noexcept;
+    bool            stopped() const noexcept;
     void            stop();
 
     std::optional<render_frame_s> try_acquire(gpu::vec2i_t dimensions);

@@ -231,8 +231,8 @@ class output_presenter_s::impl_s
     std::vector<frame_slot_s>       slots_;
     std::unique_ptr<gpu::context_s> context_;
     std::thread                     thread_;
-    std::atomic_bool                running_;
-    std::atomic_bool                display_finished_;
+    std::atomic_bool                running_{false};
+    std::atomic_bool                display_finished_{true};
 
     const size_t        buffer_frames_;
     const utils::flicks nominal_frame_duration_;
@@ -433,19 +433,19 @@ class output_presenter_s::impl_s
 
     void run()
     {
-        const gpu::context_scope_s context_scope(*context_);
-        glEnable(GL_FRAMEBUFFER_SRGB);
-
-        // Miximus deliberately uses X11/XWayland on Linux. Mutter may stop
-        // presenting an occluded or borderless XWayland window while a
-        // swap-interval wait continues to return normally. In that case swap
-        // completion is not a usable display clock, so pace against the
-        // monitor's nominal refresh period instead.
-        const bool use_nominal_cadence = glfwGetPlatform() == GLFW_PLATFORM_X11;
-        uses_nominal_cadence_          = use_nominal_cadence;
-        glfwSwapInterval(use_nominal_cadence ? 0 : 1);
-
         {
+            const gpu::context_scope_s context_scope(*context_);
+            glEnable(GL_FRAMEBUFFER_SRGB);
+
+            // Miximus deliberately uses X11/XWayland on Linux. Mutter may stop
+            // presenting an occluded or borderless XWayland window while a
+            // swap-interval wait continues to return normally. In that case swap
+            // completion is not a usable display clock, so pace against the
+            // monitor's nominal refresh period instead.
+            const bool use_nominal_cadence = glfwGetPlatform() == GLFW_PLATFORM_X11;
+            uses_nominal_cadence_          = use_nominal_cadence;
+            glfwSwapInterval(use_nominal_cadence ? 0 : 1);
+
             media::timed_output_queue_s<slot_lease_s> queue({
                 .capacity        = get_queue_capacity(buffer_frames_),
                 .early_tolerance = nominal_frame_duration_ / 2,
@@ -472,8 +472,8 @@ class output_presenter_s::impl_s
 
             collect_submitted(&queue);
             gpu::context_s::finish();
-            display_finished_ = true;
         }
+        display_finished_ = true;
     }
 
   public:
@@ -510,13 +510,20 @@ class output_presenter_s::impl_s
         thread_           = std::thread(&impl_s::run, this);
     }
 
+    void request_stop() noexcept
+    {
+        running_ = false;
+        condition_.notify_one();
+    }
+
+    bool stopped() const noexcept { return display_finished_.load(); }
+
     void stop()
     {
         if (!thread_.joinable()) {
             return;
         }
-        running_ = false;
-        condition_.notify_one();
+        request_stop();
         thread_.join();
         reclaim_retired();
 
@@ -650,6 +657,10 @@ output_presenter_s::~output_presenter_s() = default;
 gpu::context_s* output_presenter_s::context() noexcept { return impl_->context(); }
 
 void output_presenter_s::start() { impl_->start(); }
+
+void output_presenter_s::request_stop() noexcept { impl_->request_stop(); }
+
+bool output_presenter_s::stopped() const noexcept { return impl_->stopped(); }
 
 void output_presenter_s::stop() { impl_->stop(); }
 

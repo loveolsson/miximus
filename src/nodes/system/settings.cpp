@@ -19,6 +19,7 @@ using namespace miximus::nodes;
 using nlohmann::json;
 
 using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
+using framebuffer_settings_s     = core::app_state_s::frame_settings_s::framebuffer_settings_s;
 using ndi_output_settings_s      = core::app_state_s::frame_settings_s::ndi_output_settings_s;
 using screen_output_settings_s   = core::app_state_s::frame_settings_s::screen_output_settings_s;
 
@@ -74,6 +75,19 @@ option_result_e normalize_frame_rate(json* value)
     return normalized == input ? option_result_e::ok : option_result_e::corrected;
 }
 
+option_result_e normalize_framebuffer_size(json* value)
+{
+    if (value == nullptr || !value->is_array() || value->size() != 2) {
+        return option_result_e::invalid;
+    }
+
+    const auto x_result = normalize_option_value<int>(
+        &value->at(0), framebuffer_settings_s::MIN_DIMENSION, framebuffer_settings_s::MAX_DIMENSION);
+    const auto y_result = normalize_option_value<int>(
+        &value->at(1), framebuffer_settings_s::MIN_DIMENSION, framebuffer_settings_s::MAX_DIMENSION);
+    return combine_option_results(x_result, y_result);
+}
+
 class node_impl final : public node_i
 {
   public:
@@ -84,10 +98,12 @@ class node_impl final : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"frame_rate",                    DEFAULT_FRAME_RATE                               },
-            {"decklink_output_buffer_frames", decklink_output_settings_s::DEFAULT_BUFFER_FRAMES},
-            {"ndi_output_buffer_frames",      ndi_output_settings_s::DEFAULT_BUFFER_FRAMES     },
-            {"screen_output_buffer_frames",   screen_output_settings_s::DEFAULT_BUFFER_FRAMES  },
+            {"frame_rate",                    DEFAULT_FRAME_RATE                                       },
+            {"default_framebuffer_size",
+             gpu::vec2_t{framebuffer_settings_s::DEFAULT_WIDTH, framebuffer_settings_s::DEFAULT_HEIGHT}},
+            {"decklink_output_buffer_frames", decklink_output_settings_s::DEFAULT_BUFFER_FRAMES        },
+            {"ndi_output_buffer_frames",      ndi_output_settings_s::DEFAULT_BUFFER_FRAMES             },
+            {"screen_output_buffer_frames",   screen_output_settings_s::DEFAULT_BUFFER_FRAMES          },
         };
     }
 
@@ -95,6 +111,9 @@ class node_impl final : public node_i
     {
         if (name == "frame_rate") {
             return normalize_frame_rate(value);
+        }
+        if (name == "default_framebuffer_size") {
+            return normalize_framebuffer_size(value);
         }
         if (name == "decklink_output_buffer_frames") {
             return normalize_option_value<int>(

@@ -41,12 +41,14 @@ class node_impl : public node_i
     utils::observed_value_s<bool>                 fullscreen_;
     utils::observed_value_s<std::string>          monitor_id_;
     utils::observed_value_s<presenter_settings_t> presenter_settings_;
+    bool                                          presenter_stopping_{};
     std::chrono::steady_clock::time_point         next_metrics_status_;
 
-    void stop_presenter()
+    void destroy_presenter()
     {
         presenter_.reset();
         textured_quad_.reset();
+        presenter_stopping_ = false;
     }
 
     void publish_metrics(core::node_status_registry_s* status_registry)
@@ -84,7 +86,7 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    ~node_impl() override { stop_presenter(); }
+    ~node_impl() override { destroy_presenter(); }
 
     node_impl(const node_impl&)            = delete;
     node_impl(node_impl&&)                 = delete;
@@ -110,9 +112,26 @@ class node_impl : public node_i
             app->frame_settings().screen_output.buffer_frames,
             nominal_frame_duration,
         };
-        const bool recreate_presenter = presenter_settings_.observe(presenter_settings);
-        if (recreate_presenter) {
-            stop_presenter();
+        const auto position                = state.get_option<gpu::vec2_t>("position", {0, 0});
+        const auto size                    = state.get_option<gpu::vec2_t>("size", {100, 100});
+        const auto rect                    = gpu::round_to_integer({.pos = position, .size = size});
+        const auto fullscreen              = state.get_option<bool>("fullscreen", false);
+        bool       window_settings_changed = window_rect_.observe(rect);
+        window_settings_changed |= fullscreen_.observe(fullscreen);
+        window_settings_changed |= monitor_id_.observe(monitor_id);
+
+        const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
+        if (presenter_ && (presenter_settings_changed || window_settings_changed) && !presenter_stopping_) {
+            presenter_->request_stop();
+            presenter_stopping_ = true;
+        }
+
+        if (presenter_stopping_) {
+            if (!presenter_->stopped()) {
+                app->status_registry()->write(id_, status::connected_status_s{.connected = false});
+                return;
+            }
+            destroy_presenter();
         }
 
         if (!enabled) {
@@ -122,30 +141,16 @@ class node_impl : public node_i
 
         result->demands_execution = true;
 
-        const auto position                = state.get_option<gpu::vec2_t>("position", {0, 0});
-        const auto size                    = state.get_option<gpu::vec2_t>("size", {100, 100});
-        const auto rect                    = gpu::round_to_integer({.pos = position, .size = size});
-        const auto fullscreen              = state.get_option<bool>("fullscreen", false);
-        bool       window_settings_changed = window_rect_.observe(rect);
-        window_settings_changed |= fullscreen_.observe(fullscreen);
-        window_settings_changed |= monitor_id_.observe(monitor_id);
-
-        const bool presenter_created = !presenter_;
-        if (presenter_created) {
+        if (!presenter_) {
             presenter_ = std::make_unique<output_presenter_s>(
                 app->ctx(),
                 static_cast<size_t>(app->frame_settings().screen_output.buffer_frames),
                 nominal_frame_duration);
-        }
-
-        if (presenter_created || window_settings_changed) {
             if (fullscreen) {
                 presenter_->context()->set_fullscreen_monitor(monitor_id, rect);
             } else {
                 presenter_->context()->set_window_rect(rect);
             }
-        }
-        if (presenter_created) {
             presenter_->start();
         }
 

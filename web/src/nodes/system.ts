@@ -1,7 +1,7 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { markRaw } from "vue";
 import { node_type_e } from "./node_type";
-import { NumericInterface } from "./interfaces";
+import { NumericInterface, Vec2Interface } from "./interfaces";
 import FrameRateOption from "./options/FrameRateOption.vue";
 import type { frame_rate_s } from "@/generated/json_contracts";
 
@@ -38,6 +38,13 @@ export const ApplicationSettingsNode = defineNode({
   title: "Application Settings",
   inputs: {
     frame_rate: () => new FrameRateInterface(),
+    default_framebuffer_size: () =>
+      new Vec2Interface("Default size", [1920, 1080], {
+        precision: 0,
+        step: 1,
+        min: 256,
+        max: 4096,
+      }).setPort(false),
     decklink_output_buffer_frames: () =>
       new NumericInterface("Buffered frames", 4, {
         precision: 0,

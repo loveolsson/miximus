@@ -6,6 +6,7 @@
 #include "gpu/texture_fwd.hpp"
 #include "gpu/transfer/texture_download_fwd.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
+#include "gpu/types.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
@@ -53,7 +54,18 @@ class app_state_s
             int buffer_frames{DEFAULT_BUFFER_FRAMES};
         };
 
+        struct framebuffer_settings_s
+        {
+            static constexpr int DEFAULT_WIDTH  = 1920;
+            static constexpr int DEFAULT_HEIGHT = 1080;
+            static constexpr int MIN_DIMENSION  = 256;
+            static constexpr int MAX_DIMENSION  = 4096;
+
+            gpu::vec2i_t default_size{DEFAULT_WIDTH, DEFAULT_HEIGHT};
+        };
+
         frame_rate_s               frame_rate{DEFAULT_FRAME_RATE};
+        framebuffer_settings_s     framebuffer;
         decklink_output_settings_s decklink_output;
         ndi_output_settings_s      ndi_output;
         screen_output_settings_s   screen_output;

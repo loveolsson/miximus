@@ -28,6 +28,13 @@ globally converted into image data.
 
 `gpu::framebuffer_s` owns a render target texture. Framebuffer values represent mutable ordered rendering and therefore have stricter graph fan-out rules than texture values.
 
+Each framebuffer input interface owns a private fallback render target while disconnected. Its dimensions come from the
+frame-local copy of `$app.default_framebuffer_size`, and its format is RGBA16F. The target is retained and cleared when
+the input is resolved for each program frame. It is recreated on the render thread when the global size changes and
+released there when the connected input is resolved. Inactive disconnected inputs perform no allocation or clearing.
+Do not replace the fallback with a shared application framebuffer: framebuffer interfaces carry ordered mutable state
+and therefore cannot safely share one fallback target.
+
 `gpu::textured_quad_s` owns the standard textured-quad draw state. It sets the common rectangle and opacity uniforms,
 binds and unbinds sampler zero, and submits the quad. Use a scoped batch for repeated draws so texture cleanup happens
 once after the batch. Conversion paths may set their additional shader uniforms through the wrapper's shader accessor.

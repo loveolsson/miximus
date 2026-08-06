@@ -53,6 +53,7 @@ const panelElement = ref<HTMLElement>();
 
 const sectionDefinitions = [
   { title: "Program", keys: ["frame_rate"] },
+  { title: "Framebuffer", keys: ["default_framebuffer_size"] },
   {
     title: "DeckLink Output",
     keys: ["decklink_output_buffer_frames"],

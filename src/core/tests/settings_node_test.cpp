@@ -80,6 +80,7 @@ TEST(FrameRate, CanonicalizesEquivalentRatesAndRejectsInexactRates)
 TEST(SettingsNode, ProvidesTheDefaultSettings)
 {
     using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
+    using framebuffer_settings_s     = core::app_state_s::frame_settings_s::framebuffer_settings_s;
     using ndi_output_settings_s      = core::app_state_s::frame_settings_s::ndi_output_settings_s;
     using screen_output_settings_s   = core::app_state_s::frame_settings_s::screen_output_settings_s;
 
@@ -87,10 +88,29 @@ TEST(SettingsNode, ProvidesTheDefaultSettings)
     const auto defaults = settings->get_default_options();
     ASSERT_TRUE(defaults.contains("frame_rate"));
     EXPECT_EQ(defaults.at("frame_rate").get<frame_rate_s>(), DEFAULT_FRAME_RATE);
+    EXPECT_EQ(defaults.at("default_framebuffer_size").get<gpu::vec2_t>(),
+              gpu::vec2_t(framebuffer_settings_s::DEFAULT_WIDTH, framebuffer_settings_s::DEFAULT_HEIGHT));
     EXPECT_EQ(defaults.at("decklink_output_buffer_frames").get<int>(),
               decklink_output_settings_s::DEFAULT_BUFFER_FRAMES);
     EXPECT_EQ(defaults.at("ndi_output_buffer_frames").get<int>(), ndi_output_settings_s::DEFAULT_BUFFER_FRAMES);
     EXPECT_EQ(defaults.at("screen_output_buffer_frames").get<int>(), screen_output_settings_s::DEFAULT_BUFFER_FRAMES);
+}
+
+TEST(SettingsNode, CorrectsDefaultFramebufferSize)
+{
+    using framebuffer_settings_s = core::app_state_s::frame_settings_s::framebuffer_settings_s;
+
+    const auto           settings = create_settings_node();
+    auto                 state    = settings->get_default_options();
+    const nlohmann::json update{
+        {"default_framebuffer_size", {100.5, 10'000}},
+    };
+    const auto result = settings->set_options(state, update);
+
+    EXPECT_EQ(result.error, error_e::no_error);
+    EXPECT_TRUE(result.has_corrected_values);
+    EXPECT_EQ(state.at("default_framebuffer_size"),
+              nlohmann::json({framebuffer_settings_s::MIN_DIMENSION, framebuffer_settings_s::MAX_DIMENSION}));
 }
 
 TEST(SettingsNode, CorrectsDeckLinkOutputBufferSettings)

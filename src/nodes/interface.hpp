@@ -1,5 +1,6 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
+#include "gpu/framebuffer_fwd.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface_type.hpp"
 #include "nodes/node_fwd.hpp"
@@ -9,12 +10,43 @@
 #include <boost/container/small_vector.hpp>
 
 #include <climits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string_view>
 
 namespace miximus::nodes {
+
+namespace detail {
+
+template <typename T>
+struct default_value_provider_s
+{
+    void             connected() noexcept {}
+    std::optional<T> get_default_value(core::app_state_s* /*app*/) { return std::nullopt; }
+};
+
+template <>
+struct default_value_provider_s<gpu::framebuffer_s*>
+{
+  private:
+    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
+
+  public:
+    default_value_provider_s();
+    ~default_value_provider_s();
+
+    default_value_provider_s(const default_value_provider_s&)            = delete;
+    default_value_provider_s(default_value_provider_s&&)                 = delete;
+    default_value_provider_s& operator=(const default_value_provider_s&) = delete;
+    default_value_provider_s& operator=(default_value_provider_s&&)      = delete;
+
+    void                               connected() noexcept;
+    std::optional<gpu::framebuffer_s*> get_default_value(core::app_state_s* app);
+};
+
+} // namespace detail
 
 class interface_i
 {
@@ -63,6 +95,8 @@ class input_interface_s : public interface_i
     template <size_t S>
     using resolved_values_t = boost::container::small_vector<T, S>;
 
+    [[no_unique_address]] mutable detail::default_value_provider_s<T> default_value_provider_;
+
   public:
     input_interface_s(node_i& owner, std::string_view name)
         : interface_i(owner, name, dir_e::input, get_interface_type<T>())
@@ -84,11 +118,18 @@ class input_interface_s : public interface_i
         assert(ifaces.size() <= 1);
         assert(max_connection_count_ == 1); // Should only be called on interfaces expecting a single value
 
-        if (!ifaces.empty() && ifaces.front() != nullptr) {
-            return cast_iface_to_value(ifaces.front(), fallback);
+        if (!ifaces.empty()) {
+            default_value_provider_.connected();
+
+            if (ifaces.front() != nullptr) {
+                return cast_iface_to_value(ifaces.front(), fallback);
+            }
+
+            return fallback;
         }
 
-        return fallback;
+        const auto default_value = default_value_provider_.get_default_value(app);
+        return default_value.has_value() ? *default_value : fallback;
     }
 
     template <size_t S = 4>
@@ -141,5 +182,18 @@ class output_interface_s : public interface_i
     T    get_value() const { return value_; }
     void set_value(const T& value) { value_ = utils::is_finite(value) ? value : T{}; }
 };
+
+template <>
+double input_interface_s<double>::cast_iface_to_value(const interface_i* iface, const double& fallback);
+template <>
+gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_i* iface, const gpu::vec2_t& fallback);
+template <>
+gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback);
+template <>
+gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
+                                                                        gpu::texture_s* const& fallback);
+template <>
+gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*         iface,
+                                                                                gpu::framebuffer_s* const& fallback);
 
 } // namespace miximus::nodes

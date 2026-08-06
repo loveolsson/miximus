@@ -113,7 +113,11 @@ execution.
 
 Compatibility and native implicit conversions live in `src/nodes/interface.cpp`. Matching web types and conversions live in `web/src/nodes/interface_types.ts`; keep them consistent.
 
-Framebuffer outputs intentionally allow one downstream connection because they represent ordered mutation. Texture outputs may fan out. Use the framebuffer-to-texture utility node before fan-out.
+Framebuffer outputs intentionally allow one downstream connection because they represent ordered mutation. Texture
+outputs may fan out. Use the framebuffer-to-texture utility node before fan-out. A disconnected framebuffer input owns
+a private RGBA16F render target using the default size from `$app`. It is retained and cleared when resolved for each
+program frame. Resolving a connected input releases the private target on the render thread; connected framebuffer
+inputs use only their upstream value.
 
 The node manager validates graph mutations. It:
 

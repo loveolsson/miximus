@@ -19,10 +19,13 @@ namespace {
 
 class websocket_config_s final : public node_manager_s::adapter_i
 {
+    // These are required, non-owning dependencies whose lifetime is managed by app_state_s.
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     node_manager_s&          manager_;
     configuration_s&         configuration_;
     web_server::server_s&    server_;
     render::font_registry_s& font_registry_;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
     void handle_add_node(const web_message::add_node_request_s& message, int64_t client_id);
     void handle_remove_node(const web_message::remove_node_request_s& message, int64_t client_id);
