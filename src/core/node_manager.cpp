@@ -21,7 +21,9 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <set>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -76,6 +78,26 @@ bool is_connection_circular(const miximus::nodes::node_map_t& nodes,
 
     return false;
 }
+
+std::string generate_node_id(const miximus::nodes::node_map_t& nodes)
+{
+    // Keep this fixed across targets. Fifteen bytes fit the std::string SSO
+    // storage used by our Clang/libstdc++ and Windows builds.
+    constexpr size_t           id_length = 15;
+    constexpr std::string_view alphabet  = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    thread_local std::mt19937_64          generator{std::random_device{}()};
+    std::uniform_int_distribution<size_t> character(0, alphabet.size() - 1);
+
+    std::string id(id_length, '\0');
+    do {
+        for (auto& value : id) {
+            value = alphabet.at(character(generator));
+        }
+    } while (nodes.contains(id));
+
+    return id;
+}
 } // namespace
 
 namespace miximus::core {
@@ -85,17 +107,34 @@ using namespace std::chrono_literals;
 node_manager_s::node_manager_s()
 {
     nodes::register_all_nodes(&node_definitions_);
-    const auto error = handle_add_node(
-        nodes::system::SETTINGS_NODE_TYPE, nodes::system::SETTINGS_NODE_ID, nlohmann::json::object(), -1);
+    const auto error =
+        handle_add_node(nodes::system::SETTINGS_NODE_TYPE, nodes::system::SETTINGS_NODE_ID, nlohmann::json::object());
     if (error != error_e::no_error) {
         throw std::logic_error("Failed to create the application settings node");
     }
 }
 
-error_e
-node_manager_s::handle_add_node(std::string_view type, std::string_view id, const json& options, int64_t client_id)
+error_e node_manager_s::handle_add_node(std::string_view                    type,
+                                        std::string_view                    id,
+                                        const json&                         options,
+                                        const std::optional<origin_info_s>& origin)
 {
     const std::unique_lock lock(nodes_mutex_);
+    return handle_add_node_locked(type, id, options, origin);
+}
+
+error_e
+node_manager_s::handle_add_node(std::string_view type, const json& options, const std::optional<origin_info_s>& origin)
+{
+    const std::unique_lock lock(nodes_mutex_);
+    return handle_add_node_locked(type, generate_node_id(nodes_), options, origin);
+}
+
+error_e node_manager_s::handle_add_node_locked(std::string_view                    type,
+                                               std::string_view                    id,
+                                               const json&                         options,
+                                               const std::optional<origin_info_s>& origin)
+{
     _log()->info("Creating {} node with id {}", type, id);
 
     const bool is_settings_id   = id == nodes::system::SETTINGS_NODE_ID;
@@ -125,23 +164,24 @@ node_manager_s::handle_add_node(std::string_view type, std::string_view id, cons
         return result.error;
     }
 
-    for (auto& adapter : adapters_) {
-        adapter->emit_add_node(type, id, record.state.options, client_id);
-    }
-
     // Prime the state with a con_set_t for each interface
     for (const auto& [iface_id, _] : node->get_interfaces()) {
         record.state.con_map.emplace(iface_id, nodes::con_set_t{});
     }
 
-    record.node = std::move(node);
-    nodes_.emplace(id, std::move(record));
+    record.node                    = std::move(node);
+    const auto [node_it, inserted] = nodes_.emplace(id, std::move(record));
+    assert(inserted);
     dirty_nodes_.emplace(id_str);
+
+    for (auto& adapter : adapters_) {
+        adapter->emit_add_node(type, id, node_it->second.state.options, origin);
+    }
 
     return error;
 }
 
-error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_id)
+error_e node_manager_s::handle_remove_node(std::string_view id, const std::optional<origin_info_s>& origin)
 {
     const std::unique_lock lock(nodes_mutex_);
 
@@ -167,11 +207,11 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
     }
 
     for (const auto& rcon : removed_connections) {
-        remove_connection_locked(rcon, client_id);
+        remove_connection_locked(rcon, origin);
     }
 
     for (auto& adapter : adapters_) {
-        adapter->emit_remove_node(id, client_id);
+        adapter->emit_remove_node(id, origin);
     }
 
     removed_nodes_.emplace(node_it->first);
@@ -181,7 +221,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, int64_t client_i
 }
 
 nodes::set_options_result_s
-node_manager_s::handle_update_node(std::string_view id, const json& options, int64_t client_id)
+node_manager_s::handle_update_node(std::string_view id, const json& options, const std::optional<origin_info_s>& origin)
 {
     const std::unique_lock lock(nodes_mutex_);
 
@@ -207,7 +247,7 @@ node_manager_s::handle_update_node(std::string_view id, const json& options, int
     }
 
     for (auto& adapter : adapters_) {
-        adapter->emit_update_node(id, state.options, result.has_corrected_values, client_id);
+        adapter->emit_update_node(id, state.options, result.has_corrected_values, origin);
     }
 
     dirty_nodes_.emplace(id_str);
@@ -215,7 +255,7 @@ node_manager_s::handle_update_node(std::string_view id, const json& options, int
     return result;
 }
 
-error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_id)
+error_e node_manager_s::handle_add_connection(connection_s con, const std::optional<origin_info_s>& origin)
 {
     using dir_e = nodes::interface_i::dir_e;
     const std::unique_lock lock(nodes_mutex_);
@@ -287,11 +327,11 @@ error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_i
     to_iface->add_connection(&to_connections, con, &removed_connections);
 
     for (const auto& rcon : removed_connections) {
-        remove_connection_locked(rcon, client_id);
+        remove_connection_locked(rcon, origin);
     }
 
     for (auto& adapter : adapters_) {
-        adapter->emit_add_connection(con, client_id);
+        adapter->emit_add_connection(con, origin);
     }
 
     dirty_nodes_.emplace(con.from_node);
@@ -300,7 +340,7 @@ error_e node_manager_s::handle_add_connection(connection_s con, int64_t client_i
     return error_e::no_error;
 }
 
-error_e node_manager_s::remove_connection_locked(const connection_s& con, int64_t client_id)
+error_e node_manager_s::remove_connection_locked(const connection_s& con, const std::optional<origin_info_s>& origin)
 {
     _log()->info(
         "Removing connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
@@ -336,7 +376,7 @@ error_e node_manager_s::remove_connection_locked(const connection_s& con, int64_
     remove_from_interface(con.to_node, con.to_interface);
 
     for (auto& adapter : adapters_) {
-        adapter->emit_remove_connection(con, client_id);
+        adapter->emit_remove_connection(con, origin);
     }
 
     connections_.erase(con_it);
@@ -347,10 +387,10 @@ error_e node_manager_s::remove_connection_locked(const connection_s& con, int64_
     return error_e::no_error;
 }
 
-error_e node_manager_s::handle_remove_connection(const connection_s& con, int64_t client_id)
+error_e node_manager_s::handle_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin)
 {
     const std::unique_lock lock(nodes_mutex_);
-    return remove_connection_locked(con, client_id);
+    return remove_connection_locked(con, origin);
 }
 
 nlohmann::json node_manager_s::get_node_status(std::string_view id) const

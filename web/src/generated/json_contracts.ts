@@ -65,6 +65,7 @@ export interface command_s {
   readonly token?: string | null;
   readonly topic: topic_e;
   readonly origin_id?: number | null;
+  readonly origin_token?: string | null;
 }
 
 export interface connection_s {
@@ -104,7 +105,8 @@ export interface add_node_request_s {
   readonly action: action_e.command;
   readonly topic: topic_e.add_node;
   readonly token?: string | null;
-  readonly node: node_s;
+  readonly type: string;
+  readonly options: options_s;
 }
 
 export interface remove_node_request_s {
@@ -195,21 +197,24 @@ export interface error_s {
 export interface add_node_command_s {
   readonly action: action_e.command;
   readonly topic: topic_e.add_node;
-  readonly origin_id: number;
+  readonly origin_id?: number | null;
+  readonly origin_token?: string | null;
   readonly node: node_s;
 }
 
 export interface remove_node_command_s {
   readonly action: action_e.command;
   readonly topic: topic_e.remove_node;
-  readonly origin_id: number;
+  readonly origin_id?: number | null;
+  readonly origin_token?: string | null;
   readonly id: string;
 }
 
 export interface update_node_command_s {
   readonly action: action_e.command;
   readonly topic: topic_e.update_node;
-  readonly origin_id: number;
+  readonly origin_id?: number | null;
+  readonly origin_token?: string | null;
   readonly id: string;
   readonly options: options_s;
   readonly has_corrected_values: boolean;
@@ -218,14 +223,16 @@ export interface update_node_command_s {
 export interface add_connection_command_s {
   readonly action: action_e.command;
   readonly topic: topic_e.add_connection;
-  readonly origin_id: number;
+  readonly origin_id?: number | null;
+  readonly origin_token?: string | null;
   readonly connection: connection_s;
 }
 
 export interface remove_connection_command_s {
   readonly action: action_e.command;
   readonly topic: topic_e.remove_connection;
-  readonly origin_id: number;
+  readonly origin_id?: number | null;
+  readonly origin_token?: string | null;
   readonly connection: connection_s;
 }
 

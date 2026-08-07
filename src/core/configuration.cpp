@@ -205,16 +205,15 @@ void configuration_s::load(json config)
             if (type != nodes::system::SETTINGS_NODE_TYPE) {
                 throw std::runtime_error("The reserved application settings node has the wrong type");
             }
-            require_no_error(node_manager_.handle_update_node(id, node.at("options"), -1).error, "update node", id);
+            require_no_error(node_manager_.handle_update_node(id, node.at("options")).error, "update node", id);
         } else {
-            require_no_error(node_manager_.handle_add_node(type, id, node.at("options"), -1), "create node", id);
+            require_no_error(node_manager_.handle_add_node(type, id, node.at("options")), "create node", id);
         }
     }
 
     for (const auto& connection : connections) {
         const auto parsed = connection.get<connection_s>();
-        require_no_error(
-            node_manager_.handle_add_connection(parsed, -1), "create connection from node", parsed.from_node);
+        require_no_error(node_manager_.handle_add_connection(parsed), "create connection from node", parsed.from_node);
     }
 }
 

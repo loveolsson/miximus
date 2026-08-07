@@ -175,17 +175,23 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.ws?.close();
   }
 
+  public send<T extends message_s>(msg: T): boolean;
+  public send<T extends message_s, R extends message_s = message_s>(
+    msg: T,
+    cb: message_callback_t<R>,
+  ): string | undefined;
   public send<T extends message_s, R extends message_s = message_s>(
     msg: T,
     cb?: message_callback_t<R>,
-  ): boolean {
+  ): boolean | string | undefined {
     if (!this.info) {
-      return false;
+      return cb ? undefined : false;
     }
 
     let payload: message_s = msg;
+    let token: string | undefined;
     if (cb) {
-      const token = String(this.next_token++);
+      token = String(this.next_token++);
       this.callbacks.set(token, cb as message_callback_t<message_s>);
       payload = { ...msg, token };
     }
@@ -195,7 +201,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     }
 
     this.ws?.send(JSON.stringify(payload));
-    return true;
+    return token ?? true;
   }
 
   public subscribe<T extends message_s>(topic: topic_e, cb: message_callback_t<T>) {

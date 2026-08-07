@@ -11,11 +11,27 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace miximus::core {
 namespace {
+
+std::optional<origin_info_s> make_origin_info(int64_t origin_id, const std::optional<std::string>& origin_token)
+{
+    return origin_info_s{.id = origin_id, .token = origin_token};
+}
+
+std::optional<int64_t> get_origin_id(const std::optional<origin_info_s>& origin)
+{
+    return origin ? std::optional{origin->id} : std::nullopt;
+}
+
+std::optional<std::string> get_origin_token(const std::optional<origin_info_s>& origin)
+{
+    return origin ? origin->token : std::nullopt;
+}
 
 class websocket_config_s final : public node_manager_s::adapter_i
 {
@@ -27,24 +43,26 @@ class websocket_config_s final : public node_manager_s::adapter_i
     render::font_registry_s& font_registry_;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
-    void handle_add_node(const web_message::add_node_request_s& message, int64_t client_id);
-    void handle_remove_node(const web_message::remove_node_request_s& message, int64_t client_id);
-    void handle_update_node(const web_message::update_node_request_s& message, int64_t client_id);
-    void handle_add_connection(const web_message::add_connection_request_s& message, int64_t client_id);
-    void handle_remove_connection(const web_message::remove_connection_request_s& message, int64_t client_id);
-    void handle_config(const web_message::config_request_s& message, int64_t client_id);
-    void handle_node_status(const web_message::node_status_request_s& message, int64_t client_id);
-    void handle_font_registry(const web_message::font_registry_request_s& message, int64_t client_id);
+    void handle_add_node(const web_message::add_node_request_s& message, int64_t origin_id);
+    void handle_remove_node(const web_message::remove_node_request_s& message, int64_t origin_id);
+    void handle_update_node(const web_message::update_node_request_s& message, int64_t origin_id);
+    void handle_add_connection(const web_message::add_connection_request_s& message, int64_t origin_id);
+    void handle_remove_connection(const web_message::remove_connection_request_s& message, int64_t origin_id);
+    void handle_config(const web_message::config_request_s& message, int64_t origin_id);
+    void handle_node_status(const web_message::node_status_request_s& message, int64_t origin_id);
+    void handle_font_registry(const web_message::font_registry_request_s& message, int64_t origin_id);
 
-    void
-    emit_add_node(std::string_view type, std::string_view id, const nlohmann::json& options, int64_t client_id) final;
-    void emit_remove_node(std::string_view id, int64_t client_id) final;
-    void emit_update_node(std::string_view      id,
-                          const nlohmann::json& options,
-                          bool                  has_corrected_values,
-                          int64_t               client_id) final;
-    void emit_add_connection(const connection_s& con, int64_t client_id) final;
-    void emit_remove_connection(const connection_s& con, int64_t client_id) final;
+    void emit_add_node(std::string_view                    type,
+                       std::string_view                    id,
+                       const nlohmann::json&               options,
+                       const std::optional<origin_info_s>& origin) final;
+    void emit_remove_node(std::string_view id, const std::optional<origin_info_s>& origin) final;
+    void emit_update_node(std::string_view                    id,
+                          const nlohmann::json&               options,
+                          bool                                has_corrected_values,
+                          const std::optional<origin_info_s>& origin) final;
+    void emit_add_connection(const connection_s& con, const std::optional<origin_info_s>& origin) final;
+    void emit_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin) final;
     void emit_node_status(std::string_view id, const nlohmann::json& status) final;
 
   public:
@@ -81,7 +99,7 @@ websocket_config_s::websocket_config_s(node_manager_s&          manager,
         topic_e::node_status, std::bind_front(&websocket_config_s::handle_node_status, this));
 }
 
-void websocket_config_s::handle_font_registry(const web_message::font_registry_request_s& message, int64_t client_id)
+void websocket_config_s::handle_font_registry(const web_message::font_registry_request_s& message, int64_t origin_id)
 {
     const auto token = message.token.value_or("");
 
@@ -91,70 +109,75 @@ void websocket_config_s::handle_font_registry(const web_message::font_registry_r
                 font_registry_.refresh();
                 break;
         }
-        server_.send_message_sync(web_message::result_s{.token = token}, client_id);
+        server_.send_message_sync(web_message::result_s{.token = token}, origin_id);
     } catch (const std::exception& e) {
         getlog("http")->error("Failed to refresh font registry: {}", e.what());
-        server_.send_message_sync(web_message::error_s{.token = token, .error = error_e::internal_error}, client_id);
+        server_.send_message_sync(web_message::error_s{.token = token, .error = error_e::internal_error}, origin_id);
     }
 }
 
-void websocket_config_s::handle_add_node(const web_message::add_node_request_s& message, int64_t client_id)
+void websocket_config_s::handle_add_node(const web_message::add_node_request_s& message, int64_t origin_id)
 {
     const auto token  = message.token.value_or("");
-    const auto result = manager_.handle_add_node(message.node.type, message.node.id, message.node.options, client_id);
+    const auto origin = make_origin_info(origin_id, message.token);
+    const auto result = manager_.handle_add_node(message.type, message.options, origin);
     if (result == error_e::no_error) {
-        server_.send_message_sync(web_message::result_s{.token = token}, client_id);
+        server_.send_message_sync(web_message::result_s{.token = token}, origin_id);
     } else {
-        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, client_id);
+        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, origin_id);
     }
 }
 
-void websocket_config_s::handle_remove_node(const web_message::remove_node_request_s& message, int64_t client_id)
+void websocket_config_s::handle_remove_node(const web_message::remove_node_request_s& message, int64_t origin_id)
 {
     const auto token  = message.token.value_or("");
-    const auto result = manager_.handle_remove_node(message.id, client_id);
+    const auto origin = make_origin_info(origin_id, message.token);
+    const auto result = manager_.handle_remove_node(message.id, origin);
     if (result == error_e::no_error) {
-        server_.send_message_sync(web_message::result_s{.token = token}, client_id);
+        server_.send_message_sync(web_message::result_s{.token = token}, origin_id);
     } else {
-        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, client_id);
+        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, origin_id);
     }
 }
 
-void websocket_config_s::handle_update_node(const web_message::update_node_request_s& message, int64_t client_id)
+void websocket_config_s::handle_update_node(const web_message::update_node_request_s& message, int64_t origin_id)
 {
     const auto token  = message.token.value_or("");
-    const auto result = manager_.handle_update_node(message.id, message.options, client_id);
+    const auto origin = make_origin_info(origin_id, message.token);
+    const auto result = manager_.handle_update_node(message.id, message.options, origin);
     if (result.error == error_e::no_error) {
-        server_.send_message_sync(web_message::result_s{.token = token}, client_id);
+        server_.send_message_sync(web_message::result_s{.token = token}, origin_id);
     } else {
-        server_.send_message_sync(web_message::error_s{.token = token, .error = result.error}, client_id);
+        server_.send_message_sync(web_message::error_s{.token = token, .error = result.error}, origin_id);
     }
 }
 
-void websocket_config_s::handle_add_connection(const web_message::add_connection_request_s& message, int64_t client_id)
+void websocket_config_s::handle_add_connection(const web_message::add_connection_request_s& message, int64_t origin_id)
 {
     const auto token  = message.token.value_or("");
-    const auto result = manager_.handle_add_connection(message.connection, client_id);
+    const auto origin = make_origin_info(origin_id, message.token);
+    const auto result = manager_.handle_add_connection(message.connection, origin);
     if (result == error_e::no_error) {
-        server_.send_message_sync(web_message::result_s{.token = token}, client_id);
+        server_.send_message_sync(web_message::result_s{.token = token}, origin_id);
     } else {
-        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, client_id);
+        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, origin_id);
     }
 }
 
 void websocket_config_s::handle_remove_connection(const web_message::remove_connection_request_s& message,
-                                                  int64_t                                         client_id)
+                                                  int64_t                                         origin_id)
 {
     const auto token  = message.token.value_or("");
-    const auto result = manager_.handle_remove_connection(message.connection, client_id);
+    const auto origin = make_origin_info(origin_id, message.token);
+    const auto result = manager_.handle_remove_connection(message.connection, origin);
     if (result == error_e::no_error) {
-        server_.send_message_sync(web_message::result_s{.token = token}, client_id);
+        server_.send_message_sync(web_message::result_s{.token = token}, origin_id);
     } else {
-        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, client_id);
+        server_.send_message_sync(web_message::error_s{.token = token, .error = result}, origin_id);
     }
 }
 
-void websocket_config_s::handle_config(const web_message::config_request_s& message, int64_t client_id)
+void websocket_config_s::handle_config(const web_message::config_request_s& message, int64_t origin_id)
 {
     const auto token = message.token.value_or("");
     server_.send_message_sync(
@@ -162,10 +185,10 @@ void websocket_config_s::handle_config(const web_message::config_request_s& mess
             .token  = token,
             .config = configuration_.get_snapshot().get<web_message::config_s>(),
         },
-        client_id);
+        origin_id);
 }
 
-void websocket_config_s::handle_node_status(const web_message::node_status_request_s& message, int64_t client_id)
+void websocket_config_s::handle_node_status(const web_message::node_status_request_s& message, int64_t origin_id)
 {
     const auto token = message.token.value_or("");
     server_.send_message_sync(
@@ -174,51 +197,59 @@ void websocket_config_s::handle_node_status(const web_message::node_status_reque
             .id     = message.id,
             .status = manager_.get_node_status(message.id),
         },
-        client_id);
+        origin_id);
 }
 
-void websocket_config_s::emit_add_node(std::string_view      type,
-                                       std::string_view      id,
-                                       const nlohmann::json& options,
-                                       int64_t               client_id)
+void websocket_config_s::emit_add_node(std::string_view                    type,
+                                       std::string_view                    id,
+                                       const nlohmann::json&               options,
+                                       const std::optional<origin_info_s>& origin)
 {
     server_.broadcast_message_sync(web_message::add_node_command_s{
-        .origin_id = client_id,
-        .node      = {.type = std::string(type), .id = std::string(id), .options = options},
+        .origin_id    = get_origin_id(origin),
+        .origin_token = get_origin_token(origin),
+        .node         = {.type = std::string(type), .id = std::string(id), .options = options},
     });
 }
 
-void websocket_config_s::emit_remove_node(std::string_view id, int64_t client_id)
+void websocket_config_s::emit_remove_node(std::string_view id, const std::optional<origin_info_s>& origin)
 {
-    server_.broadcast_message_sync(web_message::remove_node_command_s{.origin_id = client_id, .id = std::string(id)});
+    server_.broadcast_message_sync(web_message::remove_node_command_s{
+        .origin_id    = get_origin_id(origin),
+        .origin_token = get_origin_token(origin),
+        .id           = std::string(id),
+    });
 }
 
-void websocket_config_s::emit_update_node(std::string_view      id,
-                                          const nlohmann::json& options,
-                                          bool                  has_corrected_values,
-                                          int64_t               client_id)
+void websocket_config_s::emit_update_node(std::string_view                    id,
+                                          const nlohmann::json&               options,
+                                          bool                                has_corrected_values,
+                                          const std::optional<origin_info_s>& origin)
 {
     server_.broadcast_message_sync(web_message::update_node_command_s{
-        .origin_id            = client_id,
+        .origin_id            = get_origin_id(origin),
+        .origin_token         = get_origin_token(origin),
         .id                   = std::string(id),
         .options              = options,
         .has_corrected_values = has_corrected_values,
     });
 }
 
-void websocket_config_s::emit_add_connection(const connection_s& con, int64_t client_id)
+void websocket_config_s::emit_add_connection(const connection_s& con, const std::optional<origin_info_s>& origin)
 {
     server_.broadcast_message_sync(web_message::add_connection_command_s{
-        .origin_id  = client_id,
-        .connection = con,
+        .origin_id    = get_origin_id(origin),
+        .origin_token = get_origin_token(origin),
+        .connection   = con,
     });
 }
 
-void websocket_config_s::emit_remove_connection(const connection_s& con, int64_t client_id)
+void websocket_config_s::emit_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin)
 {
     server_.broadcast_message_sync(web_message::remove_connection_command_s{
-        .origin_id  = client_id,
-        .connection = con,
+        .origin_id    = get_origin_id(origin),
+        .origin_token = get_origin_token(origin),
+        .connection   = con,
     });
 }
 

@@ -28,7 +28,8 @@ struct add_node_request_s
     static constexpr topic_e  topic  = topic_e::add_node;
 
     std::optional<std::string> token;
-    node_s                     node;
+    std::string                type;
+    nlohmann::json             options;
 };
 
 struct remove_node_request_s
@@ -96,7 +97,7 @@ struct node_status_request_s
 
 BOOST_DESCRIBE_STRUCT(subscribe_request_s, (), (token, topic))
 BOOST_DESCRIBE_STRUCT(unsubscribe_request_s, (), (token, topic))
-BOOST_DESCRIBE_STRUCT(add_node_request_s, (), (token, node))
+BOOST_DESCRIBE_STRUCT(add_node_request_s, (), (token, type, options))
 BOOST_DESCRIBE_STRUCT(remove_node_request_s, (), (token, id))
 BOOST_DESCRIBE_STRUCT(update_node_request_s, (), (token, id, options))
 BOOST_DESCRIBE_STRUCT(add_connection_request_s, (), (token, connection))

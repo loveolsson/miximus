@@ -112,6 +112,7 @@ std::string typescript_member_type()
 {
     if constexpr (std::same_as<Member, nlohmann::json>) {
         if constexpr (std::same_as<Object, web_message::node_s> ||
+                      std::same_as<Object, web_message::add_node_request_s> ||
                       std::same_as<Object, web_message::update_node_command_s> ||
                       std::same_as<Object, web_message::update_node_request_s>) {
             return "options_s";

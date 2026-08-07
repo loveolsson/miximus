@@ -74,7 +74,8 @@ TEST(web_message, typed_broadcast_serializes_the_envelope_and_payload)
     };
 
     server.broadcast_message_sync(web_message::add_node_command_s{
-        .origin_id = 42,
+        .origin_id    = 42,
+        .origin_token = "request-7",
         .node =
             {
                    .type    = "ndi_output",
@@ -86,15 +87,16 @@ TEST(web_message, typed_broadcast_serializes_the_envelope_and_payload)
     ASSERT_TRUE(implementation.did_broadcast);
     EXPECT_EQ(implementation.broadcast_message_value,
               nlohmann::json({
-                  {"action",    "command" },
-                  {"topic",     "add_node"},
-                  {"origin_id", 42        },
+                  {"action",       "command"  },
+                  {"topic",        "add_node" },
+                  {"origin_id",    42         },
+                  {"origin_token", "request-7"},
                   {"node",
                    {
                        {"type", "ndi_output"},
                        {"id", "output-1"},
                        {"options", options},
-                   }                      },
+                   }                          },
     }));
 }
 
@@ -162,6 +164,25 @@ TEST(web_message, typed_subscription_owns_values_after_dispatch)
     }));
 }
 
+TEST(web_message, add_node_request_contains_no_node_id)
+{
+    const auto request = nlohmann::json({
+                                            {"action",  "command"               },
+                                            {"topic",   "add_node"              },
+                                            {"token",   "request-2"             },
+                                            {"type",    "sinus_source"          },
+                                            {"options", {{"name", "Oscillator"}}},
+    })
+                             .get<web_message::add_node_request_s>();
+
+    EXPECT_EQ(request.token, std::optional<std::string>{"request-2"});
+    EXPECT_EQ(request.type, "sinus_source");
+    EXPECT_EQ(request.options,
+              nlohmann::json({
+                  {"name", "Oscillator"}
+    }));
+}
+
 TEST(web_message, malformed_typed_subscription_returns_a_typed_error)
 {
     server_mock_s         implementation;
@@ -195,10 +216,8 @@ TEST(web_message, typed_subscription_reports_handler_failures_as_internal_errors
     server_mock_s         implementation;
     web_server::server_s& server = implementation;
 
-    server.subscribe<web_message::remove_node_request_s>(topic_e::remove_node,
-                                                         [](const auto&, int64_t) {
-                                                             throw std::runtime_error("handler failed");
-                                                         });
+    server.subscribe<web_message::remove_node_request_s>(
+        topic_e::remove_node, [](const auto&, int64_t) { throw std::runtime_error("handler failed"); });
 
     ASSERT_TRUE(implementation.subscription);
     implementation.subscription(nlohmann::json({
@@ -206,7 +225,7 @@ TEST(web_message, typed_subscription_reports_handler_failures_as_internal_errors
                                     {"topic",  "remove_node"},
                                     {"token",  "request-3"  },
                                     {"id",     "node-1"     },
-                                }),
+    }),
                                 11);
 
     ASSERT_TRUE(implementation.did_send);
@@ -216,7 +235,7 @@ TEST(web_message, typed_subscription_reports_handler_failures_as_internal_errors
                   {"action", "error"         },
                   {"token",  "request-3"     },
                   {"error",  "internal_error"},
-              }));
+    }));
 }
 
 TEST(web_message, typed_subscription_rejects_a_mismatched_registered_topic)

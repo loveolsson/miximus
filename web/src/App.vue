@@ -114,12 +114,7 @@ const {
 ws.subscribe<add_node_command_s>(topic_e.add_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
   if (msg.node.id === SETTINGS_NODE_ID) return;
-  if (is_origin) {
-    // Our own add was acknowledged; server may have filled in options.
-    handle_server_update_node(msg.node.id, msg.node.options);
-    return;
-  }
-  handle_server_add_node(msg.node.type, msg.node.id);
+  handle_server_add_node(msg.node.type, msg.node.id, is_origin ? msg.origin_token : undefined);
   handle_server_update_node(msg.node.id, msg.node.options);
 });
 
@@ -138,7 +133,7 @@ ws.subscribe<update_node_command_s>(topic_e.update_node, (msg, is_origin) => {
     applyApplicationSettings(msg.options);
     return;
   }
-  if (is_origin) return;
+  if (is_origin && !msg.has_corrected_values) return;
   handle_server_update_node(msg.id, msg.options);
 });
 

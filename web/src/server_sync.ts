@@ -2,7 +2,7 @@
 
 import { watch } from "vue";
 import type { IBaklavaViewModel } from "@baklavajs/renderer-vue";
-import type { AbstractNode, Graph, NodeInterface } from "@baklavajs/core";
+import type { AbstractNode, Graph, IConnection, NodeInterface } from "@baklavajs/core";
 
 import { ws_wrapper } from "./websocket";
 import {
@@ -98,6 +98,8 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
   const serverMutations = new server_mutation_guard_s();
   const positionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const nodeCleanups = new Map<string, () => void>();
+  const pendingNodes = new Map<AbstractNode, { token?: string; cancelled: boolean }>();
+  const pendingNodesByToken = new Map<string, AbstractNode>();
 
   function clearPositionTimer(nodeId: string): void {
     const timer = positionTimers.get(nodeId);
@@ -178,48 +180,62 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
     nodeCleanups.delete(nodeId);
   }
 
+  function removePendingNode(node: AbstractNode): void {
+    const pending = pendingNodes.get(node);
+    if (pending?.token) pendingNodesByToken.delete(pending.token);
+    pendingNodes.delete(node);
+  }
+
+  function failPendingNode(node: AbstractNode): void {
+    if (graph.nodes.includes(node)) {
+      serverMutations.run("remove_connection", CONNECTION_MUTATION_KEY, () =>
+        serverMutations.run("remove_node", node.id, () => graph.removeNode(node)),
+      );
+    }
+    removePendingNode(node);
+  }
+
   function sendAddNode(node: AbstractNode): void {
+    const pending = pendingNodes.get(node);
+    if (!pending || pending.cancelled) {
+      pendingNodes.delete(node);
+      return;
+    }
+
     const position = node.position;
-    ws.send<add_node_request_s>(
+    const token = ws.send<add_node_request_s>(
       {
         action: action_e.command,
         topic: topic_e.add_node,
-        node: {
-          type: node.type,
-          id: node.id,
-          options: { node_visual_position: position ? [position.x, position.y] : [0, 0] },
-        },
+        type: node.type,
+        options: { node_visual_position: position ? [position.x, position.y] : [0, 0] },
       },
       (response) => {
-        if (response.action !== action_e.error) return;
-        serverMutations.run("remove_node", node.id, () => graph.removeNode(node));
+        if (response.action === action_e.error) failPendingNode(node);
       },
+    );
+
+    if (token === undefined) {
+      failPendingNode(node);
+      return;
+    }
+
+    pending.token = token;
+    pendingNodesByToken.set(token, node);
+  }
+
+  function connectionHasPendingNode(connection: IConnection): boolean {
+    const from = find_node_and_key_for_interface(graph, connection.from);
+    const to = find_node_and_key_for_interface(graph, connection.to);
+    return (
+      (from !== undefined && pendingNodes.has(from[0])) ||
+      (to !== undefined && pendingNodes.has(to[0]))
     );
   }
 
-  // Client-originated graph changes.
-  graph.events.addNode.subscribe(eventToken, (node) => {
-    subscribeNode(node);
-    if (!serverMutations.contains("add_node", node.id)) {
-      // Baklava finishes wrapping a new node in its reactive proxy before this
-      // event. Defer the command until that local add has fully unwound.
-      setTimeout(() => sendAddNode(node), 0);
-    }
-  });
+  function sendAddConnection(connection: IConnection): void {
+    if (connectionHasPendingNode(connection)) return;
 
-  graph.events.removeNode.subscribe(eventToken, (node) => {
-    removeNodeSubscriptions(node.id);
-    if (!serverMutations.contains("remove_node", node.id)) {
-      ws.send<remove_node_request_s>({
-        action: action_e.command,
-        topic: topic_e.remove_node,
-        id: node.id,
-      });
-    }
-  });
-
-  graph.events.addConnection.subscribe(eventToken, (connection) => {
-    if (serverMutations.contains("add_connection", CONNECTION_MUTATION_KEY)) return;
     const payload = connection_payload(graph, connection.from, connection.to);
     if (!payload) return;
 
@@ -238,10 +254,60 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
         );
       },
     );
+  }
+
+  function sendPendingConnections(node: AbstractNode): void {
+    for (const connection of graph.connections) {
+      const from = find_node_and_key_for_interface(graph, connection.from);
+      const to = find_node_and_key_for_interface(graph, connection.to);
+      if (from?.[0] === node || to?.[0] === node) sendAddConnection(connection);
+    }
+  }
+
+  // Client-originated graph changes.
+  graph.events.addNode.subscribe(eventToken, (node) => {
+    const serverOriginated = serverMutations.contains("add_node", node.id);
+    if (serverOriginated) {
+      subscribeNode(node);
+      return;
+    }
+
+    pendingNodes.set(node, { cancelled: false });
+    // Baklava finishes wrapping a new node in its reactive proxy before this
+    // event. Defer the command until that local add has fully unwound.
+    setTimeout(() => sendAddNode(node), 0);
+  });
+
+  graph.events.removeNode.subscribe(eventToken, (node) => {
+    removeNodeSubscriptions(node.id);
+    const pending = pendingNodes.get(node);
+    if (pending) {
+      if (serverMutations.contains("remove_node", node.id)) {
+        removePendingNode(node);
+        return;
+      }
+      pending.cancelled = true;
+      if (pending.token === undefined) pendingNodes.delete(node);
+      return;
+    }
+
+    if (!serverMutations.contains("remove_node", node.id)) {
+      ws.send<remove_node_request_s>({
+        action: action_e.command,
+        topic: topic_e.remove_node,
+        id: node.id,
+      });
+    }
+  });
+
+  graph.events.addConnection.subscribe(eventToken, (connection) => {
+    if (serverMutations.contains("add_connection", CONNECTION_MUTATION_KEY)) return;
+    sendAddConnection(connection);
   });
 
   graph.events.removeConnection.subscribe(eventToken, (connection) => {
     if (serverMutations.contains("remove_connection", CONNECTION_MUTATION_KEY)) return;
+    if (connectionHasPendingNode(connection)) return;
     const payload = connection_payload(graph, connection.from, connection.to);
     if (!payload) return;
 
@@ -253,7 +319,29 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
   });
 
   // Server-originated graph changes.
-  function handle_server_add_node(type: string, id: string): void {
+  function handle_server_add_node(type: string, id: string, originToken?: string | null): void {
+    if (originToken) {
+      const pendingNode = pendingNodesByToken.get(originToken);
+      if (pendingNode) {
+        const pending = pendingNodes.get(pendingNode);
+        removePendingNode(pendingNode);
+        pendingNode.id = id;
+        assign_node_id(pendingNode);
+
+        if (pending?.cancelled) {
+          ws.send<remove_node_request_s>({
+            action: action_e.command,
+            topic: topic_e.remove_node,
+            id,
+          });
+        } else {
+          subscribeNode(pendingNode);
+          sendPendingConnections(pendingNode);
+        }
+        return;
+      }
+    }
+
     const info = baklava.editor.nodeTypes.get(type);
     if (!info) {
       console.warn(`[server_sync] Unknown node type: ${type}`);
@@ -336,6 +424,8 @@ export function useServerSync(baklava: IBaklavaViewModel, ws: ws_wrapper) {
     graph.events.removeConnection.unsubscribe(eventToken);
     for (const cleanup of nodeCleanups.values()) cleanup();
     nodeCleanups.clear();
+    pendingNodes.clear();
+    pendingNodesByToken.clear();
   }
 
   return {

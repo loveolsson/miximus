@@ -58,6 +58,7 @@ struct command_s
     std::optional<std::string> token{};
     topic_e                    topic{};
     std::optional<int64_t>     origin_id{};
+    std::optional<std::string> origin_token{};
 };
 
 struct node_s
@@ -131,8 +132,9 @@ struct add_node_command_s
     static constexpr action_e action = action_e::command;
     static constexpr topic_e  topic  = topic_e::add_node;
 
-    int64_t origin_id{};
-    node_s  node;
+    std::optional<int64_t>     origin_id{};
+    std::optional<std::string> origin_token{};
+    node_s                     node;
 };
 
 struct remove_node_command_s
@@ -140,8 +142,9 @@ struct remove_node_command_s
     static constexpr action_e action = action_e::command;
     static constexpr topic_e  topic  = topic_e::remove_node;
 
-    int64_t     origin_id{};
-    std::string id;
+    std::optional<int64_t>     origin_id{};
+    std::optional<std::string> origin_token{};
+    std::string                id;
 };
 
 struct update_node_command_s
@@ -149,10 +152,11 @@ struct update_node_command_s
     static constexpr action_e action = action_e::command;
     static constexpr topic_e  topic  = topic_e::update_node;
 
-    int64_t        origin_id{};
-    std::string    id;
-    nlohmann::json options;
-    bool           has_corrected_values{};
+    std::optional<int64_t>     origin_id{};
+    std::optional<std::string> origin_token{};
+    std::string                id;
+    nlohmann::json             options;
+    bool                       has_corrected_values{};
 };
 
 struct add_connection_command_s
@@ -160,8 +164,9 @@ struct add_connection_command_s
     static constexpr action_e action = action_e::command;
     static constexpr topic_e  topic  = topic_e::add_connection;
 
-    int64_t      origin_id{};
-    connection_s connection;
+    std::optional<int64_t>     origin_id{};
+    std::optional<std::string> origin_token{};
+    connection_s               connection;
 };
 
 struct remove_connection_command_s
@@ -169,8 +174,9 @@ struct remove_connection_command_s
     static constexpr action_e action = action_e::command;
     static constexpr topic_e  topic  = topic_e::remove_connection;
 
-    int64_t      origin_id{};
-    connection_s connection;
+    std::optional<int64_t>     origin_id{};
+    std::optional<std::string> origin_token{};
+    connection_s               connection;
 };
 
 struct node_status_command_s
@@ -183,7 +189,7 @@ struct node_status_command_s
 };
 
 BOOST_DESCRIBE_STRUCT(message_s, (), (action, token))
-BOOST_DESCRIBE_STRUCT(command_s, (), (action, token, topic, origin_id))
+BOOST_DESCRIBE_STRUCT(command_s, (), (action, token, topic, origin_id, origin_token))
 BOOST_DESCRIBE_STRUCT(node_s, (), (type, id, schema_version, options))
 BOOST_DESCRIBE_STRUCT(config_s, (), (schema_version, nodes, connections, status))
 BOOST_DESCRIBE_STRUCT(ping_response_s, (), (response))
@@ -192,11 +198,11 @@ BOOST_DESCRIBE_STRUCT(result_s, (), (token))
 BOOST_DESCRIBE_STRUCT(config_result_s, (), (token, config))
 BOOST_DESCRIBE_STRUCT(node_status_result_s, (), (token, id, status))
 BOOST_DESCRIBE_STRUCT(error_s, (), (token, error, message))
-BOOST_DESCRIBE_STRUCT(add_node_command_s, (), (origin_id, node))
-BOOST_DESCRIBE_STRUCT(remove_node_command_s, (), (origin_id, id))
-BOOST_DESCRIBE_STRUCT(update_node_command_s, (), (origin_id, id, options, has_corrected_values))
-BOOST_DESCRIBE_STRUCT(add_connection_command_s, (), (origin_id, connection))
-BOOST_DESCRIBE_STRUCT(remove_connection_command_s, (), (origin_id, connection))
+BOOST_DESCRIBE_STRUCT(add_node_command_s, (), (origin_id, origin_token, node))
+BOOST_DESCRIBE_STRUCT(remove_node_command_s, (), (origin_id, origin_token, id))
+BOOST_DESCRIBE_STRUCT(update_node_command_s, (), (origin_id, origin_token, id, options, has_corrected_values))
+BOOST_DESCRIBE_STRUCT(add_connection_command_s, (), (origin_id, origin_token, connection))
+BOOST_DESCRIBE_STRUCT(remove_connection_command_s, (), (origin_id, origin_token, connection))
 BOOST_DESCRIBE_STRUCT(node_status_command_s, (), (id, status))
 
 } // namespace miximus::web_message
