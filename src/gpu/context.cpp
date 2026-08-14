@@ -125,10 +125,9 @@ context_s::context_s(bool visible, context_s* parent)
 {
 }
 
-context_s::context_s(const window_settings_s& settings, context_s* parent)
+void context_s::initialize_glfw()
 {
     static std::once_flag glfw_init;
-
     std::call_once(glfw_init, []() {
         _log()->debug("Initializing GLFW");
 
@@ -169,8 +168,11 @@ context_s::context_s(const window_settings_s& settings, context_s* parent)
         }
         monitor_list_version_.fetch_add(1, std::memory_order_relaxed);
     });
+}
 
-    const int visible_flag = settings.visible ? GLFW_TRUE : GLFW_FALSE;
+void context_s::configure_window_hints(bool visible)
+{
+    const int visible_flag = visible ? GLFW_TRUE : GLFW_FALSE;
     glfwWindowHint(GLFW_SRGB_CAPABLE, visible_flag);
     glfwWindowHint(GLFW_VISIBLE, visible_flag);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
@@ -182,9 +184,11 @@ context_s::context_s(const window_settings_s& settings, context_s* parent)
     glfwWindowHint(GLFW_GREEN_BITS, GLFW_DONT_CARE);
     glfwWindowHint(GLFW_BLUE_BITS, GLFW_DONT_CARE);
     glfwWindowHint(GLFW_REFRESH_RATE, GLFW_DONT_CARE);
+}
 
-    GLFWmonitor*       monitor{};
-    const GLFWvidmode* mode{};
+auto context_s::resolve_window_target(const window_settings_s& settings) -> window_target_s
+{
+    window_target_s target{.dimensions = settings.rect.size};
     if (settings.fullscreen) {
         auto it = monitors_.find(settings.monitor_id);
         if (it == monitors_.end()) {
@@ -193,42 +197,27 @@ context_s::context_s(const window_settings_s& settings, context_s* parent)
                 monitors_, [&settings](const auto& entry) { return entry.second.label == settings.monitor_id; });
         }
         if (it != monitors_.end()) {
-            monitor = it->second.handle;
+            target.monitor = it->second.handle;
         } else if (settings.monitor_id.empty()) {
-            monitor = glfwGetPrimaryMonitor();
+            target.monitor = glfwGetPrimaryMonitor();
         }
 
-        if (monitor != nullptr) {
-            mode = glfwGetVideoMode(monitor);
-            if (mode != nullptr) {
-                glfwWindowHint(GLFW_RED_BITS, mode->redBits);
-                glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
-                glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
-                glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+        if (target.monitor != nullptr) {
+            target.mode = glfwGetVideoMode(target.monitor);
+            if (target.mode != nullptr) {
+                glfwWindowHint(GLFW_RED_BITS, target.mode->redBits);
+                glfwWindowHint(GLFW_GREEN_BITS, target.mode->greenBits);
+                glfwWindowHint(GLFW_BLUE_BITS, target.mode->blueBits);
+                glfwWindowHint(GLFW_REFRESH_RATE, target.mode->refreshRate);
+                target.dimensions = {target.mode->width, target.mode->height};
             }
         }
     }
+    return target;
+}
 
-    const auto dimensions = mode != nullptr ? vec2i_t{mode->width, mode->height} : settings.rect.size;
-
-    auto parent_window = (parent != nullptr) ? parent->window_ : nullptr;
-    window_ =
-        glfwCreateWindow(dimensions.x, dimensions.y, "Miximus", mode != nullptr ? monitor : nullptr, parent_window);
-
-    if (window_ == nullptr) {
-        throw std::runtime_error("Failed to create GLFW window");
-    }
-
-    if (settings.visible) {
-        if (mode == nullptr) {
-            glfwSetWindowPos(window_, settings.rect.pos.x, settings.rect.pos.y);
-        }
-    }
-
-    glfwSetWindowUserPointer(window_, this);
-
-    const context_scope_s context_scope(*this);
-
+void context_s::initialize_glad()
+{
     static std::once_flag glad_init;
     std::call_once(glad_init, []() {
         if (gladLoadGL(glfwGetProcAddress) == 0) {
@@ -238,30 +227,64 @@ context_s::context_s(const window_settings_s& settings, context_s* parent)
         glEnable(GL_DEBUG_OUTPUT);
         glDebugMessageCallback(opengl_error_callback, nullptr);
     });
+}
 
-    if (settings.visible) {
-        glfwSwapInterval(1);
-
-        // glfwSetWindowIcon is not supported on Wayland (GLFW_FEATURE_UNAVAILABLE).
-        // On Wayland the taskbar icon is provided by the .desktop file instead.
-        if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) {
-            auto logos = std::array{
-                load_image("images/miximus_32x32.png"),
-                load_image("images/miximus_64x64.png"),
-                load_image("images/miximus_128x128.png"),
-            };
-            std::array<GLFWimage, 3> glfw_logos{};
-            std::ranges::transform(logos, glfw_logos.begin(), [](auto& logo) {
-                return GLFWimage{
-                    .width  = logo.width(),
-                    .height = logo.height(),
-                    .pixels = logo.pixels().data(),
-                };
-            });
-
-            glfwSetWindowIcon(window_, static_cast<int>(glfw_logos.size()), glfw_logos.data());
-        }
+void context_s::configure_visible_window(const window_settings_s& settings, const window_target_s& target)
+{
+    if (!settings.visible) {
+        return;
     }
+    if (target.mode == nullptr) {
+        glfwSetWindowPos(window_, settings.rect.pos.x, settings.rect.pos.y);
+    }
+
+    glfwSwapInterval(1);
+
+    // glfwSetWindowIcon is not supported on Wayland (GLFW_FEATURE_UNAVAILABLE).
+    // On Wayland the taskbar icon is provided by the .desktop file instead.
+    if (glfwGetPlatform() == GLFW_PLATFORM_WAYLAND) {
+        return;
+    }
+
+    auto logos = std::array{
+        load_image("images/miximus_32x32.png"),
+        load_image("images/miximus_64x64.png"),
+        load_image("images/miximus_128x128.png"),
+    };
+    std::array<GLFWimage, 3> glfw_logos{};
+    std::ranges::transform(logos, glfw_logos.begin(), [](auto& logo) {
+        return GLFWimage{
+            .width  = logo.width(),
+            .height = logo.height(),
+            .pixels = logo.pixels().data(),
+        };
+    });
+
+    glfwSetWindowIcon(window_, static_cast<int>(glfw_logos.size()), glfw_logos.data());
+}
+
+context_s::context_s(const window_settings_s& settings, context_s* parent)
+{
+    initialize_glfw();
+    configure_window_hints(settings.visible);
+    const auto target = resolve_window_target(settings);
+
+    auto parent_window = (parent != nullptr) ? parent->window_ : nullptr;
+    window_            = glfwCreateWindow(target.dimensions.x,
+                               target.dimensions.y,
+                               "Miximus",
+                               target.mode != nullptr ? target.monitor : nullptr,
+                               parent_window);
+
+    if (window_ == nullptr) {
+        throw std::runtime_error("Failed to create GLFW window");
+    }
+
+    glfwSetWindowUserPointer(window_, this);
+
+    const context_scope_s context_scope(*this);
+    initialize_glad();
+    configure_visible_window(settings, target);
 
     glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
     glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);

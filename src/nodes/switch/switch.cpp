@@ -65,17 +65,17 @@ class node_impl : public node_i
     void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         const auto active_connections = active_.connections(state);
-        active_.submit_dependencies(app, nodes, active_connections);
+        interface_i::submit_dependencies(app, nodes, active_connections);
         if (!active_connections.empty()) {
             for (const auto& input : inputs_) {
-                input.submit_dependencies(app, nodes, input.connections(state));
+                interface_i::submit_dependencies(app, nodes, input.connections(state));
             }
             return;
         }
 
         const auto  index = active_index(static_cast<double>(state.get_option<int>("active", 1)));
         const auto& input = inputs_.at(index);
-        input.submit_dependencies(app, nodes, input.connections(state));
+        interface_i::submit_dependencies(app, nodes, input.connections(state));
     }
 
     nlohmann::json get_default_options() const final

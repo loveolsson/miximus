@@ -57,6 +57,7 @@ class node_impl : public node_i
     std::unique_ptr<render::font_instance_s> font_instance_;
     utils::observed_value_s<uint64_t>        font_version_;
     utils::observed_value_s<std::string>     status_font_name_;
+    gpu::texture_frame_ptr                   rendered_text_frame_;
 
   public:
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
@@ -204,6 +205,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
+        rendered_text_frame_.reset();
         auto fb = iface_fb_in_.resolve_value(app, nodes, state);
         iface_fb_out_.set_value(fb);
 
@@ -225,11 +227,13 @@ class node_impl : public node_i
             render_text(app, state);
         }
 
-        auto texture = text_info_->upload_stream ? text_info_->upload_stream->consume_latest() : nullptr;
-        if (texture == nullptr) {
+        auto frame = text_info_->upload_stream ? text_info_->upload_stream->consume_latest() : nullptr;
+        if (!frame) {
             spdlog::get("app")->debug("Text node: No uploaded texture ready for rendering");
             return;
         }
+        rendered_text_frame_ = std::move(frame);
+        rendered_text_frame_->wait_ready_on_gpu();
 
         auto position = iface_position_in_.resolve_value(app, nodes, state, {0.0, 0.0});
 
@@ -242,8 +246,16 @@ class node_impl : public node_i
 
         const auto scale = gpu::pixels_to_normalized(gpu::vec2_t(surface_size), fb_dim);
 
-        textured_quad_->draw(texture, {.pos = position, .size = scale});
+        textured_quad_->draw(rendered_text_frame_->texture(), {.pos = position, .size = scale});
         gpu::framebuffer_s::end_render();
+    }
+
+    void complete(core::app_state_s* /*app*/) final
+    {
+        if (rendered_text_frame_) {
+            rendered_text_frame_->release_from_render();
+            rendered_text_frame_.reset();
+        }
     }
 
     std::string_view type() const final { return "text"; }

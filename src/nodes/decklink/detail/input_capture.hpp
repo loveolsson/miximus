@@ -1,6 +1,6 @@
 #pragma once
 #include "device_reservation.hpp"
-#include "gpu/texture_fwd.hpp"
+#include "gpu/texture_frame.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
 #include "media/timed_source_queue.hpp"
@@ -18,9 +18,9 @@ namespace miximus::nodes::decklink::detail {
 
 struct captured_input_frame_s
 {
-    gpu::texture_s* texture{};
-    gpu::vec2i_t    dimensions{};
-    BMDColorspace   colorspace{bmdColorspaceRec709};
+    gpu::texture_frame_ptr frame;
+    gpu::vec2i_t           dimensions{};
+    BMDColorspace          colorspace{bmdColorspaceRec709};
 };
 
 class input_capture_s

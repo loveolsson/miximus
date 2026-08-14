@@ -34,7 +34,7 @@ struct captured_frame_data_s
     std::optional<gpu::transfer::texture_upload_lease_s>    upload;
     decklink_ptr<IDeckLinkVideoInputFrame>                  input_frame;
     uint64_t                                                upload_version{};
-    gpu::texture_s*                                         texture{};
+    gpu::texture_frame_ptr                                  frame;
     gpu::vec2i_t                                            src_dim{};
     BMDColorspace                                           colorspace{bmdColorspaceRec709};
 };
@@ -580,7 +580,7 @@ class callback_s
                                                         .upload         = std::move(upload),
                                                         .input_frame    = decklink_ptr(videoFrame),
                                                         .upload_version = version,
-                                                        .texture        = nullptr,
+                                                        .frame          = nullptr,
                                                         .src_dim        = src_dim,
                                                         .colorspace     = get_frame_colorspace(videoFrame),
                                                     }));
@@ -676,15 +676,14 @@ class callback_s
                 frame_queue_.fail(ticket);
                 return nullptr;
             }
-            info.texture = info.stream->consume_exact(info.upload_version);
-            if (info.texture == nullptr || info.stream->current_version() != info.upload_version ||
-                !frame.mark_ready()) {
+            info.frame = info.stream->consume_exact(info.upload_version);
+            if (!info.frame || info.stream->current_version() != info.upload_version || !frame.mark_ready()) {
                 if (!warned_consume_failure_) {
                     log()->warn("DeckLink timed input failed to consume upload version {} (current {}, texture {}, "
                                 "readiness {})",
                                 info.upload_version,
                                 info.stream->current_version(),
-                                info.texture != nullptr,
+                                static_cast<bool>(info.frame),
                                 static_cast<int>(frame.readiness()));
                     warned_consume_failure_ = true;
                 }
@@ -692,6 +691,12 @@ class callback_s
                 return nullptr;
             }
             info.input_frame = nullptr;
+        } else if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
+            info.frame = info.stream ? info.stream->current_frame(info.upload_version) : nullptr;
+            if (!info.frame) {
+                frame_queue_.fail(ticket);
+                return nullptr;
+            }
         }
 
         if (!ticket.await() || !frame_queue_.commit(ticket)) {
@@ -870,11 +875,11 @@ std::optional<captured_input_frame_s> input_capture_s::resolve_frame()
     auto* frame = impl_->callback && impl_->prepared_frame.has_value()
                       ? impl_->callback->resolve_frame(*impl_->prepared_frame)
                       : nullptr;
-    if (frame == nullptr || frame->texture == nullptr) {
+    if (frame == nullptr || !frame->frame) {
         return std::nullopt;
     }
     return captured_input_frame_s{
-        .texture    = frame->texture,
+        .frame      = frame->frame,
         .dimensions = frame->src_dim,
         .colorspace = frame->colorspace,
     };

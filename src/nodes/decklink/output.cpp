@@ -511,12 +511,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                 log()->error("DeckLink output transfer produced an unexpected buffer size");
                 continue;
             }
-            if (std::cmp_greater(frame->tag(), std::numeric_limits<utils::flicks::rep>::max())) {
-                log()->error("DeckLink output transfer has an invalid program target time");
-                continue;
-            }
-
-            const auto target_time = utils::flicks{static_cast<utils::flicks::rep>(frame->tag())};
+            const auto target_time = frame->target_time();
             const auto fingerprint = media::sampled_frame_fingerprint(frame->bytes());
             if (content_frames_sampled_ != 0 && fingerprint == last_content_fingerprint_) {
                 ++content_frame_repeats_;
@@ -926,11 +921,13 @@ class node_impl : public node_i
     std::chrono::steady_clock::time_point                     next_start_attempt_;
     std::chrono::steady_clock::time_point                     next_metrics_status_;
     uint64_t                                                  render_target_drops_{};
+    std::optional<gpu::transfer::texture_download_target_s>   render_target_;
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void stop_playback()
     {
+        render_target_.reset();
         render_state_.reset();
         framebuffer_scale_.reset();
         mode_options_version_.reset();
@@ -1133,6 +1130,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
+        render_target_.reset();
         const auto texture = iface_tex_.resolve_value(app, nodes, state);
         if (texture == nullptr || !render_state_) {
             return;
@@ -1177,12 +1175,20 @@ class node_impl : public node_i
         textured_quad_yuv_->draw(framebuffer_scale_->texture());
 
         gpu::framebuffer_s::end_render();
-        target->set_tag(static_cast<uint64_t>(app->frame_context().target_time.count()));
-        target->submit();
-        callback_->request_preroll_pump();
+        target->set_target_time(app->frame_context().target_time);
+        render_target_ = std::move(target);
     }
 
-    void complete(core::app_state_s* /*app*/) final {}
+    void complete(core::app_state_s* /*app*/) final
+    {
+        if (render_target_) {
+            render_target_->submit();
+            render_target_.reset();
+            if (callback_) {
+                callback_->request_preroll_pump();
+            }
+        }
+    }
 
     nlohmann::json get_default_options() const final
     {

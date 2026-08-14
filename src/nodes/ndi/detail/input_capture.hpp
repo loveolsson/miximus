@@ -1,5 +1,5 @@
 #pragma once
-#include "gpu/texture_fwd.hpp"
+#include "gpu/texture_frame.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
 #include "media/timed_source_queue.hpp"
@@ -15,8 +15,8 @@ namespace miximus::nodes::ndi::detail {
 
 struct resolved_input_frame_s
 {
-    gpu::texture_s* texture{};
-    gpu::vec2i_t    dimensions{};
+    gpu::texture_frame_ptr frame;
+    gpu::vec2i_t           dimensions{};
 };
 
 class input_capture_s : public std::enable_shared_from_this<input_capture_s>

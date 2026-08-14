@@ -69,8 +69,8 @@ The current graph frame performs these operations:
 3. recursively submit from every demanding sink, following the potentially required input connections;
 4. suppress repeated submission of shared upstream nodes with a submission-specific visited set;
 5. lazily execute the dependencies of every demanding sink;
-6. call `glFinish()` globally;
-7. call `complete()` on every node.
+6. call `complete()` on every node without globally waiting for the GPU; nodes that consumed a cross-context frame
+   attach that frame's render-release fence here.
 
 This preserves a stable graph, advances every node through `prepare()`, gives active sources an opportunity to submit
 work before painting, and keeps render-thread GL destruction. DeckLink and NDI inputs use the submission pass to select
@@ -78,8 +78,9 @@ and start a PTS-aligned transfer ticket that execution subsequently awaits. Futu
 `prepare()` also still combines configuration maintenance, device lifecycle, status updates, queue advancement,
 allocation, and per-frame acquisition in several existing nodes.
 
-The transfer services use monotonic versions or arbitrary integer tags and publish the latest completed transfer.
-Those are useful implementation details but do not identify the media frame for which a transfer was requested.
+Upload transfer services use monotonic versions and publish the latest completed transfer. Download frames carry their
+absolute program target time as `utils::flicks`. Those values are useful implementation details but do not fully
+identify the media frame for which a transfer was requested.
 Texture and framebuffer interfaces similarly expose raw pointers without PTS, epoch, or readiness metadata.
 
 ## Program timeline
@@ -331,8 +332,8 @@ source timing policy before submission when no newer source frame is appropriate
 authoritative for the evaluation. Device loss, cancellation, and transfer failure still require finite operational
 failure handling so shutdown cannot hang, but they are errors rather than normal deadline-based fallback decisions.
 
-Transfer APIs should replace bare `version`/`tag` semantics at media-facing boundaries with structured metadata such
-as:
+Transfer APIs should use meaning-specific, strongly typed members at media-facing boundaries. Where a full media-frame
+identity crosses the boundary, use structured metadata such as:
 
 ```cpp
 struct media_frame_id_s
@@ -551,9 +552,11 @@ references, but transfer leases must flow back to the transfer service for GL cl
 ownership transition, stale-epoch rejection, and shutdown procedure. A node's asynchronous stop state must retain all
 callback, device, allocator, and queued-frame objects that the SDK can still reference.
 
-The global `glFinish()` can remain during early migration, but the end state should associate GL sync objects with the
-resource or transfer slots whose reuse they protect. OpenGL fences belong to a command stream rather than intrinsically
-to a resource, so one frame-completion fence may safely guard several resources last used by that frame.
+Cross-context textures are carried by frame objects that own both handoffs. The transfer worker publishes a ready fence
+after producing a frame, and the render context inserts a GPU wait before sampling it. The consuming node attaches a
+release fence in `complete()`. Once timing selection retires that frame, its worker waits for the release fence before
+reusing the texture or changing DVP/CUDA ownership. Repeated source frames remain retained and receive a new release
+fence after every traversal.
 
 ## Status and diagnostics
 
@@ -561,7 +564,7 @@ The scheduler should report:
 
 - program rate, frame number, PTS, epoch, and clock source;
 - render start/end time, render duration, deadline margin, and lateness;
-- prepare, traversal setup, submission, execution, GPU-finish, and completion durations;
+- prepare, traversal setup, submission, execution, legacy GPU-finish, and completion durations;
 - demanding-sink and submitted-closure node counts;
 - skipped frames and sustained-overload state;
 - pending/applied option-batch counts once atomic batches are implemented.

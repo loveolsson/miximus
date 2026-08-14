@@ -40,7 +40,7 @@ class interface_i
     void set_max_connection_count(size_t count) noexcept { max_connection_count_ = count; }
 
     std::span<const connection_s> connections(const node_state_s& state) const;
-    void submit_dependencies(core::app_state_s*, const node_map_t&, std::span<const connection_s>) const;
+    static void submit_dependencies(core::app_state_s*, const node_map_t&, std::span<const connection_s>);
 
     dir_e            direction() const noexcept { return direction_; }
     interface_type_e type() const noexcept { return type_; }
@@ -48,8 +48,8 @@ class interface_i
     std::string_view name() const noexcept { return name_; }
 
   protected:
-    const interface_i* resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&) const;
-    resolved_cons_t    resolve_connections(core::app_state_s*, const node_map_t&, const node_state_s&) const;
+    static const interface_i* resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&);
+    static resolved_cons_t    resolve_connections(core::app_state_s*, const node_map_t&, std::span<const connection_s>);
 
     size_t           max_connection_count_{1};
     std::string_view name_;
@@ -74,7 +74,18 @@ class input_interface_s : public interface_i
     }
     ~input_interface_s() = default;
 
-    bool     accepts(interface_type_e type) const noexcept final;
+    bool accepts(interface_type_e type) const noexcept final
+    {
+        constexpr auto target_type = get_interface_type<T>();
+        switch (target_type) {
+            case interface_type_e::vec2:
+                return type == interface_type_e::vec2 || type == interface_type_e::f64;
+            case interface_type_e::texture:
+                return type == interface_type_e::texture || type == interface_type_e::framebuffer;
+            default:
+                return type == target_type;
+        }
+    }
     static T cast_iface_to_value(const interface_i* iface, const T& fallback);
 
     T resolve_value(core::app_state_s*  app,
@@ -104,7 +115,7 @@ class input_interface_s : public interface_i
     {
         resolved_values_t<S> res;
 
-        auto ifaces = resolve_connections(app, nodes, state);
+        auto ifaces = resolve_connections(app, nodes, connections(state));
 
         res.reserve(ifaces.size());
         assert(max_connection_count_ > 1); // Should only be called on interfaces expecting multiple values

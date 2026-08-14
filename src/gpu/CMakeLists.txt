@@ -20,6 +20,8 @@ add_library(gpu
     texture.hpp
     texture_fwd.hpp
     texture.cpp
+    texture_frame.hpp
+    texture_frame.cpp
     types.hpp
     types.cpp
     geometry.hpp

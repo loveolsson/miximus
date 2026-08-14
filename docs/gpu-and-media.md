@@ -52,7 +52,11 @@ well.
 - `cpu_wait()` blocks the caller up to a timeout;
 - construction and destruction require GL current.
 
-The frame lifecycle currently performs one global `glFinish()` between all node `execute()` calls and all `complete()` calls. Transfer code must not rely on that finish: transfer services fence their own work and publish or recycle slots only after completion on a transfer/display worker.
+Cross-context texture frames own their synchronization. A producing worker attaches and flushes a ready fence; the
+render context inserts a GPU wait before using the texture. In `complete()`, the consuming node attaches and flushes a
+release fence. The render thread does not wait for that fence. Once the logical frame is retired, its worker waits
+before returning the slot to the free queue or performing DVP/CUDA ownership transitions. Downloads and display
+handoffs likewise use explicit fences; there is no global GPU finish in the frame loop.
 
 ## Host/GPU transfer abstraction
 
@@ -98,6 +102,12 @@ the texture. Legacy and non-timed producers may poll with `consume_latest()` or 
 previous texture while a newer upload is incomplete. A PTS-aware source instead calls `wait_until_ready()` for its
 exact prepared version during execution and only then makes that version current with `consume_exact()`. Exact
 consumption also reclaims other completed slots that the source's timing selection has made obsolete.
+
+Upload consumption returns a retained texture-frame handle rather than a raw texture. The node GPU-waits on its ready
+fence before exposing or sampling the texture and releases it from `complete()`. Replaced frames enter reclamation when
+the timing/current-frame owner retires them, but the worker does not return a slot to the free queue, change external
+ownership, overwrite it, or destroy it until the frame's latest release fence has signalled. Waiting can stall that
+worker only when it is reclaiming an exhausted slot; bounded producers already drop when no free slot is available.
 
 Submitted leases also pin their writable memory until the producer releases the lease. This is important for SDK allocators such as DeckLink, which may retain a buffer after delivering its frame callback.
 
@@ -187,7 +197,8 @@ and releases its callback reference. Control tasks retain the callback and devic
 all capture buffers are returned, and transfer-stream destruction has been queued on the GL upload worker. Application
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
-DeckLink output renders packed 10-bit YUV into a download target tagged with the frame's absolute program target time.
+DeckLink output renders packed 10-bit YUV into a download target carrying the frame's absolute program target time in
+`utils::flicks`.
 The transfer worker completes readback, and ready leases drain in FIFO order into a bounded timed-output queue. That
 queue releases superseded or overflowed frames according to its explicit selection policy. Before playback starts, short
 non-blocking control tasks collect actual program downloads. Once the configured buffer target is available, those
@@ -233,7 +244,8 @@ for and consumes that same version before color conversion. Superseded, overflow
 host leases without starting GPU work. The SDK's frame-sync layer is intentionally not placed in front of this common
 timing path.
 
-NDI output renders frames tagged with their absolute program target time into a bounded RGBA download stream. Its worker
+NDI output renders frames carrying their absolute program target time in `utils::flicks` into a bounded RGBA download
+stream. Its worker
 consumes completed leases in FIFO order, prerolls to the globally configured NDI-output buffer depth, and treats each
 exact steady-clock send deadline as a physical presentation time. It deliberately drops superseded program frames,
 repeats the retained frame across missing intervals, skips obsolete output intervals rather than bursting to catch up,

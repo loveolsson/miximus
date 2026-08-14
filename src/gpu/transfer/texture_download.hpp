@@ -3,6 +3,7 @@
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_download_fwd.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
+#include "utils/flicks.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -67,7 +68,7 @@ class texture_download_target_s
     texture_download_target_s& operator=(texture_download_target_s&&) noexcept;
 
     framebuffer_s* framebuffer() const noexcept;
-    void           set_tag(uint64_t tag) noexcept;
+    void           set_target_time(utils::flicks target_time) noexcept;
     void           submit();
     explicit       operator bool() const noexcept { return slot_ != nullptr; }
 };
@@ -91,7 +92,7 @@ class texture_download_frame_s
     texture_download_frame_s& operator=(texture_download_frame_s&&) noexcept;
 
     std::span<const std::byte> bytes() const noexcept;
-    uint64_t                   tag() const noexcept;
+    utils::flicks              target_time() const noexcept;
     explicit                   operator bool() const noexcept { return slot_ != nullptr; }
 };
 

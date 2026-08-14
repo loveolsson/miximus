@@ -1,7 +1,6 @@
 #include "texture_upload.hpp"
 
 #include "gpu/context.hpp"
-#include "gpu/sync.hpp"
 #include "gpu/transfer/detail/backend_factory.hpp"
 #include "gpu/transfer/detail/requirements.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
@@ -42,7 +41,7 @@ enum class task_type_e : uint8_t
 struct texture_upload_slot_s
 {
     std::unique_ptr<backend_i> backend;
-    std::unique_ptr<texture_s> texture;
+    texture_frame_ptr          frame;
     slot_state_e               state{slot_state_e::free};
     size_t                     reserved_bytes{};
     bool                       gl_owns_texture{};
@@ -87,7 +86,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
 
     void release_slot_resources(texture_upload_slot_s& slot)
     {
-        if (slot.texture && slot.backend) {
+        if (slot.frame && slot.backend) {
             if (slot.gl_owns_texture) {
                 slot.backend->end_texture_use();
                 slot.gl_owns_texture = false;
@@ -95,7 +94,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
             slot.backend->unbind_texture();
         }
         slot.backend.reset();
-        slot.texture.reset();
+        slot.frame.reset();
         release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
     }
@@ -113,10 +112,10 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
 
             auto slot            = std::make_shared<texture_upload_slot_s>();
             slot->reserved_bytes = reserved_bytes;
-            slot->texture =
-                std::make_unique<texture_s>(stream->desc.requirements.dimensions, stream->desc.requirements.format);
+            slot->frame          = std::make_shared<texture_frame_s>(stream->desc.requirements.dimensions,
+                                                            stream->desc.requirements.format);
             auto backend =
-                create_backend(stream->desc.requirements, backend_i::direction_e::cpu_to_gpu, slot->texture.get());
+                create_backend(stream->desc.requirements, backend_i::direction_e::cpu_to_gpu, slot->frame->texture());
             slot->backend = std::move(backend.backend);
 
             const auto actual_reserved = slot_memory_usage(stream->desc.requirements, backend.allocation_bytes);
@@ -174,16 +173,11 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         slot->gl_owns_texture = success;
 
         if (success && stream->desc.generate_mip_maps) {
-            slot->texture->generate_mip_maps();
+            slot->frame->texture()->generate_mip_maps();
         }
 
         if (success) {
-            sync_s ready_sync;
-            context_s::flush();
-            // The render thread must never inherit an unsignalled upload wait.
-            // Waiting here keeps transfer latency entirely on this dedicated
-            // worker and publishes only textures that are immediately usable.
-            success = ready_sync.cpu_wait(std::chrono::hours(1));
+            slot->frame->publish_ready_from_worker();
         }
 
         const std::scoped_lock lock(stream->mutex);
@@ -203,6 +197,9 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
     {
         const std::scoped_lock lock(stream->mutex);
         if (!slot->lease_released) {
+            return false;
+        }
+        if (!slot->frame->wait_released_on_worker()) {
             return false;
         }
         if (!stream->active) {
@@ -260,6 +257,18 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
 
 namespace miximus::gpu::transfer {
 namespace {
+std::shared_ptr<detail::texture_upload_slot_s>
+retire_current_slot(const std::shared_ptr<detail::texture_upload_stream_state_s>& stream)
+{
+    if (!stream->current_slot) {
+        return {};
+    }
+
+    auto slot   = std::move(stream->current_slot);
+    slot->state = detail::slot_state_e::reclaim;
+    return slot;
+}
+
 void return_unsubmitted_lease(const std::shared_ptr<detail::texture_upload_stream_state_s>& stream,
                               const std::shared_ptr<detail::texture_upload_slot_s>&         slot)
 {
@@ -368,13 +377,18 @@ texture_upload_stream_s::texture_upload_stream_s(std::shared_ptr<detail::texture
 
 texture_upload_stream_s::~texture_upload_stream_s()
 {
-    auto service = state_->service.lock();
+    auto                                           service = state_->service.lock();
+    std::shared_ptr<detail::texture_upload_slot_s> current;
     {
         const std::scoped_lock lock(state_->mutex);
         state_->active = false;
+        current        = retire_current_slot(state_);
         state_->completion_cv.notify_all();
     }
     if (service) {
+        if (current) {
+            service->enqueue({.type = detail::task_type_e::reclaim, .stream = state_, .slot = std::move(current)});
+        }
         service->enqueue({.type = detail::task_type_e::destroy_stream, .stream = state_, .slot = {}});
     }
 }
@@ -435,12 +449,15 @@ std::optional<texture_upload_lease_s> texture_upload_stream_s::acquire_for(std::
     }
 }
 
-texture_s* texture_upload_stream_s::consume_latest() { return consume_through(std::numeric_limits<uint64_t>::max()); }
+texture_frame_ptr texture_upload_stream_s::consume_latest()
+{
+    return consume_through(std::numeric_limits<uint64_t>::max());
+}
 
-texture_s* texture_upload_stream_s::consume_through(uint64_t version)
+texture_frame_ptr texture_upload_stream_s::consume_through(uint64_t version)
 {
     std::vector<std::shared_ptr<detail::texture_upload_slot_s>> reclaim;
-    texture_s*                                                  result = nullptr;
+    texture_frame_ptr                                           result;
     {
         const std::scoped_lock lock(state_->mutex);
         if (!state_->active) {
@@ -459,9 +476,8 @@ texture_s* texture_upload_stream_s::consume_through(uint64_t version)
         }
 
         if (next) {
-            if (state_->current_slot) {
-                state_->current_slot->state = detail::slot_state_e::reclaim;
-                reclaim.emplace_back(std::move(state_->current_slot));
+            if (auto current = retire_current_slot(state_)) {
+                reclaim.emplace_back(std::move(current));
             }
             next->state             = detail::slot_state_e::current;
             state_->current_version = next->version;
@@ -469,7 +485,7 @@ texture_s* texture_upload_stream_s::consume_through(uint64_t version)
         }
 
         if (state_->current_slot) {
-            result = state_->current_slot->texture.get();
+            result = state_->current_slot->frame;
         }
     }
 
@@ -481,10 +497,10 @@ texture_s* texture_upload_stream_s::consume_through(uint64_t version)
     return result;
 }
 
-texture_s* texture_upload_stream_s::consume_exact(uint64_t version)
+texture_frame_ptr texture_upload_stream_s::consume_exact(uint64_t version)
 {
     std::vector<std::shared_ptr<detail::texture_upload_slot_s>> reclaim;
-    texture_s*                                                  result = nullptr;
+    texture_frame_ptr                                           result;
     {
         const std::scoped_lock lock(state_->mutex);
         if (!state_->active) {
@@ -505,14 +521,13 @@ texture_s* texture_upload_stream_s::consume_exact(uint64_t version)
         }
         state_->ready_slots.clear();
 
-        if (state_->current_slot) {
-            state_->current_slot->state = detail::slot_state_e::reclaim;
-            reclaim.emplace_back(std::move(state_->current_slot));
+        if (auto current = retire_current_slot(state_)) {
+            reclaim.emplace_back(std::move(current));
         }
         next->state             = detail::slot_state_e::current;
         state_->current_version = next->version;
         state_->current_slot    = std::move(next);
-        result                  = state_->current_slot->texture.get();
+        result                  = state_->current_slot->frame;
     }
 
     if (auto service = state_->service.lock()) {
@@ -521,6 +536,15 @@ texture_s* texture_upload_stream_s::consume_exact(uint64_t version)
         }
     }
     return result;
+}
+
+texture_frame_ptr texture_upload_stream_s::current_frame(uint64_t version) const
+{
+    const std::scoped_lock lock(state_->mutex);
+    if (!state_->active || !state_->current_slot || state_->current_version != version) {
+        return nullptr;
+    }
+    return state_->current_slot->frame;
 }
 
 void texture_upload_stream_s::discard_exact(uint64_t version)

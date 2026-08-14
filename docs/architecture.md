@@ -69,11 +69,11 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 6. Finish the complete submission traversal before execution begins.
 7. Execute the demanding sinks. Resolving an input recursively executes its upstream node.
 8. Record executed IDs so each node executes at most once per frame.
-9. Call `gpu::context_s::finish()` after all submitted `execute()` work.
-10. Call `complete()` on every node.
-11. Rewind the root GL context.
-12. Flush and broadcast node-status deltas.
-13. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
+9. Call `complete()` on every node without waiting for unrelated GPU work. Nodes that consumed a cross-context frame
+   attach that frame's render-release fence here.
+10. Rewind the root GL context.
+11. Flush and broadcast node-status deltas.
+12. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
 
 ### Node lifecycle responsibilities
 
@@ -82,7 +82,8 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
   sink demands execution.
 - `submit()`: park frame-local work or initiate asynchronous work for the demanded upstream closure without waiting.
 - `execute()`: resolve inputs and submit render work with the root GL context current.
-- `complete()`: consume completed readbacks or enqueue data after the global `glFinish`; avoid slow I/O.
+- `complete()`: perform post-execution CPU lifecycle work. GPU commands may still be running; consume readbacks only
+  through their explicit transfer completion state and avoid slow I/O.
 - destructor: GL-resource destruction is arranged on the render thread with a context current.
 
 Submission is conservative for routing controlled by a connected interface: a submitted node is not guaranteed to

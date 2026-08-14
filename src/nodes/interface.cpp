@@ -38,7 +38,7 @@ std::span<const connection_s> interface_i::connections(const node_state_s& state
 
 void interface_i::submit_dependencies(core::app_state_s*            app,
                                       const node_map_t&             nodes,
-                                      std::span<const connection_s> connected) const
+                                      std::span<const connection_s> connected)
 {
     for (const auto& connection : connected) {
         submit_node_once(app, nodes, connection.from_node);
@@ -46,7 +46,7 @@ void interface_i::submit_dependencies(core::app_state_s*            app,
 }
 
 const interface_i*
-interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes, const connection_s& connection) const
+interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes, const connection_s& connection)
 {
     const auto record = nodes.find(connection.from_node);
     if (record == nodes.end()) {
@@ -60,91 +60,18 @@ interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes,
     return iface;
 }
 
-interface_i::resolved_cons_t
-interface_i::resolve_connections(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) const
+interface_i::resolved_cons_t interface_i::resolve_connections(core::app_state_s*            app,
+                                                              const node_map_t&             nodes,
+                                                              std::span<const connection_s> connected)
 {
     resolved_cons_t res;
-
-    const auto connected = connections(state);
     res.reserve(connected.size());
 
     for (const auto& con : connected) {
-        const interface_i* iface = nullptr;
-
-        if (auto record = nodes.find(con.from_node); record != nodes.end()) {
-            const auto& node = record->second.node;
-
-            iface = node->find_interface(con.from_interface);
-
-            if (iface != nullptr) {
-                execute_node_once(app, nodes, record->first);
-            }
-        }
-
-        res.emplace_back(iface);
+        res.emplace_back(resolve_connection(app, nodes, con));
     }
 
     return res;
-}
-
-template <>
-bool input_interface_s<double>::accepts(interface_type_e type) const noexcept
-{
-    switch (type) {
-        case interface_type_e::f64:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-template <>
-bool input_interface_s<gpu::vec2_t>::accepts(interface_type_e type) const noexcept
-{
-    switch (type) {
-        case interface_type_e::f64:
-        case interface_type_e::vec2:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-template <>
-bool input_interface_s<gpu::rect_s>::accepts(interface_type_e type) const noexcept
-{
-    switch (type) {
-        case interface_type_e::rect:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-template <>
-bool input_interface_s<gpu::texture_s*>::accepts(interface_type_e type) const noexcept
-{
-    switch (type) {
-        case interface_type_e::texture:
-        case interface_type_e::framebuffer:
-            return true;
-        default:
-            return false;
-    }
-}
-
-template <>
-bool input_interface_s<gpu::framebuffer_s*>::accepts(interface_type_e type) const noexcept
-{
-    switch (type) {
-        case interface_type_e::framebuffer:
-            return true;
-        default:
-            return false;
-    }
 }
 
 template <>

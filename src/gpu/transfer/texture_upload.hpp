@@ -1,5 +1,5 @@
 #pragma once
-#include "gpu/texture.hpp"
+#include "gpu/texture_frame.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 
@@ -80,14 +80,18 @@ class texture_upload_stream_s
     std::optional<texture_upload_lease_s> try_acquire();
     std::optional<texture_upload_lease_s> acquire_for(std::chrono::milliseconds timeout);
 
-    // Called on the render thread with its GL context current. Polling consumers
-    // can retain their current texture while a newer upload remains incomplete.
-    texture_s* consume_latest();
-    texture_s* consume_through(uint64_t version);
+    // Selects a frame but does not synchronize it. A consuming node calls
+    // wait_ready_on_gpu() before use and release_from_render() in complete().
+    // Polling consumers can retain their current frame while a newer upload is
+    // incomplete.
+    texture_frame_ptr consume_latest();
+    texture_frame_ptr consume_through(uint64_t version);
     // Makes one exact completed upload current and discards other completed
     // uploads. This is intended for PTS-selected sources whose host buffers may
     // be returned in a different order from their transfer-slot acquisition.
-    texture_s* consume_exact(uint64_t version);
+    texture_frame_ptr consume_exact(uint64_t version);
+    // Returns the exact current frame for a timed-source repeat.
+    texture_frame_ptr current_frame(uint64_t version) const;
 
     // Retires an exact submitted upload which the render traversal no longer
     // needs. A queued transfer is reclaimed when its worker task completes;

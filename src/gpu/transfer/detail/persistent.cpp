@@ -96,8 +96,9 @@ bool pinned_transfer_s::wait_for_completion()
     if (direction_ == direction_e::cpu_to_gpu) {
         sync_->gpu_wait();
     } else {
-        // Indefinite wait — callers must ensure this is reached only after the
-        // GPU work is done (e.g. via gpu::context_s::finish()) to avoid blocking.
+        // The download worker has already waited for the render fence before
+        // starting this readback. Wait here until the mapped host bytes are
+        // ready for the consumer.
         sync_->cpu_wait(std::chrono::hours(1));
     }
 

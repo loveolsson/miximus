@@ -2,7 +2,7 @@
 
 #include "gpu/context.hpp"
 #include "gpu/framebuffer.hpp"
-#include "gpu/sync.hpp"
+#include "gpu/texture_frame.hpp"
 #include "gpu/transfer/detail/backend_factory.hpp"
 #include "gpu/transfer/detail/requirements.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
@@ -40,11 +40,10 @@ enum class task_type_e : uint8_t
 struct texture_download_slot_s
 {
     std::unique_ptr<backend_i> backend;
-    std::unique_ptr<texture_s> texture;
-    std::unique_ptr<sync_s>    render_sync;
+    texture_frame_ptr          frame;
     slot_state_e               state{slot_state_e::free};
     size_t                     reserved_bytes{};
-    uint64_t                   tag{};
+    utils::flicks              target_time{};
 };
 
 struct texture_download_stream_state_s
@@ -85,16 +84,13 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
 
     void release_slot(texture_download_slot_s& slot)
     {
-        if (slot.render_sync) {
-            slot.render_sync->gpu_wait();
-            slot.render_sync.reset();
-        }
-        if (slot.texture && slot.backend) {
+        if (slot.frame && slot.backend) {
+            (void)slot.frame->wait_released_on_worker();
             (void)slot.backend->begin_texture_use();
             (void)slot.backend->unbind_texture();
         }
         slot.backend.reset();
-        slot.texture.reset();
+        slot.frame.reset();
         release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
     }
@@ -121,10 +117,10 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
 
             auto slot            = std::make_shared<texture_download_slot_s>();
             slot->reserved_bytes = reserved;
-            slot->texture =
-                std::make_unique<texture_s>(stream->desc.requirements.dimensions, stream->desc.requirements.format);
+            slot->frame          = std::make_shared<texture_frame_s>(stream->desc.requirements.dimensions,
+                                                            stream->desc.requirements.format);
             auto backend =
-                create_backend(stream->desc.requirements, backend_i::direction_e::gpu_to_cpu, slot->texture.get());
+                create_backend(stream->desc.requirements, backend_i::direction_e::gpu_to_cpu, slot->frame->texture());
             slot->backend = std::move(backend.backend);
 
             const auto actual_reserved = slot_memory_usage(stream->desc.requirements, backend.allocation_bytes);
@@ -170,13 +166,9 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
                               const std::shared_ptr<texture_download_slot_s>&         slot)
     {
         const auto start   = std::chrono::steady_clock::now();
-        bool       success = true;
-        if (slot->render_sync) {
-            slot->render_sync->gpu_wait();
-            slot->render_sync.reset();
-        }
-        success = slot->backend->transfer() && success;
-        success = slot->backend->wait_for_completion() && success;
+        bool       success = slot->frame->wait_released_on_worker();
+        success            = success && slot->backend->transfer();
+        success            = success && slot->backend->wait_for_completion();
 
         const auto duration =
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -277,7 +269,7 @@ texture_download_target_s::texture_download_target_s(std::shared_ptr<detail::tex
                                                      std::shared_ptr<detail::texture_download_slot_s>         slot)
     : stream_(std::move(stream))
     , slot_(std::move(slot))
-    , framebuffer_(std::make_unique<framebuffer_s>(slot_->texture.get()))
+    , framebuffer_(std::make_unique<framebuffer_s>(slot_->frame->texture()))
 {
 }
 
@@ -312,10 +304,10 @@ texture_download_target_s& texture_download_target_s::operator=(texture_download
 
 framebuffer_s* texture_download_target_s::framebuffer() const noexcept { return framebuffer_.get(); }
 
-void texture_download_target_s::set_tag(uint64_t tag) noexcept
+void texture_download_target_s::set_target_time(utils::flicks target_time) noexcept
 {
     if (slot_) {
-        slot_->tag = tag;
+        slot_->target_time = target_time;
     }
 }
 
@@ -328,18 +320,16 @@ void texture_download_target_s::submit()
     if (!service) {
         return;
     }
-    slot_->render_sync = std::make_unique<sync_s>();
-    context_s::flush();
     {
         const std::scoped_lock lock(stream_->mutex);
         if (!stream_->active || slot_->state != detail::slot_state_e::rendering) {
-            slot_->render_sync.reset();
             return;
         }
         slot_->state = detail::slot_state_e::queued;
         --stream_->active_targets;
         submitted_ = true;
     }
+    slot_->frame->release_from_render();
     service->enqueue({.type = detail::task_type_e::download, .stream = stream_, .slot = slot_});
 }
 
@@ -376,7 +366,10 @@ std::span<const std::byte> texture_download_frame_s::bytes() const noexcept
     return {static_cast<const std::byte*>(slot_->backend->data()), slot_->backend->size()};
 }
 
-uint64_t texture_download_frame_s::tag() const noexcept { return slot_ ? slot_->tag : 0; }
+utils::flicks texture_download_frame_s::target_time() const noexcept
+{
+    return slot_ ? slot_->target_time : utils::flicks{};
+}
 
 texture_download_stream_s::texture_download_stream_s(std::shared_ptr<detail::texture_download_stream_state_s> state)
     : state_(std::move(state))
@@ -407,8 +400,8 @@ std::optional<texture_download_target_s> texture_download_stream_s::try_acquire(
         if (!state_->free_slots.empty()) {
             slot = std::move(state_->free_slots.front());
             state_->free_slots.pop_front();
-            slot->state = detail::slot_state_e::rendering;
-            slot->tag   = 0;
+            slot->state       = detail::slot_state_e::rendering;
+            slot->target_time = utils::flicks{};
             ++state_->active_targets;
         } else if (state_->slots.size() + state_->pending_allocations < state_->desc.max_slots &&
                    state_->pending_allocations == 0 &&

@@ -18,6 +18,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -39,16 +40,18 @@ class node_impl : public node_i
     std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
     std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
 
-    utils::observed_value_s<std::pair<std::string, bool>> sender_selection_;
-    utils::observed_value_s<timing_selection_t>           timing_selection_;
-    utils::observed_value_s<gpu::vec2i_t>                 stream_dimensions_;
-    std::chrono::steady_clock::time_point                 next_metrics_status_;
-    uint64_t                                              render_target_drops_{};
+    utils::observed_value_s<std::pair<std::string, bool>>   sender_selection_;
+    utils::observed_value_s<timing_selection_t>             timing_selection_;
+    utils::observed_value_s<gpu::vec2i_t>                   stream_dimensions_;
+    std::chrono::steady_clock::time_point                   next_metrics_status_;
+    uint64_t                                                render_target_drops_{};
+    std::optional<gpu::transfer::texture_download_target_s> render_target_;
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void clear_render_state()
     {
+        render_target_.reset();
         if (sender_) {
             sender_->clear_stream();
         }
@@ -222,6 +225,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
+        render_target_.reset();
         if (!sender_ || sender_->phase() != output_sender_s::phase_e::running) {
             return;
         }
@@ -252,12 +256,16 @@ class node_impl : public node_i
         textured_quad_->draw(texture);
         gpu::framebuffer_s::end_render();
 
-        target->set_tag(static_cast<uint64_t>(app->frame_context().target_time.count()));
-        target->submit();
+        target->set_target_time(app->frame_context().target_time);
+        render_target_ = std::move(target);
     }
 
     void complete(core::app_state_s* /*app*/) final
     {
+        if (render_target_) {
+            render_target_->submit();
+            render_target_.reset();
+        }
         if (sender_) {
             sender_->notify_frame();
         }

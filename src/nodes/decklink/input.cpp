@@ -66,6 +66,7 @@ class node_impl : public node_i
     std::chrono::steady_clock::time_point                     next_metrics_status_;
     gpu::color_conversion_s                                   yuv_conversion_{};
     gpu::mat3                                                 gamut_conversion_{1.0F};
+    gpu::texture_frame_ptr                                    rendered_input_frame_;
 
     output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -261,11 +262,14 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
+        rendered_input_frame_.reset();
         const auto frame = capture_ ? capture_->resolve_frame() : std::nullopt;
         if (!frame.has_value()) {
             iface_tex_.set_value(framebuffer_ ? framebuffer_->texture() : nullptr);
             return;
         }
+        rendered_input_frame_ = frame->frame;
+        rendered_input_frame_->wait_ready_on_gpu();
 
         if (!textured_quad_) {
             auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
@@ -292,7 +296,7 @@ class node_impl : public node_i
         shader->set_uniform("gamut_transfer", gamut_conversion_);
 
         framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        textured_quad_->draw(frame->texture);
+        textured_quad_->draw(rendered_input_frame_->texture());
         gpu::framebuffer_s::end_render();
 
         auto fb_tex = framebuffer_->texture();
@@ -302,6 +306,10 @@ class node_impl : public node_i
 
     void complete(core::app_state_s* /*app*/) final
     {
+        if (rendered_input_frame_) {
+            rendered_input_frame_->release_from_render();
+            rendered_input_frame_.reset();
+        }
         if (capture_) {
             capture_->release_prepared_frame();
         }

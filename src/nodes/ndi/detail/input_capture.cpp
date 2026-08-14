@@ -43,7 +43,7 @@ struct captured_frame_data_s
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
     std::optional<gpu::transfer::texture_upload_lease_s>    upload;
     uint64_t                                                upload_version{};
-    gpu::texture_s*                                         texture{};
+    gpu::texture_frame_ptr                                  frame;
     gpu::vec2i_t                                            dimensions{};
     int64_t                                                 ndi_timecode{};
     int64_t                                                 ndi_timestamp{NDIlib_recv_timestamp_undefined};
@@ -241,7 +241,7 @@ class input_capture_s::impl_s
                                                         .stream         = std::move(stream),
                                                         .upload         = std::move(upload),
                                                         .upload_version = upload_version,
-                                                        .texture        = nullptr,
+                                                        .frame          = nullptr,
                                                         .dimensions     = dimensions,
                                                         .ndi_timecode   = video_frame.timecode,
                                                         .ndi_timestamp  = video_frame.timestamp,
@@ -459,13 +459,18 @@ class input_capture_s::impl_s
                 return std::nullopt;
             }
 
-            info.texture = info.stream->consume_exact(info.upload_version);
-            if (info.texture == nullptr || info.stream->current_version() != info.upload_version ||
-                !frame.mark_ready()) {
+            info.frame = info.stream->consume_exact(info.upload_version);
+            if (!info.frame || info.stream->current_version() != info.upload_version || !frame.mark_ready()) {
                 if (!warned_consume_failure_) {
                     log()->warn("NDI timed input failed to consume upload version {}", info.upload_version);
                     warned_consume_failure_ = true;
                 }
+                frame_queue_.fail(ticket);
+                return std::nullopt;
+            }
+        } else if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
+            info.frame = info.stream ? info.stream->current_frame(info.upload_version) : nullptr;
+            if (!info.frame) {
                 frame_queue_.fail(ticket);
                 return std::nullopt;
             }
@@ -479,7 +484,7 @@ class input_capture_s::impl_s
             return std::nullopt;
         }
         return resolved_input_frame_s{
-            .texture    = info.texture,
+            .frame      = info.frame,
             .dimensions = info.dimensions,
         };
     }

@@ -68,6 +68,7 @@ class node_impl : public node_i
     ::future<text_s>                          text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
+    std::vector<gpu::texture_frame_ptr>       rendered_line_frames_;
 
     utils::observed_value_s<gpu::vec2i_t> render_dimensions_;
     utils::observed_value_s<int>          font_size_;
@@ -127,6 +128,7 @@ class node_impl : public node_i
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
+        rendered_line_frames_.clear();
         auto       file_path    = state.get_option<std::string_view>("file_path");
         auto       font_name    = state.get_option<std::string_view>("font_name");
         auto       font_variant = state.get_option<std::string_view>("font_variant");
@@ -322,18 +324,28 @@ class node_impl : public node_i
             }
 
             const std::unique_lock lock(rl->mtx);
-            auto                   texture = rl->upload_stream ? rl->upload_stream->consume_latest() : nullptr;
-            if (texture == nullptr || rl->upload_stream->current_version() != rl->upload_version) {
+            auto                   frame = rl->upload_stream ? rl->upload_stream->consume_latest() : nullptr;
+            if (!frame || rl->upload_stream->current_version() != rl->upload_version) {
                 continue;
             }
+            frame->wait_ready_on_gpu();
 
             const int    line_height_px = font_size_.value() + line_height_extra_;
             const double px_pos         = std::floor((txt_line_index - scroll_pos) * line_height_px);
             const auto   pos            = gpu::pixels_to_normalized({0, px_pos}, viewport.size);
 
-            batch.draw(texture, {.pos = pos, .size = scale});
+            batch.draw(frame->texture(), {.pos = pos, .size = scale});
+            rendered_line_frames_.emplace_back(std::move(frame));
         }
         gpu::framebuffer_s::end_render();
+    }
+
+    void complete(core::app_state_s* /*app*/) final
+    {
+        for (auto& frame : rendered_line_frames_) {
+            frame->release_from_render();
+        }
+        rendered_line_frames_.clear();
     }
 
     nlohmann::json get_default_options() const final

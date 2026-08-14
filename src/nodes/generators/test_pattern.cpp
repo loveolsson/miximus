@@ -69,7 +69,8 @@ class node_impl : public node_i
     std::optional<request_s>                                failed_request_;
     std::optional<generation_s>                             generation_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> published_stream_;
-    gpu::texture_s*                                         published_texture_{};
+    gpu::texture_frame_ptr                                  published_frame_;
+    gpu::texture_frame_ptr                                  rendered_frame_;
 
     static std::shared_ptr<gpu::transfer::texture_upload_stream_s> create_stream(core::app_state_s* app,
                                                                                  gpu::vec2i_t       dimensions)
@@ -114,15 +115,15 @@ class node_impl : public node_i
             }
         }
 
-        auto* texture = generation_->stream->consume_through(generation_->upload_version);
-        if (texture == nullptr) {
+        auto frame = generation_->stream->consume_through(generation_->upload_version);
+        if (!frame) {
             return;
         }
 
         if (desired_request_.has_value() && generation_->request == desired_request_.value()) {
             published_request_ = generation_->request;
             published_stream_  = generation_->stream;
-            published_texture_ = texture;
+            published_frame_   = std::move(frame);
         }
         generation_.reset();
     }
@@ -194,6 +195,7 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
+        rendered_frame_.reset();
         const auto         resolution = state.get_option<gpu::vec2_t>("resolution", {1920, 1080});
         const gpu::vec2i_t dimensions{
             static_cast<int>(std::round(resolution.x)),
@@ -216,11 +218,23 @@ class node_impl : public node_i
         submit_generation(app);
 
         if (published_stream_) {
-            if (auto* texture = published_stream_->consume_latest(); texture != nullptr) {
-                published_texture_ = texture;
+            if (auto frame = published_stream_->consume_latest()) {
+                published_frame_ = std::move(frame);
             }
         }
-        iface_texture_.set_value(published_texture_);
+        rendered_frame_ = published_frame_;
+        if (rendered_frame_) {
+            rendered_frame_->wait_ready_on_gpu();
+        }
+        iface_texture_.set_value(rendered_frame_ ? rendered_frame_->texture() : nullptr);
+    }
+
+    void complete(core::app_state_s* /*app*/) final
+    {
+        if (rendered_frame_) {
+            rendered_frame_->release_from_render();
+            rendered_frame_.reset();
+        }
     }
 
     nlohmann::json get_default_options() const final

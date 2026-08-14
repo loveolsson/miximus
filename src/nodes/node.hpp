@@ -64,10 +64,10 @@ class node_i
     virtual void execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
 
     /**
-     * Called on the main thread with the main GL context current, AFTER
-     * gpu::context_s::finish() — all GPU commands submitted during execute() are
-     * guaranteed complete. Use for readback results or posting data to output
-     * queues. Must not block the main thread (use worker threads for slow I/O).
+     * Called on the main thread with the main GL context current after all
+     * execute() calls. GPU commands may still be running. Nodes sharing frames
+     * with another context attach their render-release fences here. Do not
+     * block the main thread; use workers for slow I/O and readback completion.
      */
     virtual void complete(core::app_state_s*) {}
 

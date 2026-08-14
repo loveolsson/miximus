@@ -136,17 +136,13 @@ class output_sender_s::impl_s
             if (!download.has_value()) {
                 break;
             }
-            if (std::cmp_greater(download->tag(), std::numeric_limits<utils::flicks::rep>::max())) {
-                continue;
-            }
             const auto expected_size =
                 static_cast<size_t>(state.dimensions.x) * static_cast<size_t>(state.dimensions.y) * 4;
             if (download->bytes().size() != expected_size) {
                 continue;
             }
-            const auto target_time = utils::flicks(static_cast<utils::flicks::rep>(download->tag()));
             queue.push({
-                .target_time = target_time,
+                .target_time = download->target_time(),
                 .value =
                     {
                             .download   = std::make_shared<gpu::transfer::texture_download_frame_s>(std::move(*download)),

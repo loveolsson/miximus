@@ -14,6 +14,7 @@
 
 struct GLFWwindow;
 struct GLFWmonitor;
+struct GLFWvidmode;
 
 namespace miximus::gpu {
 
@@ -22,24 +23,6 @@ class context_scope_s;
 class context_s
 {
     friend class context_scope_s;
-
-    using shader_map_t = std::map<shader_program_s::name_e, std::unique_ptr<shader_program_s>>;
-
-    struct monitor_record_s
-    {
-        std::string  label;
-        GLFWmonitor* handle{};
-    };
-
-    static inline thread_local std::vector<GLFWwindow*>                current_stack_;
-    static inline std::atomic<uint64_t>                                monitor_list_version_{0};
-    static inline std::map<std::string, monitor_record_s, std::less<>> monitors_;
-
-    GLFWwindow*  window_{};
-    shader_map_t shaders_;
-    void         make_current();
-    static void  rewind_current();
-    static void  monitor_config_callback(GLFWmonitor* monitor, int event) noexcept;
 
   public:
     struct window_settings_s
@@ -53,6 +36,38 @@ class context_s
         };
     };
 
+  private:
+    using shader_map_t = std::map<shader_program_s::name_e, std::unique_ptr<shader_program_s>>;
+
+    struct monitor_record_s
+    {
+        std::string  label;
+        GLFWmonitor* handle{};
+    };
+
+    struct window_target_s
+    {
+        GLFWmonitor*       monitor{};
+        const GLFWvidmode* mode{};
+        vec2i_t            dimensions{};
+    };
+
+    static inline thread_local std::vector<GLFWwindow*>                current_stack_;
+    static inline std::atomic<uint64_t>                                monitor_list_version_{0};
+    static inline std::map<std::string, monitor_record_s, std::less<>> monitors_;
+
+    GLFWwindow*  window_{};
+    shader_map_t shaders_;
+    void         make_current();
+    static void  rewind_current();
+    static void  monitor_config_callback(GLFWmonitor* monitor, int event) noexcept;
+    static void  initialize_glfw();
+    static void  initialize_glad();
+    static void  configure_window_hints(bool visible);
+    static auto  resolve_window_target(const window_settings_s& settings) -> window_target_s;
+    void         configure_visible_window(const window_settings_s& settings, const window_target_s& target);
+
+  public:
     context_s(bool visible, context_s* parent);
     context_s(const window_settings_s& settings, context_s* parent);
     ~context_s();

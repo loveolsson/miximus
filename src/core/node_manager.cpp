@@ -4,7 +4,6 @@
 #include "core/frame_scheduler.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
-#include "gpu/sync.hpp"
 #include "logger/logger.hpp"
 #include "nodes/frame_execution.hpp"
 #include "nodes/interface.hpp"
@@ -89,12 +88,18 @@ std::string generate_node_id(const miximus::nodes::node_map_t& nodes)
     thread_local std::mt19937_64          generator{std::random_device{}()};
     std::uniform_int_distribution<size_t> character(0, alphabet.size() - 1);
 
-    std::string id(id_length, '\0');
-    do {
+    const auto generate = [&] {
+        std::string id(id_length, '\0');
         for (auto& value : id) {
             value = alphabet.at(character(generator));
         }
-    } while (nodes.contains(id));
+        return id;
+    };
+
+    auto id = generate();
+    while (nodes.contains(id)) {
+        id = generate();
+    }
 
     return id;
 }
@@ -496,8 +501,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         nodes::execute_demanding_nodes(app, nodes_copy_, demanding_nodes);
         const auto execute_end = utils::flicks_now();
 
-        gpu::context_s::finish();
-        const auto finish_end = utils::flicks_now();
+        const auto finish_end = execute_end;
 
         nodes::complete_all_nodes(app, nodes_copy_);
         const auto complete_end = utils::flicks_now();
