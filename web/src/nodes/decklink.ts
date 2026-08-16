@@ -3,7 +3,12 @@ import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture } from "./interface_types";
 import { node_type_e } from "./node_type";
-import { StatusDropdownInterface, NodeStatusInterface, type NodeStatusSection } from "./interfaces";
+import {
+  DropdownInterface,
+  StatusDropdownInterface,
+  NodeStatusInterface,
+  type NodeStatusSection,
+} from "./interfaces";
 
 const decklinkInputStatus: readonly NodeStatusSection[] = [
   {
@@ -107,6 +112,9 @@ const decklinkOutputStatus: readonly NodeStatusSection[] = [
       { key: "active_format", label: "Active format" },
       { key: "playback_busy", label: "Playback", format: "active" },
       { key: "output_pixel_format", label: "Pixel format" },
+      { key: "requested_keyer_mode", label: "Requested keyer" },
+      { key: "active_keyer_mode", label: "Active keyer" },
+      { key: "keyer_fallback_reason", label: "Keyer fallback" },
       { key: "reference_locked", label: "Reference signal", format: "locked" },
       { key: "reference_format", label: "Reference format" },
     ],
@@ -223,6 +231,12 @@ export const DeckLinkOutputNode = defineNode({
     enabled: () => new CheckboxInterface("Enabled", false).setPort(false),
     device_name: () => new StatusDropdownInterface("Device", "device_names"),
     display_mode: () => new StatusDropdownInterface("Display Mode", "display_modes"),
+    keyer_mode: () =>
+      new DropdownInterface("Keyer", "disabled", [
+        { id: "disabled", label: "Disabled" },
+        { id: "internal", label: "Internal" },
+        { id: "external", label: "External" },
+      ]),
   },
   outputs: {},
 });

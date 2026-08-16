@@ -27,6 +27,14 @@ std::string fourcc(uint32_t value)
     return result;
 }
 
+std::string pixel_format_name(int64_t value)
+{
+    if (static_cast<BMDPixelFormat>(value) == bmdFormat8BitARGB) {
+        return "ARGB";
+    }
+    return fourcc(static_cast<uint32_t>(value));
+}
+
 std::string colorspace_name(int64_t value)
 {
     switch (static_cast<BMDColorspace>(value)) {
@@ -234,15 +242,13 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
         case bmdDeckLinkStatusCurrentVideoInputPixelFormat: {
             const auto value = read_int(state->status.get(), id);
             changed          = assign_if_changed(&snapshot.current_input_pixel_format,
-                                        value.has_value() ? std::optional(fourcc(static_cast<uint32_t>(*value)))
-                                                                   : std::nullopt);
+                                        value.has_value() ? std::optional(pixel_format_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusLastVideoOutputPixelFormat: {
             const auto value = read_int(state->status.get(), id);
             changed          = assign_if_changed(&snapshot.last_output_pixel_format,
-                                        value.has_value() ? std::optional(fourcc(static_cast<uint32_t>(*value)))
-                                                                   : std::nullopt);
+                                        value.has_value() ? std::optional(pixel_format_name(*value)) : std::nullopt);
             break;
         }
         default:

@@ -248,6 +248,7 @@ std::string generate_typescript()
                           STATUS_CONTRACT(source_timing_status_s),
                           STATUS_CONTRACT(decklink_input_device_status_s),
                           STATUS_CONTRACT(decklink_output_device_status_s),
+                          STATUS_CONTRACT(decklink_output_keyer_status_s),
                           STATUS_CONTRACT(decklink_input_metrics_status_s),
                           STATUS_CONTRACT(ndi_input_metrics_status_s),
                           STATUS_CONTRACT(download_stream_status_s),

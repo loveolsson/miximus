@@ -145,11 +145,48 @@ TEST(PresentationTimeline, PreservesBufferedLatencyAcrossPresentationClockProgre
     const auto                     presentation = utils::to_flicks(100.0);
     const auto                     program      = utils::to_flicks(99.9);
 
-    timeline.establish_latency(presentation, program);
+    timeline.observe_latency(presentation, program);
 
     EXPECT_EQ(timeline.latency(), utils::to_flicks(0.1));
     EXPECT_EQ(timeline.map_presentation_to_program_target(presentation + utils::to_flicks(10.0)),
               program + utils::to_flicks(10.0));
+}
+
+TEST(PresentationTimeline, StartupObservationRollsOutOfTheLatencyAverage)
+{
+    media::presentation_timeline_s timeline;
+    const auto                     presentation = utils::to_flicks(100.0);
+
+    timeline.observe_latency(presentation, presentation - utils::to_flicks(0.4));
+    for (size_t observation = 0; observation < 16; ++observation) {
+        timeline.observe_latency(presentation, presentation - utils::to_flicks(0.1));
+    }
+
+    EXPECT_EQ(timeline.latency(), utils::to_flicks(0.1));
+}
+
+TEST(PresentationTimeline, RetainedFramesSmoothlyCorrectADelayedStartupObservation)
+{
+    constexpr auto FRAME_DURATION = utils::to_flicks(1.0 / 60.0);
+    constexpr auto RETAINED_DELAY = utils::to_flicks(0.1);
+    const auto     origin         = utils::to_flicks(100.0);
+
+    media::presentation_timeline_s timeline;
+    timeline.observe_latency(origin, origin - utils::to_flicks(0.4));
+
+    for (size_t frame = 1; frame <= 64; ++frame) {
+        const auto presentation = origin + FRAME_DURATION * static_cast<utils::flicks::rep>(frame);
+        timeline.observe_latency(presentation, presentation - timeline.latency().value());
+
+        const auto oldest_retained = presentation - RETAINED_DELAY;
+        const auto requested       = timeline.map_presentation_to_program_target(presentation).value();
+        if (requested + FRAME_DURATION / 2 < oldest_retained) {
+            timeline.observe_latency(presentation, oldest_retained);
+        }
+    }
+
+    EXPECT_LT(timeline.latency().value(), RETAINED_DELAY + FRAME_DURATION);
+    EXPECT_GT(timeline.latency().value(), RETAINED_DELAY - FRAME_DURATION);
 }
 
 TEST(PresentationTimeline, ConvertsSixtyFpsProgramToNtscOutputWithoutTimelineDrift)
@@ -168,7 +205,7 @@ TEST(PresentationTimeline, ConvertsSixtyFpsProgramToNtscOutputWithoutTimelineDri
     }
 
     media::presentation_timeline_s timeline;
-    timeline.establish_latency(ORIGIN + utils::to_flicks(0.1), ORIGIN);
+    timeline.observe_latency(ORIGIN + utils::to_flicks(0.1), ORIGIN);
     for (uint64_t slot = 0; slot < 1'001; ++slot) {
         const auto presentation =
             ORIGIN + utils::to_flicks(0.1) + OUTPUT_DURATION * static_cast<utils::flicks::rep>(slot);
@@ -213,7 +250,7 @@ TEST(PresentationTimeline, FiltersCallbackJitterBeforeConvertingNtscProgramToSix
 
         const auto presentation = output_clock.map_media_pts_to_program_time(output_time).value_or(utils::flicks{});
         if (slot == 0) {
-            timeline.establish_latency(presentation, PROGRAM_ORIGIN);
+            timeline.observe_latency(presentation, PROGRAM_ORIGIN);
         }
         const auto program_target = timeline.map_presentation_to_program_target(presentation).value_or(utils::flicks{});
         ASSERT_NE(queue.select(program_target).frame, nullptr);

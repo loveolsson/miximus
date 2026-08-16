@@ -432,18 +432,19 @@ Hardware-decoded surfaces should enter the same prepared-ticket and transfer con
 
 Outputs consume frames by intended presentation PTS rather than simply taking the latest completed transfer. Every
 output queue must be bounded and define overflow, underrun, repeat, and shutdown behavior. Rendered frames retain the
-absolute scheduling-clock target from their `frame_context_s`. Each output establishes an
-intentional buffered latency at startup, maps each physical presentation slot into that same absolute clock domain,
-and selects the program frame for:
+absolute scheduling-clock target from their `frame_context_s`. Each output continuously observes its buffered latency,
+smooths those observations over a bounded rolling window, maps each physical presentation slot into that same absolute
+clock domain, and selects the program frame for:
 
 ```text
 program target time = physical presentation time - output latency
 ```
 
-The physical clock observation is output-specific, but the target-time selection and latency mapping are shared. A
-nominal PTS cursor advanced independently on both sides is not sufficient: two free-running clocks can differ slightly
-and will eventually drift even when their declared rates are identical. Buffer occupancy remains an important safety
-and diagnostic signal, but bursty render completion makes it unsuitable as the primary clock measurement.
+The physical clock observation is output-specific, but the target-time selection and latency mapping are shared. No
+single startup callback permanently anchors a media offset. A nominal PTS cursor advanced independently on both sides
+is not sufficient: two free-running clocks can differ slightly and will eventually drift even when their declared
+rates are identical. Buffer occupancy remains an important safety and diagnostic signal, but bursty render completion
+makes it unsuitable as the primary clock measurement.
 
 ### DeckLink output
 
@@ -724,10 +725,12 @@ Exit criteria:
 Each completed GPU readback now retains its absolute target time until the DeckLink completion
 callback consumes it. The callback uses the completed frame's hardware reference timestamp to map the next DeckLink
 schedule slot into Miximus' steady-clock domain. The shared clock estimator filters callback-delivery jitter and tracks
-the DeckLink clock's long-term rate; raw callback arrival variation must not directly drive cadence selection. The first
-actual completed frame establishes the fixed program-to-output latency. Each later slot selects against its filtered
-absolute presentation time minus that latency, explicitly repeats the retained frame when the program cadence is
-slower, and drops superseded frames when it is faster. One global one-to-eight-frame DeckLink-output setting controls
+the DeckLink clock's long-term rate; raw callback arrival variation must not directly drive cadence selection. Completed
+frames continuously update a bounded rolling average of the program-to-output latency. If that average temporarily
+requests program frames older than the bounded queue can retain, the oldest retained target contributes a corrective
+observation rather than discontinuously replacing the timeline. Each later slot selects against its filtered absolute
+presentation time minus the rolling latency, explicitly repeats the retained frame when the program cadence is slower,
+and drops superseded frames when it is faster. One global one-to-eight-frame DeckLink-output setting controls
 both startup and the steady scheduled-frame target for every output of that type; the SDK-reported minimum preroll
 raises the effective target when required. The output first exposes its bounded readback stream, schedules actual
 completed program frames until that target is full, retains one additional completed program frame as callback-jitter

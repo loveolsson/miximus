@@ -210,8 +210,12 @@ and releases its callback reference. Control tasks retain the callback and devic
 all capture buffers are returned, and transfer-stream destruction has been queued on the GL upload worker. Application
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
-DeckLink output renders packed 10-bit YUV into a readback target carrying the frame's absolute program target time in
-`utils::flicks`.
+DeckLink output normally renders packed 10-bit YUV into a readback target carrying the frame's absolute program target
+time in `utils::flicks`. Internal and external keyer modes instead preserve alpha through an RGBA16 intermediate and
+read back DeckLink 8-bit ARGB bytes. The keyed path uses ARGB because Duo 2 keyed HD p60 scheduling accepts it where
+the driver's otherwise supported BGRA path can reject the first scheduled frame. ARGB byte order is described by the
+shared texture-transfer format, including DVP, CUDA pixel-buffer, and persistent OpenGL paths; it is not implemented as
+a node-local transfer.
 The transfer worker completes readback, and ready leases drain in FIFO order into a bounded timed-output queue. That
 queue releases superseded or overflowed frames according to its explicit selection policy. Before playback starts, short
 non-blocking control tasks collect actual program readbacks. Once the configured buffer target is available, those
@@ -219,8 +223,9 @@ program frames are scheduled as the SDK preroll and playback begins. One additio
 the timed queue so bursty SDK completion callbacks do not make selection alternate between starvation and dropping a
 newly completed batch. The completion callback then selects the newest
 eligible program frame by mapping the next hardware presentation time into the absolute program clock. It explicitly
-retains frames for repeats and accounts for superseded frames as timing drops. `CreateVideoFrameWithBuffer` wraps the transfer lease without a copy, so the SDK
-frame keeps host memory reserved until DeckLink releases it.
+retains frames for repeats and accounts for superseded frames as timing drops. Both ordinary and keyed output use
+`CreateVideoFrameWithBuffer` to wrap the transfer lease without a copy, so the SDK frame keeps host memory reserved
+until DeckLink releases it.
 
 The single global DeckLink-output buffer target defaults to four frames and is adjustable from one to eight. The SDK's
 reported minimum preroll raises the effective target when necessary. All DeckLink output nodes use the same

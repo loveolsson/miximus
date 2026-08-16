@@ -145,6 +145,13 @@ struct decklink_output_device_status_s
     std::optional<std::string> reference_format;
 };
 
+struct decklink_output_keyer_status_s
+{
+    std::string                requested_keyer_mode;
+    std::string                active_keyer_mode;
+    std::optional<std::string> keyer_fallback_reason;
+};
+
 struct decklink_input_metrics_status_s
 {
     uint64_t frames_received{};
@@ -342,6 +349,9 @@ BOOST_DESCRIBE_STRUCT(decklink_output_device_status_s,
                        active_format,
                        output_pixel_format,
                        reference_format))
+BOOST_DESCRIBE_STRUCT(decklink_output_keyer_status_s,
+                      (),
+                      (requested_keyer_mode, active_keyer_mode, keyer_fallback_reason))
 BOOST_DESCRIBE_STRUCT(decklink_input_metrics_status_s,
                       (),
                       (frames_received,

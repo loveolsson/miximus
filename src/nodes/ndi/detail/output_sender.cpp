@@ -189,7 +189,7 @@ class output_sender_s::impl_s
                     break;
                 }
                 output_deadline           = now;
-                const auto output_latency = timeline.establish_latency(output_deadline, *oldest_program_target_time);
+                const auto output_latency = timeline.observe_latency(output_deadline, *oldest_program_target_time);
                 output_latency_us_ = std::chrono::duration_cast<std::chrono::microseconds>(output_latency).count();
                 started            = true;
             }
@@ -217,6 +217,12 @@ class output_sender_s::impl_s
             const auto selection = queue.select(*program_target);
             publish_queue_metrics(queue);
             if (selection.frame != nullptr) {
+                if (selection.selection == media::output_frame_selection_e::new_frame) {
+                    output_latency_us_ =
+                        std::chrono::duration_cast<std::chrono::microseconds>(
+                            timeline.observe_latency(output_deadline, selection.frame->program_target_time))
+                            .count();
+                }
                 program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
                                                    selection.frame->program_target_time - *program_target)
                                                    .count();

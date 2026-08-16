@@ -67,6 +67,19 @@ texture_s::pixel_format_info_s texture_s::pixel_format_info(pixel_format_e pixel
                 .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
                 .storage_identical        = true,
             };
+        case pixel_format_e::argb_u8:
+            return {
+                .internal_format          = GL_RGBA8,
+                .external_format          = GL_BGRA,
+                .external_type            = GL_UNSIGNED_INT_8_8_8_8,
+                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter               = GL_LINEAR,
+                .host_bytes_per_texel     = 4,
+                .storage_bytes_per_texel  = 4,
+                .display_pixels_per_texel = 1,
+                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
+                .storage_identical        = false,
+            };
         case pixel_format_e::bgra_u8:
             return {
                 .internal_format          = GL_RGBA8,

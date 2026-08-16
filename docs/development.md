@@ -342,6 +342,16 @@ actions and Miximus logs are interleaved on the terminal and retained together u
 `BUILD_DIR`, `SETTINGS`, `MIXIMUS_API_URL`, `TRANSITION_TIMEOUT_SECONDS`, and `STARTUP_SETTLE_SECONDS` can override its
 defaults. `MODE_DWELL_SECONDS` controls how long playback is observed after each completed mode transition.
 
+Use the keyer-mode runner on keyer-capable hardware to exercise disabled, internal, and external keying in one owned
+process. It uses a private settings copy, requires each requested mode to reach active playback, retains a status
+snapshot for each mode, and always stops the process it started:
+
+```bash
+scripts/test_decklink_keyer_modes.sh [DECKLINK_OUTPUT_NODE_ID]
+```
+
+`KEYER_MODE_DWELL_SECONDS` controls the observation time for each mode.
+
 ## Shutdown ordering
 
 Shutdown order is deliberate:

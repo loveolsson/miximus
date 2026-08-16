@@ -12,6 +12,8 @@ PRIVATE
     detail/output_video_buffer.hpp
     input.cpp
     output.cpp
+    output_migrations.hpp
+    output_migrations.cpp
     registry_fwd.hpp
     registry.hpp
     registry.cpp

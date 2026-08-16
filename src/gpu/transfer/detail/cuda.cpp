@@ -37,6 +37,7 @@ bool cuda_transfer_s::supports_direct_image(texture_s::pixel_format_e pixel_form
             return texture_s::pixel_format_info(pixel_format).storage_identical;
         case texture_s::pixel_format_e::rgb_f16:
         case texture_s::pixel_format_e::rgba_f16:
+        case texture_s::pixel_format_e::argb_u8:
         case texture_s::pixel_format_e::bgra_u8:
         case texture_s::pixel_format_e::uyuv_u8:
         case texture_s::pixel_format_e::uyuv_u10:

@@ -52,6 +52,8 @@ dvp_format_s get_dvp_format(texture_s::pixel_format_e pixel_format)
         case texture_s::pixel_format_e::rgba_f16:
         case texture_s::pixel_format_e::rgba_u8:
             return {.format = DVP_RGBA, .type = DVP_UNSIGNED_BYTE};
+        case texture_s::pixel_format_e::argb_u8:
+            return {.format = DVP_BGRA, .type = DVP_UNSIGNED_INT_8_8_8_8};
         case texture_s::pixel_format_e::bgra_u8:
         case texture_s::pixel_format_e::uyuv_u8:
             return {.format = DVP_BGRA, .type = DVP_UNSIGNED_INT_8_8_8_8_REV};

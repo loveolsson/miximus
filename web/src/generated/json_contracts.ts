@@ -366,6 +366,12 @@ export interface decklink_output_device_status_s {
   readonly reference_format?: string | null;
 }
 
+export interface decklink_output_keyer_status_s {
+  readonly requested_keyer_mode: string;
+  readonly active_keyer_mode: string;
+  readonly keyer_fallback_reason?: string | null;
+}
+
 export interface decklink_input_metrics_status_s {
   readonly frames_received: number;
   readonly frames_missing: number;
@@ -491,6 +497,7 @@ export type node_status_s = Partial<
   source_timing_status_s &
   decklink_input_device_status_s &
   decklink_output_device_status_s &
+  decklink_output_keyer_status_s &
   decklink_input_metrics_status_s &
   ndi_input_metrics_status_s &
   download_stream_status_s &

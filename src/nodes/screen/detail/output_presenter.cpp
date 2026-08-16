@@ -405,7 +405,7 @@ class output_presenter_s::impl_s
         publish_queue_metrics(*queue);
         draw(textured_quad, selection);
         const auto completion = swap_and_wait();
-        output_latency_us_    = to_microseconds(timeline->establish_latency(completion, *oldest_target));
+        output_latency_us_    = to_microseconds(timeline->observe_latency(completion, *oldest_target));
         return completion;
     }
 
@@ -422,8 +422,8 @@ class output_presenter_s::impl_s
         const auto oldest_queued = queue->oldest_program_target_time();
         if (queue->queued() == queue->capacity() && oldest_queued.has_value() &&
             *oldest_queued > *program_target + (nominal_frame_duration_ / 2)) {
-            output_latency_us_ = to_microseconds(timeline->establish_latency(predicted_completion, *oldest_queued));
-            program_target     = oldest_queued;
+            output_latency_us_ = to_microseconds(timeline->observe_latency(predicted_completion, *oldest_queued));
+            program_target     = timeline->map_presentation_to_program_target(predicted_completion);
         }
 
         auto selection = queue->select(*program_target);
@@ -481,7 +481,13 @@ class output_presenter_s::impl_s
                         break;
                     }
                     draw(&textured_quad, *selection);
-                    publish_clock_result(clock.observe_completion(swap_and_wait()));
+                    const auto presented_at = swap_and_wait();
+                    if (selection->frame != nullptr &&
+                        selection->selection == media::output_frame_selection_e::new_frame) {
+                        output_latency_us_ = to_microseconds(
+                            timeline.observe_latency(presented_at, selection->frame->program_target_time));
+                    }
+                    publish_clock_result(clock.observe_completion(presented_at));
                 }
             }
 
