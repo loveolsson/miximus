@@ -182,12 +182,16 @@ Current wrappers include:
 - CUDA via CMake `CUDAToolkit` and `CUDA::cudart`;
 - NVIDIA DVP from `3rd-party/dvp170_linux` or `dvp170_win`;
 - Blackmagic DeckLink SDK through `3rd-party/decklink-sdk`;
-- NDI through `3rd-party/ndi-sdk`;
+- NDI 6 or newer through the system-installed NDI SDK;
 - NVIDIA Video Codec SDK through `3rd-party/video-sdk`;
 - system FFmpeg components;
 - stb implementation sources.
 
 CEF remains in the repository but is not enabled by `src/wrapper/CMakeLists.txt`.
+
+The project-local `ndi` wrapper discovers the NDI headers and library in the platform's standard SDK installation
+locations. `NDI_ROOT` or `NDI_SDK_DIR` may select another SDK root, which must contain NDI 6 or newer. Consumers link
+the wrapper and do not depend on the SDK discovery mechanism or an external target name.
 
 The alias paths are symlinks to selected SDK versions. Preserve stable aliases in build files rather than embedding versioned directory names.
 
