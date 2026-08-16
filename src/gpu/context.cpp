@@ -401,6 +401,9 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
         case name_e::apply_gamma:
             fragment_shader = "shaders/apply_gamma.fs.glsl";
             break;
+        case name_e::encode_rec709_premultiplied:
+            fragment_shader = "shaders/encode_rec709_premultiplied.fs.glsl";
+            break;
         case name_e::strip_gamma:
             fragment_shader = "shaders/strip_gamma.fs.glsl";
             break;

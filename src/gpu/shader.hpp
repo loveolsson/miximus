@@ -43,6 +43,7 @@ class shader_program_s
         yuv_to_rgb,
         rgb_to_yuv,
         apply_gamma,
+        encode_rec709_premultiplied,
         strip_gamma,
     };
 

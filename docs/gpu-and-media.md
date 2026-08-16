@@ -211,7 +211,8 @@ all capture buffers are returned, and transfer-stream destruction has been queue
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
 DeckLink output normally renders packed 10-bit YUV into a readback target carrying the frame's absolute program target
-time in `utils::flicks`. Internal and external keyer modes instead preserve alpha through an RGBA16 intermediate and
+time in `utils::flicks`. Internal and external keyer modes instead preserve alpha through an RGBA16 intermediate,
+apply the Rec.709 transfer function without changing the premultiplied-alpha representation, and
 read back DeckLink 8-bit ARGB bytes. The keyed path uses ARGB because Duo 2 keyed HD p60 scheduling accepts it where
 the driver's otherwise supported BGRA path can reject the first scheduled frame. ARGB byte order is described by the
 shared texture-transfer format, including DVP, CUDA pixel-buffer, and persistent OpenGL paths; it is not implemented as

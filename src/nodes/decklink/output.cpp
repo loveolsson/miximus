@@ -1101,6 +1101,7 @@ class node_impl : public node_i
     std::optional<callback_s::render_state_s> render_state_;
 
     std::unique_ptr<gpu::framebuffer_s>                       framebuffer_scale_;
+    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_keyed_output_;
     std::unique_ptr<gpu::textured_quad_s>                     textured_quad_yuv_;
     std::unique_ptr<gpu::textured_quad_s>                     textured_quad_scale_;
     utils::observed_value_s<selection_t>                      selection_;
@@ -1357,6 +1358,10 @@ class node_impl : public node_i
             textured_quad_yuv_ = std::make_unique<gpu::textured_quad_s>(
                 app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv));
         }
+        if (mode.keyer_mode != keyer_mode_e::disabled && !textured_quad_keyed_output_) {
+            textured_quad_keyed_output_ = std::make_unique<gpu::textured_quad_s>(
+                app->ctx()->get_shader(gpu::shader_program_s::name_e::encode_rec709_premultiplied));
+        }
 
         const auto scale_pixel_format = mode.keyer_mode == keyer_mode_e::disabled
                                             ? gpu::texture_s::pixel_format_e::rgb_f16
@@ -1385,7 +1390,7 @@ class node_impl : public node_i
             shader->set_uniform("gamut_transfer", mode.gamut_conversion);
             textured_quad_yuv_->draw(framebuffer_scale_->texture());
         } else {
-            textured_quad_scale_->draw(framebuffer_scale_->texture());
+            textured_quad_keyed_output_->draw(framebuffer_scale_->texture());
         }
 
         gpu::framebuffer_s::end_render();
