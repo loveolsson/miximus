@@ -1,15 +1,15 @@
 #pragma once
 
-#include "backend.hpp"
 #include "gpu/glad.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
+#include "texture_transfer_backend.hpp"
 
 #include <cuda_gl_interop.h>
 #include <cuda_runtime_api.h>
 
 namespace miximus::gpu::transfer::detail {
 
-class cuda_transfer_s : public backend_i
+class cuda_transfer_s : public texture_transfer_backend_i
 {
     cudaStream_t          stream_{nullptr};
     cudaEvent_t           completion_{nullptr};
@@ -37,13 +37,13 @@ class cuda_transfer_s : public backend_i
     bool unregister_texture_impl(texture_s* texture) final;
 
   public:
-    cuda_transfer_s(const texture_transfer_requirements_s& requirements, direction_e dir, bool direct_image);
+    cuda_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir, bool direct_image);
     ~cuda_transfer_s() override;
 
-    bool transfer() final;
-    bool wait_for_completion() final;
+    bool submit_transfer() final;
+    bool wait_for_transfer_completion() final;
 
-    static bool supports_direct_image(texture_s::format_e format);
+    static bool supports_direct_image(texture_s::pixel_format_e pixel_format);
     static bool initialize_context();
     static void shutdown_context();
 };

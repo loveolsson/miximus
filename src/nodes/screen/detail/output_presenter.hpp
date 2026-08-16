@@ -59,7 +59,7 @@ class output_presenter_s
         render_frame_s& operator=(render_frame_s&& other) noexcept;
 
         gpu::framebuffer_s* target() const noexcept;
-        void                submit(utils::flicks target_time);
+        void                submit(utils::flicks program_target_time);
     };
 
   private:

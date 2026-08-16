@@ -1,6 +1,6 @@
+#include "media/media_clock.hpp"
 #include "media/output_runtime_metrics.hpp"
-#include "media/output_timeline.hpp"
-#include "media/source_clock.hpp"
+#include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
 #include "utils/flicks.hpp"
 
@@ -10,11 +10,11 @@
 namespace {
 using namespace miximus;
 
-media::output_frame_s<int> make_frame(utils::flicks target_time, int value)
+media::output_frame_s<int> make_frame(utils::flicks program_target_time, int value)
 {
     return {
-        .target_time = target_time,
-        .value       = value,
+        .program_target_time = program_target_time,
+        .payload             = value,
     };
 }
 
@@ -28,32 +28,32 @@ TEST(TimedOutputQueue, SelectsNewestEligibleFrameAndRepeatsIt)
     const auto selected = queue.select(utils::to_flicks(0.015));
     ASSERT_EQ(selected.selection, media::output_frame_selection_e::new_frame);
     ASSERT_NE(selected.frame, nullptr);
-    EXPECT_EQ(selected.frame->value, 20);
+    EXPECT_EQ(selected.frame->payload, 20);
 
     const auto repeat = queue.select(utils::to_flicks(0.016));
     ASSERT_EQ(repeat.selection, media::output_frame_selection_e::repeat);
     ASSERT_NE(repeat.frame, nullptr);
-    EXPECT_EQ(repeat.frame->value, 20);
+    EXPECT_EQ(repeat.frame->payload, 20);
 
     EXPECT_EQ(queue.metrics().selection_drops, 1);
     EXPECT_EQ(queue.metrics().repeated, 1);
 }
 
-TEST(TimedOutputQueue, SelectsByAbsoluteTargetTime)
+TEST(TimedOutputQueue, SelectsByAbsoluteProgramTargetTime)
 {
     media::timed_output_queue_s<int> queue;
     queue.push({
-        .target_time = utils::to_flicks(100.0),
-        .value       = 10,
+        .program_target_time = utils::to_flicks(100.0),
+        .payload             = 10,
     });
     queue.push({
-        .target_time = utils::to_flicks(101.0),
-        .value       = 20,
+        .program_target_time = utils::to_flicks(101.0),
+        .payload             = 20,
     });
 
     const auto selected = queue.select(utils::to_flicks(100.5));
     ASSERT_NE(selected.frame, nullptr);
-    EXPECT_EQ(selected.frame->value, 10);
+    EXPECT_EQ(selected.frame->payload, 10);
 }
 
 TEST(TimedOutputQueue, ConvertsSlowerProgramCadenceWithExplicitRepeats)
@@ -105,7 +105,7 @@ TEST(TimedOutputQueue, DiscardsLateCompletionWithoutRegressingTheOutput)
     const auto selection = queue.select(utils::to_flicks(0.03));
     ASSERT_EQ(selection.selection, media::output_frame_selection_e::repeat);
     ASSERT_NE(selection.frame, nullptr);
-    EXPECT_EQ(selection.frame->value, 20);
+    EXPECT_EQ(selection.frame->payload, 20);
     EXPECT_EQ(queue.metrics().selection_drops, 1);
 }
 
@@ -118,40 +118,41 @@ TEST(TimedOutputQueue, DropsOldestQueuedFramesAtCapacity)
 
     const auto selection = queue.select(utils::to_flicks(0.03));
     ASSERT_NE(selection.frame, nullptr);
-    EXPECT_EQ(selection.frame->value, 30);
+    EXPECT_EQ(selection.frame->payload, 30);
     EXPECT_EQ(queue.metrics().overflow_drops, 1);
     EXPECT_EQ(queue.metrics().selection_drops, 1);
 }
 
-TEST(TimedOutputQueue, ReportsOldestRetainedTargetTimeAfterOverflow)
+TEST(TimedOutputQueue, ReportsOldestRetainedProgramTargetTimeAfterOverflow)
 {
     media::timed_output_queue_s<int> queue({.capacity = 2});
     EXPECT_EQ(queue.capacity(), 2);
-    EXPECT_FALSE(queue.oldest_target_time().has_value());
+    EXPECT_FALSE(queue.oldest_program_target_time().has_value());
 
     queue.push(make_frame(utils::to_flicks(0.01), 10));
     queue.push(make_frame(utils::to_flicks(0.02), 20));
     queue.push(make_frame(utils::to_flicks(0.03), 30));
 
-    const auto oldest_target_time = queue.oldest_target_time();
-    const auto oldest_target      = oldest_target_time.value_or(utils::flicks{});
-    ASSERT_TRUE(oldest_target_time.has_value());
+    const auto oldest_program_target_time = queue.oldest_program_target_time();
+    const auto oldest_target              = oldest_program_target_time.value_or(utils::flicks{});
+    ASSERT_TRUE(oldest_program_target_time.has_value());
     EXPECT_EQ(oldest_target, utils::to_flicks(0.02));
 }
 
-TEST(OutputTimeline, PreservesBufferedLatencyAcrossPresentationClockProgress)
+TEST(PresentationTimeline, PreservesBufferedLatencyAcrossPresentationClockProgress)
 {
-    media::output_timeline_s timeline;
-    const auto               presentation = utils::to_flicks(100.0);
-    const auto               program      = utils::to_flicks(99.9);
+    media::presentation_timeline_s timeline;
+    const auto                     presentation = utils::to_flicks(100.0);
+    const auto                     program      = utils::to_flicks(99.9);
 
-    timeline.align(presentation, program);
+    timeline.establish_latency(presentation, program);
 
     EXPECT_EQ(timeline.latency(), utils::to_flicks(0.1));
-    EXPECT_EQ(timeline.program_target_time(presentation + utils::to_flicks(10.0)), program + utils::to_flicks(10.0));
+    EXPECT_EQ(timeline.map_presentation_to_program_target(presentation + utils::to_flicks(10.0)),
+              program + utils::to_flicks(10.0));
 }
 
-TEST(OutputTimeline, ConvertsSixtyFpsProgramToNtscOutputWithoutTimelineDrift)
+TEST(PresentationTimeline, ConvertsSixtyFpsProgramToNtscOutputWithoutTimelineDrift)
 {
     constexpr auto PROGRAM_DURATION = utils::to_flicks(1.0 / 60.0);
     constexpr auto OUTPUT_DURATION  = utils::flicks{11'771'760};
@@ -161,27 +162,27 @@ TEST(OutputTimeline, ConvertsSixtyFpsProgramToNtscOutputWithoutTimelineDrift)
     for (uint64_t frame = 0; frame < 1'100; ++frame) {
         const auto target = ORIGIN + PROGRAM_DURATION * static_cast<utils::flicks::rep>(frame);
         queue.push({
-            .target_time = target,
-            .value       = static_cast<int>(frame),
+            .program_target_time = target,
+            .payload             = static_cast<int>(frame),
         });
     }
 
-    media::output_timeline_s timeline;
-    timeline.align(ORIGIN + utils::to_flicks(0.1), ORIGIN);
+    media::presentation_timeline_s timeline;
+    timeline.establish_latency(ORIGIN + utils::to_flicks(0.1), ORIGIN);
     for (uint64_t slot = 0; slot < 1'001; ++slot) {
         const auto presentation =
             ORIGIN + utils::to_flicks(0.1) + OUTPUT_DURATION * static_cast<utils::flicks::rep>(slot);
-        const auto target      = timeline.program_target_time(presentation);
-        const auto target_time = target.value_or(utils::flicks{});
+        const auto target              = timeline.map_presentation_to_program_target(presentation);
+        const auto program_target_time = target.value_or(utils::flicks{});
         ASSERT_TRUE(target.has_value());
-        ASSERT_NE(queue.select(target_time).frame, nullptr);
+        ASSERT_NE(queue.select(program_target_time).frame, nullptr);
     }
 
     EXPECT_EQ(queue.metrics().selection_drops, 1);
     EXPECT_EQ(timeline.latency(), utils::to_flicks(0.1));
 }
 
-TEST(OutputTimeline, FiltersCallbackJitterBeforeConvertingNtscProgramToSixtyFpsOutput)
+TEST(PresentationTimeline, FiltersCallbackJitterBeforeConvertingNtscProgramToSixtyFpsOutput)
 {
     constexpr auto PROGRAM_DURATION = utils::flicks{11'771'760};
     constexpr auto OUTPUT_DURATION  = utils::to_flicks(1.0 / 60.0);
@@ -196,25 +197,25 @@ TEST(OutputTimeline, FiltersCallbackJitterBeforeConvertingNtscProgramToSixtyFpsO
                               static_cast<int>(frame)));
     }
 
-    media::source_clock_estimator_s output_clock;
-    media::output_timeline_s        timeline;
+    media::media_to_program_clock_s output_clock;
+    media::presentation_timeline_s  timeline;
     for (uint64_t slot = 0; slot < FRAME_COUNT; ++slot) {
         const auto output_time = OUTPUT_DURATION * static_cast<utils::flicks::rep>(slot);
         const auto jitter      = slot % 2 == 0 ? JITTER : -JITTER;
         output_clock.observe(
             {
-                .epoch    = 1,
-                .sequence = slot,
-                .pts      = output_time,
-                .duration = OUTPUT_DURATION,
+                .stream_epoch   = 1,
+                .frame_sequence = slot,
+                .media_pts      = output_time,
+                .frame_duration = OUTPUT_DURATION,
             },
             STEADY_ORIGIN + output_time + jitter);
 
-        const auto presentation = output_clock.map(output_time).value_or(utils::flicks{});
+        const auto presentation = output_clock.map_media_pts_to_program_time(output_time).value_or(utils::flicks{});
         if (slot == 0) {
-            timeline.align(presentation, PROGRAM_ORIGIN);
+            timeline.establish_latency(presentation, PROGRAM_ORIGIN);
         }
-        const auto program_target = timeline.program_target_time(presentation).value_or(utils::flicks{});
+        const auto program_target = timeline.map_presentation_to_program_target(presentation).value_or(utils::flicks{});
         ASSERT_NE(queue.select(program_target).frame, nullptr);
     }
 

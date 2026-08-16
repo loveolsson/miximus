@@ -103,7 +103,7 @@ class node_impl : public node_i
 
         const auto enabled                = state.get_option<bool>("enabled", false);
         const auto monitor_id             = state.get_option<std::string>("monitor_id");
-        auto       nominal_frame_duration = app->frame_context().duration;
+        auto       nominal_frame_duration = app->frame_context().frame_duration;
         if (const auto refresh_rate = gpu::context_s::get_monitor_refresh_rate(monitor_id); refresh_rate.has_value()) {
             nominal_frame_duration = utils::k_flicks_one_second / *refresh_rate;
         }
@@ -179,7 +179,7 @@ class node_impl : public node_i
             textured_quad_->draw(texture);
         }
         gpu::framebuffer_s::end_render();
-        frame->submit(app->frame_context().target_time);
+        frame->submit(app->frame_context().program_target_time);
     }
 
     void complete(core::app_state_s* /*app*/) final {}

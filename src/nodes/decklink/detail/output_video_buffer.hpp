@@ -1,5 +1,5 @@
 #pragma once
-#include "gpu/transfer/texture_download.hpp"
+#include "gpu/transfer/texture_readback.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <atomic>
@@ -9,16 +9,16 @@
 
 namespace miximus::nodes::decklink::detail {
 
-// Exposes one completed GPU download lease directly to a DeckLink output
+// Exposes one completed GPU readback lease directly to a DeckLink output
 // frame. The lease returns to its stream only after DeckLink releases every
 // frame reference using this buffer.
 class output_video_buffer_s final : public IDeckLinkVideoBuffer
 {
-    gpu::transfer::texture_download_frame_s frame_;
+    gpu::transfer::texture_readback_frame_s frame_;
     std::atomic_ulong                       ref_count_{1};
 
   public:
-    explicit output_video_buffer_s(gpu::transfer::texture_download_frame_s frame)
+    explicit output_video_buffer_s(gpu::transfer::texture_readback_frame_s frame)
         : frame_(std::move(frame))
     {
     }
@@ -28,7 +28,7 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
         if (buffer == nullptr) {
             return E_POINTER;
         }
-        const auto bytes = frame_.bytes();
+        const auto bytes = frame_.readable_host_bytes();
         *buffer          = const_cast<std::byte*>(bytes.data());
         return bytes.empty() ? E_FAIL : S_OK;
     }
@@ -38,7 +38,7 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
         if (size == nullptr) {
             return E_POINTER;
         }
-        *size = static_cast<uint64_t>(frame_.bytes().size());
+        *size = static_cast<uint64_t>(frame_.readable_host_bytes().size());
         return S_OK;
     }
 

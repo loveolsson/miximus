@@ -68,7 +68,7 @@ void publish_scheduler_status(core::app_state_s*                     app,
                                   status::application_scheduler_status_s{
                                       .clock_source              = std::string(scheduler.clock_name()),
                                       .frame_number              = context.frame_number,
-                                      .pts_flicks                = context.pts.count(),
+                                      .pts_flicks                = context.program_pts.count(),
                                       .render_duration_us        = to_microseconds(metrics.render_duration),
                                       .render_duration_max_us    = to_microseconds(metrics.render_duration_max),
                                       .render_duration_max_frame = metrics.render_duration_max_frame,
@@ -147,11 +147,11 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
 
                 const auto& metrics = frame_scheduler.finish_frame();
                 const auto& context = app.frame_context();
-                if (context.epoch != status_epoch || context.pts >= next_status_pts) {
+                if (context.epoch != status_epoch || context.program_pts >= next_status_pts) {
                     publish_scheduler_status(&app, frame_scheduler, metrics);
                     render_thread_delay_test.publish_status(&app);
                     status_epoch    = context.epoch;
-                    next_status_pts = context.pts + utils::k_flicks_one_second;
+                    next_status_pts = context.program_pts + utils::k_flicks_one_second;
                 }
             }
 

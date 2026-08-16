@@ -51,22 +51,22 @@ frame_context_s frame_scheduler_s::begin_frame(frame_rate_s frame_rate)
         ++epoch_;
     }
 
-    const auto frame_offset = duration_ * static_cast<utils::flicks::rep>(timeline_frame_);
-    const auto target_time  = anchor_time_ + frame_offset;
-    context_                = {
-                       .frame_number    = next_frame_number_,
-                       .epoch           = epoch_,
-                       .pts             = frame_offset,
-                       .duration        = duration_,
-                       .target_time     = target_time,
-                       .render_deadline = target_time + duration_,
-                       .discontinuity   = discontinuity,
+    const auto frame_offset        = duration_ * static_cast<utils::flicks::rep>(timeline_frame_);
+    const auto program_target_time = anchor_time_ + frame_offset;
+    context_                       = {
+                              .frame_number        = next_frame_number_,
+                              .epoch               = epoch_,
+                              .program_pts         = frame_offset,
+                              .frame_duration      = duration_,
+                              .program_target_time = program_target_time,
+                              .render_deadline     = program_target_time + duration_,
+                              .discontinuity       = discontinuity,
     };
 
     metrics_ = {
         .frame_number = context_.frame_number,
         .epoch        = context_.epoch,
-        .pts          = context_.pts,
+        .pts          = context_.program_pts,
         .render_start = clock_.now(),
     };
     frame_active_ = true;
@@ -81,7 +81,8 @@ const frame_scheduler_metrics_s& frame_scheduler_s::finish_frame()
 
     metrics_.render_end      = clock_.now();
     metrics_.render_duration = metrics_.render_end - metrics_.render_start;
-    metrics_.start_lateness  = std::max(metrics_.render_start - context_.target_time, utils::k_flicks_zero_seconds);
+    metrics_.start_lateness =
+        std::max(metrics_.render_start - context_.program_target_time, utils::k_flicks_zero_seconds);
     metrics_.deadline_margin = context_.render_deadline - metrics_.render_end;
 
     if (metrics_.render_duration > render_duration_max_) {

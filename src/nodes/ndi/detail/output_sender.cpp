@@ -1,9 +1,10 @@
 #include "output_sender.hpp"
 
-#include "gpu/transfer/texture_download.hpp"
+#include "gpu/transfer/texture_readback.hpp"
 #include "logger/logger.hpp"
-#include "media/output_timeline.hpp"
+#include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
+#include "types/output_buffer_limits.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
 
@@ -15,6 +16,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
@@ -26,7 +28,7 @@ constexpr auto COLOR_METADATA = R"(<ndi_color_info primaries="bt_709" transfer="
 
 struct sender_frame_s
 {
-    std::shared_ptr<gpu::transfer::texture_download_frame_s> download;
+    std::shared_ptr<gpu::transfer::texture_readback_frame_s> readback;
     gpu::vec2i_t                                             dimensions;
 };
 } // namespace
@@ -35,13 +37,13 @@ class output_sender_s::impl_s
 {
     struct stream_state_s
     {
-        std::shared_ptr<gpu::transfer::texture_download_stream_s> stream;
+        std::shared_ptr<gpu::transfer::texture_readback_stream_s> stream;
         gpu::vec2i_t                                              dimensions{};
         frame_rate_s                                              frame_rate;
         utils::flicks                                             frame_duration{};
         utils::flicks                                             program_time_origin{};
         size_t                                                    buffer_frames{};
-        uint64_t                                                  generation{};
+        uint64_t                                                  configuration_generation{};
     };
 
     utils::serial_executor_s* control_executor_;
@@ -54,7 +56,7 @@ class output_sender_s::impl_s
     mutable std::mutex            state_mutex_;
     std::condition_variable       state_condition_;
     std::optional<stream_state_s> stream_state_;
-    uint64_t                      stream_generation_{};
+    uint64_t                      stream_configuration_generation_{};
     bool                          worker_running_{};
     std::thread                   worker_;
 
@@ -101,7 +103,7 @@ class output_sender_s::impl_s
 
     void send_frame(const stream_state_s& state, const sender_frame_s& frame, utils::flicks program_pts)
     {
-        const auto bytes = frame.download->bytes();
+        const auto bytes = frame.readback->readable_host_bytes();
 
         NDIlib_video_frame_v2_t ndi_frame{};
         ndi_frame.xres                 = frame.dimensions.x;
@@ -122,32 +124,34 @@ class output_sender_s::impl_s
     bool is_current_stream(const stream_state_s& state) const
     {
         const std::scoped_lock lock(state_mutex_);
-        return worker_running_ && stream_state_.has_value() && stream_state_->generation == state.generation;
+        return worker_running_ && stream_state_.has_value() &&
+               stream_state_->configuration_generation == state.configuration_generation;
     }
 
-    static void collect_ready_downloads(const stream_state_s& state, media::timed_output_queue_s<sender_frame_s>& queue)
+    static void collect_completed_readbacks(const stream_state_s&                        state,
+                                            media::timed_output_queue_s<sender_frame_s>& queue)
     {
         // Always release completed transfer leases into the bounded timing
         // queue. If the sender falls behind, that queue discards obsolete
-        // frames here on the output worker instead of letting ready downloads
+        // frames here on the output worker instead of letting completed readbacks
         // exhaust the render thread's preallocated slots.
         while (true) {
-            auto download = state.stream->try_consume_oldest();
-            if (!download.has_value()) {
+            auto readback = state.stream->try_consume_oldest();
+            if (!readback.has_value()) {
                 break;
             }
             const auto expected_size =
                 static_cast<size_t>(state.dimensions.x) * static_cast<size_t>(state.dimensions.y) * 4;
-            if (download->bytes().size() != expected_size) {
+            if (readback->readable_host_bytes().size() != expected_size) {
                 continue;
             }
             queue.push({
-                .target_time = download->target_time(),
-                .value =
+                .program_target_time = readback->program_target_time(),
+                .payload =
                     {
-                            .download   = std::make_shared<gpu::transfer::texture_download_frame_s>(std::move(*download)),
-                            .dimensions = state.dimensions,
-                            },
+                              .readback   = std::make_shared<gpu::transfer::texture_readback_frame_s>(std::move(*readback)),
+                              .dimensions = state.dimensions,
+                              },
             });
         }
     }
@@ -158,9 +162,9 @@ class output_sender_s::impl_s
                          .capacity        = output_sender_s::get_queue_capacity(state.buffer_frames),
                          .early_tolerance = state.frame_duration / 2,
         });
-        media::output_timeline_s                                 timeline;
+        media::presentation_timeline_s                           timeline;
         utils::flicks                                            output_deadline{};
-        std::shared_ptr<gpu::transfer::texture_download_frame_s> inflight;
+        std::shared_ptr<gpu::transfer::texture_readback_frame_s> inflight;
         bool                                                     started{};
 
         while (true) {
@@ -168,7 +172,7 @@ class output_sender_s::impl_s
                 break;
             }
 
-            collect_ready_downloads(state, queue);
+            collect_completed_readbacks(state, queue);
             publish_queue_metrics(queue);
 
             if (!started && queue.queued() < state.buffer_frames) {
@@ -179,13 +183,13 @@ class output_sender_s::impl_s
 
             const auto now = utils::flicks_now();
             if (!started) {
-                const auto oldest_target_time = queue.oldest_target_time();
-                if (!oldest_target_time.has_value()) {
+                const auto oldest_program_target_time = queue.oldest_program_target_time();
+                if (!oldest_program_target_time.has_value()) {
                     phase_ = phase_e::failed;
                     break;
                 }
                 output_deadline           = now;
-                const auto output_latency = timeline.align(output_deadline, *oldest_target_time);
+                const auto output_latency = timeline.establish_latency(output_deadline, *oldest_program_target_time);
                 output_latency_us_ = std::chrono::duration_cast<std::chrono::microseconds>(output_latency).count();
                 started            = true;
             }
@@ -205,7 +209,7 @@ class output_sender_s::impl_s
                 output_intervals_skipped_.fetch_add(obsolete_intervals);
             }
 
-            const auto program_target = timeline.program_target_time(output_deadline);
+            const auto program_target = timeline.map_presentation_to_program_target(output_deadline);
             if (!program_target.has_value()) {
                 phase_ = phase_e::failed;
                 break;
@@ -214,10 +218,10 @@ class output_sender_s::impl_s
             publish_queue_metrics(queue);
             if (selection.frame != nullptr) {
                 program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                   selection.frame->target_time - *program_target)
+                                                   selection.frame->program_target_time - *program_target)
                                                    .count();
-                auto next = selection.frame->value.download;
-                send_frame(state, selection.frame->value, *program_target - state.program_time_origin);
+                auto next = selection.frame->payload.readback;
+                send_frame(state, selection.frame->payload, *program_target - state.program_time_origin);
                 inflight = std::move(next);
             }
 
@@ -341,23 +345,24 @@ class output_sender_s::impl_s
         };
     }
 
-    void set_stream(std::shared_ptr<gpu::transfer::texture_download_stream_s> stream,
+    void set_stream(std::shared_ptr<gpu::transfer::texture_readback_stream_s> stream,
                     gpu::vec2i_t                                              dimensions,
                     frame_rate_s                                              frame_rate,
                     utils::flicks                                             frame_duration,
                     utils::flicks                                             program_time_origin,
                     size_t                                                    buffer_frames)
     {
+        output_sender_s::validate_buffer_frame_count(buffer_frames);
         {
             const std::scoped_lock lock(state_mutex_);
             stream_state_ = stream_state_s{
-                .stream              = std::move(stream),
-                .dimensions          = dimensions,
-                .frame_rate          = frame_rate,
-                .frame_duration      = frame_duration,
-                .program_time_origin = program_time_origin,
-                .buffer_frames       = buffer_frames,
-                .generation          = ++stream_generation_,
+                .stream                   = std::move(stream),
+                .dimensions               = dimensions,
+                .frame_rate               = frame_rate,
+                .frame_duration           = frame_duration,
+                .program_time_origin      = program_time_origin,
+                .buffer_frames            = buffer_frames,
+                .configuration_generation = ++stream_configuration_generation_,
             };
         }
         state_condition_.notify_all();
@@ -368,7 +373,7 @@ class output_sender_s::impl_s
         {
             const std::scoped_lock lock(state_mutex_);
             stream_state_.reset();
-            ++stream_generation_;
+            ++stream_configuration_generation_;
         }
         state_condition_.notify_all();
     }
@@ -379,6 +384,28 @@ class output_sender_s::impl_s
 output_sender_s::output_sender_s(utils::serial_executor_s* control_executor, std::string sender_name)
     : impl_(std::make_unique<impl_s>(control_executor, std::move(sender_name)))
 {
+}
+
+size_t output_sender_s::validate_buffer_frame_count(size_t buffer_frames)
+{
+    if (std::cmp_less(buffer_frames, ndi_output_buffer_limits_s::MINIMUM_FRAME_COUNT) ||
+        std::cmp_greater(buffer_frames, ndi_output_buffer_limits_s::MAXIMUM_FRAME_COUNT)) {
+        throw std::invalid_argument("NDI output buffer frame count is outside its supported range");
+    }
+    return buffer_frames;
+}
+
+size_t output_sender_s::get_queue_capacity(size_t buffer_frames)
+{
+    return validate_buffer_frame_count(buffer_frames) + 3;
+}
+
+size_t output_sender_s::get_readback_slot_count(size_t buffer_frames)
+{
+    // The timing queue retains its current frame separately from queued(),
+    // while the pipeline headroom covers two consecutive render evaluations
+    // permitted by the current one-frame-late policy.
+    return get_queue_capacity(buffer_frames) + RETAINED_PROGRAM_FRAME_COUNT + READBACK_PIPELINE_HEADROOM;
 }
 
 std::shared_ptr<output_sender_s> output_sender_s::create(utils::serial_executor_s* control_executor,
@@ -401,7 +428,7 @@ output_sender_s::phase_e output_sender_s::phase() const { return impl_->phase();
 
 output_sender_s::metrics_s output_sender_s::metrics() const { return impl_->metrics(); }
 
-void output_sender_s::set_stream(std::shared_ptr<gpu::transfer::texture_download_stream_s> stream,
+void output_sender_s::set_stream(std::shared_ptr<gpu::transfer::texture_readback_stream_s> stream,
                                  gpu::vec2i_t                                              dimensions,
                                  frame_rate_s                                              frame_rate,
                                  utils::flicks                                             frame_duration,

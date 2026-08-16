@@ -8,12 +8,12 @@
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/textured_quad.hpp"
-#include "gpu/transfer/texture_download.hpp"
+#include "gpu/transfer/texture_readback.hpp"
 #include "logger/logger.hpp"
 #include "media/frame_fingerprint.hpp"
+#include "media/media_clock.hpp"
 #include "media/output_runtime_metrics.hpp"
-#include "media/output_timeline.hpp"
-#include "media/source_clock.hpp"
+#include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -21,6 +21,7 @@
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
 #include "types/node_status_json.hpp"
+#include "types/output_buffer_limits.hpp"
 #include "types/settings_option.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/serial_executor.hpp"
@@ -39,6 +40,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -54,18 +56,18 @@ using namespace miximus::nodes::decklink::detail;
 using namespace std::chrono_literals;
 
 constexpr size_t OUTPUT_QUEUE_HEADROOM        = 3;
-constexpr size_t DOWNLOAD_PIPELINE_HEADROOM   = 3;
+constexpr size_t READBACK_PIPELINE_HEADROOM   = 3;
 constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
 constexpr size_t PROGRAM_QUEUE_RESERVE        = 1;
 
 constexpr size_t get_output_queue_capacity(size_t buffer_frames) { return buffer_frames + OUTPUT_QUEUE_HEADROOM; }
 
-constexpr size_t get_download_slot_count(size_t scheduled_frames, size_t program_queue_capacity)
+constexpr size_t get_readback_slot_count(size_t scheduled_frames, size_t program_queue_capacity)
 {
     // The timed queue retains its current frame separately from queued(), so
     // it needs its own slot in addition to scheduled frames, queued program
-    // frames, and the render/download pipeline.
-    return scheduled_frames + program_queue_capacity + RETAINED_PROGRAM_FRAME_COUNT + DOWNLOAD_PIPELINE_HEADROOM;
+    // frames, and the render/readback pipeline.
+    return scheduled_frames + program_queue_capacity + RETAINED_PROGRAM_FRAME_COUNT + READBACK_PIPELINE_HEADROOM;
 }
 
 auto log() { return getlog("decklink"); }
@@ -90,7 +92,7 @@ struct mode_info_s
     BMDTimeValue            frame_duration{};
     BMDTimeScale            time_scale{};
     gpu::vec2i_t            dim{};
-    gpu::vec2i_t            download_dim{};
+    gpu::vec2i_t            readback_dimensions{};
     int32_t                 row_bytes{};
     utils::flicks           frame_duration_flicks{};
     gpu::color_conversion_s yuv_conversion{};
@@ -143,12 +145,12 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         int64_t                                          output_latency_us{};
         int64_t                                          program_selection_offset_us{};
         uint64_t                                         completion_time_failures{};
-        gpu::transfer::texture_download_stream_metrics_s download_stream;
+        gpu::transfer::texture_readback_stream_metrics_s readback_stream;
     };
 
     struct render_state_s
     {
-        std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream;
+        std::shared_ptr<gpu::transfer::texture_readback_stream_s> readback_stream;
         mode_info_s                                               mode;
     };
 
@@ -158,14 +160,14 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     struct scheduled_frame_s
     {
         decklink_ptr<IDeckLinkVideoFrame> frame;
-        uint64_t                          sequence{};
-        utils::flicks                     output_time{};
+        uint64_t                          output_frame_sequence{};
+        utils::flicks                     decklink_media_pts{};
         utils::flicks                     program_target_time{};
     };
 
     std::atomic_ulong ref_count_{1};
 
-    gpu::transfer::texture_download_service_s* download_service_;
+    gpu::transfer::texture_readback_service_s* readback_service_;
     utils::serial_executor_s*                  control_executor_;
     decklink_ptr<IDeckLinkOutput>              device_;
     std::shared_ptr<reservation_s>             reservation_;
@@ -178,17 +180,17 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     std::atomic_uint64_t           mode_options_version_;
 
     mutable std::mutex                                                             frame_mutex_;
-    std::shared_ptr<gpu::transfer::texture_download_stream_s>                      download_stream_;
+    std::shared_ptr<gpu::transfer::texture_readback_stream_s>                      readback_stream_;
     decklink_ptr<IDeckLinkVideoBuffer>                                             last_buffer_;
     std::optional<media::timed_output_queue_s<decklink_ptr<IDeckLinkVideoBuffer>>> output_queue_;
     media::output_runtime_metrics_s                                                runtime_metrics_;
     std::deque<scheduled_frame_s>                                                  scheduled_frames_;
     mode_info_s                                                                    mode_info_;
-    BMDTimeValue                                                                   pts_{};
-    uint64_t                                                                       output_sequence_{};
+    BMDTimeValue                                                                   next_decklink_stream_time_{};
+    uint64_t                                                                       next_output_frame_sequence_{};
     utils::flicks                                                                  program_frame_duration_;
-    media::source_clock_estimator_s                                                output_clock_;
-    media::output_timeline_s                                                       output_timeline_;
+    media::media_to_program_clock_s                                                decklink_to_program_clock_;
+    media::presentation_timeline_s                                                 presentation_timeline_;
     size_t                                                                         configured_buffer_frames_{};
     size_t                                                                         scheduled_frame_target_{};
     uint64_t                                                                       content_frames_sampled_{};
@@ -283,9 +285,9 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             mode.yuv_conversion   = gpu::get_color_transfer_to_yuv(transfer);
             mode.gamut_conversion = gpu::get_gamut_transfer_from_rec709(transfer);
 
-            const int row_pixels = ((mode.dim.x + 47) / 48) * 32;
-            mode.download_dim    = {row_pixels, mode.dim.y};
-            mode.row_bytes       = row_pixels * 4;
+            const int row_pixels     = ((mode.dim.x + 47) / 48) * 32;
+            mode.readback_dimensions = {row_pixels, mode.dim.y};
+            mode.row_bytes           = row_pixels * 4;
 
             auto name = get_display_mode_name(sdk_mode.get());
             if (name == requested_mode_name_) {
@@ -380,18 +382,18 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             .early_tolerance = program_frame_duration_ / 2,
         });
 
-        const auto download_slot_count = get_download_slot_count(scheduled_frame_target_, output_queue_->capacity());
-        const auto stream              = download_service_->create_stream({
-                         .requirements =
+        const auto readback_slot_count = get_readback_slot_count(scheduled_frame_target_, output_queue_->capacity());
+        const auto stream              = readback_service_->create_stream({
+                         .transfer_layout =
                 {
-                               .dimensions  = mode->download_dim,
-                               .format      = gpu::texture_s::format_e::uyuv_u10,
-                               .row_stride  = static_cast<size_t>(mode->row_bytes),
-                               .byte_size   = static_cast<size_t>(mode->row_bytes) * mode->dim.y,
-                               .host_access = gpu::transfer::host_access_e::read_only,
-                               },
-                         .max_slots     = download_slot_count,
-                         .initial_slots = download_slot_count,
+                                  .dimensions             = mode->readback_dimensions,
+                                  .pixel_format           = gpu::texture_s::pixel_format_e::uyuv_u10,
+                                  .host_row_stride_bytes  = static_cast<size_t>(mode->row_bytes),
+                                  .host_buffer_size_bytes = static_cast<size_t>(mode->row_bytes) * mode->dim.y,
+                                  .host_memory_access     = gpu::transfer::host_memory_access_e::read_only,
+                                  },
+                         .max_slots     = readback_slot_count,
+                         .initial_slots = readback_slot_count,
         });
         if (!stream->wait_for_initial_slots(5s)) {
             log()->error("Failed to initialize the DeckLink output transfer pool for {}", device_name_);
@@ -399,10 +401,10 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         }
 
         mode_info_       = *mode;
-        download_stream_ = stream;
+        readback_stream_ = stream;
         {
             const std::scoped_lock lock(state_mutex_);
-            render_state_.emplace(render_state_s{.download_stream = stream, .mode = *mode});
+            render_state_.emplace(render_state_s{.readback_stream = stream, .mode = *mode});
         }
 
         if (device_->SetScheduledFrameCompletionCallback(this) != S_OK) {
@@ -444,7 +446,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             last_buffer_ = nullptr;
             output_queue_.reset();
             scheduled_frames_.clear();
-            download_stream_.reset();
+            readback_stream_.reset();
         }
         {
             const std::scoped_lock lock(state_mutex_);
@@ -492,7 +494,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         }
     }
 
-    void consume_downloaded_frames()
+    void collect_completed_readbacks()
     {
         if (!output_queue_.has_value()) {
             return;
@@ -501,18 +503,18 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
         // The timed queue owns its overflow policy. Drain every completed
         // lease so obsolete queued frames are released instead of exhausting
-        // the download stream.
+        // the readback stream.
         while (true) {
-            auto frame = download_stream_->try_consume_oldest();
+            auto frame = readback_stream_->try_consume_oldest();
             if (!frame.has_value()) {
                 break;
             }
-            if (frame->bytes().size() != static_cast<size_t>(mode_info_.row_bytes) * mode_info_.dim.y) {
+            if (frame->readable_host_bytes().size() != static_cast<size_t>(mode_info_.row_bytes) * mode_info_.dim.y) {
                 log()->error("DeckLink output transfer produced an unexpected buffer size");
                 continue;
             }
-            const auto target_time = frame->target_time();
-            const auto fingerprint = media::sampled_frame_fingerprint(frame->bytes());
+            const auto program_target_time = frame->program_target_time();
+            const auto fingerprint         = media::sampled_frame_fingerprint(frame->readable_host_bytes());
             if (content_frames_sampled_ != 0 && fingerprint == last_content_fingerprint_) {
                 ++content_frame_repeats_;
                 ++content_repeat_streak_;
@@ -524,8 +526,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             last_content_fingerprint_ = fingerprint;
             auto buffer               = make_decklink_ptr<output_video_buffer_s>(std::move(*frame));
             output_queue.push({
-                .target_time = target_time,
-                .value       = buffer.query<IDeckLinkVideoBuffer>(),
+                .program_target_time = program_target_time,
+                .payload             = buffer.query<IDeckLinkVideoBuffer>(),
             });
         }
     }
@@ -539,9 +541,9 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         const auto selection    = output_queue.select(program_target_time);
         runtime_metrics_.observe_selection(selection.selection, output_queue.queued() != 0);
         if (selection.frame != nullptr) {
-            last_buffer_                 = selection.frame->value;
+            last_buffer_                 = selection.frame->payload;
             program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
-                                               selection.frame->target_time - program_target_time)
+                                               selection.frame->program_target_time - program_target_time)
                                                .count();
         }
         if (!last_buffer_) {
@@ -549,20 +551,21 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         }
 
         auto       frame       = create_frame(last_buffer_.get());
-        const auto stream_time = pts_;
-        const auto output_time = mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(output_sequence_);
+        const auto stream_time = next_decklink_stream_time_;
+        const auto decklink_media_pts =
+            mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(next_output_frame_sequence_);
         if (!frame || device_->ScheduleVideoFrame(
                           frame.get(), stream_time, mode_info_.frame_duration, mode_info_.time_scale) != S_OK) {
             return false;
         }
         scheduled_frames_.push_back({
-            .frame               = std::move(frame),
-            .sequence            = output_sequence_,
-            .output_time         = output_time,
-            .program_target_time = program_target_time,
+            .frame                 = std::move(frame),
+            .output_frame_sequence = next_output_frame_sequence_,
+            .decklink_media_pts    = decklink_media_pts,
+            .program_target_time   = program_target_time,
         });
-        pts_ += mode_info_.frame_duration;
-        ++output_sequence_;
+        next_decklink_stream_time_ += mode_info_.frame_duration;
+        ++next_output_frame_sequence_;
         return true;
     }
 
@@ -598,14 +601,14 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                 return;
             }
             auto& output_queue = *output_queue_;
-            consume_downloaded_frames();
+            collect_completed_readbacks();
             runtime_metrics_.observe_output_queue_depth(output_queue.queued());
             const auto required_program_frames = scheduled_frame_target_ + PROGRAM_QUEUE_RESERVE;
             if (output_queue.queued() < required_program_frames) {
                 return;
             }
 
-            const auto first_program_target = output_queue.oldest_target_time();
+            const auto first_program_target = output_queue.oldest_program_target_time();
             if (!first_program_target.has_value()) {
                 return;
             }
@@ -660,34 +663,36 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return E_FAIL;
         }
 
-        const auto completed_sequence            = completed->sequence;
-        const auto completed_output_time         = completed->output_time;
-        const auto completed_program_target_time = completed->program_target_time;
+        const auto completed_output_frame_sequence = completed->output_frame_sequence;
+        const auto completed_decklink_media_pts    = completed->decklink_media_pts;
+        const auto completed_program_target_time   = completed->program_target_time;
         const auto completed_start_time =
             observe_completion_time ? completed_frame_start_time(completed_frame) : std::nullopt;
         scheduled_frames_.erase(completed);
         if (completed_start_time.has_value()) {
             runtime_metrics_.observe_completion(*completed_start_time);
-            output_clock_.observe(
+            decklink_to_program_clock_.observe(
                 {
-                    .epoch    = 1,
-                    .sequence = completed_sequence,
-                    .pts      = completed_output_time,
-                    .duration = mode_info_.frame_duration_flicks,
+                    .stream_epoch   = 1,
+                    .frame_sequence = completed_output_frame_sequence,
+                    .media_pts      = completed_decklink_media_pts,
+                    .frame_duration = mode_info_.frame_duration_flicks,
                 },
                 *completed_start_time);
-            if (!output_timeline_.latency().has_value()) {
-                output_timeline_.align(*completed_start_time, completed_program_target_time);
+            if (!presentation_timeline_.latency().has_value()) {
+                presentation_timeline_.establish_latency(*completed_start_time, completed_program_target_time);
             }
         }
         sample_buffered_video_frames();
-        consume_downloaded_frames();
-        const auto next_output_time =
-            mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(output_sequence_);
-        const auto next_presentation_time = output_clock_.map(next_output_time);
-        const auto program_target         = next_presentation_time.has_value()
-                                                ? output_timeline_.program_target_time(*next_presentation_time)
-                                                : std::nullopt;
+        collect_completed_readbacks();
+        const auto next_decklink_media_pts =
+            mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(next_output_frame_sequence_);
+        const auto next_presentation_time =
+            decklink_to_program_clock_.map_media_pts_to_program_time(next_decklink_media_pts);
+        const auto program_target =
+            next_presentation_time.has_value()
+                ? presentation_timeline_.map_presentation_to_program_target(*next_presentation_time)
+                : std::nullopt;
         if (!program_target.has_value()) {
             log()->error("Failed to query the DeckLink output playhead for {}", device_name_);
             request_failure();
@@ -713,7 +718,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     }
 
   public:
-    callback_s(gpu::transfer::texture_download_service_s* download_service,
+    callback_s(gpu::transfer::texture_readback_service_s* readback_service,
                utils::serial_executor_s*                  control_executor,
                decklink_ptr<IDeckLinkOutput>              device,
                std::shared_ptr<reservation_s>             reservation,
@@ -721,7 +726,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                std::string                                requested_mode_name,
                utils::flicks                              program_frame_duration,
                size_t                                     buffer_frames)
-        : download_service_(download_service)
+        : readback_service_(readback_service)
         , control_executor_(control_executor)
         , device_(std::move(device))
         , reservation_(std::move(reservation))
@@ -731,6 +736,10 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         , configured_buffer_frames_(buffer_frames)
         , scheduled_frame_target_(buffer_frames)
     {
+        if (std::cmp_less(buffer_frames, decklink_output_buffer_limits_s::MINIMUM_FRAME_COUNT) ||
+            std::cmp_greater(buffer_frames, decklink_output_buffer_limits_s::MAXIMUM_FRAME_COUNT)) {
+            throw std::invalid_argument("DeckLink output buffer frame count is outside its supported range");
+        }
     }
 
     ~callback_s() override = default;
@@ -813,15 +822,15 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                            .buffered_below_target_samples = runtime_metrics.buffered_below_target_samples,
                            .buffered_zero_samples         = runtime_metrics.buffered_zero_samples,
                            .output_latency_us =
-                output_timeline_.latency().has_value()
-                                   ? std::chrono::duration_cast<std::chrono::microseconds>(*output_timeline_.latency()).count()
+                presentation_timeline_.latency().has_value()
+                                   ? std::chrono::duration_cast<std::chrono::microseconds>(*presentation_timeline_.latency()).count()
                                    : 0,
                            .program_selection_offset_us = program_selection_offset_us_,
                            .completion_time_failures    = completion_time_failures_,
-                           .download_stream             = {},
+                           .readback_stream             = {},
         };
-        if (download_stream_) {
-            result.download_stream = download_stream_->metrics();
+        if (readback_stream_) {
+            result.readback_stream = readback_stream_->metrics();
         }
         return result;
     }
@@ -921,7 +930,7 @@ class node_impl : public node_i
     std::chrono::steady_clock::time_point                     next_start_attempt_;
     std::chrono::steady_clock::time_point                     next_metrics_status_;
     uint64_t                                                  render_target_drops_{};
-    std::optional<gpu::transfer::texture_download_target_s>   render_target_;
+    std::optional<gpu::transfer::texture_readback_target_s>   render_target_;
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -950,7 +959,7 @@ class node_impl : public node_i
         }
 
         log()->info("Scheduling DeckLink output setup for {}", device_name);
-        callback_ = make_decklink_ptr<callback_s>(app->texture_download_service(),
+        callback_ = make_decklink_ptr<callback_s>(app->texture_readback_service(),
                                                   app->decklink_registry()->control_executor(),
                                                   std::move(device),
                                                   std::move(reservation),
@@ -1024,19 +1033,19 @@ class node_impl : public node_i
         status_registry->write(
             id_,
             status::download_stream_status_s{
-                .download_slots                      = metrics.download_stream.slots,
-                .download_slots_free                 = metrics.download_stream.free_slots,
-                .download_slots_rendering            = metrics.download_stream.rendering_slots,
-                .download_slots_queued               = metrics.download_stream.queued_slots,
-                .download_slots_ready                = metrics.download_stream.ready_slots,
-                .download_slots_cpu_reading          = metrics.download_stream.cpu_reading_slots,
-                .download_pending_allocations        = metrics.download_stream.pending_allocations,
-                .download_acquire_misses             = metrics.download_stream.acquire_misses,
-                .download_transfers_completed        = metrics.download_stream.transfers_completed,
-                .download_transfer_failures          = metrics.download_stream.transfer_failures,
-                .download_transfer_duration_total_us = metrics.download_stream.transfer_duration_total_us,
-                .download_transfer_duration_max_us   = metrics.download_stream.transfer_duration_max_us,
-                .download_allocation_failed          = metrics.download_stream.allocation_failed,
+                .download_slots                      = metrics.readback_stream.slots,
+                .download_slots_free                 = metrics.readback_stream.free_slots,
+                .download_slots_rendering            = metrics.readback_stream.rendering_slots,
+                .download_slots_queued               = metrics.readback_stream.queued_slots,
+                .download_slots_ready                = metrics.readback_stream.ready_slots,
+                .download_slots_cpu_reading          = metrics.readback_stream.cpu_reading_slots,
+                .download_pending_allocations        = metrics.readback_stream.pending_allocations,
+                .download_acquire_misses             = metrics.readback_stream.render_target_acquire_misses,
+                .download_transfers_completed        = metrics.readback_stream.transfers_completed,
+                .download_transfer_failures          = metrics.readback_stream.transfer_failures,
+                .download_transfer_duration_total_us = metrics.readback_stream.transfer_duration_total_us,
+                .download_transfer_duration_max_us   = metrics.readback_stream.transfer_duration_max_us,
+                .download_allocation_failed          = metrics.readback_stream.allocation_failed,
             });
         next_metrics_status_ = now + 1s;
     }
@@ -1121,9 +1130,12 @@ class node_impl : public node_i
         }
 
         auto device = app->decklink_registry()->get_output(device_name);
-        if (!device ||
-            !start_playback(
-                app, std::move(device), device_name, display_mode, app->frame_context().duration, buffer_frames)) {
+        if (!device || !start_playback(app,
+                                       std::move(device),
+                                       device_name,
+                                       display_mode,
+                                       app->frame_context().frame_duration,
+                                       buffer_frames)) {
             next_start_attempt_ = std::chrono::steady_clock::now() + 100ms;
         }
     }
@@ -1136,7 +1148,7 @@ class node_impl : public node_i
             return;
         }
 
-        auto target = render_state_->download_stream->try_acquire();
+        auto target = render_state_->readback_stream->try_acquire_render_target();
         if (!target) {
             ++render_target_drops_;
             return;
@@ -1153,7 +1165,8 @@ class node_impl : public node_i
 
         const auto& mode = render_state_->mode;
         if (!framebuffer_scale_ || framebuffer_scale_->texture()->texture_dimensions() != mode.dim) {
-            framebuffer_scale_ = std::make_unique<gpu::framebuffer_s>(mode.dim, gpu::texture_s::format_e::rgb_f16);
+            framebuffer_scale_ =
+                std::make_unique<gpu::framebuffer_s>(mode.dim, gpu::texture_s::pixel_format_e::rgb_f16);
         }
 
         framebuffer_scale_->begin_render(gpu::framebuffer_s::load_op_e::clear);
@@ -1163,19 +1176,19 @@ class node_impl : public node_i
         target->framebuffer()->begin_render(
             {
                 .pos  = {0, 0},
-                .size = mode.download_dim,
+                .size = mode.readback_dimensions,
         },
             gpu::framebuffer_s::load_op_e::clear);
 
         auto shader = textured_quad_yuv_->shader();
-        shader->set_uniform("target_width", mode.download_dim.x);
+        shader->set_uniform("target_width", mode.readback_dimensions.x);
         shader->set_uniform("transfer", mode.yuv_conversion.matrix);
         shader->set_uniform("transfer_offset", mode.yuv_conversion.offset);
         shader->set_uniform("gamut_transfer", mode.gamut_conversion);
         textured_quad_yuv_->draw(framebuffer_scale_->texture());
 
         gpu::framebuffer_s::end_render();
-        target->set_target_time(app->frame_context().target_time);
+        target->set_program_target_time(app->frame_context().program_target_time);
         render_target_ = std::move(target);
     }
 

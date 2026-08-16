@@ -1,16 +1,17 @@
 #include "output_presenter.hpp"
 
 #include "gpu/context.hpp"
+#include "gpu/fence.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/shader.hpp"
-#include "gpu/sync.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/textured_quad.hpp"
-#include "media/media_frame.hpp"
-#include "media/output_timeline.hpp"
-#include "media/source_clock.hpp"
+#include "media/media_clock.hpp"
+#include "media/media_clock_sample.hpp"
+#include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
+#include "types/output_buffer_limits.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -26,6 +27,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -36,9 +38,21 @@ constexpr size_t OUTPUT_QUEUE_HEADROOM        = 3;
 constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
 constexpr size_t RENDER_PIPELINE_HEADROOM     = 2;
 
-constexpr size_t get_queue_capacity(size_t buffer_frames) noexcept { return buffer_frames + OUTPUT_QUEUE_HEADROOM; }
+size_t validate_buffer_frame_count(size_t buffer_frames)
+{
+    if (std::cmp_less(buffer_frames, screen_output_buffer_limits_s::MINIMUM_FRAME_COUNT) ||
+        std::cmp_greater(buffer_frames, screen_output_buffer_limits_s::MAXIMUM_FRAME_COUNT)) {
+        throw std::invalid_argument("screen output buffer frame count is outside its supported range");
+    }
+    return buffer_frames;
+}
 
-constexpr size_t get_slot_count(size_t buffer_frames) noexcept
+size_t get_queue_capacity(size_t buffer_frames)
+{
+    return validate_buffer_frame_count(buffer_frames) + OUTPUT_QUEUE_HEADROOM;
+}
+
+size_t get_slot_count(size_t buffer_frames)
 {
     return get_queue_capacity(buffer_frames) + RETAINED_PROGRAM_FRAME_COUNT + RENDER_PIPELINE_HEADROOM;
 }
@@ -60,15 +74,15 @@ class presentation_clock_s
     bool          uses_nominal_cadence_;
     utils::flicks nominal_frame_duration_;
 
-    media::source_clock_estimator_s output_clock_;
-    uint64_t                        output_sequence_{};
-    utils::flicks                   output_pts_{};
+    media::media_to_program_clock_s presentation_to_program_clock_;
+    uint64_t                        presentation_frame_sequence_{};
+    utils::flicks                   presentation_pts_{};
     utils::flicks                   previous_completion_;
     utils::flicks                   next_nominal_swap_;
 
     double recovered_rate() const noexcept
     {
-        return uses_nominal_cadence_ ? 1.0 : output_clock_.recovered_rate().value_or(1.0);
+        return uses_nominal_cadence_ ? 1.0 : presentation_to_program_clock_.recovered_rate().value_or(1.0);
     }
 
   public:
@@ -81,12 +95,12 @@ class presentation_clock_s
         , next_nominal_swap_(initial_completion + nominal_frame_duration)
     {
         if (!uses_nominal_cadence_) {
-            output_clock_.observe(
+            presentation_to_program_clock_.observe(
                 {
-                    .epoch    = 0,
-                    .sequence = output_sequence_,
-                    .pts      = output_pts_,
-                    .duration = nominal_frame_duration_,
+                    .stream_epoch   = 0,
+                    .frame_sequence = presentation_frame_sequence_,
+                    .media_pts      = presentation_pts_,
+                    .frame_duration = nominal_frame_duration_,
                 },
                 initial_completion);
         }
@@ -107,7 +121,7 @@ class presentation_clock_s
         if (uses_nominal_cadence_) {
             return next_nominal_swap_;
         }
-        return output_clock_.map(output_pts_ + nominal_frame_duration_)
+        return presentation_to_program_clock_.map_media_pts_to_program_time(presentation_pts_ + nominal_frame_duration_)
             .value_or(previous_completion_ + nominal_frame_duration_);
     }
 
@@ -125,17 +139,17 @@ class presentation_clock_s
                 : std::max<utils::flicks::rep>(1,
                                                (completion_interval + (recovered_duration / 2)) / recovered_duration);
 
-        output_sequence_ += static_cast<uint64_t>(interval_count);
-        output_pts_ += nominal_frame_duration_ * interval_count;
+        presentation_frame_sequence_ += static_cast<uint64_t>(interval_count);
+        presentation_pts_ += nominal_frame_duration_ * interval_count;
         if (uses_nominal_cadence_) {
             next_nominal_swap_ += nominal_frame_duration_ * interval_count;
         } else {
-            output_clock_.observe(
+            presentation_to_program_clock_.observe(
                 {
-                    .epoch    = 0,
-                    .sequence = output_sequence_,
-                    .pts      = output_pts_,
-                    .duration = nominal_frame_duration_,
+                    .stream_epoch   = 0,
+                    .frame_sequence = presentation_frame_sequence_,
+                    .media_pts      = presentation_pts_,
+                    .frame_duration = nominal_frame_duration_,
                 },
                 completion);
         }
@@ -156,13 +170,13 @@ class output_presenter_s::impl_s
     struct frame_slot_s
     {
         std::unique_ptr<gpu::framebuffer_s> target;
-        std::unique_ptr<gpu::sync_s>        ready;
+        std::unique_ptr<gpu::fence_s>       ready;
     };
 
     struct retired_slot_s
     {
-        size_t                       index{};
-        std::unique_ptr<gpu::sync_s> released;
+        size_t                        index{};
+        std::unique_ptr<gpu::fence_s> released;
     };
 
     class slot_lease_s
@@ -177,9 +191,9 @@ class output_presenter_s::impl_s
                 return;
             }
 
-            std::unique_ptr<gpu::sync_s> released;
+            std::unique_ptr<gpu::fence_s> released;
             if (presented_ && !impl_->display_finished_.load()) {
-                released = std::make_unique<gpu::sync_s>();
+                released = std::make_unique<gpu::fence_s>();
                 gpu::context_s::flush();
             }
             impl_->retire(index_, std::move(released));
@@ -252,7 +266,7 @@ class output_presenter_s::impl_s
     std::atomic<double>  measured_refresh_hz_;
     std::atomic_bool     uses_nominal_cadence_;
 
-    void retire(size_t index, std::unique_ptr<gpu::sync_s> released) noexcept
+    void retire(size_t index, std::unique_ptr<gpu::fence_s> released) noexcept
     {
         try {
             const std::scoped_lock lock(mutex_);
@@ -268,15 +282,16 @@ class output_presenter_s::impl_s
         free_slots_.push_back(index);
     }
 
-    void submit(size_t index, utils::flicks target_time)
+    void submit(size_t index, utils::flicks program_target_time)
     {
         auto& slot = slots_.at(index);
-        slot.ready = std::make_unique<gpu::sync_s>();
+        slot.ready = std::make_unique<gpu::fence_s>();
         gpu::context_s::flush();
 
         {
             const std::scoped_lock lock(mutex_);
-            submitted_frames_.push_back({.target_time = target_time, .value = slot_lease_s(this, index)});
+            submitted_frames_.push_back(
+                {.program_target_time = program_target_time, .payload = slot_lease_s(this, index)});
         }
         ++frames_submitted_;
         condition_.notify_one();
@@ -329,7 +344,7 @@ class output_presenter_s::impl_s
             return;
         }
 
-        const auto& lease = selection.frame->value;
+        const auto& lease = selection.frame->payload;
         auto&       slot  = slots_.at(lease.index());
         if (selection.selection == media::output_frame_selection_e::new_frame && slot.ready) {
             slot.ready->gpu_wait();
@@ -356,7 +371,7 @@ class output_presenter_s::impl_s
         // evidence that the GL work which updates the visible back buffer has
         // completed. Waiting here only parks the dedicated presenter thread;
         // it can never stall graph rendering.
-        gpu::sync_s swap_finished;
+        gpu::fence_s swap_finished;
         gpu::context_s::flush();
         (void)swap_finished.cpu_wait(std::chrono::hours(1));
 
@@ -379,9 +394,9 @@ class output_presenter_s::impl_s
 
     std::optional<utils::flicks> present_preroll(media::timed_output_queue_s<slot_lease_s>* queue,
                                                  gpu::textured_quad_s*                      textured_quad,
-                                                 media::output_timeline_s*                  timeline)
+                                                 media::presentation_timeline_s*            timeline)
     {
-        const auto oldest_target = queue->oldest_target_time();
+        const auto oldest_target = queue->oldest_program_target_time();
         if (!running_.load() || !oldest_target.has_value()) {
             return std::nullopt;
         }
@@ -390,31 +405,31 @@ class output_presenter_s::impl_s
         publish_queue_metrics(*queue);
         draw(textured_quad, selection);
         const auto completion = swap_and_wait();
-        output_latency_us_    = to_microseconds(timeline->align(completion, *oldest_target));
+        output_latency_us_    = to_microseconds(timeline->establish_latency(completion, *oldest_target));
         return completion;
     }
 
     std::optional<media::output_frame_selection_s<slot_lease_s>>
     select_frame(media::timed_output_queue_s<slot_lease_s>* queue,
-                 media::output_timeline_s*                  timeline,
+                 media::presentation_timeline_s*            timeline,
                  utils::flicks                              predicted_completion)
     {
-        auto program_target = timeline->program_target_time(predicted_completion);
+        auto program_target = timeline->map_presentation_to_program_target(predicted_completion);
         if (!program_target.has_value()) {
             return std::nullopt;
         }
 
-        const auto oldest_queued = queue->oldest_target_time();
+        const auto oldest_queued = queue->oldest_program_target_time();
         if (queue->queued() == queue->capacity() && oldest_queued.has_value() &&
             *oldest_queued > *program_target + (nominal_frame_duration_ / 2)) {
-            output_latency_us_ = to_microseconds(timeline->align(predicted_completion, *oldest_queued));
+            output_latency_us_ = to_microseconds(timeline->establish_latency(predicted_completion, *oldest_queued));
             program_target     = oldest_queued;
         }
 
         auto selection = queue->select(*program_target);
         publish_queue_metrics(*queue);
         if (selection.frame != nullptr) {
-            selection_offset_us_ = to_microseconds(selection.frame->target_time - *program_target);
+            selection_offset_us_ = to_microseconds(selection.frame->program_target_time - *program_target);
         }
         return selection;
     }
@@ -450,7 +465,7 @@ class output_presenter_s::impl_s
                 .capacity        = get_queue_capacity(buffer_frames_),
                 .early_tolerance = nominal_frame_duration_ / 2,
             });
-            media::output_timeline_s                  timeline;
+            media::presentation_timeline_s            timeline;
             auto*                shader = context_->get_shader(gpu::shader_program_s::name_e::basic);
             gpu::textured_quad_s textured_quad(shader, gpu::textured_quad_s::uv_e::regular);
 
@@ -568,7 +583,7 @@ class output_presenter_s::impl_s
 
         auto& slot = slots_.at(index);
         if (!slot.target || slot.target->texture()->texture_dimensions() != dimensions) {
-            slot.target = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::format_e::bgra_u8);
+            slot.target = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::pixel_format_e::bgra_u8);
         }
         return output_presenter_s::render_frame_s(this, index);
     }
@@ -646,13 +661,13 @@ gpu::framebuffer_s* output_presenter_s::render_frame_s::target() const noexcept
     return impl_ != nullptr ? impl_->target(slot_index_) : nullptr;
 }
 
-void output_presenter_s::render_frame_s::submit(utils::flicks target_time)
+void output_presenter_s::render_frame_s::submit(utils::flicks program_target_time)
 {
     if (impl_ == nullptr) {
         throw std::logic_error("screen output frame was already submitted");
     }
     auto* impl = std::exchange(impl_, nullptr);
-    impl->submit(slot_index_, target_time);
+    impl->submit(slot_index_, program_target_time);
 }
 
 output_presenter_s::output_presenter_s(gpu::context_s*     root_context,

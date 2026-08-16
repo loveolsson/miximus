@@ -47,7 +47,7 @@ class node_impl : public node_i
         std::mutex                                              mtx;
         ::future<void>                                          ready;
         int                                                     line_no{-1};
-        uint64_t                                                upload_version{};
+        gpu::transfer::texture_upload_id_s                      upload_id{};
         std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream;
     };
 
@@ -269,31 +269,31 @@ class node_impl : public node_i
             auto& rl = render_lines_[txt_line_index % render_lines_.size()];
 
             if (rl->line_no != txt_line_index && !rl->ready.valid()) {
-                if (!rl->upload_stream || rl->upload_stream->desc().requirements.dimensions != tx_dim) {
-                    const auto byte_size = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x) *
-                                           static_cast<size_t>(tx_dim.y);
-                    const gpu::transfer::texture_transfer_requirements_s requirements{
-                        .dimensions        = tx_dim,
-                        .format            = gpu::texture_s::format_e::rgba_f16,
-                        .row_stride        = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x),
-                        .byte_size         = byte_size,
-                        .address_alignment = render::surface_s::PREFERRED_DATA_ALIGNMENT,
-                        .host_access       = gpu::transfer::host_access_e::read_write,
+                if (!rl->upload_stream || rl->upload_stream->configuration().transfer_layout.dimensions != tx_dim) {
+                    const auto host_buffer_size_bytes = sizeof(render::surface_s::pixel_t) *
+                                                        static_cast<size_t>(tx_dim.x) * static_cast<size_t>(tx_dim.y);
+                    const gpu::transfer::texture_transfer_layout_s transfer_layout{
+                        .dimensions             = tx_dim,
+                        .pixel_format           = gpu::texture_s::pixel_format_e::rgba_f16,
+                        .host_row_stride_bytes  = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x),
+                        .host_buffer_size_bytes = host_buffer_size_bytes,
+                        .host_address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
+                        .host_memory_access           = gpu::transfer::host_memory_access_e::read_write,
                     };
                     rl->upload_stream = app->texture_upload_service()->create_stream({
-                        .requirements = requirements,
-                        .max_slots    = 2,
+                        .transfer_layout = transfer_layout,
+                        .max_slots       = 2,
                     });
                 }
 
-                auto upload = rl->upload_stream->try_acquire();
+                auto upload = rl->upload_stream->try_acquire_upload_buffer();
                 if (!upload) {
                     continue;
                 }
 
                 // The render line contains the wrong text line AND is available for processing
-                rl->line_no        = txt_line_index;
-                rl->upload_version = upload->version();
+                rl->line_no   = txt_line_index;
+                rl->upload_id = upload->upload_id();
 
                 auto t = text_.lines[txt_line_index];
 
@@ -324,11 +324,11 @@ class node_impl : public node_i
             }
 
             const std::unique_lock lock(rl->mtx);
-            auto                   frame = rl->upload_stream ? rl->upload_stream->consume_latest() : nullptr;
-            if (!frame || rl->upload_stream->current_version() != rl->upload_version) {
+            auto frame = rl->upload_stream ? rl->upload_stream->select_latest_completed_upload() : nullptr;
+            if (!frame || rl->upload_stream->retained_upload_id() != rl->upload_id) {
                 continue;
             }
-            frame->wait_ready_on_gpu();
+            frame->wait_for_upload_on_gpu();
 
             const int    line_height_px = font_size_.value() + line_height_extra_;
             const double px_pos         = std::floor((txt_line_index - scroll_pos) * line_height_px);
@@ -343,7 +343,7 @@ class node_impl : public node_i
     void complete(core::app_state_s* /*app*/) final
     {
         for (auto& frame : rendered_line_frames_) {
-            frame->release_from_render();
+            frame->publish_render_release_fence();
         }
         rendered_line_frames_.clear();
     }
@@ -431,7 +431,7 @@ class node_impl : public node_i
         const std::unique_lock line_lock(line->mtx);
         const std::unique_lock font_lock(font_mtx_);
 
-        render::surface_s surface(dim, upload.bytes());
+        render::surface_s surface(dim, upload.writable_host_bytes());
         surface.clear({0, 0, 0, 0});
         text_.font->render_string(str, &surface, {0, font_size_.value()});
         upload.submit();

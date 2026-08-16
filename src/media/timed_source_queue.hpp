@@ -1,5 +1,5 @@
 #pragma once
-#include "media/source_clock.hpp"
+#include "media/media_clock.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -27,20 +27,20 @@ template <typename T>
 class source_frame_s
 {
     std::atomic<source_frame_readiness_e> readiness_;
-    T                                     value_;
+    T                                     payload_;
 
   public:
-    media_frame_id_s id;
-    utils::flicks    arrival_time;
+    media_clock_sample_s media_clock_sample;
+    utils::flicks        program_arrival_time;
 
-    source_frame_s(media_frame_id_s         frame_id,
+    source_frame_s(media_clock_sample_s     clock_sample,
                    utils::flicks            arrival,
-                   T                        value,
+                   T                        payload,
                    source_frame_readiness_e readiness = source_frame_readiness_e::reserved)
         : readiness_(readiness)
-        , value_(std::move(value))
-        , id(frame_id)
-        , arrival_time(arrival)
+        , payload_(std::move(payload))
+        , media_clock_sample(clock_sample)
+        , program_arrival_time(arrival)
     {
     }
 
@@ -50,8 +50,8 @@ class source_frame_s
     source_frame_s& operator=(source_frame_s&&)      = delete;
 
     source_frame_readiness_e readiness() const noexcept { return readiness_.load(std::memory_order_acquire); }
-    const T&                 value() const noexcept { return value_; }
-    T&                       value() noexcept { return value_; }
+    const T&                 payload() const noexcept { return payload_; }
+    T&                       payload() noexcept { return payload_; }
 
     bool mark_submitted() noexcept
     {
@@ -141,11 +141,11 @@ class prepared_frame_ticket_s
 
 struct timed_source_queue_config_s
 {
-    size_t                capacity{8};
-    utils::flicks         playout_delay{};
-    size_t                playout_delay_frames{};
-    utils::flicks         early_tolerance{};
-    source_clock_config_s clock{};
+    size_t                       capacity{8};
+    utils::flicks                playout_delay{};
+    size_t                       playout_delay_frames{};
+    utils::flicks                early_tolerance{};
+    media_clock_mapping_config_s clock{};
 };
 
 struct timed_source_queue_metrics_s
@@ -186,7 +186,7 @@ class timed_source_queue_s
     };
 
     timed_source_queue_config_s  config_;
-    source_clock_estimator_s     clock_;
+    media_to_program_clock_s     clock_;
     mutable std::mutex           pending_mutex_;
     std::deque<frame_ptr_t>      pending_;
     std::deque<aligned_frame_s>  frames_;
@@ -281,8 +281,8 @@ class timed_source_queue_s
         if (config_.capacity == 0) {
             throw std::invalid_argument("timed source queue capacity must be positive");
         }
-        if (!std::in_range<utils::flicks::rep>(config_.playout_delay_frames)) {
-            throw std::invalid_argument("timed source queue frame delay is too large");
+        if (config_.playout_delay_frames >= config_.capacity) {
+            throw std::invalid_argument("timed source queue capacity must exceed its playout delay in frames");
         }
     }
 
@@ -305,12 +305,12 @@ class timed_source_queue_s
     timed_source_queue_s& operator=(const timed_source_queue_s&) = delete;
     timed_source_queue_s& operator=(timed_source_queue_s&&)      = delete;
 
-    frame_ptr_t create_frame(media_frame_id_s         id,
-                             utils::flicks            arrival_time,
-                             T                        value,
+    frame_ptr_t create_frame(media_clock_sample_s     clock_sample,
+                             utils::flicks            program_arrival_time,
+                             T                        payload,
                              source_frame_readiness_e readiness = source_frame_readiness_e::reserved) const
     {
-        return std::make_shared<frame_t>(id, arrival_time, std::move(value), readiness);
+        return std::make_shared<frame_t>(clock_sample, program_arrival_time, std::move(payload), readiness);
     }
 
     void push(frame_ptr_t frame)
@@ -361,34 +361,36 @@ class timed_source_queue_s
         }
 
         if (!arrival_offset_origin_.has_value() && !pending.empty()) {
-            const auto newest = std::ranges::max_element(
-                pending, {}, [](const frame_ptr_t& frame) { return std::pair(frame->id.epoch, frame->id.sequence); });
-            const auto arrival_offset = (*newest)->arrival_time - program_target_time;
-            arrival_offset_origin_    = get_arrival_phase(arrival_offset, (*newest)->id.duration);
+            const auto newest         = std::ranges::max_element(pending, {}, [](const frame_ptr_t& frame) {
+                return std::pair(frame->media_clock_sample.stream_epoch, frame->media_clock_sample.frame_sequence);
+            });
+            const auto arrival_offset = (*newest)->program_arrival_time - program_target_time;
+            arrival_offset_origin_    = get_arrival_phase(arrival_offset, (*newest)->media_clock_sample.frame_duration);
         }
 
         for (auto& frame : pending) {
-            const auto arrival_offset      = frame->arrival_time - program_target_time;
+            const auto arrival_offset      = frame->program_arrival_time - program_target_time;
             auto       program_observation = program_pts + arrival_offset - *arrival_offset_origin_;
-            auto       observation         = clock_.observe(frame->id, program_observation);
-            if (observation == source_clock_observation_e::discontinuity) {
+            auto       observation         = clock_.observe(frame->media_clock_sample, program_observation);
+            if (observation == media_clock_observation_e::discontinuity) {
                 // A new source timeline also establishes a new relative arrival
                 // phase. The callback's absolute phase is transport latency,
                 // not part of the source PTS relationship.
-                arrival_offset_origin_ = get_arrival_phase(arrival_offset, frame->id.duration);
+                arrival_offset_origin_ = get_arrival_phase(arrival_offset, frame->media_clock_sample.frame_duration);
                 program_observation    = program_pts + arrival_offset - *arrival_offset_origin_;
                 clock_.reset();
-                (void)clock_.observe(frame->id, program_observation);
+                (void)clock_.observe(frame->media_clock_sample, program_observation);
                 clear_for_discontinuity(false);
             }
 
-            const auto mapped = clock_.map(frame->id.pts);
+            const auto mapped = clock_.map_media_pts_to_program_time(frame->media_clock_sample.media_pts);
             if (!mapped.has_value()) {
                 release_queued_frames(1);
                 continue;
             }
 
-            const auto frame_delay = frame->id.duration * static_cast<utils::flicks::rep>(config_.playout_delay_frames);
+            const auto frame_delay = frame->media_clock_sample.frame_duration *
+                                     static_cast<utils::flicks::rep>(config_.playout_delay_frames);
             aligned_frame_s aligned{
                 .frame       = std::move(frame),
                 .program_pts = *mapped + config_.playout_delay + frame_delay,
@@ -404,9 +406,10 @@ class timed_source_queue_s
         const auto limit    = program_pts + config_.early_tolerance + early_tolerance;
         auto       selected = frames_.end();
         for (auto it = frames_.begin(); it != frames_.end() && it->program_pts <= limit; ++it) {
-            if (selected == frames_.end() || it->frame->id.epoch > selected->frame->id.epoch ||
-                (it->frame->id.epoch == selected->frame->id.epoch &&
-                 it->frame->id.sequence > selected->frame->id.sequence)) {
+            if (selected == frames_.end() ||
+                it->frame->media_clock_sample.stream_epoch > selected->frame->media_clock_sample.stream_epoch ||
+                (it->frame->media_clock_sample.stream_epoch == selected->frame->media_clock_sample.stream_epoch &&
+                 it->frame->media_clock_sample.frame_sequence > selected->frame->media_clock_sample.frame_sequence)) {
                 selected = it;
             }
         }
@@ -415,10 +418,12 @@ class timed_source_queue_s
         if (selected != frames_.end()) {
             const auto selected_frame        = selected->frame;
             const auto is_older_source_frame = [&selected_frame](const aligned_frame_s& candidate) {
-                return candidate.frame != selected_frame &&
-                       (candidate.frame->id.epoch < selected_frame->id.epoch ||
-                        (candidate.frame->id.epoch == selected_frame->id.epoch &&
-                         candidate.frame->id.sequence < selected_frame->id.sequence));
+                return candidate.frame != selected_frame && (candidate.frame->media_clock_sample.stream_epoch <
+                                                                 selected_frame->media_clock_sample.stream_epoch ||
+                                                             (candidate.frame->media_clock_sample.stream_epoch ==
+                                                                  selected_frame->media_clock_sample.stream_epoch &&
+                                                              candidate.frame->media_clock_sample.frame_sequence <
+                                                                  selected_frame->media_clock_sample.frame_sequence));
             };
             const auto dropped = static_cast<uint64_t>(std::ranges::count_if(frames_, is_older_source_frame));
             selection_drops_.fetch_add(dropped, std::memory_order_relaxed);

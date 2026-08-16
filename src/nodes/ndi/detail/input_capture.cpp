@@ -42,7 +42,7 @@ struct captured_frame_data_s
 {
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
     std::optional<gpu::transfer::texture_upload_lease_s>    upload;
-    uint64_t                                                upload_version{};
+    gpu::transfer::texture_upload_id_s                      upload_id{};
     gpu::texture_frame_ptr                                  frame;
     gpu::vec2i_t                                            dimensions{};
     int64_t                                                 ndi_timecode{};
@@ -51,16 +51,17 @@ struct captured_frame_data_s
 
 bool copy_frame(const NDIlib_video_frame_v2_t& video_frame, std::span<std::byte> destination, size_t row_size)
 {
-    const auto frame_size = row_size * static_cast<size_t>(video_frame.yres);
+    const auto host_buffer_size_bytes = row_size * static_cast<size_t>(video_frame.yres);
     const auto source_stride =
         video_frame.line_stride_in_bytes == 0 ? row_size : static_cast<size_t>(video_frame.line_stride_in_bytes);
-    if (destination.size() < frame_size || video_frame.line_stride_in_bytes < 0 || source_stride < row_size) {
+    if (destination.size() < host_buffer_size_bytes || video_frame.line_stride_in_bytes < 0 ||
+        source_stride < row_size) {
         return false;
     }
 
     auto* source = video_frame.p_data;
     if (source_stride == row_size) {
-        std::memcpy(destination.data(), source, frame_size);
+        std::memcpy(destination.data(), source, host_buffer_size_bytes);
         return true;
     }
 
@@ -126,21 +127,21 @@ class input_capture_s::impl_s
     }
 
     std::shared_ptr<gpu::transfer::texture_upload_stream_s>
-    get_upload_stream(gpu::vec2i_t dimensions, size_t row_stride, size_t frame_size)
+    get_upload_stream(gpu::vec2i_t dimensions, size_t host_row_stride_bytes, size_t host_buffer_size_bytes)
     {
         if (upload_stream_ && upload_dimensions_ == dimensions) {
             return upload_stream_;
         }
 
-        const gpu::transfer::texture_transfer_requirements_s requirements{
-            .dimensions  = dimensions,
-            .format      = gpu::texture_s::format_e::bgra_u8,
-            .row_stride  = row_stride,
-            .byte_size   = frame_size,
-            .host_access = gpu::transfer::host_access_e::overwrite,
+        const gpu::transfer::texture_transfer_layout_s transfer_layout{
+            .dimensions             = dimensions,
+            .pixel_format           = gpu::texture_s::pixel_format_e::bgra_u8,
+            .host_row_stride_bytes  = host_row_stride_bytes,
+            .host_buffer_size_bytes = host_buffer_size_bytes,
+            .host_memory_access     = gpu::transfer::host_memory_access_e::overwrite,
         };
         upload_stream_     = upload_service_->create_stream({
-                .requirements      = requirements,
+                .transfer_layout   = transfer_layout,
                 .max_slots         = UPLOAD_SLOT_COUNT,
                 .generate_mip_maps = false,
         });
@@ -160,8 +161,8 @@ class input_capture_s::impl_s
         next_sequence_        = 0;
     }
 
-    std::optional<media::media_frame_id_s>
-    make_frame_id(const NDIlib_video_frame_v2_t& video_frame, source_format_s format, utils::flicks duration)
+    std::optional<media::media_clock_sample_s>
+    make_media_clock_sample(const NDIlib_video_frame_v2_t& video_frame, source_format_s format, utils::flicks duration)
     {
         const bool has_timestamp =
             video_frame.timestamp != NDIlib_recv_timestamp_undefined && video_frame.timestamp >= 0;
@@ -188,11 +189,11 @@ class input_capture_s::impl_s
             source_pts = duration * static_cast<utils::flicks::rep>(next_sequence_);
         }
 
-        return media::media_frame_id_s{
-            .epoch    = source_epoch_,
-            .sequence = next_sequence_++,
-            .pts      = source_pts,
-            .duration = duration,
+        return media::media_clock_sample_s{
+            .stream_epoch   = source_epoch_,
+            .frame_sequence = next_sequence_++,
+            .media_pts      = source_pts,
+            .frame_duration = duration,
         };
     }
 
@@ -215,36 +216,36 @@ class input_capture_s::impl_s
         }
 
         const gpu::vec2i_t dimensions{video_frame.xres, video_frame.yres};
-        const auto         row_size   = static_cast<size_t>(video_frame.xres) * 4;
-        const auto         frame_size = row_size * static_cast<size_t>(video_frame.yres);
-        auto               stream     = get_upload_stream(dimensions, row_size, frame_size);
-        auto               upload     = stream->try_acquire();
+        const auto         row_size               = static_cast<size_t>(video_frame.xres) * 4;
+        const auto         host_buffer_size_bytes = row_size * static_cast<size_t>(video_frame.yres);
+        auto               stream                 = get_upload_stream(dimensions, row_size, host_buffer_size_bytes);
+        auto               upload                 = stream->try_acquire_upload_buffer();
         if (!upload.has_value()) {
             ++upload_slot_drops_;
             return true;
         }
 
-        if (!copy_frame(video_frame, upload->bytes(), row_size)) {
+        if (!copy_frame(video_frame, upload->writable_host_bytes(), row_size)) {
             return false;
         }
 
-        auto frame_id =
-            make_frame_id(video_frame, source_format_s{.dimensions = dimensions, .frame_rate = frame_rate}, *duration);
-        if (!frame_id.has_value()) {
+        auto media_clock_sample = make_media_clock_sample(
+            video_frame, source_format_s{.dimensions = dimensions, .frame_rate = frame_rate}, *duration);
+        if (!media_clock_sample.has_value()) {
             return false;
         }
 
-        const auto upload_version = upload->version();
-        frame_queue_.push(frame_queue_.create_frame(*frame_id,
+        const auto upload_id = upload->upload_id();
+        frame_queue_.push(frame_queue_.create_frame(*media_clock_sample,
                                                     arrival_time,
                                                     captured_frame_data_s{
-                                                        .stream         = std::move(stream),
-                                                        .upload         = std::move(upload),
-                                                        .upload_version = upload_version,
-                                                        .frame          = nullptr,
-                                                        .dimensions     = dimensions,
-                                                        .ndi_timecode   = video_frame.timecode,
-                                                        .ndi_timestamp  = video_frame.timestamp,
+                                                        .stream        = std::move(stream),
+                                                        .upload        = std::move(upload),
+                                                        .upload_id     = upload_id,
+                                                        .frame         = nullptr,
+                                                        .dimensions    = dimensions,
+                                                        .ndi_timecode  = video_frame.timecode,
+                                                        .ndi_timestamp = video_frame.timestamp,
                                                     }));
         return true;
     }
@@ -398,9 +399,9 @@ class input_capture_s::impl_s
         };
     }
 
-    void advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity)
+    void advance_frames(utils::flicks program_pts, utils::flicks program_target_time, bool discontinuity)
     {
-        frame_queue_.advance(program_pts, target_time, discontinuity);
+        frame_queue_.advance(program_pts, program_target_time, discontinuity);
     }
 
     bool submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
@@ -421,13 +422,13 @@ class input_capture_s::impl_s
         }
 
         auto& frame = *ticket.frame();
-        auto& info  = frame.value();
+        auto& info  = frame.payload();
         if (frame.readiness() == media::source_frame_readiness_e::submitted) {
             return true;
         }
         if (!frame.mark_submitted() || !info.upload.has_value() || !info.upload->submit()) {
             if (!warned_submit_failure_) {
-                log()->warn("NDI timed input failed to submit upload version {}", info.upload_version);
+                log()->warn("NDI timed input failed to submit upload {}", info.upload_id.sequence);
                 warned_submit_failure_ = true;
             }
             frame_queue_.fail(ticket);
@@ -446,30 +447,30 @@ class input_capture_s::impl_s
 
         auto& ticket = *prepared_frame_;
         auto& frame  = *ticket.frame();
-        auto& info   = frame.value();
+        auto& info   = frame.payload();
         if (ticket.selection() == media::prepared_frame_selection_e::new_frame) {
-            const auto wait_result = info.stream ? info.stream->wait_until_ready(info.upload_version)
+            const auto wait_result = info.stream ? info.stream->wait_for_upload(info.upload_id)
                                                  : gpu::transfer::texture_upload_wait_result_e::stopped;
             if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
                 if (!warned_wait_failure_) {
-                    log()->warn("NDI timed input failed waiting for upload version {}", info.upload_version);
+                    log()->warn("NDI timed input failed waiting for upload {}", info.upload_id.sequence);
                     warned_wait_failure_ = true;
                 }
                 frame_queue_.fail(ticket);
                 return std::nullopt;
             }
 
-            info.frame = info.stream->consume_exact(info.upload_version);
-            if (!info.frame || info.stream->current_version() != info.upload_version || !frame.mark_ready()) {
+            info.frame = info.stream->select_completed_upload(info.upload_id);
+            if (!info.frame || info.stream->retained_upload_id() != info.upload_id || !frame.mark_ready()) {
                 if (!warned_consume_failure_) {
-                    log()->warn("NDI timed input failed to consume upload version {}", info.upload_version);
+                    log()->warn("NDI timed input failed to consume upload {}", info.upload_id.sequence);
                     warned_consume_failure_ = true;
                 }
                 frame_queue_.fail(ticket);
                 return std::nullopt;
             }
         } else if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
-            info.frame = info.stream ? info.stream->current_frame(info.upload_version) : nullptr;
+            info.frame = info.stream ? info.stream->retained_frame_for(info.upload_id) : nullptr;
             if (!info.frame) {
                 frame_queue_.fail(ticket);
                 return std::nullopt;
@@ -478,7 +479,7 @@ class input_capture_s::impl_s
 
         if (!ticket.await() || !frame_queue_.commit(ticket)) {
             if (!warned_commit_failure_) {
-                log()->warn("NDI timed input failed to commit upload version {}", info.upload_version);
+                log()->warn("NDI timed input failed to commit upload {}", info.upload_id.sequence);
                 warned_commit_failure_ = true;
             }
             return std::nullopt;
@@ -495,9 +496,9 @@ class input_capture_s::impl_s
             prepared_frame_->selection() == media::prepared_frame_selection_e::new_frame &&
             prepared_frame_->frame() != nullptr &&
             prepared_frame_->frame()->readiness() == media::source_frame_readiness_e::submitted) {
-            auto& info = prepared_frame_->frame()->value();
+            auto& info = prepared_frame_->frame()->payload();
             if (info.stream) {
-                info.stream->discard_exact(info.upload_version);
+                info.stream->discard_upload(info.upload_id);
             }
             frame_queue_.cancel(*prepared_frame_);
         }
@@ -545,9 +546,9 @@ input_capture_s::phase_e input_capture_s::phase() const { return impl_->phase();
 
 input_capture_s::metrics_s input_capture_s::metrics() const { return impl_->metrics(); }
 
-void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity)
+void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks program_target_time, bool discontinuity)
 {
-    impl_->advance_frames(program_pts, target_time, discontinuity);
+    impl_->advance_frames(program_pts, program_target_time, discontinuity);
 }
 
 bool input_capture_s::submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)

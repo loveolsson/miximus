@@ -21,7 +21,7 @@ class framebuffer_s
         clear,
     };
 
-    framebuffer_s(vec2i_t dimensions, texture_s::format_e color);
+    framebuffer_s(vec2i_t dimensions, texture_s::pixel_format_e pixel_format);
     explicit framebuffer_s(texture_s* texture);
     ~framebuffer_s();
 

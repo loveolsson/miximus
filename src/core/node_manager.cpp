@@ -482,7 +482,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
                                           status::application_frame_status_s{
                                               .frame_rate            = app->frame_settings().frame_rate,
-                                              .frame_duration_flicks = frame_context.duration.count(),
+                                              .frame_duration_flicks = frame_context.frame_duration.count(),
                                               .epoch                 = frame_context.epoch,
                                           });
         }

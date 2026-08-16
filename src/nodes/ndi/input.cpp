@@ -7,7 +7,7 @@
 #include "gpu/texture.hpp"
 #include "gpu/textured_quad.hpp"
 #include "logger/logger.hpp"
-#include "media/media_frame.hpp"
+#include "media/media_clock_sample.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -156,7 +156,7 @@ class node_impl : public node_i
 
         if (capture_ && capture_->phase() == input_capture_s::phase_e::running) {
             const auto& frame = app->frame_context();
-            capture_->advance_frames(frame.pts, frame.target_time, frame.discontinuity);
+            capture_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
         }
 
         status_registry->write(id_,
@@ -169,7 +169,7 @@ class node_impl : public node_i
     {
         if (capture_) {
             const auto& frame = app->frame_context();
-            (void)capture_->submit_frame(frame.pts, frame.duration / 2);
+            (void)capture_->submit_frame(frame.program_pts, frame.frame_duration / 2);
         }
     }
 
@@ -182,10 +182,11 @@ class node_impl : public node_i
             return;
         }
         rendered_input_frame_ = frame->frame;
-        rendered_input_frame_->wait_ready_on_gpu();
+        rendered_input_frame_->wait_for_upload_on_gpu();
 
         if (!framebuffer_ || framebuffer_->texture()->display_dimensions() != frame->dimensions) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(frame->dimensions, gpu::texture_s::format_e::rgb_f16);
+            framebuffer_ =
+                std::make_unique<gpu::framebuffer_s>(frame->dimensions, gpu::texture_s::pixel_format_e::rgb_f16);
         }
 
         // The shared timed-source queue has already selected and aligned this
@@ -207,7 +208,7 @@ class node_impl : public node_i
     void complete(core::app_state_s* /*app*/) final
     {
         if (rendered_input_frame_) {
-            rendered_input_frame_->release_from_render();
+            rendered_input_frame_->publish_render_release_fence();
             rendered_input_frame_.reset();
         }
         if (capture_) {

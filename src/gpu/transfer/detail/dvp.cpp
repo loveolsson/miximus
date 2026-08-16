@@ -44,18 +44,18 @@ struct dvp_format_s
     DVPBufferTypes   type;
 };
 
-dvp_format_s get_dvp_format(texture_s::format_e format)
+dvp_format_s get_dvp_format(texture_s::pixel_format_e pixel_format)
 {
-    switch (format) {
-        case texture_s::format_e::rgb_f16:
+    switch (pixel_format) {
+        case texture_s::pixel_format_e::rgb_f16:
             return {.format = DVP_RGB, .type = DVP_UNSIGNED_BYTE};
-        case texture_s::format_e::rgba_f16:
-        case texture_s::format_e::rgba_u8:
+        case texture_s::pixel_format_e::rgba_f16:
+        case texture_s::pixel_format_e::rgba_u8:
             return {.format = DVP_RGBA, .type = DVP_UNSIGNED_BYTE};
-        case texture_s::format_e::bgra_u8:
-        case texture_s::format_e::uyuv_u8:
+        case texture_s::pixel_format_e::bgra_u8:
+        case texture_s::pixel_format_e::uyuv_u8:
             return {.format = DVP_BGRA, .type = DVP_UNSIGNED_INT_8_8_8_8_REV};
-        case texture_s::format_e::uyuv_u10:
+        case texture_s::pixel_format_e::uyuv_u10:
             return {.format = DVP_RGBA, .type = DVP_UNSIGNED_INT_2_10_10_10_REV};
     }
     throw std::invalid_argument("unsupported DVP texture format");
@@ -115,13 +115,13 @@ void dvp_transfer_s::semaphore_s::init(uint32_t alloc_size, uint32_t addr_align)
     release_value = 0;
     acquire_value = 0;
 
-    DVPSyncObjectDesc desc{
+    DVPSyncObjectDesc config{
         .sem                    = mem,
         .flags                  = DVP_SYNC_OBJECT_FLAGS_USE_EVENTS,
         .externalClientWaitFunc = nullptr,
     };
 
-    require_dvp_status(dvpImportSyncObject(&desc, &dvp_handle), "dvpImportSyncObject");
+    require_dvp_status(dvpImportSyncObject(&config, &dvp_handle), "dvpImportSyncObject");
 }
 
 void dvp_transfer_s::semaphore_s::destroy()
@@ -213,7 +213,7 @@ bool dvp_transfer_s::register_texture_impl(texture_s* texture)
     }
 
     // Initialise ownership to "API/GL has the texture" so the first
-    // dvpMapBufferWaitDVP inside transfer() works correctly.
+    // dvpMapBufferWaitDVP inside submit_transfer() works correctly.
     return check_dvp_status(dvpMapBufferEndAPI(texture_handle_), "dvpMapBufferEndAPI");
 }
 
@@ -227,7 +227,7 @@ bool dvp_transfer_s::unregister_texture_impl(texture_s* /*texture*/)
     return success;
 }
 
-bool dvp_transfer_s::begin_texture_use_impl(texture_s* /*texture*/)
+bool dvp_transfer_s::acquire_texture_for_gl_impl(texture_s* /*texture*/)
 {
     if (texture_handle_ == 0) {
         return false;
@@ -236,7 +236,7 @@ bool dvp_transfer_s::begin_texture_use_impl(texture_s* /*texture*/)
     return check_dvp_status(dvpMapBufferWaitAPI(texture_handle_), "dvpMapBufferWaitAPI");
 }
 
-bool dvp_transfer_s::end_texture_use_impl(texture_s* /*texture*/)
+bool dvp_transfer_s::release_texture_from_gl_impl(texture_s* /*texture*/)
 {
     if (texture_handle_ == 0) {
         return false;
@@ -247,60 +247,61 @@ bool dvp_transfer_s::end_texture_use_impl(texture_s* /*texture*/)
 
 // ─── Constructor / Destructor ────────────────────────────────────────────────
 
-dvp_transfer_s::dvp_transfer_s(const texture_transfer_requirements_s& requirements, direction_e dir)
-    : backend_i(requirements.byte_size, dir)
+dvp_transfer_s::dvp_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir)
+    : texture_transfer_backend_i(transfer_layout.host_buffer_size_bytes, dir)
 {
     assert(dvp_supported_);
 
-    if (!supports(requirements)) {
-        throw std::invalid_argument("DVP transfer requirements are unsupported");
+    if (!supports(transfer_layout)) {
+        throw std::invalid_argument("DVP transfer transfer_layout are unsupported");
     }
 
     // Allocate page-aligned, page-locked system memory.
     // buf_addr_align_ is the DVP requirement; use at least 4096 (page size).
     const size_t alignment =
-        std::max({static_cast<size_t>(buf_addr_align_), requirements.address_alignment, size_t{4096}});
-    if (!std::has_single_bit(alignment) || size_ > std::numeric_limits<size_t>::max() - (alignment - 1)) {
+        std::max({static_cast<size_t>(buf_addr_align_), transfer_layout.host_address_alignment_bytes, size_t{4096}});
+    if (!std::has_single_bit(alignment) ||
+        host_buffer_size_bytes_ > std::numeric_limits<size_t>::max() - (alignment - 1)) {
         throw std::invalid_argument("DVP transfer alignment is invalid");
     }
-    const size_t allocation_size = (size_ + alignment - 1) & ~(alignment - 1);
-    data_                        = allocate_aligned(alignment, allocation_size);
+    const size_t allocation_size = (host_buffer_size_bytes_ + alignment - 1) & ~(alignment - 1);
+    host_memory_                 = allocate_aligned(alignment, allocation_size);
 
-    if (data_ == nullptr) {
+    if (host_memory_ == nullptr) {
         throw std::runtime_error("DVP: failed to allocate aligned sysmem");
     }
 
 #ifdef _WIN32
-    if (!VirtualLock(data_, size_)) {
-        free_aligned(data_);
-        data_ = nullptr;
+    if (!VirtualLock(host_memory_, host_buffer_size_bytes_)) {
+        free_aligned(host_memory_);
+        host_memory_ = nullptr;
         throw std::runtime_error("DVP: VirtualLock failed");
     }
 #else
-    if (mlock(data_, size_) != 0) {
-        free_aligned(data_);
-        data_ = nullptr;
+    if (mlock(host_memory_, host_buffer_size_bytes_) != 0) {
+        free_aligned(host_memory_);
+        host_memory_ = nullptr;
         throw std::runtime_error("DVP: mlock failed — check RLIMIT_MEMLOCK");
     }
 #endif
 
     // Register the sysmem buffer with DVP.
-    const auto texture_dimensions =
-        requirements.dimensions.x / texture_s::format_info(requirements.format).display_pixels_per_texel;
-    const auto          dvp_format = get_dvp_format(requirements.format);
-    DVPSysmemBufferDesc desc{
+    const auto texture_dimensions = transfer_layout.dimensions.x /
+                                    texture_s::pixel_format_info(transfer_layout.pixel_format).display_pixels_per_texel;
+    const auto          dvp_format = get_dvp_format(transfer_layout.pixel_format);
+    DVPSysmemBufferDesc config{
         .width   = static_cast<uint32_t>(texture_dimensions),
-        .height  = static_cast<uint32_t>(requirements.dimensions.y),
-        .stride  = static_cast<uint32_t>(requirements.row_stride),
-        .size    = static_cast<uint32_t>(size_),
+        .height  = static_cast<uint32_t>(transfer_layout.dimensions.y),
+        .stride  = static_cast<uint32_t>(transfer_layout.host_row_stride_bytes),
+        .size    = static_cast<uint32_t>(host_buffer_size_bytes_),
         .format  = dvp_format.format,
         .type    = dvp_format.type,
-        .bufAddr = data_,
+        .bufAddr = host_memory_,
     };
 
     bool bound_to_context = false;
     try {
-        require_dvp_status(dvpCreateBuffer(&desc, &sysmem_handle_), "dvpCreateBuffer");
+        require_dvp_status(dvpCreateBuffer(&config, &sysmem_handle_), "dvpCreateBuffer");
         require_dvp_status(dvpBindToGLCtx(sysmem_handle_), "dvpBindToGLCtx");
         bound_to_context = true;
 
@@ -315,18 +316,18 @@ dvp_transfer_s::dvp_transfer_s(const texture_transfer_requirements_s& requiremen
             sysmem_handle_ = 0;
         }
 #ifdef _WIN32
-        VirtualUnlock(data_, size_);
+        VirtualUnlock(host_memory_, host_buffer_size_bytes_);
 #else
-        munlock(data_, size_);
+        munlock(host_memory_, host_buffer_size_bytes_);
 #endif
-        free_aligned(data_);
-        data_ = nullptr;
+        free_aligned(host_memory_);
+        host_memory_ = nullptr;
         throw;
     }
 
-    if (buf_gpu_stride_align_ > 1 && requirements.row_stride % buf_gpu_stride_align_ != 0) {
+    if (buf_gpu_stride_align_ > 1 && transfer_layout.host_row_stride_bytes % buf_gpu_stride_align_ != 0) {
         getlog("gpu")->debug("DVP row stride {} does not meet the recommended {}-byte GPU alignment",
-                             requirements.row_stride,
+                             transfer_layout.host_row_stride_bytes,
                              buf_gpu_stride_align_);
     }
 }
@@ -346,14 +347,14 @@ dvp_transfer_s::~dvp_transfer_s()
     ext_sync_.destroy();
     gpu_sync_.destroy();
 
-    if (data_ != nullptr) {
+    if (host_memory_ != nullptr) {
 #ifdef _WIN32
-        VirtualUnlock(data_, size_);
+        VirtualUnlock(host_memory_, host_buffer_size_bytes_);
 #else
-        munlock(data_, size_);
+        munlock(host_memory_, host_buffer_size_bytes_);
 #endif
-        free_aligned(data_);
-        data_ = nullptr;
+        free_aligned(host_memory_);
+        host_memory_ = nullptr;
     }
 }
 
@@ -380,9 +381,9 @@ bool dvp_transfer_s::perform_dma(DVPBufferHandle src, DVPBufferHandle dst, uint3
     return check_dvp_status(dvpEnd(), "dvpEnd") && success;
 }
 
-// ─── backend_i interface ─────────────────────────────────────────────────────
+// ─── texture_transfer_backend_i interface ─────────────────────────────────────────────────────
 
-bool dvp_transfer_s::transfer()
+bool dvp_transfer_s::submit_transfer()
 {
     if (sysmem_handle_ == 0 || texture_handle_ == 0) {
         return false;
@@ -391,13 +392,13 @@ bool dvp_transfer_s::transfer()
     const auto dims = texture()->texture_dimensions();
 
     if (direction_ == direction_e::cpu_to_gpu) {
-        // CPU wrote data into data_; DMA data_ → texture.
+        // CPU wrote data into host_memory_; DMA host_memory_ → texture.
         // endTextureInUse (dvpMapBufferEndAPI) must have been called by the caller
         // before this point so DVP knows GL is done with the texture.
         return perform_dma(sysmem_handle_, texture_handle_, static_cast<uint32_t>(dims.y));
     }
 
-    // GPU rendered to texture; DMA texture → data_.
+    // GPU rendered to texture; DMA texture → host_memory_.
     // Signal that GL is done writing to the texture, DVP can start reading.
     if (!check_dvp_status(dvpMapBufferEndAPI(texture_handle_), "dvpMapBufferEndAPI")) {
         return false;
@@ -405,7 +406,7 @@ bool dvp_transfer_s::transfer()
     return perform_dma(texture_handle_, sysmem_handle_, static_cast<uint32_t>(dims.y));
 }
 
-bool dvp_transfer_s::wait_for_completion()
+bool dvp_transfer_s::wait_for_transfer_completion()
 {
     if (direction_ == direction_e::cpu_to_gpu) {
         // For cpu_to_gpu: insert a GL wait so the GPU won't sample the texture
@@ -426,18 +427,20 @@ bool dvp_transfer_s::wait_for_completion()
     return true;
 }
 
-bool dvp_transfer_s::supports(const texture_transfer_requirements_s& requirements)
+bool dvp_transfer_s::supports(const texture_transfer_layout_s& transfer_layout)
 {
-    if (!dvp_supported_ || requirements.dimensions.x <= 0 || requirements.dimensions.y <= 0 ||
-        requirements.row_stride == 0 || requirements.byte_size == 0 ||
-        requirements.byte_size > std::numeric_limits<uint32_t>::max() ||
-        requirements.row_stride > std::numeric_limits<uint32_t>::max()) {
+    if (!dvp_supported_ || transfer_layout.dimensions.x <= 0 || transfer_layout.dimensions.y <= 0 ||
+        transfer_layout.host_row_stride_bytes == 0 || transfer_layout.host_buffer_size_bytes == 0 ||
+        transfer_layout.host_buffer_size_bytes > std::numeric_limits<uint32_t>::max() ||
+        transfer_layout.host_row_stride_bytes > std::numeric_limits<uint32_t>::max()) {
         return false;
     }
 
     try {
-        (void)get_dvp_format(requirements.format);
-        return requirements.dimensions.x % texture_s::format_info(requirements.format).display_pixels_per_texel == 0;
+        (void)get_dvp_format(transfer_layout.pixel_format);
+        return transfer_layout.dimensions.x %
+                   texture_s::pixel_format_info(transfer_layout.pixel_format).display_pixels_per_texel ==
+               0;
     } catch (const std::invalid_argument&) {
         return false;
     }

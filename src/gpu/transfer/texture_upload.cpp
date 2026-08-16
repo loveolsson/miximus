@@ -1,8 +1,8 @@
 #include "texture_upload.hpp"
 
 #include "gpu/context.hpp"
-#include "gpu/transfer/detail/backend_factory.hpp"
-#include "gpu/transfer/detail/requirements.hpp"
+#include "gpu/transfer/detail/texture_transfer_backend_factory.hpp"
+#include "gpu/transfer/detail/transfer_layout.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
 #include "logger/logger.hpp"
 
@@ -40,20 +40,20 @@ enum class task_type_e : uint8_t
 
 struct texture_upload_slot_s
 {
-    std::unique_ptr<backend_i> backend;
-    texture_frame_ptr          frame;
-    slot_state_e               state{slot_state_e::free};
-    size_t                     reserved_bytes{};
-    bool                       gl_owns_texture{};
-    bool                       lease_released{true};
-    bool                       discard_requested{};
-    uint64_t                   version{};
+    std::unique_ptr<texture_transfer_backend_i> transfer_backend;
+    texture_frame_ptr                           frame;
+    slot_state_e                                state{slot_state_e::free};
+    size_t                                      reserved_bytes{};
+    bool                                        gl_has_texture_access{};
+    bool                                        lease_released{true};
+    bool                                        discard_requested{};
+    texture_upload_id_s                         upload_id{};
 };
 
 struct texture_upload_stream_state_s
 {
     std::weak_ptr<texture_upload_service_state_s>       service;
-    texture_upload_desc_s                               desc;
+    texture_upload_config_s                             config;
     mutable std::mutex                                  mutex;
     std::condition_variable                             slot_cv;
     std::condition_variable                             completion_cv;
@@ -63,8 +63,8 @@ struct texture_upload_stream_state_s
     std::shared_ptr<texture_upload_slot_s>              current_slot;
     size_t                                              pending_allocations{};
     size_t                                              active_leases{};
-    uint64_t                                            next_version{};
-    uint64_t                                            current_version{};
+    uint64_t                                            next_upload_id_value{};
+    texture_upload_id_s                                 retained_upload_id{};
     std::chrono::steady_clock::time_point               retry_allocation_after;
     bool                                                allocation_failed{};
     bool                                                active{true};
@@ -86,14 +86,14 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
 
     void release_slot_resources(texture_upload_slot_s& slot)
     {
-        if (slot.frame && slot.backend) {
-            if (slot.gl_owns_texture) {
-                slot.backend->end_texture_use();
-                slot.gl_owns_texture = false;
+        if (slot.frame && slot.transfer_backend) {
+            if (slot.gl_has_texture_access) {
+                slot.transfer_backend->release_texture_from_gl();
+                slot.gl_has_texture_access = false;
             }
-            slot.backend->unbind_texture();
+            slot.transfer_backend->unregister_texture();
         }
-        slot.backend.reset();
+        slot.transfer_backend.reset();
         slot.frame.reset();
         release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
@@ -104,21 +104,23 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         size_t reserved_bytes  = 0;
         bool   memory_reserved = false;
         try {
-            reserved_bytes = estimate_slot_memory_usage(stream->desc.requirements);
+            reserved_bytes = estimate_slot_memory_usage(stream->config.transfer_layout);
             if (!reserve_memory(reserved_bytes)) {
                 throw std::bad_alloc();
             }
             memory_reserved = true;
 
-            auto slot            = std::make_shared<texture_upload_slot_s>();
-            slot->reserved_bytes = reserved_bytes;
-            slot->frame          = std::make_shared<texture_frame_s>(stream->desc.requirements.dimensions,
-                                                            stream->desc.requirements.format);
-            auto backend =
-                create_backend(stream->desc.requirements, backend_i::direction_e::cpu_to_gpu, slot->frame->texture());
-            slot->backend = std::move(backend.backend);
+            auto slot              = std::make_shared<texture_upload_slot_s>();
+            slot->reserved_bytes   = reserved_bytes;
+            slot->frame            = std::make_shared<texture_frame_s>(stream->config.transfer_layout.dimensions,
+                                                            stream->config.transfer_layout.pixel_format);
+            auto transfer_backend  = create_texture_transfer_backend(stream->config.transfer_layout,
+                                                                    texture_transfer_backend_i::direction_e::cpu_to_gpu,
+                                                                    slot->frame->texture());
+            slot->transfer_backend = std::move(transfer_backend.transfer_backend);
 
-            const auto actual_reserved = slot_memory_usage(stream->desc.requirements, backend.allocation_bytes);
+            const auto actual_reserved =
+                slot_memory_usage(stream->config.transfer_layout, transfer_backend.backend_allocation_bytes);
             if (!resize_memory_reservation(reserved_bytes, actual_reserved)) {
                 throw std::bad_alloc();
             }
@@ -164,20 +166,20 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         }
 
         bool success = true;
-        if (slot->gl_owns_texture) {
-            success               = slot->backend->end_texture_use();
-            slot->gl_owns_texture = false;
+        if (slot->gl_has_texture_access) {
+            success                     = slot->transfer_backend->release_texture_from_gl();
+            slot->gl_has_texture_access = false;
         }
-        success               = slot->backend->transfer() && success;
-        success               = slot->backend->wait_for_completion() && success;
-        slot->gl_owns_texture = success;
+        success                     = slot->transfer_backend->submit_transfer() && success;
+        success                     = slot->transfer_backend->wait_for_transfer_completion() && success;
+        slot->gl_has_texture_access = success;
 
-        if (success && stream->desc.generate_mip_maps) {
+        if (success && stream->config.generate_mip_maps) {
             slot->frame->texture()->generate_mip_maps();
         }
 
         if (success) {
-            slot->frame->publish_ready_from_worker();
+            slot->frame->publish_upload_ready_fence();
         }
 
         const std::scoped_lock lock(stream->mutex);
@@ -199,7 +201,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         if (!slot->lease_released) {
             return false;
         }
-        if (!slot->frame->wait_released_on_worker()) {
+        if (!slot->frame->wait_for_render_release_on_worker()) {
             return false;
         }
         if (!stream->active) {
@@ -339,15 +341,19 @@ texture_upload_lease_s& texture_upload_lease_s::operator=(texture_upload_lease_s
     return *this;
 }
 
-std::span<std::byte> texture_upload_lease_s::bytes() const noexcept
+std::span<std::byte> texture_upload_lease_s::writable_host_bytes() const noexcept
 {
     if (!slot_) {
         return {};
     }
-    return {static_cast<std::byte*>(slot_->backend->data()), slot_->backend->size()};
+    return {static_cast<std::byte*>(slot_->transfer_backend->host_memory()),
+            slot_->transfer_backend->host_buffer_size_bytes()};
 }
 
-uint64_t texture_upload_lease_s::version() const noexcept { return slot_ ? slot_->version : 0; }
+texture_upload_id_s texture_upload_lease_s::upload_id() const noexcept
+{
+    return slot_ ? slot_->upload_id : texture_upload_id_s{};
+}
 
 bool texture_upload_lease_s::submit()
 {
@@ -393,7 +399,7 @@ texture_upload_stream_s::~texture_upload_stream_s()
     }
 }
 
-std::optional<texture_upload_lease_s> texture_upload_stream_s::try_acquire()
+std::optional<texture_upload_lease_s> texture_upload_stream_s::try_acquire_upload_buffer()
 {
     std::shared_ptr<detail::texture_upload_slot_s> slot;
     bool                                           enqueue_allocation = false;
@@ -406,11 +412,11 @@ std::optional<texture_upload_lease_s> texture_upload_stream_s::try_acquire()
             slot = std::move(state_->free_slots.front());
             state_->free_slots.pop_front();
             slot->state             = detail::slot_state_e::cpu_writing;
-            slot->version           = ++state_->next_version;
+            slot->upload_id         = texture_upload_id_s{++state_->next_upload_id_value};
             slot->lease_released    = false;
             slot->discard_requested = false;
             ++state_->active_leases;
-        } else if (state_->slots.size() + state_->pending_allocations < state_->desc.max_slots &&
+        } else if (state_->slots.size() + state_->pending_allocations < state_->config.max_slots &&
                    state_->pending_allocations == 0 &&
                    std::chrono::steady_clock::now() >= state_->retry_allocation_after) {
             ++state_->pending_allocations;
@@ -429,11 +435,12 @@ std::optional<texture_upload_lease_s> texture_upload_stream_s::try_acquire()
     return texture_upload_lease_s(state_, std::move(slot));
 }
 
-std::optional<texture_upload_lease_s> texture_upload_stream_s::acquire_for(std::chrono::milliseconds timeout)
+std::optional<texture_upload_lease_s>
+texture_upload_stream_s::acquire_upload_buffer_for(std::chrono::milliseconds timeout)
 {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (true) {
-        if (auto lease = try_acquire()) {
+        if (auto lease = try_acquire_upload_buffer()) {
             return lease;
         }
 
@@ -449,12 +456,12 @@ std::optional<texture_upload_lease_s> texture_upload_stream_s::acquire_for(std::
     }
 }
 
-texture_frame_ptr texture_upload_stream_s::consume_latest()
+texture_frame_ptr texture_upload_stream_s::select_latest_completed_upload()
 {
-    return consume_through(std::numeric_limits<uint64_t>::max());
+    return select_latest_completed_upload_through(texture_upload_id_s{std::numeric_limits<uint64_t>::max()});
 }
 
-texture_frame_ptr texture_upload_stream_s::consume_through(uint64_t version)
+texture_frame_ptr texture_upload_stream_s::select_latest_completed_upload_through(texture_upload_id_s upload_id)
 {
     std::vector<std::shared_ptr<detail::texture_upload_slot_s>> reclaim;
     texture_frame_ptr                                           result;
@@ -465,7 +472,7 @@ texture_frame_ptr texture_upload_stream_s::consume_through(uint64_t version)
         }
 
         std::shared_ptr<detail::texture_upload_slot_s> next;
-        while (!state_->ready_slots.empty() && state_->ready_slots.front()->version <= version) {
+        while (!state_->ready_slots.empty() && state_->ready_slots.front()->upload_id <= upload_id) {
             auto slot = std::move(state_->ready_slots.front());
             state_->ready_slots.pop_front();
             if (next) {
@@ -479,9 +486,9 @@ texture_frame_ptr texture_upload_stream_s::consume_through(uint64_t version)
             if (auto current = retire_current_slot(state_)) {
                 reclaim.emplace_back(std::move(current));
             }
-            next->state             = detail::slot_state_e::current;
-            state_->current_version = next->version;
-            state_->current_slot    = std::move(next);
+            next->state                = detail::slot_state_e::current;
+            state_->retained_upload_id = next->upload_id;
+            state_->current_slot       = std::move(next);
         }
 
         if (state_->current_slot) {
@@ -497,7 +504,7 @@ texture_frame_ptr texture_upload_stream_s::consume_through(uint64_t version)
     return result;
 }
 
-texture_frame_ptr texture_upload_stream_s::consume_exact(uint64_t version)
+texture_frame_ptr texture_upload_stream_s::select_completed_upload(texture_upload_id_s upload_id)
 {
     std::vector<std::shared_ptr<detail::texture_upload_slot_s>> reclaim;
     texture_frame_ptr                                           result;
@@ -507,8 +514,8 @@ texture_frame_ptr texture_upload_stream_s::consume_exact(uint64_t version)
             return nullptr;
         }
 
-        const auto selected =
-            std::ranges::find_if(state_->ready_slots, [version](const auto& slot) { return slot->version == version; });
+        const auto selected = std::ranges::find_if(
+            state_->ready_slots, [upload_id](const auto& slot) { return slot->upload_id == upload_id; });
         if (selected == state_->ready_slots.end()) {
             return nullptr;
         }
@@ -524,10 +531,10 @@ texture_frame_ptr texture_upload_stream_s::consume_exact(uint64_t version)
         if (auto current = retire_current_slot(state_)) {
             reclaim.emplace_back(std::move(current));
         }
-        next->state             = detail::slot_state_e::current;
-        state_->current_version = next->version;
-        state_->current_slot    = std::move(next);
-        result                  = state_->current_slot->frame;
+        next->state                = detail::slot_state_e::current;
+        state_->retained_upload_id = next->upload_id;
+        state_->current_slot       = std::move(next);
+        result                     = state_->current_slot->frame;
     }
 
     if (auto service = state_->service.lock()) {
@@ -538,16 +545,16 @@ texture_frame_ptr texture_upload_stream_s::consume_exact(uint64_t version)
     return result;
 }
 
-texture_frame_ptr texture_upload_stream_s::current_frame(uint64_t version) const
+texture_frame_ptr texture_upload_stream_s::retained_frame_for(texture_upload_id_s upload_id) const
 {
     const std::scoped_lock lock(state_->mutex);
-    if (!state_->active || !state_->current_slot || state_->current_version != version) {
+    if (!state_->active || !state_->current_slot || state_->retained_upload_id != upload_id) {
         return nullptr;
     }
     return state_->current_slot->frame;
 }
 
-void texture_upload_stream_s::discard_exact(uint64_t version)
+void texture_upload_stream_s::discard_upload(texture_upload_id_s upload_id)
 {
     std::shared_ptr<detail::texture_upload_slot_s> reclaim;
     {
@@ -557,7 +564,7 @@ void texture_upload_stream_s::discard_exact(uint64_t version)
         }
 
         const auto slot = std::ranges::find_if(
-            state_->slots, [version](const auto& candidate) { return candidate->version == version; });
+            state_->slots, [upload_id](const auto& candidate) { return candidate->upload_id == upload_id; });
         if (slot == state_->slots.end()) {
             return;
         }
@@ -585,10 +592,11 @@ void texture_upload_stream_s::discard_exact(uint64_t version)
     }
 }
 
-texture_upload_wait_result_e texture_upload_stream_s::wait_until_ready(uint64_t version) const
+texture_upload_wait_result_e texture_upload_stream_s::wait_for_upload(texture_upload_id_s upload_id) const
 {
-    const auto find_slot = [this, version] {
-        return std::ranges::find_if(state_->slots, [version](const auto& slot) { return slot->version == version; });
+    const auto find_slot = [this, upload_id] {
+        return std::ranges::find_if(state_->slots,
+                                    [upload_id](const auto& slot) { return slot->upload_id == upload_id; });
     };
 
     std::unique_lock lock(state_->mutex);
@@ -610,16 +618,16 @@ texture_upload_wait_result_e texture_upload_stream_s::wait_until_ready(uint64_t 
     return texture_upload_wait_result_e::failed;
 }
 
-uint64_t texture_upload_stream_s::latest_ready_version() const
+texture_upload_id_s texture_upload_stream_s::latest_completed_upload_id() const
 {
     const std::scoped_lock lock(state_->mutex);
-    return state_->ready_slots.empty() ? 0 : state_->ready_slots.back()->version;
+    return state_->ready_slots.empty() ? texture_upload_id_s{} : state_->ready_slots.back()->upload_id;
 }
 
-uint64_t texture_upload_stream_s::current_version() const
+texture_upload_id_s texture_upload_stream_s::retained_upload_id() const
 {
     const std::scoped_lock lock(state_->mutex);
-    return state_->current_version;
+    return state_->retained_upload_id;
 }
 
 bool texture_upload_stream_s::allocation_failed() const
@@ -628,7 +636,7 @@ bool texture_upload_stream_s::allocation_failed() const
     return state_->allocation_failed;
 }
 
-texture_upload_desc_s texture_upload_stream_s::desc() const noexcept { return state_->desc; }
+texture_upload_config_s texture_upload_stream_s::configuration() const noexcept { return state_->config; }
 
 texture_upload_service_s::texture_upload_service_s(context_s* parent, size_t memory_budget)
     : state_(std::make_shared<detail::texture_upload_service_state_s>(parent, memory_budget))
@@ -642,19 +650,19 @@ texture_upload_service_s::~texture_upload_service_s()
     state_.reset();
 }
 
-std::shared_ptr<texture_upload_stream_s> texture_upload_service_s::create_stream(texture_upload_desc_s desc)
+std::shared_ptr<texture_upload_stream_s> texture_upload_service_s::create_stream(texture_upload_config_s config)
 {
-    if (desc.max_slots == 0 || desc.initial_slots > desc.max_slots ||
-        desc.requirements.host_access == host_access_e::read_only) {
-        throw std::invalid_argument("invalid texture upload stream description");
+    if (config.max_slots == 0 || config.initial_slots > config.max_slots ||
+        config.transfer_layout.host_memory_access == host_memory_access_e::read_only) {
+        throw std::invalid_argument("invalid texture upload stream configuration");
     }
-    detail::normalize_requirements(desc.requirements);
+    detail::normalize_transfer_layout(config.transfer_layout);
     auto stream                 = std::make_shared<detail::texture_upload_stream_state_s>();
     stream->service             = state_;
-    stream->desc                = desc;
-    stream->pending_allocations = desc.initial_slots;
+    stream->config              = config;
+    stream->pending_allocations = config.initial_slots;
     auto result                 = std::shared_ptr<texture_upload_stream_s>(new texture_upload_stream_s(stream));
-    for (size_t index = 0; index < desc.initial_slots; ++index) {
+    for (size_t index = 0; index < config.initial_slots; ++index) {
         state_->enqueue({.type = detail::task_type_e::allocate, .stream = stream, .slot = {}});
     }
     return result;

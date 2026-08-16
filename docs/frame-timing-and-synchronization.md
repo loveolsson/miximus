@@ -78,7 +78,7 @@ and start a PTS-aligned transfer ticket that execution subsequently awaits. Futu
 `prepare()` also still combines configuration maintenance, device lifecycle, status updates, queue advancement,
 allocation, and per-frame acquisition in several existing nodes.
 
-Upload transfer services use monotonic versions and publish the latest completed transfer. Download frames carry their
+Upload transfer services use strong upload IDs and publish the latest completed transfer. Readback frames carry their
 absolute program target time as `utils::flicks`. Those values are useful implementation details but do not fully
 identify the media frame for which a transfer was requested.
 Texture and framebuffer interfaces similarly expose raw pointers without PTS, epoch, or readiness metadata.
@@ -113,10 +113,10 @@ struct frame_context_s
 {
     uint64_t      frame_number;
     uint64_t      epoch;
-    utils::flicks pts;
-    utils::flicks duration;
+    utils::flicks program_pts;
+    utils::flicks frame_duration;
 
-    steady_time target_time;
+    steady_time program_target_time;
     steady_time render_deadline;
 
     bool discontinuity;
@@ -125,8 +125,8 @@ struct frame_context_s
 
 The concrete steady-clock type and placement will be decided during implementation. The important distinction is:
 
-- `pts` identifies media on the program timeline;
-- `target_time` maps that PTS to the active scheduling clock;
+- `program_pts` identifies media on the program timeline;
+- `program_target_time` maps that PTS to the active scheduling clock;
 - `render_deadline` is the latest useful completion time;
 - `frame_number` names a graph/configuration boundary;
 - `epoch` invalidates timestamp relationships after a restart, seek, format change, or clock discontinuity.
@@ -139,7 +139,7 @@ presentation mapping.
 The scheduler must derive deadlines from a stable anchor:
 
 ```text
-target_time(frame N) = anchor_time + N * frame_duration
+program_target_time(frame N) = anchor_time + N * frame_duration
 ```
 
 It must not calculate each next deadline from the time the previous frame happened to finish. This prevents render
@@ -336,17 +336,17 @@ Transfer APIs should use meaning-specific, strongly typed members at media-facin
 identity crosses the boundary, use structured metadata such as:
 
 ```cpp
-struct media_frame_id_s
+struct media_clock_sample_s
 {
-    uint64_t      epoch;
-    uint64_t      sequence;
-    utils::flicks pts;
-    utils::flicks duration;
+    uint64_t      stream_epoch;
+    uint64_t      frame_sequence;
+    utils::flicks media_pts;
+    utils::flicks frame_duration;
 };
 ```
 
-Internal monotonically increasing slot versions may remain where they are useful for ownership and stale-result
-protection.
+Upload transactions use the strong `texture_upload_id_s` identity where ownership and stale-result protection require
+an exact transfer reference. This identity is not media ordering or timing.
 
 ### Graph texture contract
 
@@ -375,7 +375,7 @@ For each captured frame, retain:
 - `GetHardwareReferenceTimestamp()` when available;
 - callback arrival time for diagnostics;
 - input format, no-input-source state, colorspace, sequence, and source epoch;
-- the upload reservation/version used by the transfer service.
+- the `texture_upload_id_s` used by the transfer service.
 
 The DeckLink synchronizer maps stream time into the program timeline using hardware-reference observations where
 possible. Capture continuously fills bounded host-visible reservations regardless of current graph demand. All-node
@@ -404,7 +404,7 @@ values.
 Continuously drain `NDIlib_recv_capture_v3()` on the capture worker. Each raw decoded video frame retains the SDK
 timestamp, sender timecode, nominal frame rate, source sequence/epoch, and local arrival observation. The SDK timestamp
 has an arbitrary sender-clock origin; normalize it to a safe relative value and feed it through the same templated
-`timed_source_queue_s<T>` and embedded `source_clock_estimator_s` used by DeckLink. When the SDK timestamp is
+`timed_source_queue_s<T>` and embedded `media_to_program_clock_s` used by DeckLink. When the SDK timestamp is
 unavailable, synthesize a source-local PTS from the nominal frame duration and sequence while retaining a distinct
 epoch across timing/format discontinuities.
 
@@ -447,7 +447,7 @@ and diagnostic signal, but bursty render completion makes it unsuitable as the p
 
 ### DeckLink output
 
-Preserve scheduled playback and callback replenishment, but associate each rendered/downloaded frame with its absolute
+Preserve scheduled playback and callback replenishment, but associate each rendered/read-back frame with its absolute
 program target time. Maintain an explicit scheduled-frame target. On underrun, repeat the
 previous frame or schedule black according to policy; discard a rendered frame that arrives after its useful scheduling point.
 Repetition must explicitly schedule the retained frame for each required output interval. Do not depend on undocumented
@@ -459,8 +459,8 @@ the next DeckLink schedule slot from its stream-time distance. This continually 
 free-running DeckLink and program clocks. The DeckLink stream timestamp remains the device scheduling coordinate only;
 it must not become a second nominal program cursor.
 
-Each scheduled frame must retain the download lease that backs its `IDeckLinkVideoBuffer` until DeckLink reports frame
-completion. Do not copy completed downloads into a second DeckLink-owned frame buffer. The SDK completion callback may
+Each scheduled frame must retain the readback lease that backs its `IDeckLinkVideoBuffer` until DeckLink reports frame
+completion. Do not copy completed readbacks into a second DeckLink-owned frame buffer. The SDK completion callback may
 poll completed leases and replenish the bounded schedule, but it must not make a GL context current or wait for a GPU
 transfer. Transfer workers own their GL contexts and completion fences.
 
@@ -484,7 +484,7 @@ timecode should be derived from the mapped program PTS, and future audio must us
 
 An enabled NDI output continues demanding upstream frame work even with no receivers. Receiver attachment must not
 cause a sudden change in render load or reveal a graph that cannot sustain its configured outputs. The sender may skip
-the download and network send while no receiver is present, but the upstream graph remains active.
+the readback and network send while no receiver is present, but the upstream graph remains active.
 
 ### Screen output
 
@@ -543,7 +543,7 @@ The intended roles are:
 - SDK callback threads: bounded capture/timing observations and ownership handoffs only;
 - device-control workers: blocking device start, stop, reconnect, and mode changes;
 - decode/CPU workers: demux, decode, font rasterization, and CPU image processing;
-- GL transfer workers: shared-context upload/download submission and fences;
+- GL transfer workers: shared-context upload/readback submission and fences;
 - output workers/SDK callbacks: hardware/network scheduling from bounded PTS-aware queues.
 
 No background object may destroy GL resources directly. Existing render-thread node destruction and service-owned
@@ -704,7 +704,7 @@ exit criterion rather than an implied property of the current implementation.
 Deliverables:
 
 - Add source epoch, sequence, source PTS, duration, arrival observation, and readiness to media-facing transfer results.
-- Implement bounded timed queues and selection APIs instead of `consume_latest()` at input boundaries.
+- Implement bounded timed queues and selection APIs instead of `select_latest_completed_upload()` at input boundaries.
 - Implement the source-to-program clock estimator, hysteretic repeat/drop selection, and discontinuity reset behavior.
 - Let submission park and start the exact ticket for the current frame, then have execution await that same ticket.
 - Keep raw texture/framebuffer graph interfaces unchanged; timing remains private to the source boundary.
@@ -721,7 +721,7 @@ Exit criteria:
 
 **Status:** Implementation and targeted hardware stress validation complete; multi-day endurance validation remains
 
-Each completed GPU download now retains its absolute target time until the DeckLink completion
+Each completed GPU readback now retains its absolute target time until the DeckLink completion
 callback consumes it. The callback uses the completed frame's hardware reference timestamp to map the next DeckLink
 schedule slot into Miximus' steady-clock domain. The shared clock estimator filters callback-delivery jitter and tracks
 the DeckLink clock's long-term rate; raw callback arrival variation must not directly drive cadence selection. The first
@@ -729,12 +729,12 @@ actual completed frame establishes the fixed program-to-output latency. Each lat
 absolute presentation time minus that latency, explicitly repeats the retained frame when the program cadence is
 slower, and drops superseded frames when it is faster. One global one-to-eight-frame DeckLink-output setting controls
 both startup and the steady scheduled-frame target for every output of that type; the SDK-reported minimum preroll
-raises the effective target when required. The output first exposes its bounded download stream, schedules actual
+raises the effective target when required. The output first exposes its bounded readback stream, schedules actual
 completed program frames until that target is full, retains one additional completed program frame as callback-jitter
 reserve, and only then starts scheduled playback. There is no
 separate generated black preroll or second startup-depth setting. A buffer-size change deliberately follows the
 existing asynchronous stop/restart path and recreates the affected stream; preserving output continuity across that
-change is not a requirement. The output control path waits off the render thread for the bounded initial download-slot
+change is not a requirement. The output control path waits off the render thread for the bounded initial readback-slot
 set before exposing the stream. This prevents asynchronous pool growth from appearing as avoidable program-frame
 repeats.
 
@@ -746,12 +746,12 @@ planned multi-day soak or independent-device testing.
 
 Deliverables:
 
-- Associate each rendered/downloaded result with its absolute target time, and independently retain the
+- Associate each rendered/read-back result with its absolute target time, and independently retain the
   DeckLink stream time for every physically scheduled frame.
 - Use one configurable scheduled-frame target for program-frame preroll and steady buffering, with cadence conversion
   from program rate to output rate.
 - Explicitly schedule retained-frame repeats; never create timestamp gaps expecting the SDK to fill them.
-- Preserve zero-copy download-lease-backed frames, completion ownership, device-control serialization, and asynchronous
+- Preserve zero-copy readback-lease-backed frames, completion ownership, device-control serialization, and asynchronous
   shutdown.
 
 Exit criteria:
@@ -796,7 +796,7 @@ Exit criteria:
 
 NDI input now drains raw SDK frames continuously, converts sender timestamps into relative source PTS, and passes them
 through the same templated clock estimator/timed-source queue used by DeckLink. It starts only the exact active-closure
-upload from submission, and execution awaits and consumes that upload. NDI output uses a bounded FIFO download stream
+upload from submission, and execution awaits and consumes that upload. NDI output uses a bounded FIFO readback stream
 and a worker-owned exact steady-clock deadline with configurable global preroll, explicit repeat/drop behavior,
 program-derived timecode, and correct asynchronous-send lease retention. Receiver and sender lifecycle runs through a serialized NDI
 control executor. Rate-mismatch and network-delay stress validation remain before this stage is complete.
@@ -825,8 +825,8 @@ rate-mismatch validation remains
 
 Screen output now owns a presentation thread, a bounded set of shared render slots, explicit preroll, and an
 absolute-time output timeline. The render thread acquires a free slot without waiting, renders the program frame, and
-submits it with the frame context's target time. The presentation thread estimates the physical swap cadence, selects
-the corresponding program target, explicitly repeats or discards frames, and retires slots only after their GL sync
+submits it with the frame context's program target time. The presentation thread estimates the physical swap cadence, selects
+the corresponding program target, explicitly repeats or discards frames, and retires slots only after their OpenGL fence
 has completed. Status exposes queue, slot, repeat/drop, acquire-miss, latency, completion-interval, and measured-refresh
 metrics. Physical presentation was verified smooth alongside DeckLink and NDI loopback, including a controlled
 render-delay run; longer compositor-stall and non-matching-refresh tests remain.
@@ -835,7 +835,7 @@ Deliverables:
 
 - Make screen presentation a PTS-aware buffered output driven by selected-monitor refresh/presentation cadence.
 - Add configurable slot depth, explicit preroll, cadence conversion, repeat/drop policy, and presentation metrics.
-- Associate GL sync with shared render-slot reuse so compositor stalls cannot block the program render thread.
+- Associate OpenGL fences with shared render-slot reuse so compositor stalls cannot block the program render thread.
 
 Exit criteria:
 

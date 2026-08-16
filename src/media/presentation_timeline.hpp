@@ -5,19 +5,19 @@
 
 namespace miximus::media {
 
-class output_timeline_s
+class presentation_timeline_s
 {
     std::optional<utils::flicks> latency_;
 
   public:
-    utils::flicks align(utils::flicks presentation_time, utils::flicks program_target_time) noexcept
+    utils::flicks establish_latency(utils::flicks presentation_time, utils::flicks program_target_time) noexcept
     {
         const auto latency = presentation_time - program_target_time;
         latency_           = latency;
         return latency;
     }
 
-    std::optional<utils::flicks> program_target_time(utils::flicks presentation_time) const noexcept
+    std::optional<utils::flicks> map_presentation_to_program_target(utils::flicks presentation_time) const noexcept
     {
         if (!latency_.has_value()) {
             return std::nullopt;

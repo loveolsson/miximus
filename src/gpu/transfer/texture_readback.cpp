@@ -1,10 +1,10 @@
-#include "texture_download.hpp"
+#include "texture_readback.hpp"
 
 #include "gpu/context.hpp"
 #include "gpu/framebuffer.hpp"
 #include "gpu/texture_frame.hpp"
-#include "gpu/transfer/detail/backend_factory.hpp"
-#include "gpu/transfer/detail/requirements.hpp"
+#include "gpu/transfer/detail/texture_transfer_backend_factory.hpp"
+#include "gpu/transfer/detail/transfer_layout.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
 #include "logger/logger.hpp"
 
@@ -31,34 +31,34 @@ enum class slot_state_e : uint8_t
 enum class task_type_e : uint8_t
 {
     allocate,
-    download,
+    readback,
     destroy_stream,
 };
 
 } // namespace
 
-struct texture_download_slot_s
+struct texture_readback_slot_s
 {
-    std::unique_ptr<backend_i> backend;
-    texture_frame_ptr          frame;
-    slot_state_e               state{slot_state_e::free};
-    size_t                     reserved_bytes{};
-    utils::flicks              target_time{};
+    std::unique_ptr<texture_transfer_backend_i> transfer_backend;
+    texture_frame_ptr                           frame;
+    slot_state_e                                state{slot_state_e::free};
+    size_t                                      reserved_bytes{};
+    utils::flicks                               program_target_time{};
 };
 
-struct texture_download_stream_state_s
+struct texture_readback_stream_state_s
 {
-    std::weak_ptr<texture_download_service_state_s>       service;
-    texture_download_desc_s                               desc;
+    std::weak_ptr<texture_readback_service_state_s>       service;
+    texture_readback_config_s                             config;
     mutable std::mutex                                    mutex;
     mutable std::condition_variable                       initial_slots_condition;
-    std::vector<std::shared_ptr<texture_download_slot_s>> slots;
-    std::deque<std::shared_ptr<texture_download_slot_s>>  free_slots;
-    std::deque<std::shared_ptr<texture_download_slot_s>>  ready_slots;
+    std::vector<std::shared_ptr<texture_readback_slot_s>> slots;
+    std::deque<std::shared_ptr<texture_readback_slot_s>>  free_slots;
+    std::deque<std::shared_ptr<texture_readback_slot_s>>  ready_slots;
     size_t                                                pending_allocations{};
     size_t                                                active_targets{};
     size_t                                                active_frames{};
-    uint64_t                                              acquire_misses{};
+    uint64_t                                              render_target_acquire_misses{};
     uint64_t                                              transfers_completed{};
     uint64_t                                              transfer_failures{};
     std::chrono::microseconds                             transfer_duration_total{};
@@ -71,31 +71,31 @@ struct texture_download_stream_state_s
 struct task_s
 {
     task_type_e                                      type;
-    std::shared_ptr<texture_download_stream_state_s> stream;
-    std::shared_ptr<texture_download_slot_s>         slot;
+    std::shared_ptr<texture_readback_stream_state_s> stream;
+    std::shared_ptr<texture_readback_slot_s>         slot;
 };
 
-struct texture_download_service_state_s : transfer_worker_s<texture_download_service_state_s, task_s>
+struct texture_readback_service_state_s : transfer_worker_s<texture_readback_service_state_s, task_s>
 {
-    texture_download_service_state_s(context_s* parent, size_t budget)
+    texture_readback_service_state_s(context_s* parent, size_t budget)
         : transfer_worker_s(parent, budget)
     {
     }
 
-    void release_slot(texture_download_slot_s& slot)
+    void release_slot(texture_readback_slot_s& slot)
     {
-        if (slot.frame && slot.backend) {
-            (void)slot.frame->wait_released_on_worker();
-            (void)slot.backend->begin_texture_use();
-            (void)slot.backend->unbind_texture();
+        if (slot.frame && slot.transfer_backend) {
+            (void)slot.frame->wait_for_render_release_on_worker();
+            (void)slot.transfer_backend->acquire_texture_for_gl();
+            (void)slot.transfer_backend->unregister_texture();
         }
-        slot.backend.reset();
+        slot.transfer_backend.reset();
         slot.frame.reset();
         release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
     }
 
-    void allocate_slot(const std::shared_ptr<texture_download_stream_state_s>& stream)
+    void allocate_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream)
     {
         {
             const std::scoped_lock lock(stream->mutex);
@@ -109,21 +109,23 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
         size_t reserved{};
         bool   reserved_memory{};
         try {
-            reserved = estimate_slot_memory_usage(stream->desc.requirements);
+            reserved = estimate_slot_memory_usage(stream->config.transfer_layout);
             if (!reserve_memory(reserved)) {
                 throw std::bad_alloc();
             }
             reserved_memory = true;
 
-            auto slot            = std::make_shared<texture_download_slot_s>();
-            slot->reserved_bytes = reserved;
-            slot->frame          = std::make_shared<texture_frame_s>(stream->desc.requirements.dimensions,
-                                                            stream->desc.requirements.format);
-            auto backend =
-                create_backend(stream->desc.requirements, backend_i::direction_e::gpu_to_cpu, slot->frame->texture());
-            slot->backend = std::move(backend.backend);
+            auto slot              = std::make_shared<texture_readback_slot_s>();
+            slot->reserved_bytes   = reserved;
+            slot->frame            = std::make_shared<texture_frame_s>(stream->config.transfer_layout.dimensions,
+                                                            stream->config.transfer_layout.pixel_format);
+            auto transfer_backend  = create_texture_transfer_backend(stream->config.transfer_layout,
+                                                                    texture_transfer_backend_i::direction_e::gpu_to_cpu,
+                                                                    slot->frame->texture());
+            slot->transfer_backend = std::move(transfer_backend.transfer_backend);
 
-            const auto actual_reserved = slot_memory_usage(stream->desc.requirements, backend.allocation_bytes);
+            const auto actual_reserved =
+                slot_memory_usage(stream->config.transfer_layout, transfer_backend.backend_allocation_bytes);
             if (!resize_memory_reservation(reserved, actual_reserved)) {
                 throw std::bad_alloc();
             }
@@ -158,17 +160,17 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
                 stream->retry_allocation_after = std::chrono::steady_clock::now() + std::chrono::seconds(1);
             }
             stream->initial_slots_condition.notify_all();
-            getlog("gpu")->error("Unable to allocate texture download slot: {}", error.what());
+            getlog("gpu")->error("Unable to allocate texture readback slot: {}", error.what());
         }
     }
 
-    static void download_slot(const std::shared_ptr<texture_download_stream_state_s>& stream,
-                              const std::shared_ptr<texture_download_slot_s>&         slot)
+    static void readback_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream,
+                              const std::shared_ptr<texture_readback_slot_s>&         slot)
     {
         const auto start   = std::chrono::steady_clock::now();
-        bool       success = slot->frame->wait_released_on_worker();
-        success            = success && slot->backend->transfer();
-        success            = success && slot->backend->wait_for_completion();
+        bool       success = slot->frame->wait_for_render_release_on_worker();
+        success            = success && slot->transfer_backend->submit_transfer();
+        success            = success && slot->transfer_backend->wait_for_transfer_completion();
 
         const auto duration =
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -190,9 +192,9 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
         stream->ready_slots.emplace_back(slot);
     }
 
-    bool destroy_stream(const std::shared_ptr<texture_download_stream_state_s>& stream)
+    bool destroy_stream(const std::shared_ptr<texture_readback_stream_state_s>& stream)
     {
-        std::vector<std::shared_ptr<texture_download_slot_s>> slots;
+        std::vector<std::shared_ptr<texture_readback_slot_s>> slots;
         {
             const std::scoped_lock lock(stream->mutex);
             const bool             in_flight = std::ranges::any_of(stream->slots, [](const auto& slot) {
@@ -219,8 +221,8 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
             case task_type_e::allocate:
                 allocate_slot(task.stream);
                 return true;
-            case task_type_e::download:
-                download_slot(task.stream, task.slot);
+            case task_type_e::readback:
+                readback_slot(task.stream, task.slot);
                 return true;
             case task_type_e::destroy_stream:
                 return destroy_stream(task.stream);
@@ -232,8 +234,8 @@ struct texture_download_service_state_s : transfer_worker_s<texture_download_ser
 
 namespace miximus::gpu::transfer {
 namespace {
-void return_target(const std::shared_ptr<detail::texture_download_stream_state_s>& stream,
-                   const std::shared_ptr<detail::texture_download_slot_s>&         slot)
+void return_target(const std::shared_ptr<detail::texture_readback_stream_state_s>& stream,
+                   const std::shared_ptr<detail::texture_readback_slot_s>&         slot)
 {
     if (!stream || !slot) {
         return;
@@ -248,8 +250,8 @@ void return_target(const std::shared_ptr<detail::texture_download_stream_state_s
     }
 }
 
-void return_frame(const std::shared_ptr<detail::texture_download_stream_state_s>& stream,
-                  const std::shared_ptr<detail::texture_download_slot_s>&         slot)
+void return_frame(const std::shared_ptr<detail::texture_readback_stream_state_s>& stream,
+                  const std::shared_ptr<detail::texture_readback_slot_s>&         slot)
 {
     if (!stream || !slot) {
         return;
@@ -265,22 +267,22 @@ void return_frame(const std::shared_ptr<detail::texture_download_stream_state_s>
 }
 } // namespace
 
-texture_download_target_s::texture_download_target_s(std::shared_ptr<detail::texture_download_stream_state_s> stream,
-                                                     std::shared_ptr<detail::texture_download_slot_s>         slot)
+texture_readback_target_s::texture_readback_target_s(std::shared_ptr<detail::texture_readback_stream_state_s> stream,
+                                                     std::shared_ptr<detail::texture_readback_slot_s>         slot)
     : stream_(std::move(stream))
     , slot_(std::move(slot))
     , framebuffer_(std::make_unique<framebuffer_s>(slot_->frame->texture()))
 {
 }
 
-texture_download_target_s::~texture_download_target_s()
+texture_readback_target_s::~texture_readback_target_s()
 {
     if (!submitted_) {
         return_target(stream_, slot_);
     }
 }
 
-texture_download_target_s::texture_download_target_s(texture_download_target_s&& other) noexcept
+texture_readback_target_s::texture_readback_target_s(texture_readback_target_s&& other) noexcept
     : stream_(std::move(other.stream_))
     , slot_(std::move(other.slot_))
     , framebuffer_(std::move(other.framebuffer_))
@@ -288,7 +290,7 @@ texture_download_target_s::texture_download_target_s(texture_download_target_s&&
 {
 }
 
-texture_download_target_s& texture_download_target_s::operator=(texture_download_target_s&& other) noexcept
+texture_readback_target_s& texture_readback_target_s::operator=(texture_readback_target_s&& other) noexcept
 {
     if (this != &other) {
         if (!submitted_) {
@@ -302,16 +304,16 @@ texture_download_target_s& texture_download_target_s::operator=(texture_download
     return *this;
 }
 
-framebuffer_s* texture_download_target_s::framebuffer() const noexcept { return framebuffer_.get(); }
+framebuffer_s* texture_readback_target_s::framebuffer() const noexcept { return framebuffer_.get(); }
 
-void texture_download_target_s::set_target_time(utils::flicks target_time) noexcept
+void texture_readback_target_s::set_program_target_time(utils::flicks program_target_time) noexcept
 {
     if (slot_) {
-        slot_->target_time = target_time;
+        slot_->program_target_time = program_target_time;
     }
 }
 
-void texture_download_target_s::submit()
+void texture_readback_target_s::submit()
 {
     if (!stream_ || !slot_ || submitted_) {
         return;
@@ -329,26 +331,26 @@ void texture_download_target_s::submit()
         --stream_->active_targets;
         submitted_ = true;
     }
-    slot_->frame->release_from_render();
-    service->enqueue({.type = detail::task_type_e::download, .stream = stream_, .slot = slot_});
+    slot_->frame->publish_render_release_fence();
+    service->enqueue({.type = detail::task_type_e::readback, .stream = stream_, .slot = slot_});
 }
 
-texture_download_frame_s::texture_download_frame_s(std::shared_ptr<detail::texture_download_stream_state_s> stream,
-                                                   std::shared_ptr<detail::texture_download_slot_s>         slot)
+texture_readback_frame_s::texture_readback_frame_s(std::shared_ptr<detail::texture_readback_stream_state_s> stream,
+                                                   std::shared_ptr<detail::texture_readback_slot_s>         slot)
     : stream_(std::move(stream))
     , slot_(std::move(slot))
 {
 }
 
-texture_download_frame_s::~texture_download_frame_s() { return_frame(stream_, slot_); }
+texture_readback_frame_s::~texture_readback_frame_s() { return_frame(stream_, slot_); }
 
-texture_download_frame_s::texture_download_frame_s(texture_download_frame_s&& other) noexcept
+texture_readback_frame_s::texture_readback_frame_s(texture_readback_frame_s&& other) noexcept
     : stream_(std::move(other.stream_))
     , slot_(std::move(other.slot_))
 {
 }
 
-texture_download_frame_s& texture_download_frame_s::operator=(texture_download_frame_s&& other) noexcept
+texture_readback_frame_s& texture_readback_frame_s::operator=(texture_readback_frame_s&& other) noexcept
 {
     if (this != &other) {
         return_frame(stream_, slot_);
@@ -358,25 +360,26 @@ texture_download_frame_s& texture_download_frame_s::operator=(texture_download_f
     return *this;
 }
 
-std::span<const std::byte> texture_download_frame_s::bytes() const noexcept
+std::span<const std::byte> texture_readback_frame_s::readable_host_bytes() const noexcept
 {
     if (!slot_) {
         return {};
     }
-    return {static_cast<const std::byte*>(slot_->backend->data()), slot_->backend->size()};
+    return {static_cast<const std::byte*>(slot_->transfer_backend->host_memory()),
+            slot_->transfer_backend->host_buffer_size_bytes()};
 }
 
-utils::flicks texture_download_frame_s::target_time() const noexcept
+utils::flicks texture_readback_frame_s::program_target_time() const noexcept
 {
-    return slot_ ? slot_->target_time : utils::flicks{};
+    return slot_ ? slot_->program_target_time : utils::flicks{};
 }
 
-texture_download_stream_s::texture_download_stream_s(std::shared_ptr<detail::texture_download_stream_state_s> state)
+texture_readback_stream_s::texture_readback_stream_s(std::shared_ptr<detail::texture_readback_stream_state_s> state)
     : state_(std::move(state))
 {
 }
 
-texture_download_stream_s::~texture_download_stream_s()
+texture_readback_stream_s::~texture_readback_stream_s()
 {
     auto service = state_->service.lock();
     {
@@ -388,9 +391,9 @@ texture_download_stream_s::~texture_download_stream_s()
     }
 }
 
-std::optional<texture_download_target_s> texture_download_stream_s::try_acquire()
+std::optional<texture_readback_target_s> texture_readback_stream_s::try_acquire_render_target()
 {
-    std::shared_ptr<detail::texture_download_slot_s> slot;
+    std::shared_ptr<detail::texture_readback_slot_s> slot;
     bool                                             allocate{};
     {
         const std::scoped_lock lock(state_->mutex);
@@ -400,10 +403,10 @@ std::optional<texture_download_target_s> texture_download_stream_s::try_acquire(
         if (!state_->free_slots.empty()) {
             slot = std::move(state_->free_slots.front());
             state_->free_slots.pop_front();
-            slot->state       = detail::slot_state_e::rendering;
-            slot->target_time = utils::flicks{};
+            slot->state               = detail::slot_state_e::rendering;
+            slot->program_target_time = utils::flicks{};
             ++state_->active_targets;
-        } else if (state_->slots.size() + state_->pending_allocations < state_->desc.max_slots &&
+        } else if (state_->slots.size() + state_->pending_allocations < state_->config.max_slots &&
                    state_->pending_allocations == 0 &&
                    std::chrono::steady_clock::now() >= state_->retry_allocation_after) {
             ++state_->pending_allocations;
@@ -417,23 +420,23 @@ std::optional<texture_download_target_s> texture_download_stream_s::try_acquire(
     }
     if (!slot) {
         const std::scoped_lock lock(state_->mutex);
-        ++state_->acquire_misses;
+        ++state_->render_target_acquire_misses;
         return std::nullopt;
     }
-    if (!slot->backend->begin_texture_use()) {
+    if (!slot->transfer_backend->acquire_texture_for_gl()) {
         {
             const std::scoped_lock lock(state_->mutex);
-            ++state_->acquire_misses;
+            ++state_->render_target_acquire_misses;
         }
         return_target(state_, slot);
         return std::nullopt;
     }
-    return texture_download_target_s(state_, std::move(slot));
+    return texture_readback_target_s(state_, std::move(slot));
 }
 
-std::optional<texture_download_frame_s> texture_download_stream_s::try_consume_latest()
+std::optional<texture_readback_frame_s> texture_readback_stream_s::try_consume_latest()
 {
-    std::shared_ptr<detail::texture_download_slot_s> selected;
+    std::shared_ptr<detail::texture_readback_slot_s> selected;
     {
         const std::scoped_lock lock(state_->mutex);
         if (!state_->active || state_->ready_slots.empty()) {
@@ -450,12 +453,12 @@ std::optional<texture_download_frame_s> texture_download_stream_s::try_consume_l
         selected->state = detail::slot_state_e::cpu_reading;
         ++state_->active_frames;
     }
-    return texture_download_frame_s(state_, std::move(selected));
+    return texture_readback_frame_s(state_, std::move(selected));
 }
 
-std::optional<texture_download_frame_s> texture_download_stream_s::try_consume_oldest()
+std::optional<texture_readback_frame_s> texture_readback_stream_s::try_consume_oldest()
 {
-    std::shared_ptr<detail::texture_download_slot_s> selected;
+    std::shared_ptr<detail::texture_readback_slot_s> selected;
     {
         const std::scoped_lock lock(state_->mutex);
         if (!state_->active || state_->ready_slots.empty()) {
@@ -466,44 +469,44 @@ std::optional<texture_download_frame_s> texture_download_stream_s::try_consume_o
         selected->state = detail::slot_state_e::cpu_reading;
         ++state_->active_frames;
     }
-    return texture_download_frame_s(state_, std::move(selected));
+    return texture_readback_frame_s(state_, std::move(selected));
 }
 
-bool texture_download_stream_s::allocation_failed() const
+bool texture_readback_stream_s::allocation_failed() const
 {
     const std::scoped_lock lock(state_->mutex);
     return state_->allocation_failed;
 }
 
-bool texture_download_stream_s::initial_slots_pending() const
+bool texture_readback_stream_s::initial_slots_pending() const
 {
     const std::scoped_lock lock(state_->mutex);
     return state_->pending_allocations != 0;
 }
 
-bool texture_download_stream_s::wait_for_initial_slots(std::chrono::milliseconds timeout) const
+bool texture_readback_stream_s::wait_for_initial_slots(std::chrono::milliseconds timeout) const
 {
     std::unique_lock lock(state_->mutex);
     const bool       completed = state_->initial_slots_condition.wait_for(
         lock, timeout, [this] { return !state_->active || state_->pending_allocations == 0; });
     return completed && state_->active && !state_->allocation_failed &&
-           state_->slots.size() >= state_->desc.initial_slots;
+           state_->slots.size() >= state_->config.initial_slots;
 }
 
-texture_download_stream_metrics_s texture_download_stream_s::metrics() const
+texture_readback_stream_metrics_s texture_readback_stream_s::metrics() const
 {
     const std::scoped_lock            lock(state_->mutex);
-    texture_download_stream_metrics_s result{
-        .slots                      = state_->slots.size(),
-        .free_slots                 = state_->free_slots.size(),
-        .ready_slots                = state_->ready_slots.size(),
-        .pending_allocations        = state_->pending_allocations,
-        .acquire_misses             = state_->acquire_misses,
-        .transfers_completed        = state_->transfers_completed,
-        .transfer_failures          = state_->transfer_failures,
-        .transfer_duration_total_us = state_->transfer_duration_total.count(),
-        .transfer_duration_max_us   = state_->transfer_duration_max.count(),
-        .allocation_failed          = state_->allocation_failed,
+    texture_readback_stream_metrics_s result{
+        .slots                        = state_->slots.size(),
+        .free_slots                   = state_->free_slots.size(),
+        .ready_slots                  = state_->ready_slots.size(),
+        .pending_allocations          = state_->pending_allocations,
+        .render_target_acquire_misses = state_->render_target_acquire_misses,
+        .transfers_completed          = state_->transfers_completed,
+        .transfer_failures            = state_->transfer_failures,
+        .transfer_duration_total_us   = state_->transfer_duration_total.count(),
+        .transfer_duration_max_us     = state_->transfer_duration_max.count(),
+        .allocation_failed            = state_->allocation_failed,
     };
     for (const auto& slot : state_->slots) {
         switch (slot->state) {
@@ -525,40 +528,40 @@ texture_download_stream_metrics_s texture_download_stream_s::metrics() const
     return result;
 }
 
-texture_download_desc_s texture_download_stream_s::desc() const noexcept { return state_->desc; }
+texture_readback_config_s texture_readback_stream_s::configuration() const noexcept { return state_->config; }
 
-texture_download_service_s::texture_download_service_s(context_s* parent, size_t memory_budget)
-    : state_(std::make_shared<detail::texture_download_service_state_s>(parent, memory_budget))
+texture_readback_service_s::texture_readback_service_s(context_s* parent, size_t memory_budget)
+    : state_(std::make_shared<detail::texture_readback_service_state_s>(parent, memory_budget))
 {
     state_->start();
 }
 
-texture_download_service_s::~texture_download_service_s()
+texture_readback_service_s::~texture_readback_service_s()
 {
     state_->stop();
     state_.reset();
 }
 
-std::shared_ptr<texture_download_stream_s> texture_download_service_s::create_stream(texture_download_desc_s desc)
+std::shared_ptr<texture_readback_stream_s> texture_readback_service_s::create_stream(texture_readback_config_s config)
 {
-    if (desc.max_slots == 0 || desc.initial_slots > desc.max_slots ||
-        desc.requirements.host_access != host_access_e::read_only) {
-        throw std::invalid_argument("invalid texture download stream description");
+    if (config.max_slots == 0 || config.initial_slots > config.max_slots ||
+        config.transfer_layout.host_memory_access != host_memory_access_e::read_only) {
+        throw std::invalid_argument("invalid texture readback stream configuration");
     }
-    detail::normalize_requirements(desc.requirements);
-    auto stream                 = std::make_shared<detail::texture_download_stream_state_s>();
+    detail::normalize_transfer_layout(config.transfer_layout);
+    auto stream                 = std::make_shared<detail::texture_readback_stream_state_s>();
     stream->service             = state_;
-    stream->desc                = desc;
-    stream->pending_allocations = desc.initial_slots;
-    auto result                 = std::shared_ptr<texture_download_stream_s>(new texture_download_stream_s(stream));
-    for (size_t index = 0; index < desc.initial_slots; ++index) {
+    stream->config              = config;
+    stream->pending_allocations = config.initial_slots;
+    auto result                 = std::shared_ptr<texture_readback_stream_s>(new texture_readback_stream_s(stream));
+    for (size_t index = 0; index < config.initial_slots; ++index) {
         state_->enqueue({.type = detail::task_type_e::allocate, .stream = stream, .slot = {}});
     }
     return result;
 }
 
-size_t texture_download_service_s::memory_usage() const noexcept { return state_->memory_usage(); }
+size_t texture_readback_service_s::memory_usage() const noexcept { return state_->memory_usage(); }
 
-size_t texture_download_service_s::memory_budget() const noexcept { return state_->memory_budget(); }
+size_t texture_readback_service_s::memory_budget() const noexcept { return state_->memory_budget(); }
 
 } // namespace miximus::gpu::transfer

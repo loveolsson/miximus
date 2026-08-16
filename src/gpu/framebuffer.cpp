@@ -7,8 +7,8 @@
 
 namespace miximus::gpu {
 
-framebuffer_s::framebuffer_s(vec2i_t dimensions, texture_s::format_e color)
-    : owned_texture_(std::make_unique<texture_s>(dimensions, color))
+framebuffer_s::framebuffer_s(vec2i_t dimensions, texture_s::pixel_format_e pixel_format)
+    : owned_texture_(std::make_unique<texture_s>(dimensions, pixel_format))
     , texture_(owned_texture_.get())
 {
     initialize();

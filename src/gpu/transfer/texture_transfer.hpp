@@ -7,21 +7,21 @@
 
 namespace miximus::gpu::transfer {
 
-enum class host_access_e : std::uint8_t
+enum class host_memory_access_e : std::uint8_t
 {
     overwrite,
     read_write,
     read_only,
 };
 
-struct texture_transfer_requirements_s
+struct texture_transfer_layout_s
 {
-    vec2i_t             dimensions{};
-    texture_s::format_e format{texture_s::format_e::bgra_u8};
-    size_t              row_stride{};
-    size_t              byte_size{};
-    size_t              address_alignment{1};
-    host_access_e       host_access{host_access_e::overwrite};
+    vec2i_t                   dimensions{};
+    texture_s::pixel_format_e pixel_format{texture_s::pixel_format_e::bgra_u8};
+    size_t                    host_row_stride_bytes{};
+    size_t                    host_buffer_size_bytes{};
+    size_t                    host_address_alignment_bytes{1};
+    host_memory_access_e      host_memory_access{host_memory_access_e::overwrite};
 };
 
 } // namespace miximus::gpu::transfer

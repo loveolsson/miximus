@@ -4,7 +4,7 @@
 #include "core/node_status_registry_fwd.hpp"
 #include "gpu/context_fwd.hpp"
 #include "gpu/texture_fwd.hpp"
-#include "gpu/transfer/texture_download_fwd.hpp"
+#include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
@@ -12,6 +12,7 @@
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
 #include "types/frame_rate.hpp"
+#include "types/output_buffer_limits.hpp"
 #include "utils/asio.hpp"
 
 #include <FiberPool.hpp>
@@ -29,29 +30,17 @@ class app_state_s
     {
         struct decklink_output_settings_s
         {
-            static constexpr int DEFAULT_BUFFER_FRAMES = 4;
-            static constexpr int MIN_BUFFER_FRAMES     = 1;
-            static constexpr int MAX_BUFFER_FRAMES     = 8;
-
-            int buffer_frames{DEFAULT_BUFFER_FRAMES};
+            int buffer_frames{decklink_output_buffer_limits_s::DEFAULT_FRAME_COUNT};
         };
 
         struct ndi_output_settings_s
         {
-            static constexpr int DEFAULT_BUFFER_FRAMES = 4;
-            static constexpr int MIN_BUFFER_FRAMES     = 1;
-            static constexpr int MAX_BUFFER_FRAMES     = 8;
-
-            int buffer_frames{DEFAULT_BUFFER_FRAMES};
+            int buffer_frames{ndi_output_buffer_limits_s::DEFAULT_FRAME_COUNT};
         };
 
         struct screen_output_settings_s
         {
-            static constexpr int DEFAULT_BUFFER_FRAMES = 2;
-            static constexpr int MIN_BUFFER_FRAMES     = 1;
-            static constexpr int MAX_BUFFER_FRAMES     = 8;
-
-            int buffer_frames{DEFAULT_BUFFER_FRAMES};
+            int buffer_frames{screen_output_buffer_limits_s::DEFAULT_FRAME_COUNT};
         };
 
         struct framebuffer_settings_s
@@ -85,7 +74,7 @@ class app_state_s
     std::unique_ptr<gpu::context_s>                            ctx_;
     std::unique_ptr<gpu::texture_s>                            fallback_texture_;
     std::unique_ptr<gpu::transfer::texture_upload_service_s>   texture_upload_service_;
-    std::unique_ptr<gpu::transfer::texture_download_service_s> texture_download_service_;
+    std::unique_ptr<gpu::transfer::texture_readback_service_s> texture_readback_service_;
     std::unique_ptr<nodes::decklink::decklink_registry_s>      decklink_registry_;
     std::unique_ptr<nodes::ndi::ndi_registry_s>                ndi_registry_;
     std::unique_ptr<render::font_registry_s>                   font_registry_;
@@ -111,7 +100,7 @@ class app_state_s
     auto ctx() noexcept { return ctx_.get(); }
     auto fallback_texture() noexcept { return fallback_texture_.get(); }
     auto texture_upload_service() noexcept { return texture_upload_service_.get(); }
-    auto texture_download_service() noexcept { return texture_download_service_.get(); }
+    auto texture_readback_service() noexcept { return texture_readback_service_.get(); }
     auto decklink_registry() noexcept { return decklink_registry_.get(); }
     auto ndi_registry() noexcept { return ndi_registry_.get(); }
     auto font_registry() noexcept { return font_registry_.get(); }

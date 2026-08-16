@@ -6,7 +6,7 @@
 #include "gpu/shader.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/textured_quad.hpp"
-#include "gpu/transfer/texture_download.hpp"
+#include "gpu/transfer/texture_readback.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -37,7 +37,7 @@ class node_impl : public node_i
     using timing_selection_t = std::tuple<frame_rate_s, uint64_t, int>;
 
     std::shared_ptr<output_sender_s>                          sender_;
-    std::shared_ptr<gpu::transfer::texture_download_stream_s> download_stream_;
+    std::shared_ptr<gpu::transfer::texture_readback_stream_s> readback_stream_;
     std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
 
     utils::observed_value_s<std::pair<std::string, bool>>   sender_selection_;
@@ -45,7 +45,7 @@ class node_impl : public node_i
     utils::observed_value_s<gpu::vec2i_t>                   stream_dimensions_;
     std::chrono::steady_clock::time_point                   next_metrics_status_;
     uint64_t                                                render_target_drops_{};
-    std::optional<gpu::transfer::texture_download_target_s> render_target_;
+    std::optional<gpu::transfer::texture_readback_target_s> render_target_;
 
     input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -55,7 +55,7 @@ class node_impl : public node_i
         if (sender_) {
             sender_->clear_stream();
         }
-        download_stream_.reset();
+        readback_stream_.reset();
         stream_dimensions_.reset();
         textured_quad_.reset();
     }
@@ -90,25 +90,25 @@ class node_impl : public node_i
             .program_selection_offset_us  = metrics.program_selection_offset_us,
             .render_target_drops          = render_target_drops_,
         };
-        if (download_stream_) {
-            const auto download_metrics = download_stream_->metrics();
+        if (readback_stream_) {
+            const auto readback_metrics = readback_stream_->metrics();
             status_registry->write(id_, output_status);
             status_registry->write(
                 id_,
                 status::download_stream_status_s{
-                    .download_slots                      = download_metrics.slots,
-                    .download_slots_free                 = download_metrics.free_slots,
-                    .download_slots_rendering            = download_metrics.rendering_slots,
-                    .download_slots_queued               = download_metrics.queued_slots,
-                    .download_slots_ready                = download_metrics.ready_slots,
-                    .download_slots_cpu_reading          = download_metrics.cpu_reading_slots,
-                    .download_pending_allocations        = download_metrics.pending_allocations,
-                    .download_acquire_misses             = download_metrics.acquire_misses,
-                    .download_transfers_completed        = download_metrics.transfers_completed,
-                    .download_transfer_failures          = download_metrics.transfer_failures,
-                    .download_transfer_duration_total_us = download_metrics.transfer_duration_total_us,
-                    .download_transfer_duration_max_us   = download_metrics.transfer_duration_max_us,
-                    .download_allocation_failed          = download_metrics.allocation_failed,
+                    .download_slots                      = readback_metrics.slots,
+                    .download_slots_free                 = readback_metrics.free_slots,
+                    .download_slots_rendering            = readback_metrics.rendering_slots,
+                    .download_slots_queued               = readback_metrics.queued_slots,
+                    .download_slots_ready                = readback_metrics.ready_slots,
+                    .download_slots_cpu_reading          = readback_metrics.cpu_reading_slots,
+                    .download_pending_allocations        = readback_metrics.pending_allocations,
+                    .download_acquire_misses             = readback_metrics.render_target_acquire_misses,
+                    .download_transfers_completed        = readback_metrics.transfers_completed,
+                    .download_transfer_failures          = readback_metrics.transfer_failures,
+                    .download_transfer_duration_total_us = readback_metrics.transfer_duration_total_us,
+                    .download_transfer_duration_max_us   = readback_metrics.transfer_duration_max_us,
+                    .download_allocation_failed          = readback_metrics.allocation_failed,
                 });
         } else {
             status_registry->write(id_, output_status);
@@ -150,34 +150,34 @@ class node_impl : public node_i
         sender_->start_async();
     }
 
-    void ensure_download_stream(core::app_state_s* app, gpu::vec2i_t dimensions)
+    void ensure_readback_stream(core::app_state_s* app, gpu::vec2i_t dimensions)
     {
         const auto& settings = app->frame_settings();
-        if (download_stream_ && !stream_dimensions_.would_change(dimensions)) {
+        if (readback_stream_ && !stream_dimensions_.would_change(dimensions)) {
             return;
         }
 
         clear_render_state();
-        const gpu::transfer::texture_transfer_requirements_s requirements{
-            .dimensions  = dimensions,
-            .format      = gpu::texture_s::format_e::rgba_u8,
-            .row_stride  = static_cast<size_t>(dimensions.x) * 4,
-            .byte_size   = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y) * 4,
-            .host_access = gpu::transfer::host_access_e::read_only,
+        const gpu::transfer::texture_transfer_layout_s transfer_layout{
+            .dimensions             = dimensions,
+            .pixel_format           = gpu::texture_s::pixel_format_e::rgba_u8,
+            .host_row_stride_bytes  = static_cast<size_t>(dimensions.x) * 4,
+            .host_buffer_size_bytes = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y) * 4,
+            .host_memory_access     = gpu::transfer::host_memory_access_e::read_only,
         };
-        const auto download_slot_count =
-            output_sender_s::get_download_slot_count(static_cast<size_t>(settings.ndi_output.buffer_frames));
-        download_stream_ = app->texture_download_service()->create_stream({
-            .requirements  = requirements,
-            .max_slots     = download_slot_count,
-            .initial_slots = download_slot_count,
+        const auto readback_slot_count =
+            output_sender_s::get_readback_slot_count(static_cast<size_t>(settings.ndi_output.buffer_frames));
+        readback_stream_ = app->texture_readback_service()->create_stream({
+            .transfer_layout = transfer_layout,
+            .max_slots       = readback_slot_count,
+            .initial_slots   = readback_slot_count,
         });
         stream_dimensions_.commit(dimensions);
-        sender_->set_stream(download_stream_,
+        sender_->set_stream(readback_stream_,
                             dimensions,
                             settings.frame_rate,
-                            app->frame_context().duration,
-                            app->frame_context().target_time - app->frame_context().pts,
+                            app->frame_context().frame_duration,
+                            app->frame_context().program_target_time - app->frame_context().program_pts,
                             static_cast<size_t>(settings.ndi_output.buffer_frames));
     }
 
@@ -235,11 +235,11 @@ class node_impl : public node_i
             return;
         }
 
-        ensure_download_stream(app, texture->display_dimensions());
-        if (download_stream_->initial_slots_pending()) {
+        ensure_readback_stream(app, texture->display_dimensions());
+        if (readback_stream_->initial_slots_pending()) {
             return;
         }
-        auto target = download_stream_->try_acquire();
+        auto target = readback_stream_->try_acquire_render_target();
         if (!target.has_value()) {
             ++render_target_drops_;
             return;
@@ -256,7 +256,7 @@ class node_impl : public node_i
         textured_quad_->draw(texture);
         gpu::framebuffer_s::end_render();
 
-        target->set_target_time(app->frame_context().target_time);
+        target->set_program_target_time(app->frame_context().program_target_time);
         render_target_ = std::move(target);
     }
 

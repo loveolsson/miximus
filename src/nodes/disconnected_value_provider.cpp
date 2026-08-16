@@ -21,7 +21,7 @@ gpu::framebuffer_s* disconnected_value_provider_s<gpu::framebuffer_s*>::get(core
 
     const auto& dimensions = app->frame_settings().framebuffer.default_size;
     if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != dimensions) {
-        framebuffer_ = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::format_e::rgba_f16);
+        framebuffer_ = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::pixel_format_e::rgba_f16);
     }
 
     framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);

@@ -58,8 +58,8 @@ void expect_exact_timeline(frame_rate_s rate, uint64_t frame_count)
         const auto context = scheduler.begin_frame(rate);
         const auto offset  = duration * static_cast<utils::flicks::rep>(frame);
         ASSERT_EQ(context.frame_number, frame) << "at frame " << frame;
-        ASSERT_EQ(context.pts, offset) << "at frame " << frame;
-        ASSERT_EQ(context.target_time, START_TIME + offset) << "at frame " << frame;
+        ASSERT_EQ(context.program_pts, offset) << "at frame " << frame;
+        ASSERT_EQ(context.program_target_time, START_TIME + offset) << "at frame " << frame;
         ASSERT_EQ(context.discontinuity, frame == 0) << "at frame " << frame;
 
         const auto& metrics = scheduler.finish_frame();
@@ -91,7 +91,7 @@ TEST(FrameScheduler, RetainsUsefulLateFramesAndSkipsObsoleteFramesAtOnce)
 
     const auto second = scheduler.begin_frame(RATE);
     EXPECT_EQ(second.frame_number, 1);
-    EXPECT_EQ(second.pts, duration);
+    EXPECT_EQ(second.program_pts, duration);
 
     clock.set(START_TIME + duration * 5 + duration / 4);
     const auto& second_metrics = scheduler.finish_frame();
@@ -100,8 +100,8 @@ TEST(FrameScheduler, RetainsUsefulLateFramesAndSkipsObsoleteFramesAtOnce)
 
     const auto recovered = scheduler.begin_frame(RATE);
     EXPECT_EQ(recovered.frame_number, 5);
-    EXPECT_EQ(recovered.pts, duration * 5);
-    EXPECT_EQ(recovered.target_time, START_TIME + duration * 5);
+    EXPECT_EQ(recovered.program_pts, duration * 5);
+    EXPECT_EQ(recovered.program_target_time, START_TIME + duration * 5);
     scheduler.finish_frame();
 }
 
@@ -119,9 +119,9 @@ TEST(FrameScheduler, RateChangeStartsANewEpochWithoutResettingFrameNumbers)
     EXPECT_EQ(first.epoch, 1);
     EXPECT_EQ(second.epoch, 2);
     EXPECT_TRUE(second.discontinuity);
-    EXPECT_EQ(second.pts, utils::k_flicks_zero_seconds);
+    EXPECT_EQ(second.program_pts, utils::k_flicks_zero_seconds);
     EXPECT_EQ(second.frame_number, 1);
-    EXPECT_EQ(second.target_time, clock.now());
+    EXPECT_EQ(second.program_target_time, clock.now());
     scheduler.finish_frame();
 }
 

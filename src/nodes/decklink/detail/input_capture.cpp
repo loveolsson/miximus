@@ -33,7 +33,7 @@ struct captured_frame_data_s
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
     std::optional<gpu::transfer::texture_upload_lease_s>    upload;
     decklink_ptr<IDeckLinkVideoInputFrame>                  input_frame;
-    uint64_t                                                upload_version{};
+    gpu::transfer::texture_upload_id_s                      upload_id{};
     gpu::texture_frame_ptr                                  frame;
     gpu::vec2i_t                                            src_dim{};
     BMDColorspace                                           colorspace{bmdColorspaceRec709};
@@ -383,16 +383,16 @@ class callback_s
                 }
             }
 
-            const gpu::transfer::texture_transfer_requirements_s requirements{
-                .dimensions        = {static_cast<int>(rowBytes / 4), static_cast<int>(height)},
-                .format            = gpu::texture_s::format_e::uyuv_u10,
-                .row_stride        = static_cast<size_t>(rowBytes),
-                .byte_size         = bufferSize,
-                .address_alignment = 64,
-                .host_access       = gpu::transfer::host_access_e::overwrite,
+            const gpu::transfer::texture_transfer_layout_s transfer_layout{
+                .dimensions                   = {static_cast<int>(rowBytes / 4), static_cast<int>(height)},
+                .pixel_format                 = gpu::texture_s::pixel_format_e::uyuv_u10,
+                .host_row_stride_bytes        = static_cast<size_t>(rowBytes),
+                .host_buffer_size_bytes       = bufferSize,
+                .host_address_alignment_bytes = 64,
+                .host_memory_access           = gpu::transfer::host_memory_access_e::overwrite,
             };
             const auto stream = upload_service_->create_stream({
-                .requirements = requirements,
+                .transfer_layout = transfer_layout,
                 // Timed selection may retain five completed DMA writes while
                 // DeckLink continues cycling its independent buffer objects.
                 // Additional slots cover the published texture and asynchronous
@@ -564,25 +564,25 @@ class callback_s
             }
             return S_OK;
         }
-        observe_frame_content(upload->bytes());
-        const auto version = upload->version();
+        observe_frame_content(upload->writable_host_bytes());
+        const auto upload_id = upload->upload_id();
 
-        const media::media_frame_id_s frame_id{
-            .epoch    = source_epoch_.load(),
-            .sequence = next_sequence_.fetch_add(1),
-            .pts      = utils::flicks{stream_time},
-            .duration = utils::flicks{frame_duration},
+        const media::media_clock_sample_s media_clock_sample{
+            .stream_epoch   = source_epoch_.load(),
+            .frame_sequence = next_sequence_.fetch_add(1),
+            .media_pts      = utils::flicks{stream_time},
+            .frame_duration = utils::flicks{frame_duration},
         };
-        frame_queue_.push(frame_queue_.create_frame(frame_id,
+        frame_queue_.push(frame_queue_.create_frame(media_clock_sample,
                                                     frame_observation,
                                                     captured_frame_data_s{
-                                                        .stream         = std::move(stream),
-                                                        .upload         = std::move(upload),
-                                                        .input_frame    = decklink_ptr(videoFrame),
-                                                        .upload_version = version,
-                                                        .frame          = nullptr,
-                                                        .src_dim        = src_dim,
-                                                        .colorspace     = get_frame_colorspace(videoFrame),
+                                                        .stream      = std::move(stream),
+                                                        .upload      = std::move(upload),
+                                                        .input_frame = decklink_ptr(videoFrame),
+                                                        .upload_id   = upload_id,
+                                                        .frame       = nullptr,
+                                                        .src_dim     = src_dim,
+                                                        .colorspace  = get_frame_colorspace(videoFrame),
                                                     }));
         return S_OK;
     }
@@ -616,9 +616,9 @@ class callback_s
         return S_OK;
     }
 
-    void advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity)
+    void advance_frames(utils::flicks program_pts, utils::flicks program_target_time, bool discontinuity)
     {
-        frame_queue_.advance(program_pts, target_time, discontinuity);
+        frame_queue_.advance(program_pts, program_target_time, discontinuity);
     }
 
     frame_ticket_t select_frame(utils::flicks program_pts, utils::flicks early_tolerance)
@@ -636,14 +636,14 @@ class callback_s
         }
 
         auto& frame = *ticket.frame();
-        auto& info  = frame.value();
+        auto& info  = frame.payload();
         if (frame.readiness() == media::source_frame_readiness_e::submitted) {
             return true;
         }
         if (!frame.mark_submitted() || !info.upload.has_value() || !info.upload->submit()) {
             if (!warned_submit_failure_) {
-                log()->warn("DeckLink timed input failed to submit upload version {} (readiness {}, lease {})",
-                            info.upload_version,
+                log()->warn("DeckLink timed input failed to submit upload {} (readiness {}, lease {})",
+                            info.upload_id.sequence,
                             static_cast<int>(frame.readiness()),
                             info.upload.has_value());
                 warned_submit_failure_ = true;
@@ -662,27 +662,27 @@ class callback_s
         }
 
         auto& frame = *ticket.frame();
-        auto& info  = frame.value();
+        auto& info  = frame.payload();
         if (ticket.selection() == media::prepared_frame_selection_e::new_frame) {
-            const auto wait_result = info.stream ? info.stream->wait_until_ready(info.upload_version)
+            const auto wait_result = info.stream ? info.stream->wait_for_upload(info.upload_id)
                                                  : gpu::transfer::texture_upload_wait_result_e::stopped;
             if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
                 if (!warned_wait_failure_) {
-                    log()->warn("DeckLink timed input failed waiting for upload version {} (result {})",
-                                info.upload_version,
+                    log()->warn("DeckLink timed input failed waiting for upload {} (result {})",
+                                info.upload_id.sequence,
                                 static_cast<int>(wait_result));
                     warned_wait_failure_ = true;
                 }
                 frame_queue_.fail(ticket);
                 return nullptr;
             }
-            info.frame = info.stream->consume_exact(info.upload_version);
-            if (!info.frame || info.stream->current_version() != info.upload_version || !frame.mark_ready()) {
+            info.frame = info.stream->select_completed_upload(info.upload_id);
+            if (!info.frame || info.stream->retained_upload_id() != info.upload_id || !frame.mark_ready()) {
                 if (!warned_consume_failure_) {
-                    log()->warn("DeckLink timed input failed to consume upload version {} (current {}, texture {}, "
+                    log()->warn("DeckLink timed input failed to consume upload {} (retained {}, texture {}, "
                                 "readiness {})",
-                                info.upload_version,
-                                info.stream->current_version(),
+                                info.upload_id.sequence,
+                                info.stream->retained_upload_id().sequence,
                                 static_cast<bool>(info.frame),
                                 static_cast<int>(frame.readiness()));
                     warned_consume_failure_ = true;
@@ -692,7 +692,7 @@ class callback_s
             }
             info.input_frame = nullptr;
         } else if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
-            info.frame = info.stream ? info.stream->current_frame(info.upload_version) : nullptr;
+            info.frame = info.stream ? info.stream->retained_frame_for(info.upload_id) : nullptr;
             if (!info.frame) {
                 frame_queue_.fail(ticket);
                 return nullptr;
@@ -701,8 +701,8 @@ class callback_s
 
         if (!ticket.await() || !frame_queue_.commit(ticket)) {
             if (!warned_commit_failure_) {
-                log()->warn("DeckLink timed input failed to commit upload version {} (readiness {})",
-                            info.upload_version,
+                log()->warn("DeckLink timed input failed to commit upload {} (readiness {})",
+                            info.upload_id.sequence,
                             static_cast<int>(frame.readiness()));
                 warned_commit_failure_ = true;
             }
@@ -718,9 +718,9 @@ class callback_s
             return;
         }
 
-        auto& info = ticket.frame()->value();
+        auto& info = ticket.frame()->payload();
         if (info.stream) {
-            info.stream->discard_exact(info.upload_version);
+            info.stream->discard_upload(info.upload_id);
         }
         info.input_frame = nullptr;
         frame_queue_.cancel(ticket);
@@ -850,9 +850,9 @@ void input_capture_s::stop_async()
 
 void input_capture_s::acknowledge_render_release() { impl_->callback->acknowledge_render_release(); }
 
-void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks target_time, bool discontinuity)
+void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks program_target_time, bool discontinuity)
 {
-    impl_->callback->advance_frames(program_pts, target_time, discontinuity);
+    impl_->callback->advance_frames(program_pts, program_target_time, discontinuity);
 }
 
 bool input_capture_s::submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)

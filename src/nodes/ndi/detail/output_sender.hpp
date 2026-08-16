@@ -1,5 +1,5 @@
 #pragma once
-#include "gpu/transfer/texture_download_fwd.hpp"
+#include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/types.hpp"
 #include "types/frame_rate.hpp"
 #include "utils/flicks.hpp"
@@ -40,7 +40,9 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
 
   private:
     static constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
-    static constexpr size_t DOWNLOAD_PIPELINE_HEADROOM   = 2;
+    static constexpr size_t READBACK_PIPELINE_HEADROOM   = 2;
+
+    static size_t validate_buffer_frame_count(size_t buffer_frames);
 
     class impl_s;
     std::unique_ptr<impl_s> impl_;
@@ -48,14 +50,8 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
     output_sender_s(utils::serial_executor_s* control_executor, std::string sender_name);
 
   public:
-    static constexpr size_t get_queue_capacity(size_t buffer_frames) noexcept { return buffer_frames + 3; }
-    static constexpr size_t get_download_slot_count(size_t buffer_frames) noexcept
-    {
-        // The timing queue retains its current frame separately from queued(),
-        // while the pipeline headroom covers two consecutive render
-        // evaluations permitted by the current one-frame-late policy.
-        return get_queue_capacity(buffer_frames) + RETAINED_PROGRAM_FRAME_COUNT + DOWNLOAD_PIPELINE_HEADROOM;
-    }
+    static size_t get_queue_capacity(size_t buffer_frames);
+    static size_t get_readback_slot_count(size_t buffer_frames);
 
     static std::shared_ptr<output_sender_s> create(utils::serial_executor_s* control_executor, std::string sender_name);
 
@@ -72,7 +68,7 @@ class output_sender_s : public std::enable_shared_from_this<output_sender_s>
     phase_e   phase() const;
     metrics_s metrics() const;
 
-    void set_stream(std::shared_ptr<gpu::transfer::texture_download_stream_s> stream,
+    void set_stream(std::shared_ptr<gpu::transfer::texture_readback_stream_s> stream,
                     gpu::vec2i_t                                              dimensions,
                     frame_rate_s                                              frame_rate,
                     utils::flicks                                             frame_duration,

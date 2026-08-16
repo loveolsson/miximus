@@ -4,6 +4,7 @@
 #include "nodes/normalize_option.hpp"
 #include "register.hpp"
 #include "types/frame_rate.hpp"
+#include "types/output_buffer_limits.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -18,10 +19,7 @@ using namespace miximus;
 using namespace miximus::nodes;
 using nlohmann::json;
 
-using decklink_output_settings_s = core::app_state_s::frame_settings_s::decklink_output_settings_s;
-using framebuffer_settings_s     = core::app_state_s::frame_settings_s::framebuffer_settings_s;
-using ndi_output_settings_s      = core::app_state_s::frame_settings_s::ndi_output_settings_s;
-using screen_output_settings_s   = core::app_state_s::frame_settings_s::screen_output_settings_s;
+using framebuffer_settings_s = core::app_state_s::frame_settings_s::framebuffer_settings_s;
 
 std::optional<uint32_t> read_positive_uint32(const json& value)
 {
@@ -101,9 +99,9 @@ class node_impl final : public node_i
             {"frame_rate",                    DEFAULT_FRAME_RATE                                       },
             {"default_framebuffer_size",
              gpu::vec2_t{framebuffer_settings_s::DEFAULT_WIDTH, framebuffer_settings_s::DEFAULT_HEIGHT}},
-            {"decklink_output_buffer_frames", decklink_output_settings_s::DEFAULT_BUFFER_FRAMES        },
-            {"ndi_output_buffer_frames",      ndi_output_settings_s::DEFAULT_BUFFER_FRAMES             },
-            {"screen_output_buffer_frames",   screen_output_settings_s::DEFAULT_BUFFER_FRAMES          },
+            {"decklink_output_buffer_frames", decklink_output_buffer_limits_s::DEFAULT_FRAME_COUNT     },
+            {"ndi_output_buffer_frames",      ndi_output_buffer_limits_s::DEFAULT_FRAME_COUNT          },
+            {"screen_output_buffer_frames",   screen_output_buffer_limits_s::DEFAULT_FRAME_COUNT       },
         };
     }
 
@@ -116,16 +114,19 @@ class node_impl final : public node_i
             return normalize_framebuffer_size(value);
         }
         if (name == "decklink_output_buffer_frames") {
-            return normalize_option_value<int>(
-                value, decklink_output_settings_s::MIN_BUFFER_FRAMES, decklink_output_settings_s::MAX_BUFFER_FRAMES);
+            return normalize_option_value<int>(value,
+                                               decklink_output_buffer_limits_s::MINIMUM_FRAME_COUNT,
+                                               decklink_output_buffer_limits_s::MAXIMUM_FRAME_COUNT);
         }
         if (name == "ndi_output_buffer_frames") {
-            return normalize_option_value<int>(
-                value, ndi_output_settings_s::MIN_BUFFER_FRAMES, ndi_output_settings_s::MAX_BUFFER_FRAMES);
+            return normalize_option_value<int>(value,
+                                               ndi_output_buffer_limits_s::MINIMUM_FRAME_COUNT,
+                                               ndi_output_buffer_limits_s::MAXIMUM_FRAME_COUNT);
         }
         if (name == "screen_output_buffer_frames") {
-            return normalize_option_value<int>(
-                value, screen_output_settings_s::MIN_BUFFER_FRAMES, screen_output_settings_s::MAX_BUFFER_FRAMES);
+            return normalize_option_value<int>(value,
+                                               screen_output_buffer_limits_s::MINIMUM_FRAME_COUNT,
+                                               screen_output_buffer_limits_s::MAXIMUM_FRAME_COUNT);
         }
         return option_result_e::invalid;
     }

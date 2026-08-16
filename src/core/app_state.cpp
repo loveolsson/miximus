@@ -3,8 +3,8 @@
 #include "core/node_status_registry.hpp"
 #include "gpu/context.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/transfer/detail/backend_factory.hpp"
-#include "gpu/transfer/texture_download.hpp"
+#include "gpu/transfer/detail/texture_transfer_backend_factory.hpp"
+#include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "nodes/decklink/registry.hpp"
 #include "nodes/ndi/registry.hpp"
@@ -49,15 +49,15 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     // failed optional backend simply selects the persistent-PBO implementation.
     const gpu::context_scope_s context_scope(*ctx_);
     auto                       fallback_texture = std::make_unique<gpu::texture_s>(
-        gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::texture_s::format_e::rgba_f16);
+        gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::texture_s::pixel_format_e::rgba_f16);
     fallback_texture->clear();
-    gpu::transfer::detail::initialize_backends();
+    gpu::transfer::detail::initialize_texture_transfer_backends();
     // These must be constructed after backend initialization with the root
     // context current, so constructor member initializers are not valid here.
     // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
     texture_upload_service_ = std::make_unique<gpu::transfer::texture_upload_service_s>(ctx_.get());
     // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
-    texture_download_service_ = std::make_unique<gpu::transfer::texture_download_service_s>(ctx_.get());
+    texture_readback_service_ = std::make_unique<gpu::transfer::texture_readback_service_s>(ctx_.get());
     // NOLINTNEXTLINE(cppcoreguidelines-prefer-member-initializer)
     fallback_texture_ = std::move(fallback_texture);
 }
@@ -84,12 +84,12 @@ app_state_s::~app_state_s()
 
     // DVP is tied to the root GL context and must be closed before that context
     // is destroyed. Nodes and their transfers are destroyed before app_state.
-    texture_download_service_.reset();
+    texture_readback_service_.reset();
     texture_upload_service_.reset();
     {
         const gpu::context_scope_s context_scope(*ctx_);
         fallback_texture_.reset();
-        gpu::transfer::detail::shutdown_backends();
+        gpu::transfer::detail::shutdown_texture_transfer_backends();
     }
     ctx_.reset();
     cfg_executor_.stop();

@@ -14,7 +14,7 @@
 
 namespace miximus::gpu::transfer::detail {
 
-// Owns the mechanics shared by upload and download services. Derived keeps the
+// Owns the mechanics shared by upload and readback services. Derived keeps the
 // direction-specific task state machine; returning false from process_task()
 // retains a task for a later retry on this worker.
 template <typename Derived, typename Task>

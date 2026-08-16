@@ -62,9 +62,10 @@ auto input_video_buffer_allocator_s::acquire_upload(bool first_access)
         return std::nullopt;
     }
 
-    const auto start  = std::chrono::steady_clock::now();
-    auto       upload = first_access ? stream->acquire_for(initial_upload_timeout) : stream->try_acquire();
-    const auto wait   = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    const auto start = std::chrono::steady_clock::now();
+    auto       upload =
+        first_access ? stream->acquire_upload_buffer_for(initial_upload_timeout) : stream->try_acquire_upload_buffer();
+    const auto wait = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
     const auto wait_us = static_cast<uint64_t>(wait.count());
     auto       maximum = upload_acquire_wait_max_us_.load();
     while (wait_us > maximum && !upload_acquire_wait_max_us_.compare_exchange_weak(maximum, wait_us)) {

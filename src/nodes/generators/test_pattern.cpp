@@ -43,7 +43,7 @@ struct generation_s
     request_s                                               request;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
     boost::fibers::future<void>                             worker;
-    uint64_t                                                upload_version{};
+    gpu::transfer::texture_upload_id_s                      upload_id{};
     bool                                                    submitted{};
 };
 
@@ -52,7 +52,7 @@ void generate_pattern(gpu::vec2i_t                          dimensions,
                       bool                                  show_logo,
                       gpu::transfer::texture_upload_lease_s upload)
 {
-    render::surface_s surface(dimensions, upload.bytes());
+    render::surface_s surface(dimensions, upload.writable_host_bytes());
     render::render_test_pattern(surface, pattern);
     if (show_logo) {
         render::render_test_pattern_logo(surface);
@@ -75,18 +75,18 @@ class node_impl : public node_i
     static std::shared_ptr<gpu::transfer::texture_upload_stream_s> create_stream(core::app_state_s* app,
                                                                                  gpu::vec2i_t       dimensions)
     {
-        const auto row_stride = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(dimensions.x);
-        const gpu::transfer::texture_transfer_requirements_s requirements{
-            .dimensions        = dimensions,
-            .format            = gpu::texture_s::format_e::rgba_f16,
-            .row_stride        = row_stride,
-            .byte_size         = row_stride * static_cast<size_t>(dimensions.y),
-            .address_alignment = render::surface_s::PREFERRED_DATA_ALIGNMENT,
-            .host_access       = gpu::transfer::host_access_e::overwrite,
+        const auto host_row_stride_bytes = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(dimensions.x);
+        const gpu::transfer::texture_transfer_layout_s transfer_layout{
+            .dimensions                   = dimensions,
+            .pixel_format                 = gpu::texture_s::pixel_format_e::rgba_f16,
+            .host_row_stride_bytes        = host_row_stride_bytes,
+            .host_buffer_size_bytes       = host_row_stride_bytes * static_cast<size_t>(dimensions.y),
+            .host_address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
+            .host_memory_access           = gpu::transfer::host_memory_access_e::overwrite,
         };
         return app->texture_upload_service()->create_stream({
-            .requirements = requirements,
-            .max_slots    = 1,
+            .transfer_layout = transfer_layout,
+            .max_slots       = 1,
         });
     }
 
@@ -115,7 +115,7 @@ class node_impl : public node_i
             }
         }
 
-        auto frame = generation_->stream->consume_through(generation_->upload_version);
+        auto frame = generation_->stream->select_latest_completed_upload_through(generation_->upload_id);
         if (!frame) {
             return;
         }
@@ -149,7 +149,7 @@ class node_impl : public node_i
             return;
         }
 
-        auto upload = generation_->stream->try_acquire();
+        auto upload = generation_->stream->try_acquire_upload_buffer();
         if (!upload.has_value()) {
             if (generation_->stream->allocation_failed()) {
                 getlog("gpu")->error("Unable to allocate test-pattern surface {}x{}",
@@ -161,8 +161,8 @@ class node_impl : public node_i
             return;
         }
 
-        generation_->upload_version = upload->version();
-        auto worker                 = app->thread_pool()->submit(generate_pattern,
+        generation_->upload_id = upload->upload_id();
+        auto worker            = app->thread_pool()->submit(generate_pattern,
                                                  generation_->request.dimensions,
                                                  generation_->request.pattern,
                                                  generation_->request.show_logo,
@@ -218,13 +218,13 @@ class node_impl : public node_i
         submit_generation(app);
 
         if (published_stream_) {
-            if (auto frame = published_stream_->consume_latest()) {
+            if (auto frame = published_stream_->select_latest_completed_upload()) {
                 published_frame_ = std::move(frame);
             }
         }
         rendered_frame_ = published_frame_;
         if (rendered_frame_) {
-            rendered_frame_->wait_ready_on_gpu();
+            rendered_frame_->wait_for_upload_on_gpu();
         }
         iface_texture_.set_value(rendered_frame_ ? rendered_frame_->texture() : nullptr);
     }
@@ -232,7 +232,7 @@ class node_impl : public node_i
     void complete(core::app_state_s* /*app*/) final
     {
         if (rendered_frame_) {
-            rendered_frame_->release_from_render();
+            rendered_frame_->publish_render_release_fence();
             rendered_frame_.reset();
         }
     }

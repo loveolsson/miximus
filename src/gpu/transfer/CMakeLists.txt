@@ -1,19 +1,19 @@
 target_sources(gpu 
 PRIVATE
-    detail/backend.hpp
-    detail/backend.cpp
-    detail/backend_factory.hpp
-    detail/backend_factory.cpp
-    detail/requirements.hpp
-    detail/requirements.cpp
+    detail/texture_transfer_backend.hpp
+    detail/texture_transfer_backend.cpp
+    detail/texture_transfer_backend_factory.hpp
+    detail/texture_transfer_backend_factory.cpp
+    detail/transfer_layout.hpp
+    detail/transfer_layout.cpp
     detail/transfer_worker.hpp
     texture_transfer.hpp
     texture_upload_fwd.hpp
     texture_upload.hpp
     texture_upload.cpp
-    texture_download_fwd.hpp
-    texture_download.hpp
-    texture_download.cpp
+    texture_readback_fwd.hpp
+    texture_readback.hpp
+    texture_readback.cpp
     detail/persistent.hpp
     detail/persistent.cpp
     detail/dvp.hpp

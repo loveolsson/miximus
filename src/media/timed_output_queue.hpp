@@ -23,8 +23,8 @@ enum class output_frame_selection_e : uint8_t
 template <typename T>
 struct output_frame_s
 {
-    utils::flicks target_time;
-    T             value;
+    utils::flicks program_target_time;
+    T             payload;
 };
 
 template <typename T>
@@ -59,7 +59,10 @@ class timed_output_queue_s
     std::optional<frame_t>       current_;
     timed_output_queue_metrics_s metrics_;
 
-    static bool precedes(const frame_t& lhs, const frame_t& rhs) noexcept { return lhs.target_time < rhs.target_time; }
+    static bool precedes(const frame_t& lhs, const frame_t& rhs) noexcept
+    {
+        return lhs.program_target_time < rhs.program_target_time;
+    }
 
   public:
     explicit timed_output_queue_s(timed_output_queue_config_s config = {})
@@ -92,11 +95,11 @@ class timed_output_queue_s
         }
     }
 
-    output_frame_selection_s<T> select(utils::flicks target_time)
+    output_frame_selection_s<T> select(utils::flicks program_target_time)
     {
-        const auto limit    = target_time + config_.early_tolerance;
+        const auto limit    = program_target_time + config_.early_tolerance;
         auto       selected = frames_.end();
-        for (auto it = frames_.begin(); it != frames_.end() && it->target_time <= limit; ++it) {
+        for (auto it = frames_.begin(); it != frames_.end() && it->program_target_time <= limit; ++it) {
             selected = it;
         }
 
@@ -119,12 +122,12 @@ class timed_output_queue_s
     const timed_output_queue_metrics_s& metrics() const noexcept { return metrics_; }
     size_t                              queued() const noexcept { return frames_.size(); }
     size_t                              capacity() const noexcept { return config_.capacity; }
-    std::optional<utils::flicks>        oldest_target_time() const noexcept
+    std::optional<utils::flicks>        oldest_program_target_time() const noexcept
     {
         if (frames_.empty()) {
             return std::nullopt;
         }
-        return frames_.front().target_time;
+        return frames_.front().program_target_time;
     }
 };
 

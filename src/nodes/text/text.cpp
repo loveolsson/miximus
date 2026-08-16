@@ -168,29 +168,30 @@ class node_impl : public node_i
                                         text_info_->font_size.value() + (padding * 2)};
 
         if (!text_info_->upload_stream || text_info_->surface_size != surface_size) {
-            text_info_->surface_size = surface_size;
-            const auto byte_size     = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(surface_size.x) *
-                                   static_cast<size_t>(surface_size.y);
-            const gpu::transfer::texture_transfer_requirements_s requirements{
-                .dimensions        = surface_size,
-                .format            = gpu::texture_s::format_e::rgba_f16,
-                .row_stride        = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(surface_size.x),
-                .byte_size         = byte_size,
-                .address_alignment = render::surface_s::PREFERRED_DATA_ALIGNMENT,
-                .host_access       = gpu::transfer::host_access_e::read_write,
+            text_info_->surface_size          = surface_size;
+            const auto host_buffer_size_bytes = sizeof(render::surface_s::pixel_t) *
+                                                static_cast<size_t>(surface_size.x) *
+                                                static_cast<size_t>(surface_size.y);
+            const gpu::transfer::texture_transfer_layout_s transfer_layout{
+                .dimensions             = surface_size,
+                .pixel_format           = gpu::texture_s::pixel_format_e::rgba_f16,
+                .host_row_stride_bytes  = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(surface_size.x),
+                .host_buffer_size_bytes = host_buffer_size_bytes,
+                .host_address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
+                .host_memory_access           = gpu::transfer::host_memory_access_e::read_write,
             };
             text_info_->upload_stream = app->texture_upload_service()->create_stream({
-                .requirements = requirements,
-                .max_slots    = 3,
+                .transfer_layout = transfer_layout,
+                .max_slots       = 3,
             });
         }
 
-        auto upload = text_info_->upload_stream->try_acquire();
+        auto upload = text_info_->upload_stream->try_acquire_upload_buffer();
         if (!upload) {
             return;
         }
 
-        render::surface_s surface(surface_size, upload->bytes());
+        render::surface_s surface(surface_size, upload->writable_host_bytes());
         surface.clear({0, 0, 0, 0});
 
         // Position text with adequate padding from the top-left
@@ -227,13 +228,13 @@ class node_impl : public node_i
             render_text(app, state);
         }
 
-        auto frame = text_info_->upload_stream ? text_info_->upload_stream->consume_latest() : nullptr;
+        auto frame = text_info_->upload_stream ? text_info_->upload_stream->select_latest_completed_upload() : nullptr;
         if (!frame) {
             spdlog::get("app")->debug("Text node: No uploaded texture ready for rendering");
             return;
         }
         rendered_text_frame_ = std::move(frame);
-        rendered_text_frame_->wait_ready_on_gpu();
+        rendered_text_frame_->wait_for_upload_on_gpu();
 
         auto position = iface_position_in_.resolve_value(app, nodes, state, {0.0, 0.0});
 
@@ -253,7 +254,7 @@ class node_impl : public node_i
     void complete(core::app_state_s* /*app*/) final
     {
         if (rendered_text_frame_) {
-            rendered_text_frame_->release_from_render();
+            rendered_text_frame_->publish_render_release_fence();
             rendered_text_frame_.reset();
         }
     }

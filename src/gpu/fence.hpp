@@ -5,16 +5,16 @@
 #include <mutex>
 
 namespace miximus::gpu {
-class sync_s
+class fence_s
 {
-    GLsync sync_;
+    GLsync gl_sync_;
 
   public:
-    sync_s();
-    ~sync_s();
+    fence_s();
+    ~fence_s();
 
-    sync_s(const sync_s&) = delete;
-    sync_s(sync_s&&) noexcept;
+    fence_s(const fence_s&) = delete;
+    fence_s(fence_s&&) noexcept;
 
     void gpu_wait();
     bool cpu_wait(std::chrono::nanoseconds timeout);

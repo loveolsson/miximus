@@ -25,7 +25,7 @@ frames respectively; frame-clock synchronization controls the global program eva
 6. Miximus owns one persistent program-clock object. Selecting a provider changes its discipline state; it never replaces
    the clock object used by the scheduler.
 7. Input and output nodes are observation providers, not implementations of a scheduler clock interface.
-8. `frame_context_s::target_time` remains in Miximus' absolute steady-clock domain.
+8. `frame_context_s::program_target_time` remains in Miximus' absolute steady-clock domain.
 9. External phase corrections are bounded and gradual; normal acquisition must not jump the program timeline.
 10. Loss of observations enters free-running holdover without creating a new epoch.
 11. Explicit provider changes, program-rate changes, or irrecoverable timestamp discontinuities create a new epoch.
@@ -38,10 +38,10 @@ The implementation should extend the structures already present rather than esta
 - `core::clock_source_i` currently abstracts time queries and deadline waits. It should be narrowed and renamed to
   represent only the injectable monotonic timebase.
 - `core::frame_scheduler_s` owns frame identities, PTS, epochs, deadlines, lateness, and skipped evaluations.
-- `core::frame_context_s::target_time` is the absolute time associated with rendered frames and buffered outputs.
+- `core::frame_context_s::program_target_time` is the absolute time associated with rendered frames and buffered outputs.
 - The reserved `$app` node owns global frame rate and output buffering settings.
 - `app_state_s::frame_settings_s` is the immutable frame-boundary settings snapshot.
-- `media::source_clock_estimator_s` already estimates affine rate and phase relationships.
+- `media::media_to_program_clock_s` already estimates affine rate and phase relationships.
 - DeckLink input records stream time, hardware-reference timestamps, and callback arrival time.
 - DeckLink output maps completion-reference timestamps into steady time for its physical playhead.
 - `settings_option_s` and status-driven dropdowns already represent dynamic `{id, label}` selections.
@@ -199,7 +199,7 @@ program clock for steady-domain frame targets and deadline waits. The program cl
 provider-state transitions.
 
 Changing only `clock_source_i::wait_until()` is not correct. `frame_scheduler_s` currently fixes a steady-domain anchor,
-and buffered outputs consume `frame_context_s::target_time`. Sleeping at corrected times while continuing to publish
+and buffered outputs consume `frame_context_s::program_target_time`. Sleeping at corrected times while continuing to publish
 uncorrected target times would split render scheduling from output scheduling.
 
 The scheduler or its clock controller must therefore apply a bounded correction to the steady-domain program anchor:
@@ -212,7 +212,7 @@ corrected target = nominal target + bounded phase correction
 The resulting corrected target remains an absolute steady-clock value and is written to `frame_context_s`. DeckLink,
 NDI, and screen outputs can therefore retain their current absolute-target-time contract.
 
-`media::source_clock_estimator_s` contains reusable affine estimation logic, but the provider discipline should have a
+`media::media_to_program_clock_s` contains reusable affine estimation logic, but the provider discipline should have a
 name and interface appropriate to generic clocks rather than pretending it is an input-frame queue. Shared estimation
 math should be factored without coupling the scheduler to source selection.
 
@@ -267,7 +267,7 @@ The output callback already obtains `GetFrameCompletionReferenceTimestamp()`, de
 start time, and maps the device playhead into steady time. Publish that same physical observation through the provider
 handle with the configured output-mode rate and output sequence.
 
-This publication must not replace the output's existing `output_timeline_s`, timed queue, preroll, or repeat/drop logic.
+This publication must not replace the output's existing `presentation_timeline_s`, timed queue, preroll, or repeat/drop logic.
 The output still has to adapt buffered program frames to physical output slots even when it is also the selected program
 clock provider.
 
@@ -364,6 +364,6 @@ These are runtime diagnostics, not a duplicate serialization of application sett
 - Holdover targets remain monotonic and continue at the configured nominal rate.
 - Reacquisition applies bounded correction rather than a visible timestamp jump.
 - DeckLink callbacks remain bounded and node destruction remains race-free.
-- `frame_context_s::target_time` stays in the absolute steady-clock domain used by every buffered output.
+- `frame_context_s::program_target_time` stays in the absolute steady-clock domain used by every buffered output.
 - Input source selection and output presentation timing retain their existing responsibilities and behavior.
 - Status distinguishes selected, active, locked, holdover, unavailable, incompatible, and discontinuous states.

@@ -13,7 +13,7 @@ gpu::context_scope_s context_scope(*ctx);
 
 Do not make one context current on multiple threads or run GL work in the fiber pool. Fibers produce or consume CPU data, while the render thread and dedicated transfer/display workers own GL contexts.
 
-Textures, framebuffers, shaders, GL sync objects, and transfer buffers assume an appropriate context is current for creation and destruction. Do not release them on arbitrary workers.
+Textures, framebuffers, shaders, OpenGL fences, and transfer buffers assume an appropriate context is current for creation and destruction. Do not release them on arbitrary workers.
 
 On Linux, GLFW is forced to X11 to obtain a GLX context. DVP requires GLX and may require a native NVIDIA Xorg session; XWayland may not expose required NVIDIA extensions. The current project is not configured around GLFW's EGL backend.
 
@@ -46,7 +46,7 @@ between pixel vectors and normalized draw coordinates, and from normalized node 
 this coordinate math out of individual nodes. Common rectangle interpolation and integer rounding belong there as
 well.
 
-`gpu::sync_s` wraps a GL fence:
+`gpu::fence_s` owns the backend fence used by the current GPU implementation:
 
 - `gpu_wait()` inserts a GPU-side wait;
 - `cpu_wait()` blocks the caller up to a timeout;
@@ -55,21 +55,24 @@ well.
 Cross-context texture frames own their synchronization. A producing worker attaches and flushes a ready fence; the
 render context inserts a GPU wait before using the texture. In `complete()`, the consuming node attaches and flushes a
 release fence. The render thread does not wait for that fence. Once the logical frame is retired, its worker waits
-before returning the slot to the free queue or performing DVP/CUDA ownership transitions. Downloads and display
+before returning the slot to the free queue or performing DVP/CUDA ownership transitions. Readbacks and display
 handoffs likewise use explicit fences; there is no global GPU finish in the frame loop.
 
 ## Host/GPU transfer abstraction
 
-Nodes use the app-owned `texture_upload_service_s` and `texture_download_service_s`. The services contain an internal `backend_i` implementation selected by the backend factory:
+Nodes use the app-owned `texture_upload_service_s` and `texture_readback_service_s`. The services contain an internal
+`texture_transfer_backend_i` implementation selected by the texture-transfer backend factory:
 
 - direction (`cpu_to_gpu` or `gpu_to_cpu`);
-- byte size and host-visible `data()`;
+- host-buffer size and host-visible `host_memory()`;
 - a bound texture and backend-specific registration;
 - transfer to/from that texture;
 - completion waiting;
 - texture ownership transitions when required by DVP.
 
-`backend_i` is not a node-facing API. Upload/download streams provide scheduling, pooling, memory accounting, leases, and publication; the backend only implements one slot's host/GPU movement. Backend selection and lifecycle are kept in `detail/backend_factory`, rather than on the polymorphic interface.
+`texture_transfer_backend_i` is not a node-facing API. Upload/readback streams provide scheduling, pooling, memory
+accounting, leases, and publication; the backend only implements one slot's host/GPU movement. Backend selection and
+lifecycle are kept in `detail/texture_transfer_backend_factory`, rather than on the polymorphic interface.
 
 Transfer capabilities are initialized once in `app_state_s` while the root GL context is current. DVP and CUDA are
 initialized independently; the backend factory then selects a path for each stream from its direction, pixel format,
@@ -85,23 +88,25 @@ initialization, while direct-image support combines the project-owned texture fo
 the actual texture. Registration failure falls back without failing the stream. The format description is authoritative
 for internal/external GL format, host and storage byte sizes, packed pixels, and direct-copy compatibility.
 
-Upload and download descriptions contain `texture_transfer_requirements_s`. Always describe the real row stride and
-host access pattern. Full-overwrite producers may receive write-combined CUDA host memory; CPU rendering that reads and
-modifies existing pixels must request `host_access_e::read_write`.
+Upload and readback configurations contain `texture_transfer_layout_s`. Always describe the real
+`host_row_stride_bytes`, `host_buffer_size_bytes`, and host-memory access pattern. Full-overwrite producers may receive
+write-combined CUDA host memory; CPU rendering that reads and modifies existing pixels must request
+`host_memory_access_e::read_write`.
 
 The persistent fallback exposes its mapped unpack PBO directly as the upload lease's writable memory. Producers copy
 into that mapping, and the upload worker flushes it before updating the texture; do not add a separate CPU staging
-allocation in front of the PBO. Download slots likewise expose their mapped pack PBO after readback completes.
+allocation in front of the PBO. Readback slots likewise expose their mapped pack PBO after readback completes.
 
 ### Upload streams
 
 An upload stream is a bounded, lazily allocated set of backend-owned writable slots. A CPU producer calls
-`try_acquire()`, writes through the returned lease's mutable byte span, then calls `submit()`. The upload worker owns a
+`try_acquire_upload_buffer()`, writes through `writable_host_bytes()`, then calls `submit()`. The upload worker owns a
 permanently current shared GL context, performs the transfer, waits for its completion fence, and only then publishes
-the texture. Legacy and non-timed producers may poll with `consume_latest()` or `consume_through()` and retain their
-previous texture while a newer upload is incomplete. A PTS-aware source instead calls `wait_until_ready()` for its
-exact prepared version during execution and only then makes that version current with `consume_exact()`. Exact
-consumption also reclaims other completed slots that the source's timing selection has made obsolete.
+the texture. Legacy and non-timed producers may select with `select_latest_completed_upload()` or
+`select_latest_completed_upload_through()` and retain their previous texture while a newer upload is incomplete. A
+PTS-aware source instead calls `wait_for_upload()` for its exact prepared `texture_upload_id_s` during execution and
+then selects it with `select_completed_upload()`. Exact selection also reclaims other completed slots that the source's
+timing policy has made obsolete.
 
 Upload consumption returns a retained texture-frame handle rather than a raw texture. The node GPU-waits on its ready
 fence before exposing or sampling the texture and releases it from `complete()`. Replaced frames enter reclamation when
@@ -114,14 +119,17 @@ Submitted leases also pin their writable memory until the producer releases the 
 Timed-source capacity applies across both callback-pending and render-aligned frames, not independently to each side
 of the handoff. This keeps retained transfer memory at the advertised bound even when the render thread is delayed.
 
-Use `acquire_for()` only on native SDK threads that are allowed to wait for lazy slot allocation. Render and fiber workers use `try_acquire()` and yield/drop work when no slot is available.
+Use `acquire_upload_buffer_for()` only on native SDK threads that are allowed to wait for lazy slot allocation. Render
+and fiber workers use `try_acquire_upload_buffer()` and yield/drop work when no slot is available.
 
-### Download streams
+### Readback streams
 
-A download stream owns bounded render-target/readback slots. The render thread calls `try_acquire()`, renders into the target framebuffer, and calls `submit()`. Submission only inserts and flushes a fence. The download worker waits for rendering and performs the DVP/CUDA/PBO/basic readback on its shared context.
+A readback stream owns bounded render-target/readback slots. The render thread calls `try_acquire_render_target()`,
+renders into the target framebuffer, and calls `submit()`. Submission only inserts and flushes a fence. The readback
+worker waits for rendering and performs the DVP/CUDA/PBO/basic readback on its shared context.
 
 CPU consumers normally poll `try_consume_latest()`. PTS-aware consumers use `try_consume_oldest()` to retain FIFO
-ordering and perform their own timed selection. A frame lease exposes a read-only byte span and keeps host memory
+ordering and perform their own timed selection. A frame lease exposes `readable_host_bytes()` and keeps host memory
 reserved until the external SDK has finished using it. If no render target is free, the node drops that output frame
 instead of waiting.
 
@@ -132,19 +140,24 @@ per-stream slot limits bound latency and memory growth.
 
 ### Texture lifetime hooks
 
-DVP needs textures registered and ownership coordinated between GL/API and DVP. Each backend instance binds one slot texture for its complete lifetime and owns the corresponding registration state. Services call `begin_texture_use()` and `end_texture_use()` at established GL/transfer ownership boundaries; these operations are no-ops for backends that do not require them. DVP handles are per slot rather than stored in a global texture map.
+DVP needs textures registered and ownership coordinated between GL/API and DVP. Each backend instance registers one slot
+texture for its complete lifetime and owns the corresponding registration state. Services call
+`acquire_texture_for_gl()` and `release_texture_from_gl()` at established GL/transfer ownership boundaries; these
+operations are no-ops for backends that do not require them. DVP handles are per slot rather than stored in a global
+texture map.
 
 ### CUDA format rule
 
-CUDA transfers normally register an OpenGL pixel buffer. CUDA copies between pinned host memory and the PBO; OpenGL performs any required format conversion while moving between the PBO and texture. Storage-identical download formats may instead register the texture as a CUDA image and copy its array directly, avoiding an OpenGL readback and its driver-wide serialization.
+CUDA transfers normally register an OpenGL pixel buffer. CUDA copies between pinned host memory and the PBO; OpenGL performs any required format conversion while moving between the PBO and texture. Storage-identical readback formats may instead register the texture as a CUDA image and copy its array directly, avoiding an OpenGL readback and its driver-wide serialization.
 
 This distinction is intentional. A texture's CUDA array reflects native storage, while host bytes normally use the texture's external format/type. For example, an RGBA8 host surface uploaded to `GL_RGBA16` requires OpenGL conversion; a raw CUDA-array copy would fill only half the row. Use direct image copies only for explicitly storage-identical formats.
 
 ### Completion and handoff
 
 Completion is represented by the transfer service's publication state, not by queue ownership alone. An upload texture
-is not visible through `consume_latest()` or reported ready by `wait_until_ready()` until its transfer fence has
-completed. A download frame is not visible through `try_consume_latest()` until its host buffer is safe to read. Queue
+is not visible through `select_latest_completed_upload()` or reported ready by `wait_for_upload()` until its transfer
+fence has completed. A readback frame is not visible through `try_consume_latest()` until its host buffer is safe to
+read. Queue
 mutexes alone never imply GPU/DVP/CUDA completion.
 
 Transfer shutdown runs from `app_state_s` with the root GL context current, after node transfers/textures are destroyed and before root-context destruction. DVP and CUDA context teardown must remain in that window.
@@ -157,8 +170,8 @@ callback records the source PTS and frame metadata, detaches the write cycle's o
 custom buffer, and stores that lease in a bounded timed-source queue. The custom buffer can therefore return to the SDK
 allocator immediately, and the callback performs no GL work. During the active submission traversal, the render node
 selects the frame assigned to the current program PTS and submits that exact lease. Execution waits for and consumes
-that same upload version before converting its UYUV texture. DeckLink may finish buffers in a different order from
-their `StartAccess()` calls, so upload-slot versions are opaque identities rather than a media-ordering mechanism.
+that same upload ID before converting its UYUV texture. DeckLink may finish buffers in a different order from
+their `StartAccess()` calls, so upload IDs identify transfer transactions rather than media order.
 
 DeckLink may retain and reuse allocator buffer objects across captured frames rather than requesting a new object for
 every frame. Each buffer therefore acquires a fresh one-shot upload lease from `StartAccess(bmdBufferAccessWrite)`.
@@ -174,7 +187,7 @@ published texture, DeckLink DMA writes, uploads, and asynchronous reclaim withou
 render thread. These limits are intentionally separate because DeckLink buffer-object reuse and transfer-slot lifetime
 are independent. Every address still comes from a transfer backend; there is no node-owned staging allocation.
 
-The upload stream retains its current completed texture until the render thread consumes a newer completed version;
+The upload stream retains its current completed texture until the render thread consumes a newer completed upload;
 publishing the replacement returns the former slot to the stream. The timing queue deliberately chooses whether a
 program frame uses a new capture, repeats its committed capture, or has no capture before submission. Once a new frame
 is selected, execution waits for it rather than silently falling back to an older ready upload. The converted framebuffer
@@ -197,11 +210,11 @@ and releases its callback reference. Control tasks retain the callback and devic
 all capture buffers are returned, and transfer-stream destruction has been queued on the GL upload worker. Application
 shutdown drains the DeckLink input-control worker before destroying the shared transfer services.
 
-DeckLink output renders packed 10-bit YUV into a download target carrying the frame's absolute program target time in
+DeckLink output renders packed 10-bit YUV into a readback target carrying the frame's absolute program target time in
 `utils::flicks`.
 The transfer worker completes readback, and ready leases drain in FIFO order into a bounded timed-output queue. That
 queue releases superseded or overflowed frames according to its explicit selection policy. Before playback starts, short
-non-blocking control tasks collect actual program downloads. Once the configured buffer target is available, those
+non-blocking control tasks collect actual program readbacks. Once the configured buffer target is available, those
 program frames are scheduled as the SDK preroll and playback begins. One additional completed program frame remains in
 the timed queue so bursty SDK completion callbacks do not make selection alternate between starvation and dropping a
 newly completed batch. The completion callback then selects the newest
@@ -212,7 +225,7 @@ frame keeps host memory reserved until DeckLink releases it.
 The single global DeckLink-output buffer target defaults to four frames and is adjustable from one to eight. The SDK's
 reported minimum preroll raises the effective target when necessary. All DeckLink output nodes use the same
 frame-boundary snapshot. Changing the setting uses the normal asynchronous output restart and recreates each affected
-bounded download stream; a brief output interruption is expected. Output streams enqueue their complete bounded slot
+bounded readback stream; a brief output interruption is expected. Output streams enqueue their complete bounded slot
 set at creation so lazy pool growth cannot cause program-frame repeats after preroll begins. Neither the callback nor
 the preroll control task makes a GL context current or waits for a transfer.
 
@@ -238,22 +251,23 @@ services and process-wide NDI runtime are destroyed.
 NDI input owns a dedicated capture thread which continuously drains `NDIlib_recv_capture_v3()`. It copies each decoded
 frame into a bounded unsubmitted upload lease, immediately frees the SDK frame, and pushes source timestamp, sequence,
 duration, arrival observation, and NDI timing metadata through the same `media::timed_source_queue_s<T>` used by
-DeckLink. The queue's shared source-clock estimator maps the arbitrary sender timestamp origin onto program time.
+DeckLink. The queue's shared media-to-program clock mapping converts the arbitrary sender timestamp origin into program
+time.
 All-node preparation advances that queue. Active graph submission starts the exact selected upload, and execution waits
-for and consumes that same version before color conversion. Superseded, overflowed, or inactive frames release their
+for and consumes that same upload before color conversion. Superseded, overflowed, or inactive frames release their
 host leases without starting GPU work. The SDK's frame-sync layer is intentionally not placed in front of this common
 timing path.
 
-NDI output renders frames carrying their absolute program target time in `utils::flicks` into a bounded RGBA download
+NDI output renders frames carrying their absolute program target time in `utils::flicks` into a bounded RGBA readback
 stream. Its worker
 consumes completed leases in FIFO order, prerolls to the globally configured NDI-output buffer depth, and treats each
 exact steady-clock send deadline as a physical presentation time. It deliberately drops superseded program frames,
 repeats the retained frame across missing intervals, skips obsolete output intervals rather than bursting to catch up,
-and derives NDI timecode from the mapped program time. `clock_video` remains disabled. Potentially blocking asynchronous sends stay on the worker, and each download
+and derives NDI timecode from the mapped program time. `clock_video` remains disabled. Potentially blocking asynchronous sends stay on the worker, and each readback
 lease is retained until the following NDI async-send call releases the SDK's use of that memory. Enabled NDI outputs
-remain demanding graph sinks regardless of receiver count. Like DeckLink output, the bounded download stream queues its
+remain demanding graph sinks regardless of receiver count. Like DeckLink output, the bounded readback stream queues its
 initial slot set before sending begins rather than growing one retained slot at a time during playout. The sender worker
-always drains completed download leases into the bounded timed queue; when it falls behind, overflow disposal therefore
+always drains completed readback leases into the bounded timed queue; when it falls behind, overflow disposal therefore
 happens on that worker rather than exhausting render-thread slots. Preallocated pipeline headroom covers the two
 consecutive evaluations possible under the current one-frame-late scheduler policy.
 
@@ -270,7 +284,7 @@ loops; preserve the separation between clipping and pixel operations to avoid pe
 
 Surface-producing upload streams request `surface_s::DATA_ALIGNMENT`. The transfer factory verifies the exposed host
 pointer for every backend, and `surface_s` uses that contract for compiler alignment hints. New surface producers must
-carry the same requirement into their upload-stream description.
+carry the same requirement into their upload-stream configuration.
 
 ## Real-time queues and workers
 
@@ -291,11 +305,11 @@ Worker/callback rules:
 - `src/gpu/framebuffer.hpp/.cpp`
 - `src/gpu/geometry.hpp`
 - `src/gpu/textured_quad.hpp/.cpp`
-- `src/gpu/sync.hpp/.cpp`
-- `src/gpu/transfer/detail/backend.hpp/.cpp`
-- `src/gpu/transfer/detail/backend_factory.hpp/.cpp`
+- `src/gpu/fence.hpp/.cpp`
+- `src/gpu/transfer/detail/texture_transfer_backend.hpp/.cpp`
+- `src/gpu/transfer/detail/texture_transfer_backend_factory.hpp/.cpp`
 - `src/gpu/transfer/texture_upload.hpp/.cpp`
-- `src/gpu/transfer/texture_download.hpp/.cpp`
+- `src/gpu/transfer/texture_readback.hpp/.cpp`
 - `src/gpu/transfer/detail/`
 - `src/nodes/decklink/`
 - `src/nodes/decklink/detail/input_capture.hpp/.cpp`

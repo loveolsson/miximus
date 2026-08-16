@@ -52,7 +52,7 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
             *buffer = nullptr;
             return E_FAIL;
         }
-        *buffer = upload_->bytes().data();
+        *buffer = upload_->writable_host_bytes().data();
         return S_OK;
     }
 

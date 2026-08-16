@@ -8,6 +8,7 @@ add_library(miximus_types
     json_contract.hpp
     node_status.hpp
     node_status_json.hpp
+    output_buffer_limits.hpp
     topic.hpp
     settings_option.hpp
     settings_option.cpp

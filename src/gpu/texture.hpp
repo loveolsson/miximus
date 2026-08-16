@@ -11,7 +11,7 @@ constexpr GLuint MIP_MAP_LEVELS = 4;
 class texture_s
 {
   public:
-    enum class format_e
+    enum class pixel_format_e
     {
         rgb_f16,
         rgba_f16,
@@ -21,7 +21,7 @@ class texture_s
         uyuv_u10,
     };
 
-    struct format_info_s
+    struct pixel_format_info_s
     {
         GLenum  internal_format;
         GLenum  external_format;
@@ -36,15 +36,15 @@ class texture_s
     };
 
   private:
-    GLuint   id_{};
-    vec2i_t  display_dimensions_{};
-    vec2i_t  texture_dimensions_{};
-    GLenum   format_{};
-    GLenum   type_{};
-    format_e colorspace_;
+    GLuint         id_{};
+    vec2i_t        display_dimensions_{};
+    vec2i_t        texture_dimensions_{};
+    GLenum         gl_external_format_{};
+    GLenum         gl_external_type_{};
+    pixel_format_e pixel_format_;
 
   public:
-    texture_s(vec2i_t dimensions, format_e color);
+    texture_s(vec2i_t dimensions, pixel_format_e pixel_format);
     ~texture_s();
 
     texture_s(const texture_s&)      = delete;
@@ -52,16 +52,16 @@ class texture_s
     void operator=(const texture_s&) = delete;
     void operator=(texture_s&&)      = delete;
 
-    void                 init();
-    static format_info_s format_info(format_e format);
-    static size_t        host_row_byte_size(vec2i_t dimensions, format_e format);
-    static size_t        estimate_storage_byte_size(vec2i_t dimensions, format_e format);
-    vec2i_t              display_dimensions() const noexcept { return display_dimensions_; }
-    vec2i_t              texture_dimensions() const noexcept { return texture_dimensions_; }
-    GLenum               format() const noexcept { return format_; }
-    GLenum               type() const noexcept { return type_; }
-    format_e             color_type() const noexcept { return colorspace_; }
-    GLuint               id() const noexcept { return id_; }
+    void                       init();
+    static pixel_format_info_s pixel_format_info(pixel_format_e pixel_format);
+    static size_t              host_row_byte_size(vec2i_t dimensions, pixel_format_e pixel_format);
+    static size_t              estimate_storage_byte_size(vec2i_t dimensions, pixel_format_e pixel_format);
+    vec2i_t                    display_dimensions() const noexcept { return display_dimensions_; }
+    vec2i_t                    texture_dimensions() const noexcept { return texture_dimensions_; }
+    GLenum                     gl_external_format() const noexcept { return gl_external_format_; }
+    GLenum                     gl_external_type() const noexcept { return gl_external_type_; }
+    pixel_format_e             pixel_format() const noexcept { return pixel_format_; }
+    GLuint                     id() const noexcept { return id_; }
 
     void        bind(GLuint sampler) const;
     static void unbind(GLuint sampler);

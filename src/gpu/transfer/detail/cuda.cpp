@@ -26,20 +26,20 @@ bool cuda_transfer_s::initialized_ = false;
 bool cuda_transfer_s::supported_   = false;
 int  cuda_transfer_s::device_      = 0;
 
-bool cuda_transfer_s::supports_direct_image(texture_s::format_e format)
+bool cuda_transfer_s::supports_direct_image(texture_s::pixel_format_e pixel_format)
 {
     // Direct copies require both identical host/storage bytes and an OpenGL
     // internal format supported by cudaGraphicsGLRegisterImage. CUDA does not
     // support packed GL_RGB10_A2 images, even though uyuv_u10 has an identical
     // four-byte host and texture-storage representation.
-    switch (format) {
-        case texture_s::format_e::rgba_u8:
-            return texture_s::format_info(format).storage_identical;
-        case texture_s::format_e::rgb_f16:
-        case texture_s::format_e::rgba_f16:
-        case texture_s::format_e::bgra_u8:
-        case texture_s::format_e::uyuv_u8:
-        case texture_s::format_e::uyuv_u10:
+    switch (pixel_format) {
+        case texture_s::pixel_format_e::rgba_u8:
+            return texture_s::pixel_format_info(pixel_format).storage_identical;
+        case texture_s::pixel_format_e::rgb_f16:
+        case texture_s::pixel_format_e::rgba_f16:
+        case texture_s::pixel_format_e::bgra_u8:
+        case texture_s::pixel_format_e::uyuv_u8:
+        case texture_s::pixel_format_e::uyuv_u10:
             return false;
     }
     return false;
@@ -96,35 +96,33 @@ void cuda_transfer_s::shutdown_context()
     device_      = 0;
 }
 
-cuda_transfer_s::cuda_transfer_s(const texture_transfer_requirements_s& requirements,
-                                 direction_e                            dir,
-                                 bool                                   direct_image)
-    : backend_i(requirements.byte_size, dir)
-    , row_stride_(requirements.row_stride)
-    , row_length_(static_cast<GLint>(requirements.row_stride /
-                                     texture_s::format_info(requirements.format).host_bytes_per_texel))
+cuda_transfer_s::cuda_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir, bool direct_image)
+    : texture_transfer_backend_i(transfer_layout.host_buffer_size_bytes, dir)
+    , row_stride_(transfer_layout.host_row_stride_bytes)
+    , row_length_(static_cast<GLint>(transfer_layout.host_row_stride_bytes /
+                                     texture_s::pixel_format_info(transfer_layout.pixel_format).host_bytes_per_texel))
     , direct_image_(direct_image)
 {
     if (!supported_ || !check_cuda(cudaSetDevice(device_), "cudaSetDevice during transfer creation")) {
         throw std::runtime_error("CUDA transfer created without an initialized CUDA/OpenGL context");
     }
     auto host_flags = cudaHostAllocPortable;
-    if (dir == direction_e::cpu_to_gpu && requirements.host_access == host_access_e::overwrite) {
+    if (dir == direction_e::cpu_to_gpu && transfer_layout.host_memory_access == host_memory_access_e::overwrite) {
         host_flags |= cudaHostAllocWriteCombined;
     }
-    if (!check_cuda(cudaHostAlloc(&data_, size_, host_flags), "cudaHostAlloc")) {
+    if (!check_cuda(cudaHostAlloc(&host_memory_, host_buffer_size_bytes_, host_flags), "cudaHostAlloc")) {
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
     if (!check_cuda(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking), "cudaStreamCreateWithFlags")) {
-        (void)cudaFreeHost(data_);
-        data_ = nullptr;
+        (void)cudaFreeHost(host_memory_);
+        host_memory_ = nullptr;
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
     if (!check_cuda(cudaEventCreateWithFlags(&completion_, cudaEventDisableTiming), "cudaEventCreateWithFlags")) {
         (void)cudaStreamDestroy(stream_);
-        (void)cudaFreeHost(data_);
-        stream_ = nullptr;
-        data_   = nullptr;
+        (void)cudaFreeHost(host_memory_);
+        stream_      = nullptr;
+        host_memory_ = nullptr;
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
 }
@@ -150,8 +148,8 @@ cuda_transfer_s::~cuda_transfer_s()
     if (stream_ != nullptr) {
         (void)cudaStreamDestroy(stream_);
     }
-    if (data_ != nullptr) {
-        (void)cudaFreeHost(data_);
+    if (host_memory_ != nullptr) {
+        (void)cudaFreeHost(host_memory_);
     }
 }
 
@@ -200,7 +198,7 @@ bool cuda_transfer_s::unregister_texture_impl(texture_s* /*texture*/)
 bool cuda_transfer_s::copy_host_to_texture(texture_s* texture)
 {
     const auto dimensions = texture->texture_dimensions();
-    const auto format     = texture_s::format_info(texture->color_type());
+    const auto format     = texture_s::pixel_format_info(texture->pixel_format());
     const auto row_bytes  = static_cast<size_t>(dimensions.x) * format.storage_bytes_per_texel;
     if (row_stride_ < row_bytes || !ensure_texture_resource(texture) ||
         !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
@@ -214,7 +212,7 @@ bool cuda_transfer_s::copy_host_to_texture(texture_s* texture)
         success = check_cuda(cudaMemcpy2DToArrayAsync(array,
                                                       0,
                                                       0,
-                                                      data_,
+                                                      host_memory_,
                                                       row_stride_,
                                                       row_bytes,
                                                       static_cast<size_t>(dimensions.y),
@@ -234,7 +232,7 @@ bool cuda_transfer_s::copy_host_to_texture(texture_s* texture)
 bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
 {
     const auto dimensions = texture->texture_dimensions();
-    const auto format     = texture_s::format_info(texture->color_type());
+    const auto format     = texture_s::pixel_format_info(texture->pixel_format());
     const auto row_bytes  = static_cast<size_t>(dimensions.x) * format.storage_bytes_per_texel;
     if (dimensions.y <= 0 || row_stride_ < row_bytes || !ensure_texture_resource(texture) ||
         !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
@@ -245,7 +243,7 @@ bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
     bool        success = check_cuda(cudaGraphicsSubResourceGetMappedArray(&array, texture_resource_, 0, 0),
                               "cudaGraphicsSubResourceGetMappedArray");
     if (success) {
-        success = check_cuda(cudaMemcpy2DFromArrayAsync(data_,
+        success = check_cuda(cudaMemcpy2DFromArrayAsync(host_memory_,
                                                         row_stride_,
                                                         array,
                                                         0,
@@ -275,7 +273,7 @@ bool cuda_transfer_s::ensure_buffer()
     }
 
     glCreateBuffers(1, &buffer_);
-    glNamedBufferStorage(buffer_, static_cast<GLsizeiptr>(size_), nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glNamedBufferStorage(buffer_, static_cast<GLsizeiptr>(host_buffer_size_bytes_), nullptr, GL_DYNAMIC_STORAGE_BIT);
 
     const unsigned int flags =
         direction_ == direction_e::cpu_to_gpu ? cudaGraphicsRegisterFlagsWriteDiscard : cudaGraphicsRegisterFlagsNone;
@@ -298,13 +296,14 @@ bool cuda_transfer_s::copy_host_to_buffer()
     size_t buffer_size = 0;
     bool   success     = check_cuda(cudaGraphicsResourceGetMappedPointer(&buffer_ptr, &buffer_size, buffer_resource_),
                               "cudaGraphicsResourceGetMappedPointer");
-    if (success && buffer_size < size_) {
-        log()->error("CUDA: mapped buffer is too small ({} < {})", buffer_size, size_);
+    if (success && buffer_size < host_buffer_size_bytes_) {
+        log()->error("CUDA: mapped buffer is too small ({} < {})", buffer_size, host_buffer_size_bytes_);
         success = false;
     }
     if (success) {
-        success = check_cuda(cudaMemcpyAsync(buffer_ptr, data_, size_, cudaMemcpyHostToDevice, stream_),
-                             "cudaMemcpyAsync host to buffer");
+        success = check_cuda(
+            cudaMemcpyAsync(buffer_ptr, host_memory_, host_buffer_size_bytes_, cudaMemcpyHostToDevice, stream_),
+            "cudaMemcpyAsync host to buffer");
     }
 
     success =
@@ -325,13 +324,14 @@ bool cuda_transfer_s::copy_buffer_to_host()
     size_t buffer_size = 0;
     bool   success     = check_cuda(cudaGraphicsResourceGetMappedPointer(&buffer_ptr, &buffer_size, buffer_resource_),
                               "cudaGraphicsResourceGetMappedPointer");
-    if (success && buffer_size < size_) {
-        log()->error("CUDA: mapped buffer is too small ({} < {})", buffer_size, size_);
+    if (success && buffer_size < host_buffer_size_bytes_) {
+        log()->error("CUDA: mapped buffer is too small ({} < {})", buffer_size, host_buffer_size_bytes_);
         success = false;
     }
     if (success) {
-        success = check_cuda(cudaMemcpyAsync(data_, buffer_ptr, size_, cudaMemcpyDeviceToHost, stream_),
-                             "cudaMemcpyAsync buffer to host");
+        success = check_cuda(
+            cudaMemcpyAsync(host_memory_, buffer_ptr, host_buffer_size_bytes_, cudaMemcpyDeviceToHost, stream_),
+            "cudaMemcpyAsync buffer to host");
     }
 
     success =
@@ -341,7 +341,7 @@ bool cuda_transfer_s::copy_buffer_to_host()
     return success;
 }
 
-bool cuda_transfer_s::transfer()
+bool cuda_transfer_s::submit_transfer()
 {
     const auto dimensions = texture()->texture_dimensions();
 
@@ -360,8 +360,15 @@ bool cuda_transfer_s::transfer()
         glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer_);
-        glTextureSubImage2D(
-            texture()->id(), 0, 0, 0, dimensions.x, dimensions.y, texture()->format(), texture()->type(), nullptr);
+        glTextureSubImage2D(texture()->id(),
+                            0,
+                            0,
+                            0,
+                            dimensions.x,
+                            dimensions.y,
+                            texture()->gl_external_format(),
+                            texture()->gl_external_type(),
+                            nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, previous_row_length);
         glPixelStorei(GL_UNPACK_ALIGNMENT, previous_alignment);
@@ -383,14 +390,14 @@ bool cuda_transfer_s::transfer()
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
     glBindTexture(GL_TEXTURE_2D, texture()->id());
-    glGetTexImage(GL_TEXTURE_2D, 0, texture()->format(), texture()->type(), nullptr);
+    glGetTexImage(GL_TEXTURE_2D, 0, texture()->gl_external_format(), texture()->gl_external_type(), nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glPixelStorei(GL_PACK_ROW_LENGTH, previous_row_length);
     glPixelStorei(GL_PACK_ALIGNMENT, previous_alignment);
     return copy_buffer_to_host();
 }
 
-bool cuda_transfer_s::wait_for_completion()
+bool cuda_transfer_s::wait_for_transfer_completion()
 {
     if (!pending_) {
         return false;

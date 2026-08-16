@@ -1,8 +1,7 @@
 #pragma once
-#include "backend.hpp"
 #include "gpu/glad.hpp"
-#include "gpu/sync.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
+#include "texture_transfer_backend.hpp"
 
 #include <DVPAPI.h>
 #include <dvpapi_gl.h>
@@ -24,7 +23,7 @@ namespace miximus::gpu::transfer::detail {
 //   API  → DVP  : dvpMapBufferEndAPI  (outside begin/end) → dvpMapBufferWaitDVP (inside)
 //   DVP  → API  : dvpMapBufferEndDVP  (inside begin/end)  → dvpMapBufferWaitAPI (outside)
 //
-class dvp_transfer_s : public backend_i
+class dvp_transfer_s : public texture_transfer_backend_i
 {
     // Per-buffer DVP handles
     DVPBufferHandle sysmem_handle_{0};
@@ -68,21 +67,21 @@ class dvp_transfer_s : public backend_i
 
     bool register_texture_impl(texture_s* texture) final;
     bool unregister_texture_impl(texture_s* texture) final;
-    bool begin_texture_use_impl(texture_s* texture) final;
-    bool end_texture_use_impl(texture_s* texture) final;
+    bool acquire_texture_for_gl_impl(texture_s* texture) final;
+    bool release_texture_from_gl_impl(texture_s* texture) final;
 
   public:
-    dvp_transfer_s(const texture_transfer_requirements_s& requirements, direction_e dir);
+    dvp_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir);
     ~dvp_transfer_s();
 
-    bool transfer() final;
-    bool wait_for_completion() final;
+    bool submit_transfer() final;
+    bool wait_for_transfer_completion() final;
 
     // Called once during app initialization with the root GL context current.
     static bool initialize_context();
     // Called during app shutdown with the same root GL context current.
     static void shutdown_context();
-    static bool supports(const texture_transfer_requirements_s& requirements);
+    static bool supports(const texture_transfer_layout_s& transfer_layout);
 };
 
 } // namespace miximus::gpu::transfer::detail

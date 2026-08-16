@@ -15,8 +15,8 @@ add_library(gpu
     framebuffer.cpp
     vertex.hpp
     vertex_attr.hpp
-    sync.hpp
-    sync.cpp
+    fence.hpp
+    fence.cpp
     texture.hpp
     texture_fwd.hpp
     texture.cpp

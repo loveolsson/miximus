@@ -1,9 +1,9 @@
 add_library(media
-    media_frame.hpp
+    media_clock_sample.hpp
     output_runtime_metrics.hpp
-    output_timeline.hpp
-    source_clock.hpp
-    source_clock.cpp
+    presentation_timeline.hpp
+    media_clock.hpp
+    media_clock.cpp
     timed_output_queue.hpp
     timed_source_queue.hpp
 )
