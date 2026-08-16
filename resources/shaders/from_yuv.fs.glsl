@@ -8,7 +8,7 @@ uniform mat3      transfer;
 uniform vec3      transfer_offset;
 uniform mat3      gamut_transfer;
 
-vec3 yuv2rgb(float Y, float Cb, float Cr)
+vec3 yuv_to_rgb(float Y, float Cb, float Cr)
 {
     // float r, g, b;
 
@@ -86,6 +86,6 @@ void main(void)
             break;
     }
 
-    vec3 encoded_rgb = yuv2rgb(Y, Cb, Cr);
-    FragColor        = vec4(gamut_transfer * toLinear(encoded_rgb), 1.0);
+    vec3 encoded_rgb = yuv_to_rgb(Y, Cb, Cr);
+    FragColor        = vec4(gamut_transfer * to_linear(encoded_rgb), 1.0);
 }

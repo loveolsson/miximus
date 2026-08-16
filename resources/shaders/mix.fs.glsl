@@ -25,7 +25,7 @@ vec4 to_video_premultiplied(vec4 color)
     if (color.a <= 0.0) {
         return vec4(0.0);
     }
-    return vec4(fromLinear(color.rgb / color.a) * color.a, color.a);
+    return vec4(from_linear(color.rgb / color.a) * color.a, color.a);
 }
 
 vec4 to_linear_premultiplied(vec4 color)
@@ -33,7 +33,7 @@ vec4 to_linear_premultiplied(vec4 color)
     if (color.a <= 0.0) {
         return vec4(0.0);
     }
-    return vec4(toLinear(color.rgb / color.a) * color.a, color.a);
+    return vec4(to_linear(color.rgb / color.a) * color.a, color.a);
 }
 
 void main()

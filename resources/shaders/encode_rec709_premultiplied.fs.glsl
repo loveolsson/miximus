@@ -13,6 +13,6 @@ void main()
         return;
     }
 
-    vec4 encoded = vec4(fromLinear(color.rgb / color.a) * color.a, color.a);
+    vec4 encoded = vec4(from_linear(color.rgb / color.a) * color.a, color.a);
     FragColor    = map_readback_components(encoded, readback_component_mapping);
 }

@@ -8,9 +8,9 @@ uniform mat3      transfer;
 uniform vec3      transfer_offset;
 uniform mat3      gamut_transfer;
 
-vec3 rgb2yuv(vec3 rgb)
+vec3 rgb_to_yuv(vec3 rgb)
 {
-    return (transfer * fromLinear(gamut_transfer * rgb)) + transfer_offset;
+    return (transfer * from_linear(gamut_transfer * rgb)) + transfer_offset;
 
     // float Y, Cb, Cr;
     // r = Y + 1.5748 * Cr;
@@ -43,32 +43,32 @@ void main(void)
 
     switch (x % 4) {
         case 0:
-            tex_1 = rgb2yuv(texelFetch(tex, ivec2(start_x, y), 0).xyz);
-            tex_2 = rgb2yuv(texelFetch(tex, ivec2(start_x + 1, y), 0).xyz);
+            tex_1 = rgb_to_yuv(texelFetch(tex, ivec2(start_x, y), 0).xyz);
+            tex_2 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 1, y), 0).xyz);
             X     = (tex_1.y + tex_2.y) / 2.0;
             Y     = tex_1.x;
             Z     = (tex_1.z + tex_2.z) / 2.0;
             break;
         case 1:
-            tex_1 = rgb2yuv(texelFetch(tex, ivec2(start_x + 1, y), 0).xyz);
-            tex_2 = rgb2yuv(texelFetch(tex, ivec2(start_x + 2, y), 0).xyz);
-            tex_3 = rgb2yuv(texelFetch(tex, ivec2(start_x + 3, y), 0).xyz);
+            tex_1 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 1, y), 0).xyz);
+            tex_2 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 2, y), 0).xyz);
+            tex_3 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 3, y), 0).xyz);
             X     = tex_1.x;
             Y     = (tex_2.y + tex_3.y) / 2.0;
             Z     = tex_2.x;
             break;
         case 2:
-            tex_1 = rgb2yuv(texelFetch(tex, ivec2(start_x + 2, y), 0).xyz);
-            tex_2 = rgb2yuv(texelFetch(tex, ivec2(start_x + 3, y), 0).xyz);
-            tex_3 = rgb2yuv(texelFetch(tex, ivec2(start_x + 4, y), 0).xyz);
-            tex_4 = rgb2yuv(texelFetch(tex, ivec2(start_x + 5, y), 0).xyz);
+            tex_1 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 2, y), 0).xyz);
+            tex_2 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 3, y), 0).xyz);
+            tex_3 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 4, y), 0).xyz);
+            tex_4 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 5, y), 0).xyz);
             X     = (tex_1.z + tex_2.z) / 2.0;
             Y     = tex_2.x;
             Z     = (tex_3.y + tex_4.y) / 2.0;
             break;
         default:
-            tex_1 = rgb2yuv(texelFetch(tex, ivec2(start_x + 4, y), 0).xyz);
-            tex_2 = rgb2yuv(texelFetch(tex, ivec2(start_x + 5, y), 0).xyz);
+            tex_1 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 4, y), 0).xyz);
+            tex_2 = rgb_to_yuv(texelFetch(tex, ivec2(start_x + 5, y), 0).xyz);
             X     = tex_1.x;
             Y     = (tex_1.z + tex_2.z) / 2.0;
             Z     = tex_2.x;

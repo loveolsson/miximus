@@ -13,21 +13,21 @@ const float gamma_div        = 4.5;
 // const float gamma_div        = 12.92;
 
 // Converts a color from linear light gamma to sRGB gamma
-vec3 fromLinear(vec3 linearRGB)
+vec3 from_linear(vec3 linear_rgb)
 {
-    bvec3 cutoff = lessThan(linearRGB, vec3(gamma_cutoffFrom));
-    vec3  higher = vec3(gamma_offset + 1.0) * pow(linearRGB, vec3(gamma_gamma)) - vec3(gamma_offset);
-    vec3  lower  = linearRGB * vec3(gamma_div);
+    bvec3 cutoff = lessThan(linear_rgb, vec3(gamma_cutoffFrom));
+    vec3  higher = vec3(gamma_offset + 1.0) * pow(linear_rgb, vec3(gamma_gamma)) - vec3(gamma_offset);
+    vec3  lower  = linear_rgb * vec3(gamma_div);
 
     return mix(higher, lower, cutoff);
 }
 
 // Wikipedia https://en.wikipedia.org/wiki/Rec._709
-vec3 toLinear(vec3 sRGB)
+vec3 to_linear(vec3 srgb)
 {
-    bvec3 cutoff = lessThan(sRGB, vec3(gamma_cutoffTo));
-    vec3  higher = pow((sRGB + vec3(gamma_offset)) / vec3(gamma_offset + 1.0), vec3((1.0 / gamma_gamma)));
-    vec3  lower  = sRGB / vec3(gamma_div);
+    bvec3 cutoff = lessThan(srgb, vec3(gamma_cutoffTo));
+    vec3  higher = pow((srgb + vec3(gamma_offset)) / vec3(gamma_offset + 1.0), vec3((1.0 / gamma_gamma)));
+    vec3  lower  = srgb / vec3(gamma_div);
 
     return mix(higher, lower, cutoff);
 }
