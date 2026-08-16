@@ -148,7 +148,7 @@ texture map.
 
 ### CUDA format rule
 
-CUDA transfers normally register an OpenGL pixel buffer. CUDA copies between pinned host memory and the PBO; OpenGL performs any required format conversion while moving between the PBO and texture. Storage-identical readback formats may instead register the texture as a CUDA image and copy its array directly, avoiding an OpenGL readback and its driver-wide serialization.
+CUDA transfers normally register an OpenGL pixel buffer. CUDA copies between pinned host memory and the PBO; OpenGL performs any required format conversion while moving between the PBO and texture. For ARGB and BGRA readback, the backend instead asks the final output shader to arrange raw RGBA storage bytes and reads those bytes without an OpenGL component-order conversion. Each acquired readback target reports the required mapping because slots may use different fallback backends. Final output shaders apply it after color encoding with blending disabled; mappings describe component order only and do not replace packed-format encoding such as v210. Storage-identical readback formats may register the texture as a CUDA image and copy its array directly, avoiding an OpenGL readback and its driver-wide serialization.
 
 This distinction is intentional. A texture's CUDA array reflects native storage, while host bytes normally use the texture's external format/type. For example, an RGBA8 host surface uploaded to `GL_RGBA16` requires OpenGL conversion; a raw CUDA-array copy would fill only half the row. Use direct image copies only for explicitly storage-identical formats.
 

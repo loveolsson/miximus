@@ -1,5 +1,6 @@
 #pragma once
 #include "gpu/texture_fwd.hpp"
+#include "gpu/transfer/readback_component_mapping.hpp"
 
 #include <cassert>
 #include <cstddef>
@@ -31,6 +32,11 @@ class texture_transfer_backend_i
     bool unregister_texture();
     bool acquire_texture_for_gl();
     bool release_texture_from_gl();
+
+    virtual readback_component_mapping_e readback_component_mapping() const noexcept
+    {
+        return readback_component_mapping_e::identity;
+    }
 
     virtual bool submit_transfer()              = 0;
     virtual bool wait_for_transfer_completion() = 0;

@@ -12,6 +12,7 @@ class draw_state_s
     vertex_array_s    vertex_array_;
     vertex_buffer_s   vertex_buffer_;
     shader_program_s* shader_{};
+    bool              blending_enabled_{true};
 
   public:
     draw_state_s();
@@ -34,6 +35,7 @@ class draw_state_s
     }
 
     void set_shader_program(shader_program_s* shader) { shader_ = shader; }
+    void set_blending_enabled(bool enabled) noexcept { blending_enabled_ = enabled; }
 
     void draw();
 };

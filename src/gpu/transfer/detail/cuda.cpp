@@ -35,10 +35,10 @@ bool cuda_transfer_s::supports_direct_image(texture_s::pixel_format_e pixel_form
     switch (pixel_format) {
         case texture_s::pixel_format_e::rgba_u8:
             return texture_s::pixel_format_info(pixel_format).storage_identical;
-        case texture_s::pixel_format_e::rgb_f16:
-        case texture_s::pixel_format_e::rgba_f16:
         case texture_s::pixel_format_e::argb_u8:
         case texture_s::pixel_format_e::bgra_u8:
+        case texture_s::pixel_format_e::rgb_f16:
+        case texture_s::pixel_format_e::rgba_f16:
         case texture_s::pixel_format_e::uyuv_u8:
         case texture_s::pixel_format_e::uyuv_u10:
             return false;
@@ -126,6 +126,18 @@ cuda_transfer_s::cuda_transfer_s(const texture_transfer_layout_s& transfer_layou
         host_memory_ = nullptr;
         throw std::runtime_error("Failed to create CUDA transfer resources");
     }
+    if (!direct_image_ && direction_ == direction_e::gpu_to_cpu) {
+        switch (transfer_layout.pixel_format) {
+            case texture_s::pixel_format_e::argb_u8:
+                readback_component_mapping_ = readback_component_mapping_e::rgba_to_argb_bytes;
+                break;
+            case texture_s::pixel_format_e::bgra_u8:
+                readback_component_mapping_ = readback_component_mapping_e::rgba_to_bgra_bytes;
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 cuda_transfer_s::~cuda_transfer_s()
@@ -152,6 +164,11 @@ cuda_transfer_s::~cuda_transfer_s()
     if (host_memory_ != nullptr) {
         (void)cudaFreeHost(host_memory_);
     }
+}
+
+readback_component_mapping_e cuda_transfer_s::readback_component_mapping() const noexcept
+{
+    return readback_component_mapping_;
 }
 
 bool cuda_transfer_s::ensure_texture_resource(texture_s* texture)
@@ -391,7 +408,12 @@ bool cuda_transfer_s::submit_transfer()
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
     glBindTexture(GL_TEXTURE_2D, texture()->id());
-    glGetTexImage(GL_TEXTURE_2D, 0, texture()->gl_external_format(), texture()->gl_external_type(), nullptr);
+    const bool shader_arranged_bytes = readback_component_mapping_ != readback_component_mapping_e::identity;
+    glGetTexImage(GL_TEXTURE_2D,
+                  0,
+                  shader_arranged_bytes ? GL_RGBA : texture()->gl_external_format(),
+                  shader_arranged_bytes ? GL_UNSIGNED_BYTE : texture()->gl_external_type(),
+                  nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glPixelStorei(GL_PACK_ROW_LENGTH, previous_row_length);
     glPixelStorei(GL_PACK_ALIGNMENT, previous_alignment);

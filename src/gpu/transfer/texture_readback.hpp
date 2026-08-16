@@ -1,6 +1,7 @@
 #pragma once
 #include "gpu/framebuffer_fwd.hpp"
 #include "gpu/texture.hpp"
+#include "gpu/transfer/readback_component_mapping.hpp"
 #include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 #include "utils/flicks.hpp"
@@ -67,10 +68,11 @@ class texture_readback_target_s
     texture_readback_target_s(texture_readback_target_s&&) noexcept;
     texture_readback_target_s& operator=(texture_readback_target_s&&) noexcept;
 
-    framebuffer_s* framebuffer() const noexcept;
-    void           set_program_target_time(utils::flicks program_target_time) noexcept;
-    void           submit();
-    explicit       operator bool() const noexcept { return slot_ != nullptr; }
+    framebuffer_s*               framebuffer() const noexcept;
+    readback_component_mapping_e readback_component_mapping() const noexcept;
+    void                         set_program_target_time(utils::flicks program_target_time) noexcept;
+    void                         submit();
+    explicit                     operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_readback_frame_s

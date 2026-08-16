@@ -3,6 +3,7 @@ out vec4 FragColor;
 in vec2 TexCoord;
 
 uniform sampler2D tex;
+uniform int       readback_component_mapping;
 
 void main()
 {
@@ -12,5 +13,6 @@ void main()
         return;
     }
 
-    FragColor = vec4(fromLinear(color.rgb / color.a) * color.a, color.a);
+    vec4 encoded = vec4(fromLinear(color.rgb / color.a) * color.a, color.a);
+    FragColor    = map_readback_components(encoded, readback_component_mapping);
 }

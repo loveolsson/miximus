@@ -31,3 +31,19 @@ vec3 toLinear(vec3 sRGB)
 
     return mix(higher, lower, cutoff);
 }
+
+const int readback_component_mapping_identity           = 0;
+const int readback_component_mapping_rgba_to_argb_bytes = 1;
+const int readback_component_mapping_rgba_to_bgra_bytes = 2;
+
+vec4 map_readback_components(vec4 rgba, int mapping)
+{
+    switch (mapping) {
+        case readback_component_mapping_rgba_to_argb_bytes:
+            return rgba.argb;
+        case readback_component_mapping_rgba_to_bgra_bytes:
+            return rgba.bgra;
+        default:
+            return rgba;
+    }
+}

@@ -250,8 +250,11 @@ class node_impl : public node_i
         if (!textured_quad_) {
             auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
             textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
+            textured_quad_->set_blending_enabled(false);
         }
 
+        textured_quad_->shader()->set_uniform("readback_component_mapping",
+                                              static_cast<int>(target->readback_component_mapping()));
         target->framebuffer()->begin_render(gpu::framebuffer_s::load_op_e::clear);
         textured_quad_->draw(texture);
         gpu::framebuffer_s::end_render();

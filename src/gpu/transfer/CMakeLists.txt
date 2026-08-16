@@ -8,6 +8,7 @@ PRIVATE
     detail/transfer_layout.cpp
     detail/transfer_worker.hpp
     texture_transfer.hpp
+    readback_component_mapping.hpp
     texture_upload_fwd.hpp
     texture_upload.hpp
     texture_upload.cpp

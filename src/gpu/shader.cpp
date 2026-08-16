@@ -44,6 +44,8 @@ class shader_s
             std::vector<GLchar> text(length);
             glGetShaderInfoLog(id_, length, nullptr, text.data());
 
+            getlog("gpu")->error("Failed to compile shader {}: {}", name, text.data());
+
             glDeleteShader(id_);
 
             throw std::runtime_error(text.data());

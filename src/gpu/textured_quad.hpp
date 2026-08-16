@@ -63,6 +63,7 @@ class textured_quad_s
     textured_quad_s& operator=(textured_quad_s&&)      = delete;
 
     shader_program_s* shader() const { return shader_; }
+    void              set_blending_enabled(bool enabled) noexcept { draw_state_.set_blending_enabled(enabled); }
     batch_s           begin_batch() { return batch_s(this); }
     void              draw(texture_s* texture, rect_s rect = {}, double opacity = 1.0);
     void draw_mix(texture_s* a, texture_s* b, double t, rect_s a_rect, rect_s b_rect, mix_space_e mix_space);

@@ -11,16 +11,17 @@ namespace miximus::gpu::transfer::detail {
 
 class cuda_transfer_s : public texture_transfer_backend_i
 {
-    cudaStream_t          stream_{nullptr};
-    cudaEvent_t           completion_{nullptr};
-    GLuint                buffer_{0};
-    cudaGraphicsResource* buffer_resource_{nullptr};
-    cudaGraphicsResource* texture_resource_{nullptr};
-    GLuint                registered_texture_{};
-    size_t                row_stride_{};
-    GLint                 row_length_{};
-    bool                  direct_image_{};
-    bool                  pending_{false};
+    cudaStream_t                 stream_{nullptr};
+    cudaEvent_t                  completion_{nullptr};
+    GLuint                       buffer_{0};
+    cudaGraphicsResource*        buffer_resource_{nullptr};
+    cudaGraphicsResource*        texture_resource_{nullptr};
+    GLuint                       registered_texture_{};
+    size_t                       row_stride_{};
+    GLint                        row_length_{};
+    bool                         direct_image_{};
+    bool                         pending_{false};
+    readback_component_mapping_e readback_component_mapping_{readback_component_mapping_e::identity};
 
     static bool initialized_;
     static bool supported_;
@@ -40,8 +41,9 @@ class cuda_transfer_s : public texture_transfer_backend_i
     cuda_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir, bool direct_image);
     ~cuda_transfer_s() override;
 
-    bool submit_transfer() final;
-    bool wait_for_transfer_completion() final;
+    bool                         submit_transfer() final;
+    bool                         wait_for_transfer_completion() final;
+    readback_component_mapping_e readback_component_mapping() const noexcept final;
 
     static bool supports_direct_image(texture_s::pixel_format_e pixel_format);
     static bool initialize_context();

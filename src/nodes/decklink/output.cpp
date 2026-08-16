@@ -1361,6 +1361,7 @@ class node_impl : public node_i
         if (mode.keyer_mode != keyer_mode_e::disabled && !textured_quad_keyed_output_) {
             textured_quad_keyed_output_ = std::make_unique<gpu::textured_quad_s>(
                 app->ctx()->get_shader(gpu::shader_program_s::name_e::encode_rec709_premultiplied));
+            textured_quad_keyed_output_->set_blending_enabled(false);
         }
 
         const auto scale_pixel_format = mode.keyer_mode == keyer_mode_e::disabled
@@ -1390,6 +1391,8 @@ class node_impl : public node_i
             shader->set_uniform("gamut_transfer", mode.gamut_conversion);
             textured_quad_yuv_->draw(framebuffer_scale_->texture());
         } else {
+            textured_quad_keyed_output_->shader()->set_uniform("readback_component_mapping",
+                                                               static_cast<int>(target->readback_component_mapping()));
             textured_quad_keyed_output_->draw(framebuffer_scale_->texture());
         }
 

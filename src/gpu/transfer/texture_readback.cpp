@@ -306,6 +306,11 @@ texture_readback_target_s& texture_readback_target_s::operator=(texture_readback
 
 framebuffer_s* texture_readback_target_s::framebuffer() const noexcept { return framebuffer_.get(); }
 
+readback_component_mapping_e texture_readback_target_s::readback_component_mapping() const noexcept
+{
+    return slot_ ? slot_->transfer_backend->readback_component_mapping() : readback_component_mapping_e::identity;
+}
+
 void texture_readback_target_s::set_program_target_time(utils::flicks program_target_time) noexcept
 {
     if (slot_) {
