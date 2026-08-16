@@ -3,6 +3,7 @@ import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture } from "./interface_types";
 import { node_type_e } from "./node_type";
+import { createFillModeInterface } from "./fill_mode";
 import {
   DropdownInterface,
   StatusDropdownInterface,
@@ -231,6 +232,7 @@ export const DeckLinkOutputNode = defineNode({
     enabled: () => new CheckboxInterface("Enabled", false).setPort(false),
     device_name: () => new StatusDropdownInterface("Device", "device_names"),
     display_mode: () => new StatusDropdownInterface("Display Mode", "display_modes"),
+    fill_mode: () => createFillModeInterface("scale"),
     keyer_mode: () =>
       new DropdownInterface("Keyer", "disabled", [
         { id: "disabled", label: "Disabled" },

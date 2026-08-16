@@ -179,7 +179,9 @@ class node_impl : public node_i
             textured_quad_->draw(texture);
         }
         gpu::framebuffer_s::end_render();
-        frame->submit(app->frame_context().program_target_time);
+        const auto fill_mode          = state.get_enum_option("fill_mode", gpu::fill_mode_e::scale);
+        const auto content_dimensions = texture != nullptr ? texture->display_dimensions() : dimensions;
+        frame->submit(app->frame_context().program_target_time, fill_mode, content_dimensions);
     }
 
     void complete(core::app_state_s* /*app*/) final {}
@@ -187,12 +189,13 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",       "Screen output"      },
-            {"enabled",    true                 },
-            {"fullscreen", false                },
-            {"monitor_id", ""                   },
-            {"position",   gpu::vec2_t{0, 0}    },
-            {"size",       gpu::vec2_t{100, 100}},
+            {"name",       "Screen output"                        },
+            {"enabled",    true                                   },
+            {"fullscreen", false                                  },
+            {"fill_mode",  enum_to_string(gpu::fill_mode_e::scale)},
+            {"monitor_id", ""                                     },
+            {"position",   gpu::vec2_t{0, 0}                      },
+            {"size",       gpu::vec2_t{100, 100}                  },
         };
     }
 
@@ -200,6 +203,10 @@ class node_impl : public node_i
     {
         if (name == "enabled" || name == "fullscreen") {
             return normalize_option_value<bool>(value);
+        }
+
+        if (name == "fill_mode") {
+            return normalize_enum_option_value<gpu::fill_mode_e>(value);
         }
 
         if (name == "monitor_id") {

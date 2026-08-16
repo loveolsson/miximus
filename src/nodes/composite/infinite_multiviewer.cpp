@@ -58,6 +58,7 @@ class node_impl : public node_i
         }
 
         const auto target_dimensions = fb->texture()->display_dimensions();
+        const auto fill_mode         = state.get_enum_option("fill_mode", gpu::fill_mode_e::contain);
         auto       batch             = textured_quad_->begin_batch();
 
         for (size_t i = 0, y = 0; y < cols && i < tex_count; y++) {
@@ -71,10 +72,10 @@ class node_impl : public node_i
                     .pos  = {box_dim * static_cast<double>(x), box_dim * static_cast<double>(y)},
                     .size = {box_dim,                          box_dim                         },
                 };
-                const auto draw_rect =
-                    gpu::contain_aspect_ratio(cell, texture->display_dimensions(), target_dimensions);
+                const auto texture_draw =
+                    gpu::calculate_texture_draw(cell, texture->display_dimensions(), target_dimensions, fill_mode);
 
-                batch.draw(texture, draw_rect);
+                batch.draw(texture, texture_draw);
             }
         }
         gpu::framebuffer_s::end_render();
@@ -83,14 +84,16 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name", "Infinite Multiviewer"},
+            {"name",      "Infinite Multiviewer"                   },
+            {"fill_mode", enum_to_string(gpu::fill_mode_e::contain)},
         };
     }
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
-        (void)name;
-        (void)value;
+        if (name == "fill_mode") {
+            return normalize_enum_option_value<gpu::fill_mode_e>(value);
+        }
         return option_result_e::invalid;
     }
 

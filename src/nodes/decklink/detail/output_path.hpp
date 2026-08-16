@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gpu/color_transfer.hpp"
+#include "gpu/geometry.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 #include "utils/flicks.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
@@ -52,7 +53,8 @@ class output_frame_renderer_i
     output_frame_renderer_i(output_frame_renderer_i&&)                 = delete;
     output_frame_renderer_i& operator=(output_frame_renderer_i&&)      = delete;
 
-    virtual void render(gpu::texture_s* source, gpu::transfer::texture_readback_target_s& target) = 0;
+    virtual void
+    render(gpu::texture_s* source, gpu::transfer::texture_readback_target_s& target, gpu::fill_mode_e fill_mode) = 0;
 };
 
 class output_path_i

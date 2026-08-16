@@ -40,11 +40,11 @@ binds and unbinds sampler zero, and submits the quad. Use a scoped batch for rep
 once after the batch. Conversion paths may set their additional shader uniforms through the wrapper's shader accessor.
 Nodes should not repeat the underlying texture-binding and quad-submission sequence.
 
-Shared rectangle and scaling calculations live in `gpu/geometry.hpp`. Use its contain/cover operations for
-aspect-preserving placement and pass texture display dimensions rather than storage dimensions. It also owns conversion
-between pixel vectors and normalized draw coordinates, and from normalized node rectangles to pixel viewports; keep
-this coordinate math out of individual nodes. Common rectangle interpolation and integer rounding belong there as
-well.
+Shared rectangle and scaling calculations live in `gpu/geometry.hpp`. Use `calculate_texture_draw()` for the shared
+scale/fill/contain behavior; it returns both destination placement and any source crop needed by `textured_quad_s`.
+Pass texture display dimensions rather than storage dimensions. The geometry header also owns conversion between pixel
+vectors and normalized draw coordinates, and from normalized node rectangles to pixel viewports; keep this coordinate
+math out of individual nodes. Common rectangle interpolation and integer rounding belong there as well.
 
 `gpu::fence_s` owns the backend fence used by the current GPU implementation:
 

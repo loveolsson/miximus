@@ -3,6 +3,7 @@ import { setType } from "@baklavajs/interface-types";
 import { t_texture, t_framebuffer, t_f64, t_rect } from "./interface_types";
 import { node_type_e } from "./node_type";
 import { DropdownInterface, NumericInterface } from "./interfaces";
+import { createFillModeInterface } from "./fill_mode";
 
 export const DrawBoxNode = defineNode({
   type: node_type_e.draw_box,
@@ -16,6 +17,7 @@ export const DrawBoxNode = defineNode({
         setType,
         t_f64,
       ),
+    fill_mode: () => createFillModeInterface("scale"),
   },
   outputs: {
     fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
@@ -28,6 +30,7 @@ export const InfiniteMultiviewerNode = defineNode({
   inputs: {
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+    fill_mode: () => createFillModeInterface("contain"),
   },
   outputs: {
     fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
@@ -51,6 +54,7 @@ export const MixTex2Node = defineNode({
         { id: "video", label: "Video" },
         { id: "linear", label: "Linear light" },
       ]),
+    fill_mode: () => createFillModeInterface("contain"),
   },
   outputs: {
     fb_out: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),

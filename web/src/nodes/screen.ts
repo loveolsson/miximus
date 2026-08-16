@@ -3,6 +3,7 @@ import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture } from "./interface_types";
 import { node_type_e } from "./node_type";
+import { createFillModeInterface } from "./fill_mode";
 import {
   StatusDropdownInterface,
   NodeStatusInterface,
@@ -57,6 +58,7 @@ export const ScreenOutputNode = defineNode({
     status: () => new NodeStatusInterface(screenStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
     fullscreen: () => new CheckboxInterface("Fullscreen", false).setPort(false),
+    fill_mode: () => createFillModeInterface("scale"),
     monitor_id: () => new StatusDropdownInterface("Monitor", "monitors"),
     position: () => new Vec2Interface("Position", [0, 0], pixelPositionOptions).setPort(false),
     size: () => new Vec2Interface("Size", [100, 100], pixelSizeOptions).setPort(false),

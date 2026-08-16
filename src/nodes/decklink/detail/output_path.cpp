@@ -91,10 +91,13 @@ class scaled_output_frame_renderer_s : public output_frame_renderer_i
     virtual void    render_output(gpu::transfer::texture_readback_target_s& target) = 0;
 
   public:
-    void render(gpu::texture_s* source, gpu::transfer::texture_readback_target_s& target) final
+    void
+    render(gpu::texture_s* source, gpu::transfer::texture_readback_target_s& target, gpu::fill_mode_e fill_mode) final
     {
         scaled_framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        scale_quad_->draw(source);
+        const auto texture_draw = gpu::calculate_texture_draw(
+            {}, source->display_dimensions(), scaled_framebuffer_->texture()->display_dimensions(), fill_mode);
+        scale_quad_->draw(source, texture_draw);
         gpu::framebuffer_s::end_render();
 
         target.framebuffer()->begin_render(

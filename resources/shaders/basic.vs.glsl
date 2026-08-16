@@ -3,6 +3,8 @@ layout(location = 1) in vec2 uv;
 
 uniform vec2 offset;
 uniform vec2 scale;
+uniform vec2 texture_offset;
+uniform vec2 texture_scale;
 
 out vec2 TexCoord; // specify a color output to the fragment shader
 
@@ -14,5 +16,5 @@ void main()
     p.y * -1.0;
 
     gl_Position = vec4(p, 0.0, 1.0); // see how we directly give a vec3 to vec4's constructor
-    TexCoord    = uv;                // set the output variable to a dark-red color
+    TexCoord    = texture_offset + uv * texture_scale;
 }

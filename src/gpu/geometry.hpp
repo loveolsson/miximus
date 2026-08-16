@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 
 namespace miximus::gpu {
@@ -50,6 +51,19 @@ enum class aspect_scale_e
     cover,
 };
 
+enum class fill_mode_e : uint8_t
+{
+    scale,
+    fill,
+    contain,
+};
+
+struct texture_draw_s
+{
+    rect_s destination{};
+    rect_s source{};
+};
+
 /**
  * Center content with its aspect ratio preserved inside `bounds`.
  *
@@ -95,6 +109,50 @@ scale_rect_to_aspect(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_d
 [[nodiscard]] inline rect_s cover_aspect_ratio(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions)
 {
     return scale_rect_to_aspect(bounds, content_dimensions, target_dimensions, aspect_scale_e::cover);
+}
+
+/** Calculate destination placement and source cropping for drawing a texture into bounds. */
+[[nodiscard]] inline texture_draw_s
+calculate_texture_draw(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions, fill_mode_e fill_mode)
+{
+    if (fill_mode == fill_mode_e::scale || bounds.size.x == 0.0 || bounds.size.y == 0.0) {
+        return {.destination = bounds};
+    }
+
+    const bool flip_x = bounds.size.x < 0.0;
+    const bool flip_y = bounds.size.y < 0.0;
+    if (flip_x) {
+        bounds.pos.x += bounds.size.x;
+        bounds.size.x *= -1.0;
+    }
+    if (flip_y) {
+        bounds.pos.y += bounds.size.y;
+        bounds.size.y *= -1.0;
+    }
+
+    texture_draw_s result;
+    if (fill_mode == fill_mode_e::contain) {
+        result.destination = contain_aspect_ratio(bounds, content_dimensions, target_dimensions);
+    } else if (fill_mode == fill_mode_e::fill) {
+        const auto covered = cover_aspect_ratio(bounds, content_dimensions, target_dimensions);
+        result.destination = bounds;
+        result.source      = {
+                 .pos  = (bounds.pos - covered.pos) / covered.size,
+                 .size = bounds.size / covered.size,
+        };
+    } else {
+        throw std::invalid_argument("unknown texture fill mode");
+    }
+
+    if (flip_x) {
+        result.destination.pos.x += result.destination.size.x;
+        result.destination.size.x *= -1.0;
+    }
+    if (flip_y) {
+        result.destination.pos.y += result.destination.size.y;
+        result.destination.size.y *= -1.0;
+    }
+    return result;
 }
 
 /** Convert a normalized rectangle into a pixel rectangle for a target. */

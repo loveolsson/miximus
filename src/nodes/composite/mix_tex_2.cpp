@@ -84,11 +84,12 @@ class node_impl : public node_i
         }
 
         const auto target_dimensions = framebuffer->texture()->display_dimensions();
-        const auto a_rect            = gpu::contain_aspect_ratio({}, a->display_dimensions(), target_dimensions);
-        const auto b_rect            = gpu::contain_aspect_ratio({}, b->display_dimensions(), target_dimensions);
-        const auto blend_mode        = state.get_enum_option("blend_mode", blend_mode_e::video);
-        const auto mix_space         = blend_mode == blend_mode_e::video ? gpu::textured_quad_s::mix_space_e::video
-                                                                         : gpu::textured_quad_s::mix_space_e::linear;
+        const auto fill_mode         = state.get_enum_option("fill_mode", gpu::fill_mode_e::contain);
+        const auto a_draw     = gpu::calculate_texture_draw({}, a->display_dimensions(), target_dimensions, fill_mode);
+        const auto b_draw     = gpu::calculate_texture_draw({}, b->display_dimensions(), target_dimensions, fill_mode);
+        const auto blend_mode = state.get_enum_option("blend_mode", blend_mode_e::video);
+        const auto mix_space  = blend_mode == blend_mode_e::video ? gpu::textured_quad_s::mix_space_e::video
+                                                                  : gpu::textured_quad_s::mix_space_e::linear;
 
         framebuffer->begin_render();
 
@@ -97,16 +98,17 @@ class node_impl : public node_i
             textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
-        textured_quad_->draw_mix(a, b, t, a_rect, b_rect, mix_space);
+        textured_quad_->draw_mix(a, b, t, a_draw, b_draw, mix_space);
         gpu::framebuffer_s::end_render();
     }
 
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",       "Mix A/B"                          },
-            {"t",          0                                  },
-            {"blend_mode", enum_to_string(blend_mode_e::video)},
+            {"name",       "Mix A/B"                                },
+            {"t",          0                                        },
+            {"blend_mode", enum_to_string(blend_mode_e::video)      },
+            {"fill_mode",  enum_to_string(gpu::fill_mode_e::contain)},
         };
     }
 
@@ -117,6 +119,9 @@ class node_impl : public node_i
         }
         if (name == "blend_mode") {
             return normalize_enum_option_value<blend_mode_e>(value);
+        }
+        if (name == "fill_mode") {
+            return normalize_enum_option_value<gpu::fill_mode_e>(value);
         }
 
         return option_result_e::invalid;

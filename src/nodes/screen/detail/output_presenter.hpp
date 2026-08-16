@@ -1,5 +1,6 @@
 #pragma once
 #include "gpu/framebuffer_fwd.hpp"
+#include "gpu/geometry.hpp"
 #include "gpu/types.hpp"
 #include "utils/flicks.hpp"
 
@@ -59,7 +60,7 @@ class output_presenter_s
         render_frame_s& operator=(render_frame_s&& other) noexcept;
 
         gpu::framebuffer_s* target() const noexcept;
-        void                submit(utils::flicks program_target_time);
+        void submit(utils::flicks program_target_time, gpu::fill_mode_e fill_mode, gpu::vec2i_t content_dimensions);
     };
 
   private:

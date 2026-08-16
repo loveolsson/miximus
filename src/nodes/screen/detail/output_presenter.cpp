@@ -181,9 +181,11 @@ class output_presenter_s::impl_s
 
     class slot_lease_s
     {
-        impl_s*      impl_{};
-        size_t       index_{};
-        mutable bool presented_{};
+        impl_s*          impl_{};
+        size_t           index_{};
+        gpu::fill_mode_e fill_mode_{gpu::fill_mode_e::scale};
+        gpu::vec2i_t     content_dimensions_{};
+        mutable bool     presented_{};
 
         void release() noexcept
         {
@@ -202,9 +204,11 @@ class output_presenter_s::impl_s
 
       public:
         slot_lease_s() = default;
-        slot_lease_s(impl_s* impl, size_t index) noexcept
+        slot_lease_s(impl_s* impl, size_t index, gpu::fill_mode_e fill_mode, gpu::vec2i_t content_dimensions) noexcept
             : impl_(impl)
             , index_(index)
+            , fill_mode_(fill_mode)
+            , content_dimensions_(content_dimensions)
         {
         }
 
@@ -216,6 +220,8 @@ class output_presenter_s::impl_s
         slot_lease_s(slot_lease_s&& other) noexcept
             : impl_(std::exchange(other.impl_, nullptr))
             , index_(other.index_)
+            , fill_mode_(other.fill_mode_)
+            , content_dimensions_(other.content_dimensions_)
             , presented_(other.presented_)
         {
         }
@@ -224,15 +230,19 @@ class output_presenter_s::impl_s
         {
             if (this != &other) {
                 release();
-                impl_      = std::exchange(other.impl_, nullptr);
-                index_     = other.index_;
-                presented_ = other.presented_;
+                impl_               = std::exchange(other.impl_, nullptr);
+                index_              = other.index_;
+                fill_mode_          = other.fill_mode_;
+                content_dimensions_ = other.content_dimensions_;
+                presented_          = other.presented_;
             }
             return *this;
         }
 
-        size_t index() const noexcept { return index_; }
-        void   mark_presented() const noexcept { presented_ = true; }
+        size_t           index() const noexcept { return index_; }
+        gpu::fill_mode_e fill_mode() const noexcept { return fill_mode_; }
+        gpu::vec2i_t     content_dimensions() const noexcept { return content_dimensions_; }
+        void             mark_presented() const noexcept { presented_ = true; }
     };
 
     using submitted_frame_s = media::output_frame_s<slot_lease_s>;
@@ -282,7 +292,8 @@ class output_presenter_s::impl_s
         free_slots_.push_back(index);
     }
 
-    void submit(size_t index, utils::flicks program_target_time)
+    void
+    submit(size_t index, utils::flicks program_target_time, gpu::fill_mode_e fill_mode, gpu::vec2i_t content_dimensions)
     {
         auto& slot = slots_.at(index);
         slot.ready = std::make_unique<gpu::fence_s>();
@@ -290,8 +301,8 @@ class output_presenter_s::impl_s
 
         {
             const std::scoped_lock lock(mutex_);
-            submitted_frames_.push_back(
-                {.program_target_time = program_target_time, .payload = slot_lease_s(this, index)});
+            submitted_frames_.push_back({.program_target_time = program_target_time,
+                                         .payload = slot_lease_s(this, index, fill_mode, content_dimensions)});
         }
         ++frames_submitted_;
         condition_.notify_one();
@@ -354,11 +365,19 @@ class output_presenter_s::impl_s
         glViewport(0, 0, framebuffer_size.x, framebuffer_size.y);
         glClearColor(0, 0, 0, 0);
         glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
-        textured_quad->draw(slot.target->texture(),
-                            {
-                                .pos  = {0,   1.0 },
-                                .size = {1.0, -1.0},
-        });
+        if (framebuffer_size.x <= 0 || framebuffer_size.y <= 0) {
+            lease.mark_presented();
+            return;
+        }
+        const auto texture_draw = gpu::calculate_texture_draw(
+            {
+                .pos = {0,   1.0 },
+                  .size = {1.0, -1.0}
+        },
+            lease.content_dimensions(),
+            framebuffer_size,
+            lease.fill_mode());
+        textured_quad->draw(slot.target->texture(), texture_draw);
         lease.mark_presented();
     }
 
@@ -671,13 +690,15 @@ gpu::framebuffer_s* output_presenter_s::render_frame_s::target() const noexcept
     return impl_ != nullptr ? impl_->target(slot_index_) : nullptr;
 }
 
-void output_presenter_s::render_frame_s::submit(utils::flicks program_target_time)
+void output_presenter_s::render_frame_s::submit(utils::flicks    program_target_time,
+                                                gpu::fill_mode_e fill_mode,
+                                                gpu::vec2i_t     content_dimensions)
 {
     if (impl_ == nullptr) {
         throw std::logic_error("screen output frame was already submitted");
     }
     auto* impl = std::exchange(impl_, nullptr);
-    impl->submit(slot_index_, program_target_time);
+    impl->submit(slot_index_, program_target_time, fill_mode, content_dimensions);
 }
 
 output_presenter_s::output_presenter_s(gpu::context_s*     root_context,

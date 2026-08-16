@@ -1160,7 +1160,8 @@ class node_impl : public node_i
         if (!frame_renderer_) {
             frame_renderer_ = render_state_->active_output.path->create_renderer(app->ctx());
         }
-        frame_renderer_->render(texture, *target);
+        const auto fill_mode = state.get_enum_option("fill_mode", gpu::fill_mode_e::scale);
+        frame_renderer_->render(texture, *target, fill_mode);
         target->set_program_target_time(app->frame_context().program_target_time);
         render_target_ = std::move(target);
     }
@@ -1179,10 +1180,11 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",         "DeckLink output"                     },
-            {"enabled",      true                                  },
-            {"display_mode", "720p60"                              },
-            {"keyer_mode",   enum_to_string(keyer_mode_e::disabled)},
+            {"name",         "DeckLink output"                      },
+            {"enabled",      true                                   },
+            {"display_mode", "720p60"                               },
+            {"fill_mode",    enum_to_string(gpu::fill_mode_e::scale)},
+            {"keyer_mode",   enum_to_string(keyer_mode_e::disabled) },
         };
     }
 
@@ -1193,6 +1195,9 @@ class node_impl : public node_i
         }
         if (name == "keyer_mode") {
             return normalize_enum_option_value<keyer_mode_e>(value);
+        }
+        if (name == "fill_mode") {
+            return normalize_enum_option_value<gpu::fill_mode_e>(value);
         }
         if (name == "enabled") {
             return normalize_option_value<bool>(value);

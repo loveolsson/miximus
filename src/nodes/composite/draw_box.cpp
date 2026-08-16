@@ -2,6 +2,7 @@
 #include "glm/common.hpp"
 #include "gpu/context.hpp"
 #include "gpu/framebuffer.hpp"
+#include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/textured_quad.hpp"
 #include "gpu/types.hpp"
@@ -52,9 +53,12 @@ class node_impl : public node_i
                                                        .size = {1.0, 1.0},
         });
 
-        auto opacity_opt = state.get_option<double>("opacity", 1.0);
-        auto opacity     = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
-        opacity          = glm::clamp(opacity, 0.0, 1.0);
+        auto opacity_opt        = state.get_option<double>("opacity", 1.0);
+        auto opacity            = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
+        opacity                 = glm::clamp(opacity, 0.0, 1.0);
+        const auto fill_mode    = state.get_enum_option("fill_mode", gpu::fill_mode_e::scale);
+        const auto texture_draw = gpu::calculate_texture_draw(
+            draw_rect, texture->display_dimensions(), fb->texture()->display_dimensions(), fill_mode);
 
         fb->begin_render();
 
@@ -63,7 +67,7 @@ class node_impl : public node_i
             textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
-        textured_quad_->draw(texture, draw_rect, opacity);
+        textured_quad_->draw(texture, texture_draw, opacity);
 
         gpu::framebuffer_s::end_render();
     }
@@ -71,8 +75,9 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",    "Draw box"},
-            {"opacity", 1         },
+            {"name",      "Draw box"                             },
+            {"opacity",   1                                      },
+            {"fill_mode", enum_to_string(gpu::fill_mode_e::scale)},
         };
     }
 
@@ -80,6 +85,9 @@ class node_impl : public node_i
     {
         if (name == "opacity") {
             return normalize_option_value<double>(value, 0, 1.0);
+        }
+        if (name == "fill_mode") {
+            return normalize_enum_option_value<gpu::fill_mode_e>(value);
         }
 
         return option_result_e::invalid;
