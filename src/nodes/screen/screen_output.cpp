@@ -179,7 +179,7 @@ class node_impl : public node_i
             textured_quad_->draw(texture);
         }
         gpu::framebuffer_s::end_render();
-        const auto fill_mode          = state.get_enum_option("fill_mode", gpu::fill_mode_e::scale);
+        const auto fill_mode          = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
         const auto content_dimensions = texture != nullptr ? texture->display_dimensions() : dimensions;
         frame->submit(app->frame_context().program_target_time, fill_mode, content_dimensions);
     }

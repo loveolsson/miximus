@@ -84,10 +84,11 @@ class node_impl : public node_i
         }
 
         const auto target_dimensions = framebuffer->texture()->display_dimensions();
-        const auto fill_mode         = state.get_enum_option("fill_mode", gpu::fill_mode_e::contain);
+        const auto fill_mode         = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
+
         const auto a_draw     = gpu::calculate_texture_draw({}, a->display_dimensions(), target_dimensions, fill_mode);
         const auto b_draw     = gpu::calculate_texture_draw({}, b->display_dimensions(), target_dimensions, fill_mode);
-        const auto blend_mode = state.get_enum_option("blend_mode", blend_mode_e::video);
+        const auto blend_mode = state.get_enum_option_unchecked<blend_mode_e>("blend_mode");
         const auto mix_space  = blend_mode == blend_mode_e::video ? gpu::textured_quad_s::mix_space_e::video
                                                                   : gpu::textured_quad_s::mix_space_e::linear;
 

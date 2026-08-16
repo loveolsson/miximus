@@ -164,7 +164,14 @@ error_e node_manager_s::handle_add_node_locked(std::string_view                 
     node->init(id);
 
     nodes::node_record_s record;
-    record.state.options = node->get_default_options();
+    record.state.options       = json::object();
+    const auto default_options = node->get_default_options();
+    const auto default_result  = node->set_options(record.state.options, default_options);
+    if (default_result.error != error_e::no_error || default_result.has_corrected_values) {
+        _log()->error("Node type {} has invalid or non-canonical default options", type);
+        return error_e::internal_error;
+    }
+
     if (const auto result = node->set_options(record.state.options, options); result.error != error_e::no_error) {
         return result.error;
     }

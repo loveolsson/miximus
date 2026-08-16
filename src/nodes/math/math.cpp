@@ -42,7 +42,7 @@ class node_impl : public node_i
     {
         T res{};
 
-        auto op = state.get_enum_option("operation", operation_e::add);
+        auto op = state.get_enum_option_unchecked<operation_e>("operation");
 
         auto a_opt = state.get_option<T>("a");
         auto b_opt = state.get_option<T>("b");

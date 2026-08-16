@@ -56,7 +56,7 @@ class node_impl : public node_i
         auto opacity_opt        = state.get_option<double>("opacity", 1.0);
         auto opacity            = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
         opacity                 = glm::clamp(opacity, 0.0, 1.0);
-        const auto fill_mode    = state.get_enum_option("fill_mode", gpu::fill_mode_e::scale);
+        const auto fill_mode    = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
         const auto texture_draw = gpu::calculate_texture_draw(
             draw_rect, texture->display_dimensions(), fb->texture()->display_dimensions(), fill_mode);
 

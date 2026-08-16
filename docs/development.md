@@ -135,6 +135,27 @@ generation at compile time.
 
 Node registration also owns persisted schema evolution. Version 1 is implicit for a factory-only registration. `node_definition_s::migrations` is an append-only vector: element 0 migrates version 1 to 2, element 1 migrates version 2 to 3, and so on. The current schema version is derived from the vector length, so every schema bump necessarily has one ordered migration. Keep each node's migration chain in a separate `<node>_migrations.hpp/.cpp` pair; a shared file is appropriate for a templated node family with one shared schema. Option migrations mutate the options object; input/output interface migrations rename the corresponding endpoint of saved connections. Migrations must throw if their claimed source data cannot be converted safely. Do not bump the schema for implementation-only changes.
 
+Adding an option with a default does not by itself require a schema bump or migration. Node construction starts with the
+current defaults and overlays the persisted options through normal validation, so an older configuration that lacks the
+new key automatically receives its default. Add a migration only when existing persisted data must be transformed to
+preserve its meaning or behavior—for example, replacing an old `fill` boolean with a `fill_mode` enum whose value is
+derived from that boolean. Do not add a migration merely to write the same value already supplied by
+`get_default_options()`. Once a schema version has been emitted, however, its migration remains part of the append-only
+history even if it is later found to have been unnecessary.
+
+There is a narrow exception when repairing a migration chain. Defaults are applied after migrations have replayed, so a
+later migration can produce a different result if an option introduced at an earlier version is absent instead of
+holding the default from that version. In that case, it is acceptable to retrofit the earlier migration to materialize
+the historical default needed by the later transformation. Treat this as a compatibility correction for a demonstrated
+dependency between migrations, not as a reason to add defaults proactively. Cover the affected starting schema versions
+with migration tests.
+
+Migration code must keep historical serialized enum values as explicit string literals. Do not derive them through
+`enum_to_string()`, `magic_enum`, a current enum member, or the node's current defaults: those definitions can change
+while the migration's input and output contract must remain fixed. For example, a migration from a `fill` boolean to a
+`fill_mode` option must assign the exact historical strings such as `"fill"` or `"contain"` directly in that migration.
+Tests should assert the serialized strings produced by each transformation.
+
 ### Web side
 
 1. Add or update the Baklava definition in `web/src/nodes/`.

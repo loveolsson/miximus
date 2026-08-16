@@ -131,10 +131,12 @@ The node manager validates graph mutations. It:
 
 ## Options and persistence
 
-Each node supplies `get_default_options()` and normalizes updates in `normalize_option()`. Normalization reports whether
-the value was accepted unchanged, corrected, or invalid. `node_i::set_options()` applies a complete update atomically,
+Each node supplies `get_default_options()` and normalizes updates in `normalize_option()`. Defaults pass through the
+same normalization path once when the node is created and must already be canonical. Normalization reports whether the
+value was accepted unchanged, corrected, or invalid. `node_i::set_options()` applies a complete update atomically,
 rejects invalid keys or values, and stores accepted normalized values. Update broadcasts report whether any values were
-corrected. Common options include the display name and editor position.
+corrected. Common options include the display name and editor position. Nodes may use unchecked typed accessors for
+values read from admitted state because defaults, loaded configuration, and live updates all pass through this boundary.
 
 The persisted settings JSON is owned by `core::configuration_s`. Its JSON load/serialization API is separate from the
 file wrappers so future web commands can reuse the same path. The document contains a top-level `schema_version`, node

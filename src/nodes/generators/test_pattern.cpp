@@ -203,7 +203,7 @@ class node_impl : public node_i
         };
         const request_s request{
             .dimensions = dimensions,
-            .pattern    = state.get_enum_option("pattern", render::test_pattern_e::smpte_color_bars),
+            .pattern    = state.get_enum_option_unchecked<render::test_pattern_e>("pattern"),
             .show_logo  = state.get_option<bool>("show_logo"),
         };
         if (desired_request_.observe(request)) {

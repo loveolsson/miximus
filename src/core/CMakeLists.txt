@@ -50,6 +50,7 @@ add_sanitizers(app)
 if(BUILD_TESTING)
     add_executable(core_test
         tests/settings_node_test.cpp
+        tests/node_options_test.cpp
         tests/frame_execution_test.cpp
         tests/frame_scheduler_test.cpp
         tests/output_timing_test.cpp

@@ -5,9 +5,11 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cassert>
 #include <format>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 
 namespace miximus::nodes {
 
@@ -46,16 +48,18 @@ struct node_state_s
     }
 
     template <typename T>
-    T get_enum_option(std::string_view name, T fallback) const
+        requires std::is_enum_v<T>
+    T get_enum_option_unchecked(std::string_view name) const
     {
-        const auto opt = get_option<std::string_view>(name);
-        const auto e   = enum_from_string<T>(opt);
+        const auto option = options.find(name);
+        assert(option != options.end());
 
-        if (e.has_value()) {
-            return *e;
-        } else {
-            return fallback;
-        }
+        const auto* value = option->get_ptr<const nlohmann::json::string_t*>();
+        assert(value != nullptr);
+
+        const auto result = enum_from_string<T>(*value);
+        assert(result.has_value());
+        return *result;
     }
 };
 

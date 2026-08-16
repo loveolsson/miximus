@@ -1088,7 +1088,7 @@ class node_impl : public node_i
 
         const auto device_name    = state.get_option<std::string>("device_name");
         const auto display_mode   = state.get_option<std::string>("display_mode");
-        const auto keyer_mode     = state.get_enum_option("keyer_mode", keyer_mode_e::disabled);
+        const auto keyer_mode     = state.get_enum_option_unchecked<keyer_mode_e>("keyer_mode");
         const auto enabled        = state.get_option<bool>("enabled");
         const auto buffer_frames  = app->frame_settings().decklink_output.buffer_frames;
         result->demands_execution = enabled;
@@ -1160,7 +1160,7 @@ class node_impl : public node_i
         if (!frame_renderer_) {
             frame_renderer_ = render_state_->active_output.path->create_renderer(app->ctx());
         }
-        const auto fill_mode = state.get_enum_option("fill_mode", gpu::fill_mode_e::scale);
+        const auto fill_mode = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
         frame_renderer_->render(texture, *target, fill_mode);
         target->set_program_target_time(app->frame_context().program_target_time);
         render_target_ = std::move(target);

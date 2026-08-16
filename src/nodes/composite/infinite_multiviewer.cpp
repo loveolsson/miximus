@@ -58,7 +58,7 @@ class node_impl : public node_i
         }
 
         const auto target_dimensions = fb->texture()->display_dimensions();
-        const auto fill_mode         = state.get_enum_option("fill_mode", gpu::fill_mode_e::contain);
+        const auto fill_mode         = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
         auto       batch             = textured_quad_->begin_batch();
 
         for (size_t i = 0, y = 0; y < cols && i < tex_count; y++) {
