@@ -14,7 +14,6 @@ add_library(gpu
     framebuffer_fwd.hpp
     framebuffer.cpp
     vertex.hpp
-    vertex_attr.hpp
     fence.hpp
     fence.cpp
     texture.hpp
@@ -65,6 +64,11 @@ PUBLIC
     glm::glm
     cuda
     dvp
+)
+
+target_compile_definitions(
+    gpu
+    PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:MIXIMUS_VALIDATE_SHADER_UNIFORMS>
 )
 
 if(MIXIMUS_USE_PRECOMPILED_HEADERS)

@@ -1,39 +1,29 @@
 #pragma once
 #include "gpu/glad.hpp"
-#include "gpu/vertex.hpp"
+#include "gpu/types.hpp"
 #include "utils/transparent_string_hash.hpp"
 
-#include <algorithm>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 namespace miximus::gpu {
 
 class shader_program_s
 {
-    struct attribute_s
-    {
-        std::string name;
-        GLint       loc;
-        GLenum      type;
-        GLint       size;
-    };
-
     struct uniform_s
     {
-        GLint  loc;
+        GLint  location;
         GLenum type;
         GLint  size;
     };
 
-    using attr_list_t   = std::vector<attribute_s>;
     using uniform_map_t = std::unordered_map<std::string, uniform_s, utils::transparent_string_hash, std::equal_to<>>;
 
     GLuint        program_;
-    attr_list_t   attributes_;
     uniform_map_t uniforms_;
+
+    const uniform_s* find_uniform(std::string_view name) const noexcept;
 
   public:
     enum name_e
@@ -59,34 +49,11 @@ class shader_program_s
     static void unuse();
     GLuint      get_id() { return program_; }
 
-    template <typename T>
-    void set_vertex_type();
-
-    void set_uniform(std::string_view name, const vec2_t& val);
-    void set_uniform(std::string_view name, const vec3_t& val);
-    void set_uniform(std::string_view name, const mat3& val);
-    void set_uniform(std::string_view name, double val);
-    void set_uniform(std::string_view name, int val);
+    bool set_uniform(std::string_view name, const vec2_t& val);
+    bool set_uniform(std::string_view name, const vec3_t& val);
+    bool set_uniform(std::string_view name, const mat3& val);
+    bool set_uniform(std::string_view name, double val);
+    bool set_uniform(std::string_view name, int val);
 };
-
-template <typename T>
-inline void shader_program_s::set_vertex_type()
-{
-    constexpr auto info = get_vertex_type_info<T>();
-
-    for (GLuint i = 0; i < attributes_.size(); ++i) {
-        const auto& attr = attributes_[i];
-
-        const auto it = std::ranges::find(info, attr.name, &vertex_attr_info_s::name);
-        if (it != info.end()) {
-            const vertex_attr& v = it->attr;
-
-            glEnableVertexAttribArray(attr.loc);
-            glVertexAttribPointer(attr.loc, v.size, v.type, v.norm, sizeof(T), reinterpret_cast<void*>(v.offset));
-        } else {
-            glDisableVertexAttribArray(attr.loc);
-        }
-    }
-}
 
 } // namespace miximus::gpu

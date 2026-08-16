@@ -5,6 +5,7 @@
 #include "static_files/files.hpp"
 
 #include <array>
+#include <format>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -12,6 +13,33 @@
 #include <vector>
 
 namespace miximus::gpu {
+
+namespace {
+
+void maybe_throw_uniform_type_error(bool             type_matches,
+                                    std::string_view uniform_name,
+                                    GLenum           actual_type,
+                                    GLint            array_size,
+                                    std::string_view expected_type)
+{
+#ifdef MIXIMUS_VALIDATE_SHADER_UNIFORMS
+    if (!type_matches) {
+        throw std::logic_error(std::format("shader uniform '{}' has OpenGL type {} and array size {}; expected {}",
+                                           uniform_name,
+                                           actual_type,
+                                           array_size,
+                                           expected_type));
+    }
+#else
+    (void)type_matches;
+    (void)uniform_name;
+    (void)actual_type;
+    (void)array_size;
+    (void)expected_type;
+#endif
+}
+
+} // namespace
 
 class shader_s
 {
@@ -91,31 +119,6 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
     }
 
     GLint count = 0;
-    glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTES, &count);
-    log->debug("Active Attributes: {}", count);
-
-    GLint attribute_name_length = 0;
-    glGetProgramiv(program_, GL_ACTIVE_ATTRIBUTE_MAX_LENGTH, &attribute_name_length);
-    std::vector<GLchar> attribute_name(static_cast<size_t>(attribute_name_length));
-
-    for (GLuint i = 0; std::cmp_less(i, count); i++) {
-        GLint  size{};
-        GLenum type{};
-
-        glGetActiveAttrib(program_, i, attribute_name_length, nullptr, &size, &type, attribute_name.data());
-        log->debug(" -- Attribute {} Type: {} Name: \"{}\"", i, type, attribute_name.data());
-
-        const GLint loc = glGetAttribLocation(program_, attribute_name.data());
-        if (loc != -1) {
-            attributes_.emplace_back(attribute_s{
-                .name = attribute_name.data(),
-                .loc  = loc,
-                .type = type,
-                .size = size,
-            });
-        }
-    }
-
     glGetProgramiv(program_, GL_ACTIVE_UNIFORMS, &count);
     log->debug("Active Uniforms: {}", count);
 
@@ -135,9 +138,9 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
         if (loc != -1) {
             uniforms_.emplace(uniform_name.data(),
                               uniform_s{
-                                  .loc  = loc,
-                                  .type = type,
-                                  .size = size,
+                                  .location = loc,
+                                  .type     = type,
+                                  .size     = size,
                               });
         }
     }
@@ -155,39 +158,68 @@ void shader_program_s::use() const { glUseProgram(program_); }
 
 void shader_program_s::unuse() { glUseProgram(0); }
 
-void shader_program_s::set_uniform(std::string_view name, const vec2_t& val)
+const shader_program_s::uniform_s* shader_program_s::find_uniform(std::string_view name) const noexcept
 {
-    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniform2f(program_, it->second.loc, static_cast<float>(val.x), static_cast<float>(val.y));
-    }
+    const auto it = uniforms_.find(name);
+    return it != uniforms_.end() ? &it->second : nullptr;
 }
 
-void shader_program_s::set_uniform(std::string_view name, const vec3_t& val)
+bool shader_program_s::set_uniform(std::string_view name, const vec2_t& val)
 {
-    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniform3f(program_, it->second.loc, val.x, val.y, val.z);
+    if (const auto* uniform = find_uniform(name)) {
+        maybe_throw_uniform_type_error(
+            uniform->type == GL_FLOAT_VEC2, name, uniform->type, uniform->size, "GL_FLOAT_VEC2");
+        glProgramUniform2f(program_, uniform->location, static_cast<float>(val.x), static_cast<float>(val.y));
+        return true;
     }
+    return false;
 }
 
-void shader_program_s::set_uniform(std::string_view name, const mat3& val)
+bool shader_program_s::set_uniform(std::string_view name, const vec3_t& val)
 {
-    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniformMatrix3fv(program_, it->second.loc, 1, GL_TRUE, &val[0][0]);
+    if (const auto* uniform = find_uniform(name)) {
+        maybe_throw_uniform_type_error(
+            uniform->type == GL_FLOAT_VEC3, name, uniform->type, uniform->size, "GL_FLOAT_VEC3");
+        glProgramUniform3f(program_, uniform->location, val.x, val.y, val.z);
+        return true;
     }
+    return false;
 }
 
-void shader_program_s::set_uniform(std::string_view name, double val)
+bool shader_program_s::set_uniform(std::string_view name, const mat3& val)
 {
-    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniform1f(program_, it->second.loc, static_cast<float>(val));
+    if (const auto* uniform = find_uniform(name)) {
+        maybe_throw_uniform_type_error(
+            uniform->type == GL_FLOAT_MAT3, name, uniform->type, uniform->size, "GL_FLOAT_MAT3");
+        glProgramUniformMatrix3fv(program_, uniform->location, 1, GL_TRUE, &val[0][0]);
+        return true;
     }
+    return false;
 }
 
-void shader_program_s::set_uniform(std::string_view name, int val)
+bool shader_program_s::set_uniform(std::string_view name, double val)
 {
-    if (auto it = uniforms_.find(name); it != uniforms_.end()) {
-        glProgramUniform1i(program_, it->second.loc, val);
+    if (const auto* uniform = find_uniform(name)) {
+        maybe_throw_uniform_type_error(uniform->type == GL_FLOAT, name, uniform->type, uniform->size, "GL_FLOAT");
+        glProgramUniform1f(program_, uniform->location, static_cast<float>(val));
+        return true;
     }
+    return false;
+}
+
+bool shader_program_s::set_uniform(std::string_view name, int val)
+{
+    if (const auto* uniform = find_uniform(name)) {
+        maybe_throw_uniform_type_error(uniform->type == GL_INT || uniform->type == GL_BOOL ||
+                                           uniform->type == GL_SAMPLER_2D,
+                                       name,
+                                       uniform->type,
+                                       uniform->size,
+                                       "GL_INT, GL_BOOL, or GL_SAMPLER_2D");
+        glProgramUniform1i(program_, uniform->location, val);
+        return true;
+    }
+    return false;
 }
 
 } // namespace miximus::gpu

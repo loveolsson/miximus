@@ -425,11 +425,15 @@ class output_presenter_s::impl_s
             output_latency_us_ = to_microseconds(timeline->observe_latency(predicted_completion, *oldest_queued));
             program_target     = timeline->map_presentation_to_program_target(predicted_completion);
         }
+        if (!program_target.has_value()) {
+            return std::nullopt;
+        }
+        const auto selected_program_target = program_target.value();
 
-        auto selection = queue->select(*program_target);
+        auto selection = queue->select(selected_program_target);
         publish_queue_metrics(*queue);
         if (selection.frame != nullptr) {
-            selection_offset_us_ = to_microseconds(selection.frame->program_target_time - *program_target);
+            selection_offset_us_ = to_microseconds(selection.frame->program_target_time - selected_program_target);
         }
         return selection;
     }
