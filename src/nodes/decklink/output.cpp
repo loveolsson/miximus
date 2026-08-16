@@ -2,12 +2,10 @@
 #include "core/node_status_registry.hpp"
 #include "detail/colorspace.hpp"
 #include "detail/device_reservation.hpp"
+#include "detail/output_activation.hpp"
+#include "detail/output_path.hpp"
 #include "detail/output_video_buffer.hpp"
-#include "gpu/color_transfer.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_readback.hpp"
 #include "logger/logger.hpp"
 #include "media/frame_fingerprint.hpp"
@@ -61,13 +59,6 @@ constexpr size_t READBACK_PIPELINE_HEADROOM   = 3;
 constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
 constexpr size_t PROGRAM_QUEUE_RESERVE        = 1;
 
-enum class keyer_mode_e : uint8_t
-{
-    disabled,
-    internal,
-    external,
-};
-
 constexpr size_t get_output_queue_capacity(size_t buffer_frames) { return buffer_frames + OUTPUT_QUEUE_HEADROOM; }
 
 constexpr size_t get_readback_slot_count(size_t scheduled_frames, size_t program_queue_capacity)
@@ -93,23 +84,6 @@ status::decklink_output_device_status_s make_device_status(const device_status_s
         .reference_format    = status.reference_signal_mode,
     };
 }
-
-struct mode_info_s
-{
-    BMDDisplayMode                 mode{bmdModeUnknown};
-    BMDTimeValue                   frame_duration{};
-    BMDTimeScale                   time_scale{};
-    gpu::vec2i_t                   dim{};
-    gpu::vec2i_t                   readback_dimensions{};
-    int32_t                        row_bytes{};
-    utils::flicks                  frame_duration_flicks{};
-    gpu::color_conversion_s        yuv_conversion{};
-    gpu::mat3                      gamut_conversion{1.0F};
-    BMDColorspace                  colorspace{bmdColorspaceRec709};
-    BMDPixelFormat                 output_pixel_format{bmdFormat10BitYUV};
-    gpu::texture_s::pixel_format_e readback_pixel_format{gpu::texture_s::pixel_format_e::uyuv_u10};
-    keyer_mode_e                   keyer_mode{keyer_mode_e::disabled};
-};
 
 class callback_s final : public IDeckLinkVideoOutputCallback
 {
@@ -162,7 +136,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     struct render_state_s
     {
         std::shared_ptr<gpu::transfer::texture_readback_stream_s> readback_stream;
-        mode_info_s                                               mode;
+        active_output_s                                           active_output;
     };
 
   private:
@@ -185,13 +159,12 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     std::string                                device_name_;
     std::string                                requested_mode_name_;
     keyer_mode_e                               requested_keyer_mode_;
+    output_activation_s                        output_activation_;
 
     mutable std::mutex             state_mutex_;
     std::optional<render_state_s>  render_state_;
     std::vector<settings_option_s> mode_options_;
     std::atomic_uint64_t           mode_options_version_;
-    keyer_mode_e                   active_keyer_mode_{keyer_mode_e::disabled};
-    std::optional<std::string>     keyer_fallback_reason_;
 
     mutable std::mutex                                                             frame_mutex_;
     std::shared_ptr<gpu::transfer::texture_readback_stream_s>                      readback_stream_;
@@ -199,7 +172,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     std::optional<media::timed_output_queue_s<decklink_ptr<IDeckLinkVideoBuffer>>> output_queue_;
     media::output_runtime_metrics_s                                                runtime_metrics_;
     std::deque<scheduled_frame_s>                                                  scheduled_frames_;
-    mode_info_s                                                                    mode_info_;
+    active_output_s                                                                active_output_;
     BMDTimeValue                                                                   next_decklink_stream_time_{};
     uint64_t                                                                       next_output_frame_sequence_{};
     utils::flicks                                                                  program_frame_duration_;
@@ -215,13 +188,11 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     int64_t                                                                        program_selection_offset_us_{};
     uint64_t                                                                       completion_time_failures_{};
 
-    std::atomic_bool             stop_requested_;
-    std::atomic_bool             preroll_pump_posted_;
-    std::atomic<phase_e>         phase_{phase_e::starting};
-    bool                         callback_installed_{};
-    bool                         output_enabled_{};
-    bool                         playback_started_{};
-    decklink_ptr<IDeckLinkKeyer> keyer_;
+    std::atomic_bool     stop_requested_;
+    std::atomic_bool     preroll_pump_posted_;
+    std::atomic<phase_e> phase_{phase_e::starting};
+    bool                 callback_installed_{};
+    bool                 playback_started_{};
 
     std::mutex              stop_mutex_;
     std::condition_variable stop_condition_;
@@ -263,7 +234,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         mode_options_version_.fetch_add(1);
     }
 
-    auto select_display_mode() -> std::optional<mode_info_s>
+    auto select_display_mode() -> std::optional<output_display_mode_s>
     {
         decklink_ptr<IDeckLinkDisplayModeIterator> iterator;
         if (!device_ || device_->GetDisplayModeIterator(iterator.releaseAndGetAddressOf()) != S_OK || !iterator) {
@@ -271,13 +242,13 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return std::nullopt;
         }
 
-        std::optional<mode_info_s>         selected;
-        std::vector<std::string>           names;
-        decklink_ptr<IDeckLinkDisplayMode> sdk_mode;
+        std::optional<output_display_mode_s> selected;
+        std::vector<std::string>             names;
+        decklink_ptr<IDeckLinkDisplayMode>   sdk_mode;
         while (iterator->Next(sdk_mode.releaseAndGetAddressOf()) == S_OK) {
-            mode_info_s mode{};
-            mode.mode = sdk_mode->GetDisplayMode();
-            mode.dim  = {sdk_mode->GetWidth(), sdk_mode->GetHeight()};
+            output_display_mode_s mode{};
+            mode.mode       = sdk_mode->GetDisplayMode();
+            mode.dimensions = {sdk_mode->GetWidth(), sdk_mode->GetHeight()};
             if (sdk_mode->GetFrameRate(&mode.frame_duration, &mode.time_scale) != S_OK) {
                 continue;
             }
@@ -300,10 +271,6 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             mode.yuv_conversion   = gpu::get_color_transfer_to_yuv(transfer);
             mode.gamut_conversion = gpu::get_gamut_transfer_from_rec709(transfer);
 
-            const int row_pixels     = ((mode.dim.x + 47) / 48) * 32;
-            mode.readback_dimensions = {row_pixels, mode.dim.y};
-            mode.row_bytes           = row_pixels * 4;
-
             auto name = get_display_mode_name(sdk_mode.get());
             if (name == requested_mode_name_) {
                 selected = mode;
@@ -318,14 +285,6 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         return selected;
     }
 
-    void set_colorspace_metadata(IDeckLinkMutableVideoFrame* frame) const
-    {
-        auto metadata = query_decklink_interface<IDeckLinkVideoFrameMutableMetadataExtensions>(frame);
-        if (metadata) {
-            (void)metadata->SetInt(bmdDeckLinkFrameMetadataColorspace, mode_info_.colorspace);
-        }
-    }
-
     size_t minimum_preroll_frames()
     {
         auto    attributes = device_.query<IDeckLinkProfileAttributes>();
@@ -337,106 +296,9 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         return static_cast<size_t>(minimum);
     }
 
-    void set_keyer_fallback(std::string reason)
-    {
-        log()->warn("DeckLink output {} requested {} keying but will continue with ordinary 10-bit YUV output: {}",
-                    device_name_,
-                    enum_to_string(requested_keyer_mode_),
-                    reason);
-        const std::scoped_lock lock(state_mutex_);
-        active_keyer_mode_     = keyer_mode_e::disabled;
-        keyer_fallback_reason_ = std::move(reason);
-    }
-
-    void set_active_keyer(keyer_mode_e mode)
-    {
-        const std::scoped_lock lock(state_mutex_);
-        active_keyer_mode_ = mode;
-        keyer_fallback_reason_.reset();
-    }
-
-    bool device_supports_requested_keyer(BMDDisplayMode display_mode)
-    {
-        auto       attributes = device_.query<IDeckLinkProfileAttributes>();
-        bool       capability{};
-        const auto capability_id = requested_keyer_mode_ == keyer_mode_e::external ? BMDDeckLinkSupportsExternalKeying
-                                                                                   : BMDDeckLinkSupportsInternalKeying;
-        if (!attributes || attributes->GetFlag(capability_id, &capability) != S_OK || !capability) {
-            set_keyer_fallback("the active device profile does not advertise that keyer capability");
-            return false;
-        }
-
-        keyer_ = device_.query<IDeckLinkKeyer>();
-        if (!keyer_) {
-            set_keyer_fallback("the device does not expose the DeckLink keyer interface");
-            return false;
-        }
-
-        bool supported{};
-        if (device_->DoesSupportVideoMode(bmdVideoConnectionUnspecified,
-                                          display_mode,
-                                          bmdFormat8BitARGB,
-                                          bmdNoVideoOutputConversion,
-                                          bmdSupportedVideoModeKeying,
-                                          nullptr,
-                                          &supported) != S_OK ||
-            !supported) {
-            set_keyer_fallback("the selected display mode does not support 8-bit ARGB keying");
-            keyer_ = nullptr;
-            return false;
-        }
-        return true;
-    }
-
-    bool configure_output_format(mode_info_s* mode, keyer_mode_e keyer_mode)
-    {
-        mode->keyer_mode = keyer_mode;
-        if (keyer_mode != keyer_mode_e::disabled) {
-            // Duo 2 accepts keyed HD p60 frames as 8-bit ARGB but rejects the
-            // otherwise equivalent BGRA frame description at scheduling.
-            mode->output_pixel_format   = bmdFormat8BitARGB;
-            mode->readback_pixel_format = gpu::texture_s::pixel_format_e::argb_u8;
-        } else {
-            mode->output_pixel_format   = bmdFormat10BitYUV;
-            mode->readback_pixel_format = gpu::texture_s::pixel_format_e::uyuv_u10;
-        }
-
-        const auto row_bytes_result =
-            device_->RowBytesForPixelFormat(mode->output_pixel_format, mode->dim.x, &mode->row_bytes);
-        if (row_bytes_result != S_OK || mode->row_bytes <= 0 || mode->row_bytes % 4 != 0) {
-            log()->error("Unable to determine DeckLink row bytes for {} with result {:#010x}",
-                         device_name_,
-                         static_cast<uint32_t>(row_bytes_result));
-            return false;
-        }
-        mode->readback_dimensions = {mode->row_bytes / 4, mode->dim.y};
-        return true;
-    }
-
     auto create_frame(IDeckLinkVideoBuffer* buffer) -> decklink_ptr<IDeckLinkVideoFrame>
     {
-        if (buffer == nullptr) {
-            return {};
-        }
-
-        decklink_ptr<IDeckLinkMutableVideoFrame> frame;
-        const auto                               result = device_->CreateVideoFrameWithBuffer(mode_info_.dim.x,
-                                                                mode_info_.dim.y,
-                                                                mode_info_.row_bytes,
-                                                                mode_info_.output_pixel_format,
-                                                                bmdFrameFlagDefault,
-                                                                buffer,
-                                                                frame.releaseAndGetAddressOf());
-        if (result != S_OK) {
-            log()->error("CreateVideoFrameWithBuffer failed for {} with result {:#010x}",
-                         device_name_,
-                         static_cast<uint32_t>(result));
-            return {};
-        }
-        if (mode_info_.keyer_mode == keyer_mode_e::disabled) {
-            set_colorspace_metadata(frame.get());
-        }
-        return frame.query<IDeckLinkVideoFrame>();
+        return active_output_.path->create_frame(device_.get(), buffer, device_name_);
     }
 
     bool initialize_output()
@@ -445,77 +307,9 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         if (!selected_mode) {
             return false;
         }
-        auto mode = *selected_mode;
-
-        bool supported{};
-        if (device_->DoesSupportVideoMode(bmdVideoConnectionUnspecified,
-                                          mode.mode,
-                                          bmdFormat10BitYUV,
-                                          bmdNoVideoOutputConversion,
-                                          bmdSupportedVideoModeDefault,
-                                          nullptr,
-                                          &supported) != S_OK ||
-            !supported) {
-            log()->error("DeckLink output mode {} is not supported by {}", requested_mode_name_, device_name_);
+        const auto active_output = output_activation_.start(*selected_mode, requested_keyer_mode_);
+        if (!active_output) {
             return false;
-        }
-
-        auto active_keyer_mode = keyer_mode_e::disabled;
-        if (requested_keyer_mode_ == keyer_mode_e::disabled) {
-            set_active_keyer(keyer_mode_e::disabled);
-        } else if (device_supports_requested_keyer(mode.mode)) {
-            active_keyer_mode = requested_keyer_mode_;
-        }
-        if (!configure_output_format(&mode, active_keyer_mode)) {
-            return false;
-        }
-
-        if (!keyer_) {
-            keyer_ = device_.query<IDeckLinkKeyer>();
-        }
-        // DeckLink devices can retain keyer state across output restarts and
-        // process lifetimes. Normalize it before changing the output mode so
-        // ordinary v210 playback never inherits an earlier alpha-keyer setup.
-        if (keyer_) {
-            (void)keyer_->Disable();
-        }
-
-        if (device_->EnableVideoOutput(mode.mode, bmdVideoOutputFlagDefault) != S_OK) {
-            log()->error("Failed to enable DeckLink output {}", device_name_);
-            return false;
-        }
-        output_enabled_ = true;
-
-        if (active_keyer_mode != keyer_mode_e::disabled) {
-            const bool external      = active_keyer_mode == keyer_mode_e::external;
-            const auto enable_result = keyer_->Enable(external);
-            const auto level_result  = enable_result == S_OK ? keyer_->SetLevel(255) : E_FAIL;
-            if (enable_result != S_OK || level_result != S_OK) {
-                log()->error("DeckLink keyer setup failed for {}: Enable={:#010x}, SetLevel={:#010x}",
-                             device_name_,
-                             static_cast<uint32_t>(enable_result),
-                             static_cast<uint32_t>(level_result));
-                (void)keyer_->Disable();
-                if (device_->DisableVideoOutput() != S_OK) {
-                    log()->error("Unable to disable DeckLink output after keyer setup failed for {}", device_name_);
-                    return false;
-                }
-                output_enabled_ = false;
-                set_keyer_fallback("the DeckLink driver rejected enabling the keyer");
-                active_keyer_mode = keyer_mode_e::disabled;
-                if (!configure_output_format(&mode, active_keyer_mode) ||
-                    device_->EnableVideoOutput(mode.mode, bmdVideoOutputFlagDefault) != S_OK) {
-                    log()->error("Unable to restart ordinary DeckLink output after keyer setup failed for {}",
-                                 device_name_);
-                    return false;
-                }
-                output_enabled_ = true;
-            } else {
-                set_active_keyer(active_keyer_mode);
-            }
-        } else if (keyer_ && keyer_->Disable() != S_OK) {
-            log()->warn("Unable to confirm that keying is disabled on {}; continuing with ordinary 10-bit YUV output",
-                        device_name_);
         }
 
         const auto device_minimum = minimum_preroll_frames();
@@ -534,27 +328,20 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
         const auto readback_slot_count = get_readback_slot_count(scheduled_frame_target_, output_queue_->capacity());
         const auto stream              = readback_service_->create_stream({
-                         .transfer_layout =
-                {
-                                  .dimensions             = mode.readback_dimensions,
-                                  .pixel_format           = mode.readback_pixel_format,
-                                  .host_row_stride_bytes  = static_cast<size_t>(mode.row_bytes),
-                                  .host_buffer_size_bytes = static_cast<size_t>(mode.row_bytes) * mode.dim.y,
-                                  .host_memory_access     = gpu::transfer::host_memory_access_e::read_only,
-                                  },
-                         .max_slots     = readback_slot_count,
-                         .initial_slots = readback_slot_count,
+                         .transfer_layout = active_output->path->transfer_layout(),
+                         .max_slots       = readback_slot_count,
+                         .initial_slots   = readback_slot_count,
         });
         if (!stream->wait_for_initial_slots(5s)) {
             log()->error("Failed to initialize the DeckLink output transfer pool for {}", device_name_);
             return false;
         }
 
-        mode_info_       = mode;
+        active_output_   = *active_output;
         readback_stream_ = stream;
         {
             const std::scoped_lock lock(state_mutex_);
-            render_state_.emplace(render_state_s{.readback_stream = stream, .mode = mode});
+            render_state_.emplace(render_state_s{.readback_stream = stream, .active_output = *active_output});
         }
 
         if (device_->SetScheduledFrameCompletionCallback(this) != S_OK) {
@@ -586,14 +373,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             (void)device_->SetScheduledFrameCompletionCallback(nullptr);
             callback_installed_ = false;
         }
-        if (keyer_) {
-            (void)keyer_->Disable();
-        }
-        if (device_ && output_enabled_) {
-            (void)device_->DisableVideoOutput();
-            output_enabled_ = false;
-        }
-        keyer_ = nullptr;
+        output_activation_.stop();
 
         {
             const std::scoped_lock lock(frame_mutex_);
@@ -663,7 +443,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             if (!frame.has_value()) {
                 break;
             }
-            if (frame->readable_host_bytes().size() != static_cast<size_t>(mode_info_.row_bytes) * mode_info_.dim.y) {
+            if (frame->readable_host_bytes().size() != active_output_.path->transfer_layout().host_buffer_size_bytes) {
                 log()->error("DeckLink output transfer produced an unexpected buffer size");
                 continue;
             }
@@ -704,15 +484,17 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return false;
         }
 
-        auto       frame       = create_frame(last_buffer_.get());
-        const auto stream_time = next_decklink_stream_time_;
-        const auto decklink_media_pts =
-            mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(next_output_frame_sequence_);
+        auto       frame              = create_frame(last_buffer_.get());
+        const auto stream_time        = next_decklink_stream_time_;
+        const auto decklink_media_pts = active_output_.path->display_mode().frame_duration_flicks *
+                                        static_cast<utils::flicks::rep>(next_output_frame_sequence_);
         if (!frame) {
             return false;
         }
-        const auto schedule_result =
-            device_->ScheduleVideoFrame(frame.get(), stream_time, mode_info_.frame_duration, mode_info_.time_scale);
+        const auto schedule_result = device_->ScheduleVideoFrame(frame.get(),
+                                                                 stream_time,
+                                                                 active_output_.path->display_mode().frame_duration,
+                                                                 active_output_.path->display_mode().time_scale);
         if (schedule_result != S_OK) {
             log()->error("ScheduleVideoFrame failed for {} with result {:#010x}",
                          device_name_,
@@ -725,7 +507,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             .decklink_media_pts    = decklink_media_pts,
             .program_target_time   = program_target_time,
         });
-        next_decklink_stream_time_ += mode_info_.frame_duration;
+        next_decklink_stream_time_ += active_output_.path->display_mode().frame_duration;
         ++next_output_frame_sequence_;
         return true;
     }
@@ -744,7 +526,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         const auto steady_now      = steady_before + (steady_after - steady_before) / 2;
         const auto reference_delta = static_cast<long double>(completion_time - reference_now) /
                                      static_cast<long double>(reference_time_scale());
-        return steady_now + utils::to_flicks(static_cast<double>(reference_delta)) - mode_info_.frame_duration_flicks;
+        return steady_now + utils::to_flicks(static_cast<double>(reference_delta)) -
+               active_output_.path->display_mode().frame_duration_flicks;
     }
 
     void pump_preroll()
@@ -778,13 +561,14 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                 if (!schedule_program_frame(program_target)) {
                     break;
                 }
-                program_target += mode_info_.frame_duration_flicks;
+                program_target += active_output_.path->display_mode().frame_duration_flicks;
             }
             if (scheduled_frames_.size() != scheduled_frame_target_) {
                 runtime_metrics_.observe_refill(scheduled_frame_target_, scheduled_frames_.size());
             } else {
-                phase_                  = phase_e::running;
-                const auto start_result = device_->StartScheduledPlayback(0, mode_info_.time_scale, 1.0);
+                phase_ = phase_e::running;
+                const auto start_result =
+                    device_->StartScheduledPlayback(0, active_output_.path->display_mode().time_scale, 1.0);
                 if (start_result == S_OK) {
                     playback_started_ = true;
                     sample_buffered_video_frames();
@@ -841,15 +625,15 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                     .stream_epoch   = 1,
                     .frame_sequence = completed_output_frame_sequence,
                     .media_pts      = completed_decklink_media_pts,
-                    .frame_duration = mode_info_.frame_duration_flicks,
+                    .frame_duration = active_output_.path->display_mode().frame_duration_flicks,
                 },
                 *completed_start_time);
             presentation_timeline_.observe_latency(*completed_start_time, completed_program_target_time);
         }
         sample_buffered_video_frames();
         collect_completed_readbacks();
-        const auto next_decklink_media_pts =
-            mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(next_output_frame_sequence_);
+        const auto next_decklink_media_pts = active_output_.path->display_mode().frame_duration_flicks *
+                                             static_cast<utils::flicks::rep>(next_output_frame_sequence_);
         const auto next_presentation_time =
             decklink_to_program_clock_.map_media_pts_to_program_time(next_decklink_media_pts);
         auto program_target = next_presentation_time.has_value()
@@ -866,11 +650,18 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             presentation_timeline_.observe_latency(*next_presentation_time, *oldest_program_target);
             program_target = presentation_timeline_.map_presentation_to_program_target(*next_presentation_time);
         }
+        if (!program_target.has_value()) {
+            log()->error("Failed to remap the DeckLink output playhead for {}", device_name_);
+            request_failure();
+            return E_FAIL;
+        }
+        const auto first_program_target = program_target.value();
         const auto refill_count =
             scheduled_frame_target_ > scheduled_frames_.size() ? scheduled_frame_target_ - scheduled_frames_.size() : 0;
         size_t scheduled{};
         for (size_t i = 0; i < refill_count; ++i) {
-            const auto target = *program_target + mode_info_.frame_duration_flicks * static_cast<utils::flicks::rep>(i);
+            const auto target = first_program_target + active_output_.path->display_mode().frame_duration_flicks *
+                                                           static_cast<utils::flicks::rep>(i);
             if (!schedule_program_frame(target)) {
                 break;
             }
@@ -902,6 +693,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         , device_name_(std::move(device_name))
         , requested_mode_name_(std::move(requested_mode_name))
         , requested_keyer_mode_(requested_keyer_mode)
+        , output_activation_(device_, device_name_)
         , program_frame_duration_(program_frame_duration)
         , configured_buffer_frames_(buffer_frames)
         , scheduled_frame_target_(buffer_frames)
@@ -959,10 +751,18 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     auto keyer_status() const -> status::decklink_output_keyer_status_s
     {
         const std::scoped_lock lock(state_mutex_);
+        if (render_state_) {
+            const auto& active_output = render_state_->active_output;
+            return {
+                .requested_keyer_mode  = std::string(enum_to_string(active_output.requested_keyer_mode)),
+                .active_keyer_mode     = std::string(enum_to_string(active_output.active_keyer_mode)),
+                .keyer_fallback_reason = active_output.keyer_fallback_reason,
+            };
+        }
         return {
             .requested_keyer_mode  = std::string(enum_to_string(requested_keyer_mode_)),
-            .active_keyer_mode     = std::string(enum_to_string(active_keyer_mode_)),
-            .keyer_fallback_reason = keyer_fallback_reason_,
+            .active_keyer_mode     = std::string(enum_to_string(keyer_mode_e::disabled)),
+            .keyer_fallback_reason = std::nullopt,
         };
     }
 
@@ -1100,10 +900,7 @@ class node_impl : public node_i
     decklink_ptr<callback_s>                  callback_;
     std::optional<callback_s::render_state_s> render_state_;
 
-    std::unique_ptr<gpu::framebuffer_s>                       framebuffer_scale_;
-    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_keyed_output_;
-    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_yuv_;
-    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_scale_;
+    std::unique_ptr<output_frame_renderer_i>                  frame_renderer_;
     utils::observed_value_s<selection_t>                      selection_;
     utils::observed_value_s<uint64_t>                         device_version_;
     utils::observed_value_s<std::pair<std::string, uint64_t>> mode_options_version_;
@@ -1119,7 +916,7 @@ class node_impl : public node_i
     {
         render_target_.reset();
         render_state_.reset();
-        framebuffer_scale_.reset();
+        frame_renderer_.reset();
         mode_options_version_.reset();
         if (callback_) {
             callback_->stop_async();
@@ -1234,6 +1031,41 @@ class node_impl : public node_i
         next_metrics_status_ = now + 1s;
     }
 
+    bool prepare_existing_playback(core::node_status_registry_s* status, std::string_view device_name)
+    {
+        if (!callback_) {
+            return false;
+        }
+
+        const auto phase = callback_->phase();
+        if (phase == callback_s::phase_e::prerolling || phase == callback_s::phase_e::running) {
+            if (!render_state_) {
+                render_state_ = callback_->render_state();
+            }
+            if (phase == callback_s::phase_e::prerolling) {
+                callback_->request_preroll_pump();
+            }
+            status->write(id_, status::connected_status_s{.connected = render_state_.has_value()});
+            return true;
+        }
+
+        if (phase == callback_s::phase_e::failed || phase == callback_s::phase_e::stopped) {
+            if (phase == callback_s::phase_e::failed) {
+                log()->error("DeckLink output playback failed: {}", device_name);
+            }
+            callback_ = nullptr;
+            render_state_.reset();
+            frame_renderer_.reset();
+            next_start_attempt_ = std::chrono::steady_clock::now() + 1s;
+            return false;
+        }
+
+        render_state_.reset();
+        frame_renderer_.reset();
+        status->write(id_, status::connected_status_s{.connected = false});
+        return true;
+    }
+
   public:
     ~node_impl() override { stop_playback(); }
 
@@ -1290,32 +1122,8 @@ class node_impl : public node_i
                           });
         }
         publish_callback_status(status, device_name);
-        if (callback_) {
-            const auto phase = callback_->phase();
-            if (phase == callback_s::phase_e::prerolling || phase == callback_s::phase_e::running) {
-                if (!render_state_) {
-                    render_state_ = callback_->render_state();
-                }
-                if (phase == callback_s::phase_e::prerolling) {
-                    callback_->request_preroll_pump();
-                }
-                status->write(id_, status::connected_status_s{.connected = render_state_.has_value()});
-                return;
-            }
-            if (phase == callback_s::phase_e::failed || phase == callback_s::phase_e::stopped) {
-                if (phase == callback_s::phase_e::failed) {
-                    log()->error("DeckLink output playback failed: {}", device_name);
-                }
-                callback_ = nullptr;
-                render_state_.reset();
-                framebuffer_scale_.reset();
-                next_start_attempt_ = std::chrono::steady_clock::now() + 1s;
-            } else {
-                render_state_.reset();
-                framebuffer_scale_.reset();
-                status->write(id_, status::connected_status_s{.connected = false});
-                return;
-            }
+        if (prepare_existing_playback(status, device_name)) {
+            return;
         }
 
         status->write(id_, status::connected_status_s{.connected = false});
@@ -1349,54 +1157,10 @@ class node_impl : public node_i
             return;
         }
 
-        if (!textured_quad_scale_) {
-            textured_quad_scale_ =
-                std::make_unique<gpu::textured_quad_s>(app->ctx()->get_shader(gpu::shader_program_s::name_e::basic));
+        if (!frame_renderer_) {
+            frame_renderer_ = render_state_->active_output.path->create_renderer(app->ctx());
         }
-        const auto& mode = render_state_->mode;
-        if (mode.keyer_mode == keyer_mode_e::disabled && !textured_quad_yuv_) {
-            textured_quad_yuv_ = std::make_unique<gpu::textured_quad_s>(
-                app->ctx()->get_shader(gpu::shader_program_s::name_e::rgb_to_yuv));
-        }
-        if (mode.keyer_mode != keyer_mode_e::disabled && !textured_quad_keyed_output_) {
-            textured_quad_keyed_output_ = std::make_unique<gpu::textured_quad_s>(
-                app->ctx()->get_shader(gpu::shader_program_s::name_e::encode_rec709_premultiplied));
-            textured_quad_keyed_output_->set_blending_enabled(false);
-        }
-
-        const auto scale_pixel_format = mode.keyer_mode == keyer_mode_e::disabled
-                                            ? gpu::texture_s::pixel_format_e::rgb_f16
-                                            : gpu::texture_s::pixel_format_e::rgba_f16;
-        if (!framebuffer_scale_ || framebuffer_scale_->texture()->texture_dimensions() != mode.dim ||
-            framebuffer_scale_->texture()->pixel_format() != scale_pixel_format) {
-            framebuffer_scale_ = std::make_unique<gpu::framebuffer_s>(mode.dim, scale_pixel_format);
-        }
-
-        framebuffer_scale_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        textured_quad_scale_->draw(texture);
-        gpu::framebuffer_s::end_render();
-
-        target->framebuffer()->begin_render(
-            {
-                .pos  = {0, 0},
-                .size = mode.readback_dimensions,
-        },
-            gpu::framebuffer_s::load_op_e::clear);
-
-        if (mode.keyer_mode == keyer_mode_e::disabled) {
-            auto shader = textured_quad_yuv_->shader();
-            shader->set_uniform("target_width", mode.readback_dimensions.x);
-            shader->set_uniform("transfer", mode.yuv_conversion.matrix);
-            shader->set_uniform("transfer_offset", mode.yuv_conversion.offset);
-            shader->set_uniform("gamut_transfer", mode.gamut_conversion);
-            textured_quad_yuv_->draw(framebuffer_scale_->texture());
-        } else {
-            textured_quad_keyed_output_->shader()->set_uniform("readback_component_mapping",
-                                                               static_cast<int>(target->readback_component_mapping()));
-            textured_quad_keyed_output_->draw(framebuffer_scale_->texture());
-        }
-
-        gpu::framebuffer_s::end_render();
+        frame_renderer_->render(texture, *target);
         target->set_program_target_time(app->frame_context().program_target_time);
         render_target_ = std::move(target);
     }

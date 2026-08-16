@@ -10,6 +10,10 @@ PRIVATE
     detail/input_capture.hpp
     detail/input_capture.cpp
     detail/output_video_buffer.hpp
+    detail/output_activation.hpp
+    detail/output_activation.cpp
+    detail/output_path.hpp
+    detail/output_path.cpp
     input.cpp
     output.cpp
     output_migrations.hpp
