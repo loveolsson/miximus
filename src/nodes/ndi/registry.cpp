@@ -42,7 +42,7 @@ ndi_registry_s::~ndi_registry_s()
     }
 
     if (finder_ != nullptr) {
-        NDIlib_find_destroy(static_cast<NDIlib_find_instance_t>(finder_));
+        NDIlib_find_destroy(finder_);
     }
 
     // Receiver and sender control tasks must finish before the process-wide
@@ -59,7 +59,7 @@ void ndi_registry_s::discovery_loop()
     auto log = getlog("ndi");
 
     while (running_.load()) {
-        const bool changed = NDIlib_find_wait_for_sources(static_cast<NDIlib_find_instance_t>(finder_), 500);
+        const bool changed = NDIlib_find_wait_for_sources(finder_, 500);
 
         if (!running_.load()) {
             break;
@@ -70,8 +70,7 @@ void ndi_registry_s::discovery_loop()
         }
 
         uint32_t               num_sources = 0;
-        const NDIlib_source_t* sources =
-            NDIlib_find_get_current_sources(static_cast<NDIlib_find_instance_t>(finder_), &num_sources);
+        const NDIlib_source_t* sources     = NDIlib_find_get_current_sources(finder_, &num_sources);
 
         // Copy names while source pointers are valid (before next get_current_sources call)
         std::vector<std::string> names;

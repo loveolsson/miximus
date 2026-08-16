@@ -1,6 +1,7 @@
 #pragma once
 #include "types/settings_option.hpp"
 #include "utils/serial_executor_fwd.hpp"
+#include "wrapper/ndi-sdk/ndi_inc.hpp"
 
 #include <atomic>
 #include <memory>
@@ -13,8 +14,8 @@ namespace miximus::nodes::ndi {
 
 class ndi_registry_s
 {
-    void* finder_{nullptr};
-    bool  initialized_{false};
+    NDIlib_find_instance_t finder_{nullptr};
+    bool                   initialized_{false};
 
     mutable std::shared_mutex source_mutex_;
     std::vector<std::string>  source_names_;

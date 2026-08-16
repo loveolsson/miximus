@@ -161,6 +161,17 @@ class input_capture_s::impl_s
         next_sequence_        = 0;
     }
 
+    void handle_source_change()
+    {
+        ++source_epoch_;
+        source_format_.reset();
+        source_has_timestamp_.reset();
+        timestamp_origin_.reset();
+        previous_timestamp_.reset();
+        next_sequence_ = 0;
+        log()->info("NDI receiver resolved a different source for \"{}\"", source_name_);
+    }
+
     std::optional<media::media_clock_sample_s>
     make_media_clock_sample(const NDIlib_video_frame_v2_t& video_frame, source_format_s format, utils::flicks duration)
     {
@@ -301,6 +312,8 @@ class input_capture_s::impl_s
                     return;
                 }
                 NDIlib_recv_free_video_v2(receiver_, &video_frame);
+            } else if (frame_type == NDIlib_frame_type_source_change) {
+                handle_source_change();
             } else if (frame_type == NDIlib_frame_type_error) {
                 log()->error("NDI receiver reported a connection error for \"{}\"", source_name_);
                 phase_          = phase_e::failed;

@@ -1,6 +1,6 @@
 add_library(ndi INTERFACE)
 
-set(NDI_ROOT "" CACHE PATH "Root directory of the NDI 6 SDK")
+set(NDI_ROOT "" CACHE PATH "Root directory of the NDI 6.2 SDK")
 
 set(NDI_ROOT_HINTS
     "${NDI_ROOT}"
@@ -74,8 +74,8 @@ if(NOT CMAKE_MATCH_1)
 endif()
 
 set(NDI_VERSION "${CMAKE_MATCH_1}")
-if(NDI_VERSION VERSION_LESS 6)
-    message(FATAL_ERROR "NDI 6 or newer is required, but ${NDI_DISCOVERED_ROOT} contains NDI ${NDI_VERSION}")
+if(NDI_VERSION VERSION_LESS 6.2)
+    message(FATAL_ERROR "NDI 6.2 or newer is required, but ${NDI_DISCOVERED_ROOT} contains NDI ${NDI_VERSION}")
 endif()
 
 target_include_directories(ndi SYSTEM INTERFACE "${NDI_INCLUDE_DIR}")
