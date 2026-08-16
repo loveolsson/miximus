@@ -240,10 +240,10 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",       "Test pattern"         },
-            {"resolution", gpu::vec2_t{1920, 1080}},
-            {"pattern",    "smpte_color_bars"     },
-            {"show_logo",  false                  },
+            {"name",       "Test pattern"                                          },
+            {"resolution", gpu::vec2_t{1920, 1080}                                 },
+            {"pattern",    enum_to_string(render::test_pattern_e::smpte_color_bars)},
+            {"show_logo",  false                                                   },
         };
     }
 
@@ -268,12 +268,7 @@ class node_impl : public node_i
         }
 
         if (name == "pattern") {
-            if (value == nullptr || !value->is_string()) {
-                return option_result_e::invalid;
-            }
-            return enum_from_string<render::test_pattern_e>(value->get<std::string_view>()).has_value()
-                       ? option_result_e::ok
-                       : option_result_e::invalid;
+            return normalize_enum_option_value<render::test_pattern_e>(value);
         }
 
         if (name == "show_logo") {

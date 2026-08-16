@@ -116,14 +116,7 @@ class node_impl : public node_i
             return normalize_option_value<double>(value, 0, 1);
         }
         if (name == "blend_mode") {
-            const auto result = normalize_option_value<std::string_view>(value);
-            if (result == option_result_e::invalid) {
-                return result;
-            }
-
-            return enum_from_string<blend_mode_e>(value->get<std::string_view>()).has_value()
-                       ? result
-                       : option_result_e::invalid;
+            return normalize_enum_option_value<blend_mode_e>(value);
         }
 
         return option_result_e::invalid;

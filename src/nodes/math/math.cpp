@@ -85,13 +85,7 @@ class node_impl : public node_i
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "operation") {
-            const auto result = normalize_option_value<std::string_view>(value);
-            if (result == option_result_e::invalid) {
-                return result;
-            }
-
-            const auto val = value->get<std::string_view>();
-            return enum_from_string<operation_e>(val).has_value() ? result : option_result_e::invalid;
+            return normalize_enum_option_value<operation_e>(value);
         }
 
         if (name == "a" || name == "b") {

@@ -1,6 +1,7 @@
 #pragma once
 #include "gpu/types.hpp"
 #include "option_result.hpp"
+#include "utils/lookup.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -10,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace miximus::nodes {
 
@@ -137,6 +139,17 @@ inline option_result_e normalize_option_value<std::string_view>(nlohmann::json* 
                                                                 std::optional<std::string_view>)
 {
     return val != nullptr && val->is_string() ? option_result_e::ok : option_result_e::invalid;
+}
+
+template <typename E>
+    requires std::is_enum_v<E>
+inline option_result_e normalize_enum_option_value(nlohmann::json* val)
+{
+    const auto result = normalize_option_value<std::string_view>(val);
+    if (result == option_result_e::invalid) {
+        return result;
+    }
+    return enum_from_string<E>(val->get<std::string_view>()).has_value() ? result : option_result_e::invalid;
 }
 
 } // namespace miximus::nodes

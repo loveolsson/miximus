@@ -1179,10 +1179,10 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",         "DeckLink output"},
-            {"enabled",      true             },
-            {"display_mode", "720p60"         },
-            {"keyer_mode",   "disabled"       },
+            {"name",         "DeckLink output"                     },
+            {"enabled",      true                                  },
+            {"display_mode", "720p60"                              },
+            {"keyer_mode",   enum_to_string(keyer_mode_e::disabled)},
         };
     }
 
@@ -1192,13 +1192,7 @@ class node_impl : public node_i
             return normalize_option_value<std::string_view>(value);
         }
         if (name == "keyer_mode") {
-            const auto result = normalize_option_value<std::string_view>(value);
-            if (result == option_result_e::invalid) {
-                return result;
-            }
-            return enum_from_string<keyer_mode_e>(value->get<std::string_view>()).has_value()
-                       ? result
-                       : option_result_e::invalid;
+            return normalize_enum_option_value<keyer_mode_e>(value);
         }
         if (name == "enabled") {
             return normalize_option_value<bool>(value);
