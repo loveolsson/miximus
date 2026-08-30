@@ -22,6 +22,26 @@ add_executable(miximus
     main.cpp
 )
 
+if(SANITIZE_ADDRESS OR SANITIZE_UNDEFINED)
+    target_sources(miximus PRIVATE sanitizer_defaults.cpp)
+
+    target_compile_definitions(miximus PRIVATE
+        $<$<BOOL:${SANITIZE_ADDRESS}>:MIXIMUS_SANITIZE_ADDRESS>
+        $<$<BOOL:${SANITIZE_UNDEFINED}>:MIXIMUS_SANITIZE_UNDEFINED>
+    )
+
+    if(SANITIZE_ADDRESS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        find_program(MIXIMUS_SANITIZER_ADDR2LINE_EXECUTABLE NAMES addr2line)
+        if(NOT MIXIMUS_SANITIZER_ADDR2LINE_EXECUTABLE)
+            message(FATAL_ERROR "addr2line is required for Clang sanitizer builds")
+        endif()
+
+        target_compile_definitions(miximus PRIVATE
+            MIXIMUS_SANITIZER_ADDR2LINE="${MIXIMUS_SANITIZER_ADDR2LINE_EXECUTABLE}"
+        )
+    endif()
+endif()
+
 target_link_libraries(miximus
 PRIVATE
     web_server
@@ -29,14 +49,11 @@ PRIVATE
     render
     app
     gpu
+    shutdown_watchdog
     magic_enum::magic_enum
 )
 
 add_sanitizers(miximus)
-
-if(SANITIZE_ADDRESS OR SANITIZE_MEMORY OR SANITIZE_THREAD OR SANITIZE_UNDEFINED)
-    target_compile_definitions(miximus PRIVATE MIXIMUS_SANITIZED_BUILD)
-endif()
 
 macro(copy_library_to_binary_dir NAME)
 add_custom_command(TARGET miximus POST_BUILD

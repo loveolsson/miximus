@@ -6,7 +6,6 @@
 #include <nlohmann/json.hpp>
 
 #include <format>
-#include <functional>
 #include <future>
 #include <stdexcept>
 #include <string>
@@ -23,12 +22,6 @@ web_server_impl::web_server_impl()
     endpoint_.set_access_channels(alevel::access_core);
     endpoint_.set_access_channels(alevel::app);
     endpoint_.set_reuse_addr(true);
-
-    endpoint_.set_open_handler(std::bind_front(&web_server_impl::on_open, this));
-    endpoint_.set_close_handler(std::bind_front(&web_server_impl::on_close, this));
-    endpoint_.set_fail_handler(std::bind_front(&web_server_impl::on_fail, this));
-    endpoint_.set_http_handler(std::bind_front(&web_server_impl::on_http, this));
-    endpoint_.set_message_handler(std::bind_front(&web_server_impl::on_message, this));
 }
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
@@ -36,8 +29,11 @@ void web_server_impl::subscribe(topic_e topic, const callback_t& callback)
     if (!started_) {
         throw std::logic_error("web_server: subscribe() called before start()");
     }
-    boost::asio::post(endpoint_.get_io_context(),
-                      [this, topic, callback]() { get_subscription_by_topic(topic) = callback; });
+    boost::asio::post(endpoint_.get_io_context(), [weak_self = weak_from_this(), topic, callback]() {
+        if (const auto self = weak_self.lock()) {
+            self->get_subscription_by_topic(topic) = callback;
+        }
+    });
 }
 
 void web_server_impl::set_config_getters(const config_getters_t& getters)
@@ -45,12 +41,43 @@ void web_server_impl::set_config_getters(const config_getters_t& getters)
     if (!started_) {
         throw std::logic_error("web_server: set_config_getters() called before start()");
     }
-    boost::asio::post(endpoint_.get_io_context(), [this, getters]() { config_getters_ = getters; });
+    boost::asio::post(endpoint_.get_io_context(), [weak_self = weak_from_this(), getters]() {
+        if (const auto self = weak_self.lock()) {
+            self->config_getters_ = getters;
+        }
+    });
 }
 
 void web_server_impl::start(uint16_t port, boost::asio::io_context* service)
 {
     using namespace websocketpp::log;
+
+    const auto weak_self = weak_from_this();
+    endpoint_.set_open_handler([weak_self](const con_hdl_t& hdl) {
+        if (const auto self = weak_self.lock()) {
+            self->on_open(hdl);
+        }
+    });
+    endpoint_.set_close_handler([weak_self](const con_hdl_t& hdl) {
+        if (const auto self = weak_self.lock()) {
+            self->on_close(hdl);
+        }
+    });
+    endpoint_.set_fail_handler([weak_self](const con_hdl_t& hdl) {
+        if (const auto self = weak_self.lock()) {
+            self->on_fail(hdl);
+        }
+    });
+    endpoint_.set_http_handler([weak_self](const con_hdl_t& hdl) {
+        if (const auto self = weak_self.lock()) {
+            self->on_http(hdl);
+        }
+    });
+    endpoint_.set_message_handler([weak_self](const con_hdl_t& hdl, const msg_ptr_t& message) {
+        if (const auto self = weak_self.lock()) {
+            self->on_message(hdl, message);
+        }
+    });
 
     std::error_code ec;
     endpoint_.init_asio(service, ec);
@@ -91,37 +118,43 @@ void web_server_impl::stop()
     std::promise<void> done;
     auto               future = done.get_future();
 
-    boost::asio::post(endpoint_.get_io_context(), [this, p = std::move(done)]() mutable {
-        endpoint_.stop_listening();
+    boost::asio::post(endpoint_.get_io_context(), [self = shared_from_this(), p = std::move(done)]() mutable {
+        self->endpoint_.stop_listening();
 
         // Suppress expected teardown noise: canceled async ops on connections
         // being closed. Safe after stop_listening() — no new external failures
         // can occur from this point.
-        endpoint_.clear_access_channels(alevel::fail);
+        self->endpoint_.clear_access_channels(alevel::fail);
 
-        for (auto& connection : connections_) {
+        for (auto& connection : self->connections_) {
             error_code ec;
-            endpoint_.close(connection.first, status::going_away, "server shutting down", ec);
+            self->endpoint_.close(connection.first, status::going_away, "server shutting down", ec);
             if (ec) {
-                endpoint_.get_alog().write(elevel::rerror, std::format("Error closing connection: {}", ec.message()));
+                self->endpoint_.get_alog().write(elevel::rerror,
+                                                 std::format("Error closing connection: {}", ec.message()));
             }
         }
 
-        if (connections_.empty()) {
-            p.set_value();
+        if (self->connections_.empty()) {
+            boost::asio::post(self->endpoint_.get_io_context(),
+                              [promise = std::move(p)]() mutable { promise.set_value(); });
         } else {
-            stop_promise_ = std::move(p);
+            self->stop_promise_ = std::move(p);
         }
     });
 
     future.wait();
+    started_ = false;
 }
 
 void web_server_impl::send_message(const nlohmann::json& msg, int64_t connection_id)
 {
-    boost::asio::post(endpoint_.get_io_context(), [this, serialized = msg.dump(), connection_id]() {
-        send_message_sync(serialized, connection_id);
-    });
+    boost::asio::post(endpoint_.get_io_context(),
+                      [weak_self = weak_from_this(), serialized = msg.dump(), connection_id]() {
+                          if (const auto self = weak_self.lock()) {
+                              self->send_message_sync(serialized, connection_id);
+                          }
+                      });
 }
 
 void web_server_impl::send_message_sync(const nlohmann::json& msg, int64_t connection_id)
@@ -148,9 +181,12 @@ void web_server_impl::broadcast_message(const nlohmann::json& msg)
 {
     auto topic = get_topic_from_payload(msg);
     if (topic.has_value()) {
-        boost::asio::post(endpoint_.get_io_context(), [this, topic = *topic, serialized = msg.dump()]() {
-            broadcast_message_sync(topic, serialized);
-        });
+        boost::asio::post(endpoint_.get_io_context(),
+                          [weak_self = weak_from_this(), topic = *topic, serialized = msg.dump()]() {
+                              if (const auto self = weak_self.lock()) {
+                                  self->broadcast_message_sync(topic, serialized);
+                              }
+                          });
     }
 }
 

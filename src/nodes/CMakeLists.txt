@@ -44,6 +44,7 @@ PRIVATE
     render
     media
     miximus_types
+    logger
     Boost::fiber
     magic_enum::magic_enum
 PUBLIC

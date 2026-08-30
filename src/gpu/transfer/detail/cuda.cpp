@@ -90,6 +90,7 @@ void cuda_transfer_s::shutdown_context()
     if (supported_) {
         (void)check_cuda(cudaSetDevice(device_), "cudaSetDevice during shutdown");
         (void)check_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize during shutdown");
+        (void)check_cuda(cudaDeviceReset(), "cudaDeviceReset during shutdown");
     }
 
     supported_   = false;

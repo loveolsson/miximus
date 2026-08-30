@@ -62,6 +62,7 @@ class callback_s
     std::shared_ptr<device_reservation_s<IDeckLinkInput>>   reservation_;
     std::string                                             device_name_;
     decklink_ptr<input_video_buffer_allocator_s>            allocator_;
+    std::mutex                                              frame_callback_mutex_;
     mutable std::mutex                                      upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     media::timed_source_queue_s<captured_frame_data_s>      frame_queue_{
@@ -261,6 +262,14 @@ class callback_s
     {
         phase_ = phase_e::stopping;
         stop_sdk_capture();
+        {
+            // The render thread clears its queue before requesting retirement,
+            // but a frame callback already in flight may publish once more.
+            // After unregistering the SDK callback, wait for that callback and
+            // release its frame before waiting for allocator-owned buffers.
+            const std::scoped_lock lock(frame_callback_mutex_);
+            frame_queue_.reset();
+        }
         release_upload_pool();
         device_ = nullptr;
         reservation_.reset();
@@ -428,6 +437,7 @@ class callback_s
     HRESULT STDMETHODCALLTYPE VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame,
                                                      IDeckLinkAudioInputPacket* /*audioPacket*/) noexcept final
     {
+        const std::scoped_lock callback_lock(frame_callback_mutex_);
         if (phase_.load() != phase_e::running) {
             return S_OK;
         }

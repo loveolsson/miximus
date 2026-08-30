@@ -32,9 +32,12 @@ PRIVATE
     render
     nodes
     miximus_types
+    shutdown_watchdog
     magic_enum::magic_enum
     Boost::headers
     Boost::program_options
+PUBLIC
+    logger
 )
 
 if(MIXIMUS_USE_PRECOMPILED_HEADERS)

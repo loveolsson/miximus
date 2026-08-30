@@ -13,6 +13,7 @@
 #include "types/node_status_json.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"
+#include "utils/shutdown_watchdog.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
@@ -28,7 +29,6 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
 
 using namespace miximus;
 using namespace std::chrono_literals;
@@ -43,17 +43,6 @@ auto& get_signal_status() noexcept
 }
 
 void signal_handler(int /*signal*/) noexcept { get_signal_status() = 1; }
-
-void start_shutdown_watchdog()
-{
-#ifndef MIXIMUS_SANITIZED_BUILD
-    std::thread([] {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        std::cerr << "Shutdown timed out, forcing exit\n";
-        std::_Exit(1);
-    }).detach();
-#endif
-}
 
 void publish_scheduler_status(core::app_state_s*                     app,
                               const core::frame_scheduler_s&         scheduler,
@@ -160,21 +149,30 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
             }
 
             getlog("app")->info("Exiting...");
-            start_shutdown_watchdog();
+            utils::start_shutdown_watchdog();
+            utils::begin_shutdown_step("web subsystem");
             web_server->stop();
             node_manager.clear_adapters();
+            web_server.reset();
+            utils::report_shutdown_step_completed();
+            utils::begin_shutdown_step("configuration save");
             try {
                 configuration.save_file(app.command_line_options().settings_path);
             } catch (const std::exception& error) {
                 getlog("app")->error("Failed to save configuration: {}", error.what());
             }
+            utils::report_shutdown_step_completed();
+            utils::begin_shutdown_step("render graph");
             node_manager.clear_nodes(&app);
+            utils::report_shutdown_step_completed();
         }
+        utils::report_shutdown_step_completed();
     } catch (std::exception& e) {
         std::cout << "Panic: " << e.what() << '\n';
     }
 
-    // gpu::context_s::terminate();
+    utils::finish_shutdown_watchdog();
+    getlog("app")->info("Application shutdown complete");
     spdlog::shutdown();
     return EXIT_SUCCESS;
 }

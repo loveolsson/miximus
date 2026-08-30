@@ -10,6 +10,7 @@
 #include "nodes/ndi/registry.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
+#include "utils/shutdown_watchdog.hpp"
 
 #include <memory>
 #include <utility>
@@ -79,11 +80,16 @@ app_state_s::~app_state_s()
     // Capture-control work may still be retiring SDK buffers and upload
     // streams after a node was removed. Drain it before destroying the shared
     // transfer services it uses.
+    utils::begin_shutdown_step("DeckLink subsystem");
     decklink_registry_.reset();
+    utils::report_shutdown_step_completed();
+    utils::begin_shutdown_step("NDI subsystem");
     ndi_registry_.reset();
+    utils::report_shutdown_step_completed();
 
     // DVP is tied to the root GL context and must be closed before that context
     // is destroyed. Nodes and their transfers are destroyed before app_state.
+    utils::begin_shutdown_step("GPU subsystem");
     texture_readback_service_.reset();
     texture_upload_service_.reset();
     {
@@ -92,9 +98,13 @@ app_state_s::~app_state_s()
         gpu::transfer::detail::shutdown_texture_transfer_backends();
     }
     ctx_.reset();
+    gpu::context_s::terminate();
+    utils::report_shutdown_step_completed();
+    utils::begin_shutdown_step("application worker services");
     cfg_executor_.stop();
     cfg_thread_.join();
     thread_pool_->close_queue();
+    thread_pool_.reset();
 }
 
 } // namespace miximus::core

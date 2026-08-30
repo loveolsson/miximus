@@ -22,7 +22,9 @@ class segments_view;
 }
 
 namespace miximus::web_server::detail {
-class web_server_impl : public server_s
+class web_server_impl
+    : public server_s
+    , public std::enable_shared_from_this<web_server_impl>
 {
     using server_t       = websocketpp::server<custom_config>;
     using con_hdl_t      = websocketpp::connection_hdl;

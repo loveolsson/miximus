@@ -32,6 +32,10 @@ cmake -S . -B build
 cmake --build build -j
 ```
 
+Release builds do not enable interprocedural optimization by default. Enable IPO/LTO for Miximus' first-party static
+libraries and their executable consumers with `-DMIXIMUS_ENABLE_RELEASE_IPO=ON`. External dependencies and the
+separately loaded `static_files` shared library are not included.
+
 Enable clang-tidy during native compilation with:
 
 ```bash
@@ -46,13 +50,14 @@ enabled because the compiler and clang-tidy may use incompatible PCH formats.
 
 ### Sanitizers
 
-Configure a separate Clang build when enabling sanitizers so the normal developer build remains unaffected:
+Configure a separate Clang build when enabling sanitizers so the normal developer build remains unaffected. Clang 21 is
+the supported Linux sanitizer toolchain for Miximus.
 
 ```bash
 cmake -S . -B build-asan \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER=clang-21 \
+    -DCMAKE_CXX_COMPILER=clang++-21 \
     -DSANITIZE_ADDRESS=ON \
     -DSANITIZE_UNDEFINED=ON \
     -DMIXIMUS_ENABLE_CLANG_TIDY=OFF \
@@ -62,23 +67,32 @@ cmake --build build-asan -j
 
 On Linux, CUDA/OpenGL interoperability may fail during `cudaGLGetDevices()` with `cudaErrorMemoryAllocation` when
 AddressSanitizer protects its shadow-memory gap. This happens before Miximus allocates pinned memory, streams, events,
-CUDA images, or CUDA pixel buffers and therefore does not indicate exhausted GPU memory. The current CUDA 11.4 setup
-has been verified to initialize and exercise both direct-image and pixel-buffer transfers with:
+CUDA images, or CUDA pixel buffers and therefore does not indicate exhausted GPU memory. Sanitized Miximus executables
+supply the required AddressSanitizer runtime setting themselves. The current CUDA 11.4 setup has been verified to
+initialize and exercise both direct-image and pixel-buffer transfers with:
 
 ```bash
-ASAN_OPTIONS=protect_shadow_gap=0:abort_on_error=1 \
-UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
-./build-asan/miximus
+./build-asan/miximus --settings build/settings.json --stop-after 5
 ```
 
-`protect_shadow_gap=0` leaves AddressSanitizer instrumentation enabled, but removes the inaccessible guard over its
-unused shadow gap so CUDA can establish its unified virtual-address mappings. Use this workaround only for CUDA-enabled
-sanitizer runs. An out-of-memory error in a normal build, or from a later operation such as `cudaHostAlloc()` or CUDA
-resource registration, must still be investigated as a real allocation or driver failure.
+`protect_shadow_gap=0` leaves AddressSanitizer instrumentation enabled, but removes the inaccessible guard over its unused
+shadow gap so CUDA can establish its unified virtual-address mappings. The setting is compiled into AddressSanitizer builds
+only. An out-of-memory error in a normal build, or from a later operation such as `cudaHostAlloc()` or CUDA resource
+registration, must still be investigated as a real allocation or driver failure.
 
-Sanitized builds omit the shutdown watchdog. Sanitizer instrumentation and leak reporting can make teardown exceed the
-normal five-second deadline, and the watchdog's forced `_Exit()` would prevent destructors and sanitizer finalization
-from completing.
+LeakSanitizer remains enabled for Miximus and its dependencies. Its built-in suppression excludes only allocations whose
+stack includes `libnvidia-glcore.so`; the proprietary driver retains a small set of process-lifetime OpenGL and DBus
+allocations even after CUDA and GLFW teardown. Do not broaden this suppression to CUDA, DBus, or other libraries.
+
+Clang sanitizer builds select the system's conventional `addr2line` executable through CMake and compile that choice
+into the sanitizer runtime defaults. This keeps online stack symbolization enabled while avoiding a deadlock observed
+between the packaged compiler-rt and the external `llvm-symbolizer` protocol during LeakSanitizer's exit-time scan. Do
+not set `ASAN_SYMBOLIZER_PATH` or sanitizer options when running Miximus; a normal direct invocation must produce
+symbolized reports and terminate on its own.
+
+The shutdown watchdog runs in every build configuration. A subsystem that makes no progress for ten seconds is treated
+as stalled in normal builds. Sanitized builds use a 60-second per-subsystem deadline because instrumentation can make
+otherwise healthy teardown substantially slower; the watchdog remains active to catch genuine shutdown stalls.
 
 LeakSanitizer cannot run while the process is being traced. Add `detect_leaks=0` to `ASAN_OPTIONS` only when running
 under a debugger or another environment that uses `ptrace`; leave leak detection enabled for ordinary terminal runs.
@@ -384,4 +398,12 @@ Shutdown order is deliberate:
 5. Shut down CUDA/DVP transfer contexts while root GL is current.
 6. Destroy root GL and stop/join application service threads.
 
-`web_server` is declared after `app_state_s`, so it is destroyed first; websocketpp retains a raw pointer to the app's Asio executor. A five-second watchdog forces exit if teardown hangs in normal builds; sanitized builds omit it so slow instrumentation and leak reporting can finish. Do not casually reorder these lifetimes.
+`web_server` is declared after `app_state_s`, so it is destroyed first; websocketpp retains a raw pointer to the app's
+Asio executor. A no-progress watchdog forces exit if teardown hangs in any build configuration, using a ten-second
+deadline normally and a 60-second deadline under sanitizers. Each completed shutdown step resets its deadline, so
+cumulative SDK and network teardown time is not treated as a lockup.
+Completion reports are limited to large application-subsystem boundaries, with no more than ten across the application.
+Each boundary is announced before teardown starts and logged again when complete, allowing a timeout to identify the
+subsystem currently stalled.
+Internal tasks, executors, SDK calls, and individual resources must not report progress; they are implementation details
+of the subsystem whose completed shutdown is being monitored. Do not casually reorder these lifetimes.

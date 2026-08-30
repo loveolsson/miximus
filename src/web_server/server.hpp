@@ -46,6 +46,6 @@ class server_s
     void subscribe(topic_e topic, Callback&& callback);
 };
 
-std::unique_ptr<server_s> create_web_server();
+std::shared_ptr<server_s> create_web_server();
 
 } // namespace miximus::web_server

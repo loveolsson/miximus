@@ -236,11 +236,13 @@ decklink_registry_s::~decklink_registry_s()
     control_executor_.reset();
     statistics_thread_.request_stop();
     statistics_thread_.join();
-    const std::unique_lock lock(device_mutex_);
-    names_.clear();
-    inputs_.clear();
-    outputs_.clear();
-    monitors_.clear();
+    {
+        const std::unique_lock lock(device_mutex_);
+        names_.clear();
+        inputs_.clear();
+        outputs_.clear();
+        monitors_.clear();
+    }
 }
 
 void decklink_registry_s::uninstall()

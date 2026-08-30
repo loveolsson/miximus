@@ -160,7 +160,10 @@ fence has completed. A readback frame is not visible through `try_consume_latest
 read. Queue
 mutexes alone never imply GPU/DVP/CUDA completion.
 
-Transfer shutdown runs from `app_state_s` with the root GL context current, after node transfers/textures are destroyed and before root-context destruction. DVP and CUDA context teardown must remain in that window.
+Transfer shutdown runs from `app_state_s` with the root GL context current, after node transfers/textures are destroyed and
+before root-context destruction. DVP and CUDA context teardown must remain in that window. CUDA shutdown synchronizes and
+resets the selected device only after all transfer resources are gone. After the root context is destroyed,
+`glfwTerminate()` releases GLFW's remaining platform and driver resources on the main thread.
 
 ## DeckLink
 
