@@ -101,12 +101,4 @@ add_custom_target(report_build_summary ALL
 )
 add_dependencies(report_build_summary miximus)
 
-# if(CMAKE_BUILD_TYPE STREQUAL "Release")
-#     include(CheckIPOSupported)
-#     check_ipo_supported(RESULT result)
-#     if(result)
-#         set_property(TARGET miximus libcef_dll_wrapper PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
-#     else()
-#         message(WARNING "IPO is not supported: ${output}")
-#     endif()
-# endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/release_ipo.cmake")
