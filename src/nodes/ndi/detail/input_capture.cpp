@@ -93,6 +93,7 @@ class input_capture_s::impl_s
 
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     gpu::vec2i_t                                            upload_dimensions_{};
+    gpu::transfer::host_pixel_format_e                      upload_pixel_format_{};
 
     frame_queue_t frame_queue_{
         {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = 1}
@@ -127,25 +128,29 @@ class input_capture_s::impl_s
     }
 
     std::shared_ptr<gpu::transfer::texture_upload_stream_s>
-    get_upload_stream(gpu::vec2i_t dimensions, size_t host_row_stride_bytes, size_t host_buffer_size_bytes)
+    get_upload_stream(gpu::vec2i_t                       dimensions,
+                      gpu::transfer::host_pixel_format_e pixel_format,
+                      size_t                             host_row_stride_bytes,
+                      size_t                             host_buffer_size_bytes)
     {
-        if (upload_stream_ && upload_dimensions_ == dimensions) {
+        if (upload_stream_ && upload_dimensions_ == dimensions && upload_pixel_format_ == pixel_format) {
             return upload_stream_;
         }
 
-        const gpu::transfer::texture_transfer_layout_s transfer_layout{
-            .dimensions             = dimensions,
-            .pixel_format           = gpu::texture_s::pixel_format_e::bgra_u8,
-            .host_row_stride_bytes  = host_row_stride_bytes,
-            .host_buffer_size_bytes = host_buffer_size_bytes,
-            .host_memory_access     = gpu::transfer::host_memory_access_e::overwrite,
+        const gpu::transfer::host_frame_layout_s host_layout{
+            .image_dimensions  = dimensions,
+            .pixel_format      = pixel_format,
+            .row_stride_bytes  = host_row_stride_bytes,
+            .buffer_size_bytes = host_buffer_size_bytes,
+            .memory_access     = gpu::transfer::host_memory_access_e::overwrite,
         };
-        upload_stream_     = upload_service_->create_stream({
-                .transfer_layout   = transfer_layout,
-                .max_slots         = UPLOAD_SLOT_COUNT,
-                .generate_mip_maps = false,
+        upload_stream_       = upload_service_->create_stream({
+                  .host_layout       = host_layout,
+                  .max_slots         = UPLOAD_SLOT_COUNT,
+                  .generate_mip_maps = false,
         });
-        upload_dimensions_ = dimensions;
+        upload_dimensions_   = dimensions;
+        upload_pixel_format_ = pixel_format;
         return upload_stream_;
     }
 
@@ -229,8 +234,11 @@ class input_capture_s::impl_s
         const gpu::vec2i_t dimensions{video_frame.xres, video_frame.yres};
         const auto         row_size               = static_cast<size_t>(video_frame.xres) * 4;
         const auto         host_buffer_size_bytes = row_size * static_cast<size_t>(video_frame.yres);
-        auto               stream                 = get_upload_stream(dimensions, row_size, host_buffer_size_bytes);
-        auto               upload                 = stream->try_acquire_upload_buffer();
+        const auto         pixel_format           = video_frame.FourCC == NDIlib_FourCC_video_type_BGRA
+                                                        ? gpu::transfer::host_pixel_format_e::bgra_u8
+                                                        : gpu::transfer::host_pixel_format_e::bgrx_u8;
+        auto               stream = get_upload_stream(dimensions, pixel_format, row_size, host_buffer_size_bytes);
+        auto               upload = stream->try_acquire_upload_buffer();
         if (!upload.has_value()) {
             ++upload_slot_drops_;
             return true;

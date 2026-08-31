@@ -25,113 +25,67 @@ size_t checked_multiply(size_t lhs, size_t rhs)
 }
 } // namespace
 
-texture_s::pixel_format_info_s texture_s::pixel_format_info(pixel_format_e pixel_format)
+texture_s::storage_format_info_s texture_s::storage_format_info(storage_format_e storage_format)
 {
-    switch (pixel_format) {
-        case pixel_format_e::rgb_f16:
+    switch (storage_format) {
+        case storage_format_e::rgb_unorm16:
             return {
-                .internal_format          = GL_RGB16,
-                .external_format          = GL_RGB,
-                .external_type            = GL_UNSIGNED_BYTE,
-                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
-                .mag_filter               = GL_LINEAR,
-                .host_bytes_per_texel     = 3,
-                .storage_bytes_per_texel  = 6,
-                .display_pixels_per_texel = 1,
-                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
-                .storage_identical        = false,
+                .internal_format         = GL_RGB16,
+                .clear_format            = GL_RGB,
+                .clear_type              = GL_UNSIGNED_SHORT,
+                .min_filter              = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter              = GL_LINEAR,
+                .storage_bytes_per_texel = 6,
+                .mip_map_levels          = static_cast<GLsizei>(MIP_MAP_LEVELS),
+                .integer                 = false,
             };
-        case pixel_format_e::rgba_f16:
+        case storage_format_e::rgba_unorm16:
             return {
-                .internal_format          = GL_RGBA16,
-                .external_format          = GL_RGBA,
-                .external_type            = GL_UNSIGNED_BYTE,
-                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
-                .mag_filter               = GL_LINEAR,
-                .host_bytes_per_texel     = 4,
-                .storage_bytes_per_texel  = 8,
-                .display_pixels_per_texel = 1,
-                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
-                .storage_identical        = false,
+                .internal_format         = GL_RGBA16,
+                .clear_format            = GL_RGBA,
+                .clear_type              = GL_UNSIGNED_SHORT,
+                .min_filter              = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter              = GL_LINEAR,
+                .storage_bytes_per_texel = 8,
+                .mip_map_levels          = static_cast<GLsizei>(MIP_MAP_LEVELS),
+                .integer                 = false,
             };
-        case pixel_format_e::rgba_u8:
+        case storage_format_e::rgba_unorm8:
             return {
-                .internal_format          = GL_RGBA8,
-                .external_format          = GL_RGBA,
-                .external_type            = GL_UNSIGNED_BYTE,
-                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
-                .mag_filter               = GL_LINEAR,
-                .host_bytes_per_texel     = 4,
-                .storage_bytes_per_texel  = 4,
-                .display_pixels_per_texel = 1,
-                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
-                .storage_identical        = true,
+                .internal_format         = GL_RGBA8,
+                .clear_format            = GL_RGBA,
+                .clear_type              = GL_UNSIGNED_BYTE,
+                .min_filter              = GL_NEAREST_MIPMAP_LINEAR,
+                .mag_filter              = GL_LINEAR,
+                .storage_bytes_per_texel = 4,
+                .mip_map_levels          = static_cast<GLsizei>(MIP_MAP_LEVELS),
+                .integer                 = false,
             };
-        case pixel_format_e::argb_u8:
+        case storage_format_e::r32_uint:
             return {
-                .internal_format          = GL_RGBA8,
-                .external_format          = GL_BGRA,
-                .external_type            = GL_UNSIGNED_INT_8_8_8_8,
-                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
-                .mag_filter               = GL_LINEAR,
-                .host_bytes_per_texel     = 4,
-                .storage_bytes_per_texel  = 4,
-                .display_pixels_per_texel = 1,
-                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
-                .storage_identical        = false,
-            };
-        case pixel_format_e::bgra_u8:
-            return {
-                .internal_format          = GL_RGBA8,
-                .external_format          = GL_BGRA,
-                .external_type            = GL_UNSIGNED_INT_8_8_8_8_REV,
-                .min_filter               = GL_NEAREST_MIPMAP_LINEAR,
-                .mag_filter               = GL_LINEAR,
-                .host_bytes_per_texel     = 4,
-                .storage_bytes_per_texel  = 4,
-                .display_pixels_per_texel = 1,
-                .mip_map_levels           = static_cast<GLsizei>(MIP_MAP_LEVELS),
-                .storage_identical        = false,
-            };
-        case pixel_format_e::uyuv_u8:
-            return {
-                .internal_format          = GL_RGBA8,
-                .external_format          = GL_BGRA,
-                .external_type            = GL_UNSIGNED_INT_8_8_8_8_REV,
-                .min_filter               = GL_NEAREST,
-                .mag_filter               = GL_NEAREST,
-                .host_bytes_per_texel     = 4,
-                .storage_bytes_per_texel  = 4,
-                .display_pixels_per_texel = 2,
-                .mip_map_levels           = 1,
-                .storage_identical        = false,
-            };
-        case pixel_format_e::uyuv_u10:
-            return {
-                .internal_format          = GL_RGB10_A2,
-                .external_format          = GL_RGBA,
-                .external_type            = GL_UNSIGNED_INT_2_10_10_10_REV,
-                .min_filter               = GL_NEAREST,
-                .mag_filter               = GL_NEAREST,
-                .host_bytes_per_texel     = 4,
-                .storage_bytes_per_texel  = 4,
-                .display_pixels_per_texel = 1,
-                .mip_map_levels           = 1,
-                .storage_identical        = true,
+                .internal_format         = GL_R32UI,
+                .clear_format            = GL_RED_INTEGER,
+                .clear_type              = GL_UNSIGNED_INT,
+                .min_filter              = GL_NEAREST,
+                .mag_filter              = GL_NEAREST,
+                .storage_bytes_per_texel = 4,
+                .mip_map_levels          = 1,
+                .integer                 = true,
             };
     }
-    throw std::invalid_argument("Invalid texture pixel_format");
+    throw std::invalid_argument("Invalid texture storage format");
 }
 
-texture_s::texture_s(vec2i_t dimensions, pixel_format_e pixel_format)
-    : display_dimensions_(dimensions)
-    , texture_dimensions_(dimensions)
-    , pixel_format_(pixel_format)
+texture_s::texture_s(vec2i_t                   display_dimensions,
+                     vec2i_t                   texture_dimensions,
+                     storage_format_e          storage_format,
+                     input_component_mapping_e input_component_mapping)
+    : display_dimensions_(display_dimensions)
+    , texture_dimensions_(texture_dimensions)
+    , storage_format_(storage_format)
+    , input_component_mapping_(input_component_mapping)
 {
-    const auto info = pixel_format_info(pixel_format);
-    texture_dimensions_.x /= info.display_pixels_per_texel;
-    gl_external_format_ = info.external_format;
-    gl_external_type_   = info.external_type;
+    const auto info = storage_format_info(storage_format);
 
     glCreateTextures(GL_TEXTURE_2D, 1, &id_);
 
@@ -141,6 +95,13 @@ texture_s::texture_s(vec2i_t dimensions, pixel_format_e pixel_format)
     glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, info.mag_filter);
 
     glTextureStorage2D(id_, info.mip_map_levels, info.internal_format, texture_dimensions_.x, texture_dimensions_.y);
+}
+
+texture_s::texture_s(vec2i_t                   dimensions,
+                     storage_format_e          storage_format,
+                     input_component_mapping_e input_component_mapping)
+    : texture_s(dimensions, dimensions, storage_format, input_component_mapping)
+{
 }
 
 texture_s::~texture_s()
@@ -157,20 +118,21 @@ void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
 
 void texture_s::clear() const
 {
-    const auto mip_map_levels = pixel_format_info(pixel_format_).mip_map_levels;
+    const auto info           = storage_format_info(storage_format_);
+    const auto mip_map_levels = info.mip_map_levels;
     for (GLsizei level = 0; level < mip_map_levels; ++level) {
-        glClearTexImage(id_, level, gl_external_format_, gl_external_type_, nullptr);
+        glClearTexImage(id_, level, info.clear_format, info.clear_type, nullptr);
     }
 }
 
-size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, pixel_format_e pixel_format)
+size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, storage_format_e storage_format)
 {
     if (dimensions.x <= 0 || dimensions.y <= 0) {
         throw std::invalid_argument("texture dimensions must be positive");
     }
 
-    const auto info   = pixel_format_info(pixel_format);
-    auto       width  = static_cast<size_t>(dimensions.x / info.display_pixels_per_texel);
+    const auto info   = storage_format_info(storage_format);
+    auto       width  = static_cast<size_t>(dimensions.x);
     auto       height = static_cast<size_t>(dimensions.y);
     size_t     byte_size{};
 
@@ -184,23 +146,9 @@ size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, pixel_format_e 
     return byte_size;
 }
 
-size_t texture_s::host_row_byte_size(vec2i_t dimensions, pixel_format_e pixel_format)
-{
-    if (dimensions.x <= 0 || dimensions.y <= 0) {
-        throw std::invalid_argument("texture dimensions must be positive");
-    }
-
-    const auto info = pixel_format_info(pixel_format);
-    if (dimensions.x % info.display_pixels_per_texel != 0) {
-        throw std::invalid_argument("texture width is incompatible with packed pixel pixel_format");
-    }
-    return checked_multiply(static_cast<size_t>(dimensions.x / info.display_pixels_per_texel),
-                            info.host_bytes_per_texel);
-}
-
 void texture_s::generate_mip_maps() const
 {
-    if (pixel_format_info(pixel_format_).mip_map_levels > 1) {
+    if (storage_format_info(storage_format_).mip_map_levels > 1) {
         glGenerateTextureMipmap(id_);
     }
 }

@@ -7,10 +7,12 @@
 
 namespace miximus::gpu::transfer::detail {
 
-pinned_transfer_s::pinned_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir)
-    : texture_transfer_backend_i(transfer_layout.host_buffer_size_bytes, dir)
-    , row_length_(static_cast<GLint>(transfer_layout.host_row_stride_bytes /
-                                     texture_s::pixel_format_info(transfer_layout.pixel_format).host_bytes_per_texel))
+pinned_transfer_s::pinned_transfer_s(const texture_transfer_plan_s& transfer_plan, direction_e dir)
+    : texture_transfer_backend_i(transfer_plan.host_layout.buffer_size_bytes, dir)
+    , row_length_(
+          static_cast<GLint>(transfer_plan.host_layout.row_stride_bytes / transfer_plan.storage_bytes_per_texel))
+    , pixel_format_(transfer_plan.pixel_format)
+    , pixel_type_(transfer_plan.pixel_type)
 {
     GLbitfield storage_flags = GL_MAP_PERSISTENT_BIT;
     GLbitfield map_flags     = GL_MAP_PERSISTENT_BIT;
@@ -61,15 +63,7 @@ bool pinned_transfer_s::submit_transfer()
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, id_);
         glBindTexture(GL_TEXTURE_2D, id);
-        glTexSubImage2D(GL_TEXTURE_2D,
-                        0,
-                        0,
-                        0,
-                        dims.x,
-                        dims.y,
-                        texture()->gl_external_format(),
-                        texture()->gl_external_type(),
-                        nullptr);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, dims.x, dims.y, pixel_format_, pixel_type_, nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, previous_row_length);
         glPixelStorei(GL_UNPACK_ALIGNMENT, previous_alignment);
@@ -83,7 +77,7 @@ bool pinned_transfer_s::submit_transfer()
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, id_);
         glBindTexture(GL_TEXTURE_2D, id);
-        glGetTexImage(GL_TEXTURE_2D, 0, texture()->gl_external_format(), texture()->gl_external_type(), nullptr);
+        glGetTexImage(GL_TEXTURE_2D, 0, pixel_format_, pixel_type_, nullptr);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         glPixelStorei(GL_PACK_ROW_LENGTH, previous_row_length);
         glPixelStorei(GL_PACK_ALIGNMENT, previous_alignment);

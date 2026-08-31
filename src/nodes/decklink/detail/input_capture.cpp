@@ -356,8 +356,8 @@ class callback_s
 
     // ── IDeckLinkVideoBufferAllocatorProvider ────────────────────────────────
 
-    HRESULT STDMETHODCALLTYPE GetVideoBufferAllocator(uint32_t bufferSize,
-                                                      uint32_t /*width*/,
+    HRESULT STDMETHODCALLTYPE GetVideoBufferAllocator(uint32_t                        bufferSize,
+                                                      uint32_t                        width,
                                                       uint32_t                        height,
                                                       uint32_t                        rowBytes,
                                                       BMDPixelFormat                  pixelFormat,
@@ -392,16 +392,16 @@ class callback_s
                 }
             }
 
-            const gpu::transfer::texture_transfer_layout_s transfer_layout{
-                .dimensions                   = {static_cast<int>(rowBytes / 4), static_cast<int>(height)},
-                .pixel_format                 = gpu::texture_s::pixel_format_e::uyuv_u10,
-                .host_row_stride_bytes        = static_cast<size_t>(rowBytes),
-                .host_buffer_size_bytes       = bufferSize,
-                .host_address_alignment_bytes = 64,
-                .host_memory_access           = gpu::transfer::host_memory_access_e::overwrite,
+            const gpu::transfer::host_frame_layout_s host_layout{
+                .image_dimensions        = {static_cast<int>(width), static_cast<int>(height)},
+                .pixel_format            = gpu::transfer::host_pixel_format_e::v210,
+                .row_stride_bytes        = static_cast<size_t>(rowBytes),
+                .buffer_size_bytes       = bufferSize,
+                .address_alignment_bytes = 64,
+                .memory_access           = gpu::transfer::host_memory_access_e::overwrite,
             };
             const auto stream = upload_service_->create_stream({
-                .transfer_layout = transfer_layout,
+                .host_layout = host_layout,
                 // Timed selection may retain five completed DMA writes while
                 // DeckLink continues cycling its independent buffer objects.
                 // Additional slots cover the published texture and asynchronous

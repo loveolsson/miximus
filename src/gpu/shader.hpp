@@ -1,4 +1,5 @@
 #pragma once
+#include "gpu/component_mapping.hpp"
 #include "gpu/glad.hpp"
 #include "gpu/types.hpp"
 #include "utils/transparent_string_hash.hpp"
@@ -26,6 +27,12 @@ class shader_program_s
     const uniform_s* find_uniform(std::string_view name) const noexcept;
 
   public:
+    struct component_mapping_capabilities_s
+    {
+        bool input{};
+        bool output{};
+    };
+
     enum name_e
     {
         basic,
@@ -37,7 +44,9 @@ class shader_program_s
         strip_gamma,
     };
 
-    shader_program_s(std::string_view vert_name, std::string_view frag_name);
+    shader_program_s(std::string_view                 vert_name,
+                     std::string_view                 frag_name,
+                     component_mapping_capabilities_s component_mapping_capabilities);
     ~shader_program_s();
 
     shader_program_s(const shader_program_s&) = delete;
@@ -48,12 +57,16 @@ class shader_program_s
     void        use() const;
     static void unuse();
     GLuint      get_id() { return program_; }
+    bool        supports_input_component_mapping() const noexcept;
+    bool        supports_output_component_mapping() const noexcept;
 
     bool set_uniform(std::string_view name, const vec2_t& val);
     bool set_uniform(std::string_view name, const vec3_t& val);
     bool set_uniform(std::string_view name, const mat3& val);
     bool set_uniform(std::string_view name, double val);
     bool set_uniform(std::string_view name, int val);
+    void set_input_component_mapping(input_component_mapping_e mapping);
+    void set_output_component_mapping(output_component_mapping_e mapping);
 };
 
 } // namespace miximus::gpu

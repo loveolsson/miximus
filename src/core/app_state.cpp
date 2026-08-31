@@ -49,8 +49,9 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     // intentionally part of app startup rather than context construction so a
     // failed optional backend simply selects the persistent-PBO implementation.
     const gpu::context_scope_s context_scope(*ctx_);
-    auto                       fallback_texture = std::make_unique<gpu::texture_s>(
-        gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::texture_s::pixel_format_e::rgba_f16);
+    auto                       fallback_texture =
+        std::make_unique<gpu::texture_s>(gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION},
+                                         gpu::texture_s::storage_format_e::rgba_unorm16);
     fallback_texture->clear();
     gpu::transfer::detail::initialize_texture_transfer_backends();
     // These must be constructed after backend initialization with the root

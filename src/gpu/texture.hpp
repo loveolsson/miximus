@@ -1,4 +1,5 @@
 #pragma once
+#include "component_mapping.hpp"
 #include "glad.hpp"
 #include "types.hpp"
 
@@ -11,41 +12,41 @@ constexpr GLuint MIP_MAP_LEVELS = 4;
 class texture_s
 {
   public:
-    enum class pixel_format_e
+    enum class storage_format_e
     {
-        rgb_f16,
-        rgba_f16,
-        rgba_u8,
-        argb_u8,
-        bgra_u8,
-        uyuv_u8,
-        uyuv_u10,
+        rgb_unorm16,
+        rgba_unorm16,
+        rgba_unorm8,
+        r32_uint,
     };
 
-    struct pixel_format_info_s
+    struct storage_format_info_s
     {
         GLenum  internal_format;
-        GLenum  external_format;
-        GLenum  external_type;
+        GLenum  clear_format;
+        GLenum  clear_type;
         GLint   min_filter;
         GLint   mag_filter;
-        size_t  host_bytes_per_texel;
         size_t  storage_bytes_per_texel;
-        int     display_pixels_per_texel;
         GLsizei mip_map_levels;
-        bool    storage_identical;
+        bool    integer;
     };
 
   private:
-    GLuint         id_{};
-    vec2i_t        display_dimensions_{};
-    vec2i_t        texture_dimensions_{};
-    GLenum         gl_external_format_{};
-    GLenum         gl_external_type_{};
-    pixel_format_e pixel_format_;
+    GLuint                    id_{};
+    vec2i_t                   display_dimensions_{};
+    vec2i_t                   texture_dimensions_{};
+    storage_format_e          storage_format_;
+    input_component_mapping_e input_component_mapping_{input_component_mapping_e::identity};
 
   public:
-    texture_s(vec2i_t dimensions, pixel_format_e pixel_format);
+    texture_s(vec2i_t                   display_dimensions,
+              vec2i_t                   texture_dimensions,
+              storage_format_e          storage_format,
+              input_component_mapping_e input_component_mapping = input_component_mapping_e::identity);
+    texture_s(vec2i_t                   dimensions,
+              storage_format_e          storage_format,
+              input_component_mapping_e input_component_mapping = input_component_mapping_e::identity);
     ~texture_s();
 
     texture_s(const texture_s&)      = delete;
@@ -53,16 +54,14 @@ class texture_s
     void operator=(const texture_s&) = delete;
     void operator=(texture_s&&)      = delete;
 
-    void                       init();
-    static pixel_format_info_s pixel_format_info(pixel_format_e pixel_format);
-    static size_t              host_row_byte_size(vec2i_t dimensions, pixel_format_e pixel_format);
-    static size_t              estimate_storage_byte_size(vec2i_t dimensions, pixel_format_e pixel_format);
-    vec2i_t                    display_dimensions() const noexcept { return display_dimensions_; }
-    vec2i_t                    texture_dimensions() const noexcept { return texture_dimensions_; }
-    GLenum                     gl_external_format() const noexcept { return gl_external_format_; }
-    GLenum                     gl_external_type() const noexcept { return gl_external_type_; }
-    pixel_format_e             pixel_format() const noexcept { return pixel_format_; }
-    GLuint                     id() const noexcept { return id_; }
+    void                         init();
+    static storage_format_info_s storage_format_info(storage_format_e storage_format);
+    static size_t             estimate_storage_byte_size(vec2i_t texture_dimensions, storage_format_e storage_format);
+    vec2i_t                   display_dimensions() const noexcept { return display_dimensions_; }
+    vec2i_t                   texture_dimensions() const noexcept { return texture_dimensions_; }
+    storage_format_e          storage_format() const noexcept { return storage_format_; }
+    input_component_mapping_e input_component_mapping() const noexcept { return input_component_mapping_; }
+    GLuint                    id() const noexcept { return id_; }
 
     void        bind(GLuint sampler) const;
     static void unbind(GLuint sampler);

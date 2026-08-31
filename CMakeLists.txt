@@ -39,7 +39,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/submodules/fiberpool/include
 )
 
-option(MIXIMUS_TUNE_NATIVE OFF)
+option(MIXIMUS_TUNE_NATIVE "Enable architecture-specific compiler tuning" OFF)
 
 if (MIXIMUS_TUNE_NATIVE)
     include(CheckCXXCompilerFlag)

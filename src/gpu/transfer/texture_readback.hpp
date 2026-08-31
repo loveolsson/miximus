@@ -1,7 +1,6 @@
 #pragma once
 #include "gpu/framebuffer_fwd.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/transfer/readback_component_mapping.hpp"
 #include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 #include "utils/flicks.hpp"
@@ -15,7 +14,8 @@
 
 namespace miximus::gpu {
 class context_s;
-}
+class textured_quad_s;
+} // namespace miximus::gpu
 
 namespace miximus::gpu::transfer {
 namespace detail {
@@ -26,9 +26,9 @@ struct texture_readback_stream_state_s;
 
 struct texture_readback_config_s
 {
-    texture_transfer_layout_s transfer_layout{.host_memory_access = host_memory_access_e::read_only};
-    size_t                    max_slots{4};
-    size_t                    initial_slots{};
+    host_frame_layout_s host_layout{.memory_access = host_memory_access_e::read_only};
+    size_t              max_slots{4};
+    size_t              initial_slots{};
 };
 
 struct texture_readback_stream_metrics_s
@@ -68,11 +68,11 @@ class texture_readback_target_s
     texture_readback_target_s(texture_readback_target_s&&) noexcept;
     texture_readback_target_s& operator=(texture_readback_target_s&&) noexcept;
 
-    framebuffer_s*               framebuffer() const noexcept;
-    readback_component_mapping_e readback_component_mapping() const noexcept;
-    void                         set_program_target_time(utils::flicks program_target_time) noexcept;
-    void                         submit();
-    explicit                     operator bool() const noexcept { return slot_ != nullptr; }
+    framebuffer_s* framebuffer() const noexcept;
+    void           draw(textured_quad_s* textured_quad, texture_s* texture) const;
+    void           set_program_target_time(utils::flicks program_target_time) noexcept;
+    void           submit();
+    explicit       operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_readback_frame_s

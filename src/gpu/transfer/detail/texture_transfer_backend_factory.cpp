@@ -62,7 +62,7 @@ void shutdown_texture_transfer_backends()
     texture_transfer_capabilities() = {};
 }
 
-texture_transfer_backend_selection_s create_texture_transfer_backend(const texture_transfer_layout_s& transfer_layout,
+texture_transfer_backend_selection_s create_texture_transfer_backend(const texture_transfer_plan_s& transfer_plan,
                                                                      texture_transfer_backend_i::direction_e direction,
                                                                      texture_s*                              texture)
 {
@@ -71,7 +71,7 @@ texture_transfer_backend_selection_s create_texture_transfer_backend(const textu
     }
 
     const auto try_register =
-        [texture, alignment = transfer_layout.host_address_alignment_bytes](
+        [texture, alignment = transfer_plan.host_layout.address_alignment_bytes](
             std::unique_ptr<texture_transfer_backend_i> candidate) -> std::unique_ptr<texture_transfer_backend_i> {
         if (reinterpret_cast<std::uintptr_t>(candidate->host_memory()) % alignment != 0) {
             return nullptr;
@@ -83,15 +83,15 @@ texture_transfer_backend_selection_s create_texture_transfer_backend(const textu
     };
 
     auto& state = texture_transfer_capabilities();
-    if (state.dvp_available && dvp_transfer_s::supports(transfer_layout)) {
+    if (state.dvp_available && dvp_transfer_s::supports(transfer_plan)) {
         try {
-            if (auto selected_backend = try_register(std::make_unique<dvp_transfer_s>(transfer_layout, direction))) {
+            if (auto selected_backend = try_register(std::make_unique<dvp_transfer_s>(transfer_plan, direction))) {
                 getlog("gpu")->debug("Selected DVP direct-memory transfer backend");
                 return {
                     .transfer_backend         = std::move(selected_backend),
                     .backend_kind             = texture_transfer_backend_kind_e::dvp,
                     .memory_path              = texture_transfer_memory_path_e::direct_memory,
-                    .backend_allocation_bytes = transfer_layout.host_buffer_size_bytes,
+                    .backend_allocation_bytes = transfer_plan.host_layout.buffer_size_bytes,
                 };
             }
             getlog("gpu")->warn("DVP texture registration failed; trying another transfer backend");
@@ -101,17 +101,17 @@ texture_transfer_backend_selection_s create_texture_transfer_backend(const textu
     }
 
     if (state.cuda_available) {
-        const bool direct_image = cuda_transfer_s::supports_direct_image(transfer_layout.pixel_format);
+        const bool direct_image = cuda_transfer_s::supports_direct_image(transfer_plan.storage_format);
         if (direct_image) {
             try {
                 if (auto selected_backend =
-                        try_register(std::make_unique<cuda_transfer_s>(transfer_layout, direction, true))) {
+                        try_register(std::make_unique<cuda_transfer_s>(transfer_plan, direction, true))) {
                     getlog("gpu")->debug("Selected CUDA direct-image transfer backend");
                     return {
                         .transfer_backend         = std::move(selected_backend),
                         .backend_kind             = texture_transfer_backend_kind_e::cuda,
                         .memory_path              = texture_transfer_memory_path_e::direct_image,
-                        .backend_allocation_bytes = transfer_layout.host_buffer_size_bytes,
+                        .backend_allocation_bytes = transfer_plan.host_layout.buffer_size_bytes,
                     };
                 }
                 getlog("gpu")->debug("CUDA direct image registration failed; trying the CUDA pixel-buffer path");
@@ -123,13 +123,13 @@ texture_transfer_backend_selection_s create_texture_transfer_backend(const textu
 
         try {
             if (auto selected_backend =
-                    try_register(std::make_unique<cuda_transfer_s>(transfer_layout, direction, false))) {
+                    try_register(std::make_unique<cuda_transfer_s>(transfer_plan, direction, false))) {
                 getlog("gpu")->debug("Selected CUDA pixel-buffer transfer backend");
                 return {
                     .transfer_backend         = std::move(selected_backend),
                     .backend_kind             = texture_transfer_backend_kind_e::cuda,
                     .memory_path              = texture_transfer_memory_path_e::pixel_buffer,
-                    .backend_allocation_bytes = transfer_layout.host_buffer_size_bytes * 2,
+                    .backend_allocation_bytes = transfer_plan.host_layout.buffer_size_bytes * 2,
                 };
             }
         } catch (const std::exception& error) {
@@ -138,7 +138,7 @@ texture_transfer_backend_selection_s create_texture_transfer_backend(const textu
         }
     }
 
-    auto selected_backend = try_register(std::make_unique<pinned_transfer_s>(transfer_layout, direction));
+    auto selected_backend = try_register(std::make_unique<pinned_transfer_s>(transfer_plan, direction));
     if (!selected_backend) {
         throw std::runtime_error("failed to register persistent transfer backend with texture");
     }
@@ -147,7 +147,7 @@ texture_transfer_backend_selection_s create_texture_transfer_backend(const textu
         .transfer_backend         = std::move(selected_backend),
         .backend_kind             = texture_transfer_backend_kind_e::persistent,
         .memory_path              = texture_transfer_memory_path_e::pixel_buffer,
-        .backend_allocation_bytes = transfer_layout.host_buffer_size_bytes,
+        .backend_allocation_bytes = transfer_plan.host_layout.buffer_size_bytes,
     };
 }
 

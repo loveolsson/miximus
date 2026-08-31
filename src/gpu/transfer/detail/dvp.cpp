@@ -44,21 +44,16 @@ struct dvp_format_s
     DVPBufferTypes   type;
 };
 
-dvp_format_s get_dvp_format(texture_s::pixel_format_e pixel_format)
+dvp_format_s get_dvp_format(texture_s::storage_format_e storage_format)
 {
-    switch (pixel_format) {
-        case texture_s::pixel_format_e::rgb_f16:
-            return {.format = DVP_RGB, .type = DVP_UNSIGNED_BYTE};
-        case texture_s::pixel_format_e::rgba_f16:
-        case texture_s::pixel_format_e::rgba_u8:
+    switch (storage_format) {
+        case texture_s::storage_format_e::rgba_unorm8:
             return {.format = DVP_RGBA, .type = DVP_UNSIGNED_BYTE};
-        case texture_s::pixel_format_e::argb_u8:
-            return {.format = DVP_BGRA, .type = DVP_UNSIGNED_INT_8_8_8_8};
-        case texture_s::pixel_format_e::bgra_u8:
-        case texture_s::pixel_format_e::uyuv_u8:
-            return {.format = DVP_BGRA, .type = DVP_UNSIGNED_INT_8_8_8_8_REV};
-        case texture_s::pixel_format_e::uyuv_u10:
-            return {.format = DVP_RGBA, .type = DVP_UNSIGNED_INT_2_10_10_10_REV};
+        case texture_s::storage_format_e::r32_uint:
+            return {.format = DVP_RED_INTEGER, .type = DVP_UNSIGNED_INT};
+        case texture_s::storage_format_e::rgb_unorm16:
+        case texture_s::storage_format_e::rgba_unorm16:
+            break;
     }
     throw std::invalid_argument("unsupported DVP texture format");
 }
@@ -249,19 +244,19 @@ bool dvp_transfer_s::release_texture_from_gl_impl(texture_s* /*texture*/)
 
 // ─── Constructor / Destructor ────────────────────────────────────────────────
 
-dvp_transfer_s::dvp_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir)
-    : texture_transfer_backend_i(transfer_layout.host_buffer_size_bytes, dir)
+dvp_transfer_s::dvp_transfer_s(const texture_transfer_plan_s& transfer_plan, direction_e dir)
+    : texture_transfer_backend_i(transfer_plan.host_layout.buffer_size_bytes, dir)
 {
     assert(dvp_supported_);
 
-    if (!supports(transfer_layout)) {
+    if (!supports(transfer_plan)) {
         throw std::invalid_argument("DVP transfer transfer_layout are unsupported");
     }
 
     // Allocate page-aligned, page-locked system memory.
     // buf_addr_align_ is the DVP requirement; use at least 4096 (page size).
-    const size_t alignment =
-        std::max({static_cast<size_t>(buf_addr_align_), transfer_layout.host_address_alignment_bytes, size_t{4096}});
+    const size_t alignment = std::max(
+        {static_cast<size_t>(buf_addr_align_), transfer_plan.host_layout.address_alignment_bytes, size_t{4096}});
     if (!std::has_single_bit(alignment) ||
         host_buffer_size_bytes_ > std::numeric_limits<size_t>::max() - (alignment - 1)) {
         throw std::invalid_argument("DVP transfer alignment is invalid");
@@ -288,13 +283,12 @@ dvp_transfer_s::dvp_transfer_s(const texture_transfer_layout_s& transfer_layout,
 #endif
 
     // Register the sysmem buffer with DVP.
-    const auto texture_dimensions = transfer_layout.dimensions.x /
-                                    texture_s::pixel_format_info(transfer_layout.pixel_format).display_pixels_per_texel;
-    const auto          dvp_format = get_dvp_format(transfer_layout.pixel_format);
+    const auto          texture_dimensions = transfer_plan.texture_dimensions.x;
+    const auto          dvp_format         = get_dvp_format(transfer_plan.storage_format);
     DVPSysmemBufferDesc config{
         .width   = static_cast<uint32_t>(texture_dimensions),
-        .height  = static_cast<uint32_t>(transfer_layout.dimensions.y),
-        .stride  = static_cast<uint32_t>(transfer_layout.host_row_stride_bytes),
+        .height  = static_cast<uint32_t>(transfer_plan.texture_dimensions.y),
+        .stride  = static_cast<uint32_t>(transfer_plan.host_layout.row_stride_bytes),
         .size    = static_cast<uint32_t>(host_buffer_size_bytes_),
         .format  = dvp_format.format,
         .type    = dvp_format.type,
@@ -327,9 +321,9 @@ dvp_transfer_s::dvp_transfer_s(const texture_transfer_layout_s& transfer_layout,
         throw;
     }
 
-    if (buf_gpu_stride_align_ > 1 && transfer_layout.host_row_stride_bytes % buf_gpu_stride_align_ != 0) {
+    if (buf_gpu_stride_align_ > 1 && transfer_plan.host_layout.row_stride_bytes % buf_gpu_stride_align_ != 0) {
         getlog("gpu")->debug("DVP row stride {} does not meet the recommended {}-byte GPU alignment",
-                             transfer_layout.host_row_stride_bytes,
+                             transfer_plan.host_layout.row_stride_bytes,
                              buf_gpu_stride_align_);
     }
 }
@@ -429,20 +423,18 @@ bool dvp_transfer_s::wait_for_transfer_completion()
     return true;
 }
 
-bool dvp_transfer_s::supports(const texture_transfer_layout_s& transfer_layout)
+bool dvp_transfer_s::supports(const texture_transfer_plan_s& transfer_plan)
 {
-    if (!dvp_supported_ || transfer_layout.dimensions.x <= 0 || transfer_layout.dimensions.y <= 0 ||
-        transfer_layout.host_row_stride_bytes == 0 || transfer_layout.host_buffer_size_bytes == 0 ||
-        transfer_layout.host_buffer_size_bytes > std::numeric_limits<uint32_t>::max() ||
-        transfer_layout.host_row_stride_bytes > std::numeric_limits<uint32_t>::max()) {
+    if (!dvp_supported_ || transfer_plan.texture_dimensions.x <= 0 || transfer_plan.texture_dimensions.y <= 0 ||
+        transfer_plan.host_layout.row_stride_bytes == 0 || transfer_plan.host_layout.buffer_size_bytes == 0 ||
+        transfer_plan.host_layout.buffer_size_bytes > std::numeric_limits<uint32_t>::max() ||
+        transfer_plan.host_layout.row_stride_bytes > std::numeric_limits<uint32_t>::max()) {
         return false;
     }
 
     try {
-        (void)get_dvp_format(transfer_layout.pixel_format);
-        return transfer_layout.dimensions.x %
-                   texture_s::pixel_format_info(transfer_layout.pixel_format).display_pixels_per_texel ==
-               0;
+        (void)get_dvp_format(transfer_plan.storage_format);
+        return true;
     } catch (const std::invalid_argument&) {
         return false;
     }

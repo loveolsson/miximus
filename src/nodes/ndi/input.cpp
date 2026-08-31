@@ -186,7 +186,7 @@ class node_impl : public node_i
 
         if (!framebuffer_ || framebuffer_->texture()->display_dimensions() != frame->dimensions) {
             framebuffer_ =
-                std::make_unique<gpu::framebuffer_s>(frame->dimensions, gpu::texture_s::pixel_format_e::rgb_f16);
+                std::make_unique<gpu::framebuffer_s>(frame->dimensions, gpu::texture_s::storage_format_e::rgb_unorm16);
         }
 
         // The shared timed-source queue has already selected and aligned this
@@ -197,7 +197,7 @@ class node_impl : public node_i
         }
 
         framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        textured_quad_->draw(rendered_input_frame_->texture());
+        textured_quad_->draw_transfer_input(rendered_input_frame_->texture());
         gpu::framebuffer_s::end_render();
 
         auto* output = framebuffer_->texture();

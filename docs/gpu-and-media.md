@@ -75,23 +75,25 @@ accounting, leases, and publication; the backend only implements one slot's host
 lifecycle are kept in `detail/texture_transfer_backend_factory`, rather than on the polymorphic interface.
 
 Transfer capabilities are initialized once in `app_state_s` while the root GL context is current. DVP and CUDA are
-initialized independently; the backend factory then selects a path for each stream from its direction, pixel format,
-row stride, host access pattern, and alignment requirements:
+initialized independently; the backend factory then selects a path for each stream from its direction, host pixel
+layout, row stride, host access pattern, and alignment requirements:
 
 1. NVIDIA DVP/GPU Direct for Video when the layout is supported and the texture registers successfully.
-2. A CUDA image copy for formats whose host representation is proven identical to OpenGL storage.
-3. A CUDA/OpenGL pixel buffer when OpenGL format conversion is required.
+2. A CUDA image copy for raw storage formats supported by CUDA/OpenGL interoperability.
+3. A CUDA/OpenGL pixel buffer when direct image registration is unavailable.
 4. A persistent mapped OpenGL PBO fallback.
 
 CUDA has no general query for arbitrary OpenGL format interoperability. General CUDA/GL support is detected during
 initialization, while direct-image support combines the project-owned texture format description with registration of
 the actual texture. Registration failure falls back without failing the stream. The format description is authoritative
-for internal/external GL format, host and storage byte sizes, packed pixels, and direct-copy compatibility.
+for raw GL storage, host and storage byte sizes, and direct-copy compatibility.
 
-Upload and readback configurations contain `texture_transfer_layout_s`. Always describe the real
-`host_row_stride_bytes`, `host_buffer_size_bytes`, and host-memory access pattern. Full-overwrite producers may receive
-write-combined CUDA host memory; CPU rendering that reads and modifies existing pixels must request
-`host_memory_access_e::read_write`.
+Upload and readback configurations contain `host_frame_layout_s`. Nodes describe only the real image dimensions, host
+pixel layout, row stride, buffer size, alignment, and memory access pattern. The transfer planner chooses the raw GPU
+storage and component mappings. Eight-bit RGBA-family layouts use `GL_RGBA8`; v210 uses raw `GL_R32UI` words. Shaders
+perform component swizzling and v210 packing or unpacking, so transfer backends move unchanged bytes whenever possible.
+Full-overwrite producers may receive write-combined CUDA host memory; CPU rendering that reads and modifies existing
+pixels must request `host_memory_access_e::read_write`.
 
 The persistent fallback exposes its mapped unpack PBO directly as the upload lease's writable memory. Producers copy
 into that mapping, and the upload worker flushes it before updating the texture; do not add a separate CPU staging

@@ -33,6 +33,8 @@ class textured_quad_s
         {
         }
 
+        void draw_impl(texture_s* texture, const texture_draw_s& texture_draw, double opacity, bool transfer_input);
+
         friend class textured_quad_s;
 
       public:
@@ -50,6 +52,7 @@ class textured_quad_s
 
         void draw(texture_s* texture, rect_s rect = {}, double opacity = 1.0);
         void draw(texture_s* texture, const texture_draw_s& draw, double opacity = 1.0);
+        void draw_transfer_input(texture_s* texture, const texture_draw_s& draw = {}, double opacity = 1.0);
     };
 
   private:
@@ -69,6 +72,7 @@ class textured_quad_s
     batch_s           begin_batch() { return batch_s(this); }
     void              draw(texture_s* texture, rect_s rect = {}, double opacity = 1.0);
     void              draw(texture_s* texture, const texture_draw_s& draw, double opacity = 1.0);
+    void              draw_transfer_input(texture_s* texture, const texture_draw_s& draw = {}, double opacity = 1.0);
     void              draw_mix(texture_s*            a,
                                texture_s*            b,
                                double                t,

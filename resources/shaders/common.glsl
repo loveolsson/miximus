@@ -32,16 +32,35 @@ vec3 to_linear(vec3 srgb)
     return mix(higher, lower, cutoff);
 }
 
-const int readback_component_mapping_identity           = 0;
-const int readback_component_mapping_rgba_to_argb_bytes = 1;
-const int readback_component_mapping_rgba_to_bgra_bytes = 2;
+const int input_component_mapping_identity     = 0;
+const int input_component_mapping_bgra_to_rgba = 1;
+const int input_component_mapping_bgrx_to_rgba = 2;
+const int input_component_mapping_argb_to_rgba = 3;
 
-vec4 map_readback_components(vec4 rgba, int mapping)
+vec4 map_input_components(vec4 stored, int mapping)
 {
     switch (mapping) {
-        case readback_component_mapping_rgba_to_argb_bytes:
+        case input_component_mapping_bgra_to_rgba:
+            return stored.bgra;
+        case input_component_mapping_bgrx_to_rgba:
+            return vec4(stored.bgr, 1.0);
+        case input_component_mapping_argb_to_rgba:
+            return stored.gbar;
+        default:
+            return stored;
+    }
+}
+
+const int output_component_mapping_identity           = 0;
+const int output_component_mapping_rgba_to_argb_bytes = 1;
+const int output_component_mapping_rgba_to_bgra_bytes = 2;
+
+vec4 map_output_components(vec4 rgba, int mapping)
+{
+    switch (mapping) {
+        case output_component_mapping_rgba_to_argb_bytes:
             return rgba.argb;
-        case readback_component_mapping_rgba_to_bgra_bytes:
+        case output_component_mapping_rgba_to_bgra_bytes:
             return rgba.bgra;
         default:
             return rgba;

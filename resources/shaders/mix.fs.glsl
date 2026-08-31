@@ -15,7 +15,11 @@ uniform vec2      b_source_offset;
 uniform vec2      b_source_scale;
 uniform int       video_mix;
 
-vec4 sample_fitted(sampler2D image, vec2 destination_offset, vec2 destination_scale, vec2 source_offset, vec2 source_scale)
+vec4 sample_fitted(sampler2D image,
+                   vec2      destination_offset,
+                   vec2      destination_scale,
+                   vec2      source_offset,
+                   vec2      source_scale)
 {
     vec2 uv = (TexCoord - destination_offset) / destination_scale;
     if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {

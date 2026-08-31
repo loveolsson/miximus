@@ -2,7 +2,7 @@ out vec4 FragColor;
 
 in vec2 TexCoord; // the input variable from the vertex shader (same name and same type)
 
-uniform sampler2D tex;
+uniform usampler2D tex;
 uniform int       target_width;
 uniform mat3      transfer;
 uniform vec3      transfer_offset;
@@ -30,6 +30,12 @@ vec3 yuv_to_rgb(float Y, float Cb, float Cr)
     return (vec3(Y, Cb, Cr) - transfer_offset) * transfer;
 }
 
+vec3 unpack_v210_word(ivec2 position)
+{
+    uint word = texelFetch(tex, position, 0).r;
+    return vec3(word & 1023u, (word >> 10) & 1023u, (word >> 20) & 1023u) / 1023.0;
+}
+
 void main(void)
 {
     vec2 tc = TexCoord;
@@ -40,46 +46,46 @@ void main(void)
     float Y, Cb, Cr;
 
     int  start_x = x / 6 * 4;
-    vec4 tex_1, tex_2;
+    vec3 tex_1, tex_2;
 
     switch (x % 6) {
         case 0:
-            tex_1 = texelFetch(tex, ivec2(start_x, y), 0);
+            tex_1 = unpack_v210_word(ivec2(start_x, y));
             Y     = tex_1.y;
             Cb    = tex_1.x;
             Cr    = tex_1.z;
             break;
         case 1:
-            tex_1 = texelFetch(tex, ivec2(start_x, y), 0);
-            tex_2 = texelFetch(tex, ivec2(start_x + 1, y), 0);
+            tex_1 = unpack_v210_word(ivec2(start_x, y));
+            tex_2 = unpack_v210_word(ivec2(start_x + 1, y));
             Y     = tex_2.x;
             Cb    = tex_1.x;
             Cr    = tex_1.z;
             break;
         case 2:
-            tex_1 = texelFetch(tex, ivec2(start_x + 1, y), 0);
-            tex_2 = texelFetch(tex, ivec2(start_x + 2, y), 0);
+            tex_1 = unpack_v210_word(ivec2(start_x + 1, y));
+            tex_2 = unpack_v210_word(ivec2(start_x + 2, y));
             Y     = tex_1.z;
             Cb    = tex_1.y;
             Cr    = tex_2.x;
             break;
         case 3:
-            tex_1 = texelFetch(tex, ivec2(start_x + 1, y), 0);
-            tex_2 = texelFetch(tex, ivec2(start_x + 2, y), 0);
+            tex_1 = unpack_v210_word(ivec2(start_x + 1, y));
+            tex_2 = unpack_v210_word(ivec2(start_x + 2, y));
             Y     = tex_2.y;
             Cb    = tex_1.y;
             Cr    = tex_2.x;
             break;
         case 4:
-            tex_1 = texelFetch(tex, ivec2(start_x + 2, y), 0);
-            tex_2 = texelFetch(tex, ivec2(start_x + 3, y), 0);
+            tex_1 = unpack_v210_word(ivec2(start_x + 2, y));
+            tex_2 = unpack_v210_word(ivec2(start_x + 3, y));
             Y     = tex_2.x;
             Cb    = tex_1.z;
             Cr    = tex_2.y;
             break;
         default:
-            tex_1 = texelFetch(tex, ivec2(start_x + 2, y), 0);
-            tex_2 = texelFetch(tex, ivec2(start_x + 3, y), 0);
+            tex_1 = unpack_v210_word(ivec2(start_x + 2, y));
+            tex_2 = unpack_v210_word(ivec2(start_x + 3, y));
             Y     = tex_2.z;
             Cb    = tex_1.z;
             Cr    = tex_2.y;

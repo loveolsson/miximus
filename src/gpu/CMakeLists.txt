@@ -19,6 +19,7 @@ add_library(gpu
     texture.hpp
     texture_fwd.hpp
     texture.cpp
+    component_mapping.hpp
     texture_frame.hpp
     texture_frame.cpp
     types.hpp
@@ -76,3 +77,12 @@ if(MIXIMUS_USE_PRECOMPILED_HEADERS)
 endif()
 
 add_sanitizers(gpu)
+
+if(BUILD_TESTING)
+    add_executable(gpu_test
+        tests/transfer_layout_test.cpp
+    )
+    target_link_libraries(gpu_test PRIVATE gpu GTest::gtest_main)
+    add_sanitizers(gpu_test)
+    gtest_discover_tests(gpu_test)
+endif()

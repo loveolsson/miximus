@@ -54,6 +54,7 @@ struct texture_upload_stream_state_s
 {
     std::weak_ptr<texture_upload_service_state_s>       service;
     texture_upload_config_s                             config;
+    texture_transfer_plan_s                             transfer_plan;
     mutable std::mutex                                  mutex;
     std::condition_variable                             slot_cv;
     std::condition_variable                             completion_cv;
@@ -104,23 +105,24 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         size_t reserved_bytes  = 0;
         bool   memory_reserved = false;
         try {
-            reserved_bytes = estimate_slot_memory_usage(stream->config.transfer_layout);
+            reserved_bytes = estimate_slot_memory_usage(stream->transfer_plan);
             if (!reserve_memory(reserved_bytes)) {
                 throw std::bad_alloc();
             }
             memory_reserved = true;
 
-            auto slot              = std::make_shared<texture_upload_slot_s>();
-            slot->reserved_bytes   = reserved_bytes;
-            slot->frame            = std::make_shared<texture_frame_s>(stream->config.transfer_layout.dimensions,
-                                                            stream->config.transfer_layout.pixel_format);
-            auto transfer_backend  = create_texture_transfer_backend(stream->config.transfer_layout,
-                                                                    texture_transfer_backend_i::direction_e::cpu_to_gpu,
-                                                                    slot->frame->texture());
+            auto slot            = std::make_shared<texture_upload_slot_s>();
+            slot->reserved_bytes = reserved_bytes;
+            slot->frame          = std::make_shared<texture_frame_s>(stream->transfer_plan.host_layout.image_dimensions,
+                                                            stream->transfer_plan.texture_dimensions,
+                                                            stream->transfer_plan.storage_format,
+                                                            stream->transfer_plan.input_mapping);
+            auto transfer_backend = create_texture_transfer_backend(
+                stream->transfer_plan, texture_transfer_backend_i::direction_e::cpu_to_gpu, slot->frame->texture());
             slot->transfer_backend = std::move(transfer_backend.transfer_backend);
 
             const auto actual_reserved =
-                slot_memory_usage(stream->config.transfer_layout, transfer_backend.backend_allocation_bytes);
+                slot_memory_usage(stream->transfer_plan, transfer_backend.backend_allocation_bytes);
             if (!resize_memory_reservation(reserved_bytes, actual_reserved)) {
                 throw std::bad_alloc();
             }
@@ -653,13 +655,13 @@ texture_upload_service_s::~texture_upload_service_s()
 std::shared_ptr<texture_upload_stream_s> texture_upload_service_s::create_stream(texture_upload_config_s config)
 {
     if (config.max_slots == 0 || config.initial_slots > config.max_slots ||
-        config.transfer_layout.host_memory_access == host_memory_access_e::read_only) {
+        config.host_layout.memory_access == host_memory_access_e::read_only) {
         throw std::invalid_argument("invalid texture upload stream configuration");
     }
-    detail::normalize_transfer_layout(config.transfer_layout);
     auto stream                 = std::make_shared<detail::texture_upload_stream_state_s>();
     stream->service             = state_;
     stream->config              = config;
+    stream->transfer_plan       = detail::make_texture_transfer_plan(config.host_layout);
     stream->pending_allocations = config.initial_slots;
     auto result                 = std::shared_ptr<texture_upload_stream_s>(new texture_upload_stream_s(stream));
     for (size_t index = 0; index < config.initial_slots; ++index) {

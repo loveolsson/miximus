@@ -269,20 +269,20 @@ class node_impl : public node_i
             auto& rl = render_lines_[txt_line_index % render_lines_.size()];
 
             if (rl->line_no != txt_line_index && !rl->ready.valid()) {
-                if (!rl->upload_stream || rl->upload_stream->configuration().transfer_layout.dimensions != tx_dim) {
+                if (!rl->upload_stream || rl->upload_stream->configuration().host_layout.image_dimensions != tx_dim) {
                     const auto host_buffer_size_bytes = sizeof(render::surface_s::pixel_t) *
                                                         static_cast<size_t>(tx_dim.x) * static_cast<size_t>(tx_dim.y);
-                    const gpu::transfer::texture_transfer_layout_s transfer_layout{
-                        .dimensions             = tx_dim,
-                        .pixel_format           = gpu::texture_s::pixel_format_e::rgba_f16,
-                        .host_row_stride_bytes  = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x),
-                        .host_buffer_size_bytes = host_buffer_size_bytes,
-                        .host_address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
-                        .host_memory_access           = gpu::transfer::host_memory_access_e::read_write,
+                    const gpu::transfer::host_frame_layout_s host_layout{
+                        .image_dimensions        = tx_dim,
+                        .pixel_format            = gpu::transfer::host_pixel_format_e::rgba_u8,
+                        .row_stride_bytes        = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(tx_dim.x),
+                        .buffer_size_bytes       = host_buffer_size_bytes,
+                        .address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
+                        .memory_access           = gpu::transfer::host_memory_access_e::read_write,
                     };
                     rl->upload_stream = app->texture_upload_service()->create_stream({
-                        .transfer_layout = transfer_layout,
-                        .max_slots       = 2,
+                        .host_layout = host_layout,
+                        .max_slots   = 2,
                     });
                 }
 

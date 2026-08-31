@@ -279,7 +279,7 @@ class node_impl : public node_i
         const auto src_dim = frame->dimensions;
 
         if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != src_dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::pixel_format_e::rgb_f16);
+            framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::storage_format_e::rgb_unorm16);
         }
 
         auto shader = textured_quad_->shader();

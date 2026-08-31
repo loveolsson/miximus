@@ -59,14 +59,14 @@ class output_frame_renderer_i
 
 class output_path_i
 {
-    output_display_mode_s                    display_mode_;
-    BMDPixelFormat                           decklink_pixel_format_;
-    gpu::transfer::texture_transfer_layout_s transfer_layout_;
+    output_display_mode_s              display_mode_;
+    BMDPixelFormat                     decklink_pixel_format_;
+    gpu::transfer::host_frame_layout_s host_layout_;
 
   protected:
-    output_path_i(output_display_mode_s                    display_mode,
-                  BMDPixelFormat                           decklink_pixel_format,
-                  gpu::transfer::texture_transfer_layout_s transfer_layout);
+    output_path_i(output_display_mode_s              display_mode,
+                  BMDPixelFormat                     decklink_pixel_format,
+                  gpu::transfer::host_frame_layout_s host_layout);
 
   public:
     virtual ~output_path_i() = default;
@@ -76,9 +76,9 @@ class output_path_i
     output_path_i(output_path_i&&)                 = delete;
     output_path_i& operator=(output_path_i&&)      = delete;
 
-    const output_display_mode_s& display_mode() const noexcept { return display_mode_; }
-    BMDPixelFormat               decklink_pixel_format() const noexcept { return decklink_pixel_format_; }
-    const gpu::transfer::texture_transfer_layout_s& transfer_layout() const noexcept { return transfer_layout_; }
+    const output_display_mode_s&              display_mode() const noexcept { return display_mode_; }
+    BMDPixelFormat                            decklink_pixel_format() const noexcept { return decklink_pixel_format_; }
+    const gpu::transfer::host_frame_layout_s& host_layout() const noexcept { return host_layout_; }
 
     virtual auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
         -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame>                                                  = 0;
@@ -87,7 +87,7 @@ class output_path_i
 
 class v210_output_path_s final : public output_path_i
 {
-    v210_output_path_s(output_display_mode_s display_mode, gpu::transfer::texture_transfer_layout_s transfer_layout);
+    v210_output_path_s(output_display_mode_s display_mode, gpu::transfer::host_frame_layout_s host_layout);
 
   public:
     static auto create(IDeckLinkOutput* device, const output_display_mode_s& display_mode, std::string_view device_name)
@@ -100,8 +100,8 @@ class v210_output_path_s final : public output_path_i
 
 class premultiplied_bgra_output_path_s final : public output_path_i
 {
-    premultiplied_bgra_output_path_s(output_display_mode_s                    display_mode,
-                                     gpu::transfer::texture_transfer_layout_s transfer_layout);
+    premultiplied_bgra_output_path_s(output_display_mode_s              display_mode,
+                                     gpu::transfer::host_frame_layout_s host_layout);
 
   public:
     static auto create(IDeckLinkOutput* device, const output_display_mode_s& display_mode, std::string_view device_name)

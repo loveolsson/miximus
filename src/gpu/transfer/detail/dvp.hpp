@@ -2,6 +2,7 @@
 #include "gpu/glad.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 #include "texture_transfer_backend.hpp"
+#include "transfer_layout.hpp"
 
 #include <DVPAPI.h>
 #include <dvpapi_gl.h>
@@ -71,7 +72,7 @@ class dvp_transfer_s : public texture_transfer_backend_i
     bool release_texture_from_gl_impl(texture_s* texture) final;
 
   public:
-    dvp_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir);
+    dvp_transfer_s(const texture_transfer_plan_s& transfer_plan, direction_e dir);
     ~dvp_transfer_s();
 
     bool submit_transfer() final;
@@ -81,7 +82,7 @@ class dvp_transfer_s : public texture_transfer_backend_i
     static bool initialize_context();
     // Called during app shutdown with the same root GL context current.
     static void shutdown_context();
-    static bool supports(const texture_transfer_layout_s& transfer_layout);
+    static bool supports(const texture_transfer_plan_s& transfer_plan);
 };
 
 } // namespace miximus::gpu::transfer::detail

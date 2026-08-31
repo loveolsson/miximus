@@ -328,9 +328,9 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
         const auto readback_slot_count = get_readback_slot_count(scheduled_frame_target_, output_queue_->capacity());
         const auto stream              = readback_service_->create_stream({
-                         .transfer_layout = active_output->path->transfer_layout(),
-                         .max_slots       = readback_slot_count,
-                         .initial_slots   = readback_slot_count,
+                         .host_layout   = active_output->path->host_layout(),
+                         .max_slots     = readback_slot_count,
+                         .initial_slots = readback_slot_count,
         });
         if (!stream->wait_for_initial_slots(5s)) {
             log()->error("Failed to initialize the DeckLink output transfer pool for {}", device_name_);
@@ -443,7 +443,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             if (!frame.has_value()) {
                 break;
             }
-            if (frame->readable_host_bytes().size() != active_output_.path->transfer_layout().host_buffer_size_bytes) {
+            if (frame->readable_host_bytes().size() != active_output_.path->host_layout().buffer_size_bytes) {
                 log()->error("DeckLink output transfer produced an unexpected buffer size");
                 continue;
             }

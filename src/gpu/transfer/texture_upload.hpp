@@ -24,10 +24,10 @@ struct texture_upload_stream_state_s;
 
 struct texture_upload_config_s
 {
-    texture_transfer_layout_s transfer_layout;
-    size_t                    max_slots{3};
-    size_t                    initial_slots{};
-    bool                      generate_mip_maps{true};
+    host_frame_layout_s host_layout;
+    size_t              max_slots{3};
+    size_t              initial_slots{};
+    bool                generate_mip_maps{true};
 };
 
 struct texture_upload_id_s

@@ -1,6 +1,7 @@
 #pragma once
 #include "gpu/transfer/texture_transfer.hpp"
 #include "texture_transfer_backend.hpp"
+#include "transfer_layout.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -32,7 +33,7 @@ struct texture_transfer_backend_selection_s
     size_t                                      backend_allocation_bytes;
 };
 
-texture_transfer_backend_selection_s create_texture_transfer_backend(const texture_transfer_layout_s& transfer_layout,
+texture_transfer_backend_selection_s create_texture_transfer_backend(const texture_transfer_plan_s& transfer_plan,
                                                                      texture_transfer_backend_i::direction_e direction,
                                                                      texture_s*                              texture);
 

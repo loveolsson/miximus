@@ -26,21 +26,16 @@ bool cuda_transfer_s::initialized_ = false;
 bool cuda_transfer_s::supported_   = false;
 int  cuda_transfer_s::device_      = 0;
 
-bool cuda_transfer_s::supports_direct_image(texture_s::pixel_format_e pixel_format)
+bool cuda_transfer_s::supports_direct_image(texture_s::storage_format_e storage_format)
 {
-    // Direct copies require both identical host/storage bytes and an OpenGL
-    // internal format supported by cudaGraphicsGLRegisterImage. CUDA does not
-    // support packed GL_RGB10_A2 images, even though uyuv_u10 has an identical
-    // four-byte host and texture-storage representation.
-    switch (pixel_format) {
-        case texture_s::pixel_format_e::rgba_u8:
-            return texture_s::pixel_format_info(pixel_format).storage_identical;
-        case texture_s::pixel_format_e::argb_u8:
-        case texture_s::pixel_format_e::bgra_u8:
-        case texture_s::pixel_format_e::rgb_f16:
-        case texture_s::pixel_format_e::rgba_f16:
-        case texture_s::pixel_format_e::uyuv_u8:
-        case texture_s::pixel_format_e::uyuv_u10:
+    // These formats are byte-identical to their host transfer plans and are
+    // explicitly supported by cudaGraphicsGLRegisterImage.
+    switch (storage_format) {
+        case texture_s::storage_format_e::rgba_unorm8:
+        case texture_s::storage_format_e::r32_uint:
+            return true;
+        case texture_s::storage_format_e::rgb_unorm16:
+        case texture_s::storage_format_e::rgba_unorm16:
             return false;
     }
     return false;
@@ -98,18 +93,20 @@ void cuda_transfer_s::shutdown_context()
     device_      = 0;
 }
 
-cuda_transfer_s::cuda_transfer_s(const texture_transfer_layout_s& transfer_layout, direction_e dir, bool direct_image)
-    : texture_transfer_backend_i(transfer_layout.host_buffer_size_bytes, dir)
-    , row_stride_(transfer_layout.host_row_stride_bytes)
-    , row_length_(static_cast<GLint>(transfer_layout.host_row_stride_bytes /
-                                     texture_s::pixel_format_info(transfer_layout.pixel_format).host_bytes_per_texel))
+cuda_transfer_s::cuda_transfer_s(const texture_transfer_plan_s& transfer_plan, direction_e dir, bool direct_image)
+    : texture_transfer_backend_i(transfer_plan.host_layout.buffer_size_bytes, dir)
+    , row_stride_(transfer_plan.host_layout.row_stride_bytes)
+    , row_length_(
+          static_cast<GLint>(transfer_plan.host_layout.row_stride_bytes / transfer_plan.storage_bytes_per_texel))
+    , pixel_format_(transfer_plan.pixel_format)
+    , pixel_type_(transfer_plan.pixel_type)
     , direct_image_(direct_image)
 {
     if (!supported_ || !check_cuda(cudaSetDevice(device_), "cudaSetDevice during transfer creation")) {
         throw std::runtime_error("CUDA transfer created without an initialized CUDA/OpenGL context");
     }
     auto host_flags = cudaHostAllocPortable;
-    if (dir == direction_e::cpu_to_gpu && transfer_layout.host_memory_access == host_memory_access_e::overwrite) {
+    if (dir == direction_e::cpu_to_gpu && transfer_plan.host_layout.memory_access == host_memory_access_e::overwrite) {
         host_flags |= cudaHostAllocWriteCombined;
     }
     if (!check_cuda(cudaHostAlloc(&host_memory_, host_buffer_size_bytes_, host_flags), "cudaHostAlloc")) {
@@ -126,18 +123,6 @@ cuda_transfer_s::cuda_transfer_s(const texture_transfer_layout_s& transfer_layou
         stream_      = nullptr;
         host_memory_ = nullptr;
         throw std::runtime_error("Failed to create CUDA transfer resources");
-    }
-    if (!direct_image_ && direction_ == direction_e::gpu_to_cpu) {
-        switch (transfer_layout.pixel_format) {
-            case texture_s::pixel_format_e::argb_u8:
-                readback_component_mapping_ = readback_component_mapping_e::rgba_to_argb_bytes;
-                break;
-            case texture_s::pixel_format_e::bgra_u8:
-                readback_component_mapping_ = readback_component_mapping_e::rgba_to_bgra_bytes;
-                break;
-            default:
-                break;
-        }
     }
 }
 
@@ -165,11 +150,6 @@ cuda_transfer_s::~cuda_transfer_s()
     if (host_memory_ != nullptr) {
         (void)cudaFreeHost(host_memory_);
     }
-}
-
-readback_component_mapping_e cuda_transfer_s::readback_component_mapping() const noexcept
-{
-    return readback_component_mapping_;
 }
 
 bool cuda_transfer_s::ensure_texture_resource(texture_s* texture)
@@ -217,7 +197,7 @@ bool cuda_transfer_s::unregister_texture_impl(texture_s* /*texture*/)
 bool cuda_transfer_s::copy_host_to_texture(texture_s* texture)
 {
     const auto dimensions = texture->texture_dimensions();
-    const auto format     = texture_s::pixel_format_info(texture->pixel_format());
+    const auto format     = texture_s::storage_format_info(texture->storage_format());
     const auto row_bytes  = static_cast<size_t>(dimensions.x) * format.storage_bytes_per_texel;
     if (row_stride_ < row_bytes || !ensure_texture_resource(texture) ||
         !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
@@ -251,7 +231,7 @@ bool cuda_transfer_s::copy_host_to_texture(texture_s* texture)
 bool cuda_transfer_s::copy_texture_to_host(texture_s* texture)
 {
     const auto dimensions = texture->texture_dimensions();
-    const auto format     = texture_s::pixel_format_info(texture->pixel_format());
+    const auto format     = texture_s::storage_format_info(texture->storage_format());
     const auto row_bytes  = static_cast<size_t>(dimensions.x) * format.storage_bytes_per_texel;
     if (dimensions.y <= 0 || row_stride_ < row_bytes || !ensure_texture_resource(texture) ||
         !check_cuda(cudaGraphicsMapResources(1, &texture_resource_, stream_), "cudaGraphicsMapResources image")) {
@@ -379,15 +359,7 @@ bool cuda_transfer_s::submit_transfer()
         glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length_);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer_);
-        glTextureSubImage2D(texture()->id(),
-                            0,
-                            0,
-                            0,
-                            dimensions.x,
-                            dimensions.y,
-                            texture()->gl_external_format(),
-                            texture()->gl_external_type(),
-                            nullptr);
+        glTextureSubImage2D(texture()->id(), 0, 0, 0, dimensions.x, dimensions.y, pixel_format_, pixel_type_, nullptr);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, previous_row_length);
         glPixelStorei(GL_UNPACK_ALIGNMENT, previous_alignment);
@@ -409,12 +381,7 @@ bool cuda_transfer_s::submit_transfer()
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, buffer_);
     glBindTexture(GL_TEXTURE_2D, texture()->id());
-    const bool shader_arranged_bytes = readback_component_mapping_ != readback_component_mapping_e::identity;
-    glGetTexImage(GL_TEXTURE_2D,
-                  0,
-                  shader_arranged_bytes ? GL_RGBA : texture()->gl_external_format(),
-                  shader_arranged_bytes ? GL_UNSIGNED_BYTE : texture()->gl_external_type(),
-                  nullptr);
+    glGetTexImage(GL_TEXTURE_2D, 0, pixel_format_, pixel_type_, nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glPixelStorei(GL_PACK_ROW_LENGTH, previous_row_length);
     glPixelStorei(GL_PACK_ALIGNMENT, previous_alignment);

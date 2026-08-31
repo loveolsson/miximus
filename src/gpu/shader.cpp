@@ -5,6 +5,7 @@
 #include "static_files/files.hpp"
 
 #include <array>
+#include <cassert>
 #include <format>
 #include <stdexcept>
 #include <string>
@@ -90,7 +91,9 @@ class shader_s
     GLuint id() const { return id_; }
 };
 
-shader_program_s::shader_program_s(std::string_view vert_name, std::string_view frag_name)
+shader_program_s::shader_program_s(std::string_view                 vert_name,
+                                   std::string_view                 frag_name,
+                                   component_mapping_capabilities_s component_mapping_capabilities)
     : program_(glCreateProgram())
 {
     auto log = getlog("gpu");
@@ -144,6 +147,14 @@ shader_program_s::shader_program_s(std::string_view vert_name, std::string_view 
                               });
         }
     }
+
+    if (supports_input_component_mapping() != component_mapping_capabilities.input ||
+        supports_output_component_mapping() != component_mapping_capabilities.output) {
+        glDeleteProgram(program_);
+        program_ = 0;
+        throw std::logic_error(std::format(
+            "shader {}/{} component-mapping interface does not match its declared capabilities", vert_name, frag_name));
+    }
 }
 
 shader_program_s::~shader_program_s()
@@ -162,6 +173,16 @@ const shader_program_s::uniform_s* shader_program_s::find_uniform(std::string_vi
 {
     const auto it = uniforms_.find(name);
     return it != uniforms_.end() ? &it->second : nullptr;
+}
+
+bool shader_program_s::supports_input_component_mapping() const noexcept
+{
+    return find_uniform("input_component_mapping") != nullptr;
+}
+
+bool shader_program_s::supports_output_component_mapping() const noexcept
+{
+    return find_uniform("output_component_mapping") != nullptr;
 }
 
 bool shader_program_s::set_uniform(std::string_view name, const vec2_t& val)
@@ -211,15 +232,40 @@ bool shader_program_s::set_uniform(std::string_view name, int val)
 {
     if (const auto* uniform = find_uniform(name)) {
         maybe_throw_uniform_type_error(uniform->type == GL_INT || uniform->type == GL_BOOL ||
-                                           uniform->type == GL_SAMPLER_2D,
+                                           uniform->type == GL_SAMPLER_2D ||
+                                           uniform->type == GL_UNSIGNED_INT_SAMPLER_2D,
                                        name,
                                        uniform->type,
                                        uniform->size,
-                                       "GL_INT, GL_BOOL, or GL_SAMPLER_2D");
+                                       "GL_INT, GL_BOOL, GL_SAMPLER_2D, or GL_UNSIGNED_INT_SAMPLER_2D");
         glProgramUniform1i(program_, uniform->location, val);
         return true;
     }
     return false;
+}
+
+void shader_program_s::set_input_component_mapping(input_component_mapping_e mapping)
+{
+#ifdef MIXIMUS_VALIDATE_SHADER_UNIFORMS
+    if (!supports_input_component_mapping()) {
+        throw std::logic_error("shader does not support input component mapping");
+    }
+#endif
+    const bool set = set_uniform("input_component_mapping", static_cast<int>(mapping));
+    assert(set);
+    (void)set;
+}
+
+void shader_program_s::set_output_component_mapping(output_component_mapping_e mapping)
+{
+#ifdef MIXIMUS_VALIDATE_SHADER_UNIFORMS
+    if (!supports_output_component_mapping()) {
+        throw std::logic_error("shader does not support output component mapping");
+    }
+#endif
+    const bool set = set_uniform("output_component_mapping", static_cast<int>(mapping));
+    assert(set);
+    (void)set;
 }
 
 } // namespace miximus::gpu

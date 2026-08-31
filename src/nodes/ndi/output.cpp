@@ -158,19 +158,19 @@ class node_impl : public node_i
         }
 
         clear_render_state();
-        const gpu::transfer::texture_transfer_layout_s transfer_layout{
-            .dimensions             = dimensions,
-            .pixel_format           = gpu::texture_s::pixel_format_e::rgba_u8,
-            .host_row_stride_bytes  = static_cast<size_t>(dimensions.x) * 4,
-            .host_buffer_size_bytes = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y) * 4,
-            .host_memory_access     = gpu::transfer::host_memory_access_e::read_only,
+        const gpu::transfer::host_frame_layout_s host_layout{
+            .image_dimensions  = dimensions,
+            .pixel_format      = gpu::transfer::host_pixel_format_e::rgba_u8,
+            .row_stride_bytes  = static_cast<size_t>(dimensions.x) * 4,
+            .buffer_size_bytes = static_cast<size_t>(dimensions.x) * static_cast<size_t>(dimensions.y) * 4,
+            .memory_access     = gpu::transfer::host_memory_access_e::read_only,
         };
         const auto readback_slot_count =
             output_sender_s::get_readback_slot_count(static_cast<size_t>(settings.ndi_output.buffer_frames));
         readback_stream_ = app->texture_readback_service()->create_stream({
-            .transfer_layout = transfer_layout,
-            .max_slots       = readback_slot_count,
-            .initial_slots   = readback_slot_count,
+            .host_layout   = host_layout,
+            .max_slots     = readback_slot_count,
+            .initial_slots = readback_slot_count,
         });
         stream_dimensions_.commit(dimensions);
         sender_->set_stream(readback_stream_,
@@ -253,10 +253,8 @@ class node_impl : public node_i
             textured_quad_->set_blending_enabled(false);
         }
 
-        textured_quad_->shader()->set_uniform("readback_component_mapping",
-                                              static_cast<int>(target->readback_component_mapping()));
         target->framebuffer()->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        textured_quad_->draw(texture);
+        target->draw(textured_quad_.get(), texture);
         gpu::framebuffer_s::end_render();
 
         target->set_program_target_time(app->frame_context().program_target_time);

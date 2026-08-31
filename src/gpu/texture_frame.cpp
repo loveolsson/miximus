@@ -8,8 +8,12 @@
 
 namespace miximus::gpu {
 
-texture_frame_s::texture_frame_s(vec2i_t dimensions, texture_s::pixel_format_e pixel_format)
-    : texture_(std::make_unique<texture_s>(dimensions, pixel_format))
+texture_frame_s::texture_frame_s(vec2i_t                     display_dimensions,
+                                 vec2i_t                     texture_dimensions,
+                                 texture_s::storage_format_e storage_format,
+                                 input_component_mapping_e   input_component_mapping)
+    : texture_(
+          std::make_unique<texture_s>(display_dimensions, texture_dimensions, storage_format, input_component_mapping))
 {
 }
 

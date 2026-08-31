@@ -20,7 +20,10 @@ class texture_frame_s
     std::unique_ptr<fence_s>   render_release_fence_;
 
   public:
-    texture_frame_s(vec2i_t dimensions, texture_s::pixel_format_e pixel_format);
+    texture_frame_s(vec2i_t                     display_dimensions,
+                    vec2i_t                     texture_dimensions,
+                    texture_s::storage_format_e storage_format,
+                    input_component_mapping_e   input_component_mapping);
     ~texture_frame_s();
 
     texture_frame_s(const texture_frame_s&)            = delete;

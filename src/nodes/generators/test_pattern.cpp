@@ -76,17 +76,17 @@ class node_impl : public node_i
                                                                                  gpu::vec2i_t       dimensions)
     {
         const auto host_row_stride_bytes = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(dimensions.x);
-        const gpu::transfer::texture_transfer_layout_s transfer_layout{
-            .dimensions                   = dimensions,
-            .pixel_format                 = gpu::texture_s::pixel_format_e::rgba_f16,
-            .host_row_stride_bytes        = host_row_stride_bytes,
-            .host_buffer_size_bytes       = host_row_stride_bytes * static_cast<size_t>(dimensions.y),
-            .host_address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
-            .host_memory_access           = gpu::transfer::host_memory_access_e::overwrite,
+        const gpu::transfer::host_frame_layout_s host_layout{
+            .image_dimensions        = dimensions,
+            .pixel_format            = gpu::transfer::host_pixel_format_e::rgba_u8,
+            .row_stride_bytes        = host_row_stride_bytes,
+            .buffer_size_bytes       = host_row_stride_bytes * static_cast<size_t>(dimensions.y),
+            .address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
+            .memory_access           = gpu::transfer::host_memory_access_e::overwrite,
         };
         return app->texture_upload_service()->create_stream({
-            .transfer_layout = transfer_layout,
-            .max_slots       = 1,
+            .host_layout = host_layout,
+            .max_slots   = 1,
         });
     }
 

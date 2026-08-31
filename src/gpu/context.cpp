@@ -383,8 +383,9 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
         return it->second.get();
     }
 
-    constexpr std::string_view vertex_shader = "shaders/basic.vs.glsl";
-    std::string_view           fragment_shader;
+    constexpr std::string_view                         vertex_shader = "shaders/basic.vs.glsl";
+    std::string_view                                   fragment_shader;
+    shader_program_s::component_mapping_capabilities_s component_mapping_capabilities;
     switch (name) {
         case name_e::basic:
             fragment_shader = "shaders/basic.fs.glsl";
@@ -399,19 +400,23 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
             fragment_shader = "shaders/to_yuv.fs.glsl";
             break;
         case name_e::apply_gamma:
-            fragment_shader = "shaders/apply_gamma.fs.glsl";
+            fragment_shader                       = "shaders/apply_gamma.fs.glsl";
+            component_mapping_capabilities.output = true;
             break;
         case name_e::encode_rec709_premultiplied:
-            fragment_shader = "shaders/encode_rec709_premultiplied.fs.glsl";
+            fragment_shader                       = "shaders/encode_rec709_premultiplied.fs.glsl";
+            component_mapping_capabilities.output = true;
             break;
         case name_e::strip_gamma:
-            fragment_shader = "shaders/strip_gamma.fs.glsl";
+            fragment_shader                      = "shaders/strip_gamma.fs.glsl";
+            component_mapping_capabilities.input = true;
             break;
         default:
             throw std::invalid_argument("Unknown shader program");
     }
 
-    auto [it, _] = shaders_.emplace(name, std::make_unique<shader_program_s>(vertex_shader, fragment_shader));
+    auto [it, _] = shaders_.emplace(
+        name, std::make_unique<shader_program_s>(vertex_shader, fragment_shader, component_mapping_capabilities));
 
     return it->second.get();
 }

@@ -36,19 +36,46 @@ void textured_quad_s::batch_s::draw(texture_s* texture, rect_s rect, double opac
 
 void textured_quad_s::batch_s::draw(texture_s* texture, const texture_draw_s& draw, double opacity)
 {
+    draw_impl(texture, draw, opacity, false);
+}
+
+void textured_quad_s::batch_s::draw_impl(texture_s*            texture,
+                                         const texture_draw_s& texture_draw,
+                                         double                opacity,
+                                         bool                  transfer_input)
+{
     if (texture == nullptr) {
         return;
     }
 
-    owner_->shader_->set_uniform("offset", draw.destination.pos);
-    owner_->shader_->set_uniform("scale", draw.destination.size);
-    owner_->shader_->set_uniform("texture_offset", draw.source.pos);
-    owner_->shader_->set_uniform("texture_scale", draw.source.size);
+    owner_->shader_->set_uniform("offset", texture_draw.destination.pos);
+    owner_->shader_->set_uniform("scale", texture_draw.destination.size);
+    owner_->shader_->set_uniform("texture_offset", texture_draw.source.pos);
+    owner_->shader_->set_uniform("texture_scale", texture_draw.source.size);
     owner_->shader_->set_uniform("opacity", opacity);
+#ifdef MIXIMUS_VALIDATE_SHADER_UNIFORMS
+    if (!transfer_input && texture->input_component_mapping() != input_component_mapping_e::identity) {
+        throw std::logic_error("raw transfer texture requires draw_transfer_input()");
+    }
+#else
+    (void)transfer_input;
+#endif
 
     texture->bind(0);
     texture_bound_ = true;
     owner_->draw_state_.draw();
+}
+
+void textured_quad_s::batch_s::draw_transfer_input(texture_s*            texture,
+                                                   const texture_draw_s& texture_draw,
+                                                   double                opacity)
+{
+    if (texture == nullptr) {
+        return;
+    }
+    owner_->shader_->set_input_component_mapping(texture->input_component_mapping());
+    draw_impl(texture, texture_draw, opacity, true);
+    owner_->shader_->set_input_component_mapping(input_component_mapping_e::identity);
 }
 
 void textured_quad_s::draw(texture_s* texture, rect_s rect, double opacity)
@@ -61,6 +88,12 @@ void textured_quad_s::draw(texture_s* texture, const texture_draw_s& draw, doubl
 {
     auto batch = begin_batch();
     batch.draw(texture, draw, opacity);
+}
+
+void textured_quad_s::draw_transfer_input(texture_s* texture, const texture_draw_s& draw, double opacity)
+{
+    auto batch = begin_batch();
+    batch.draw_transfer_input(texture, draw, opacity);
 }
 
 void textured_quad_s::draw_mix(texture_s*            a,
@@ -90,6 +123,12 @@ void textured_quad_s::draw_mix(texture_s*            a,
     shader_->set_uniform("b_source_offset", b_draw.source.pos);
     shader_->set_uniform("b_source_scale", b_draw.source.size);
     shader_->set_uniform("video_mix", mix_space == mix_space_e::video ? 1 : 0);
+#ifdef MIXIMUS_VALIDATE_SHADER_UNIFORMS
+    if (a->input_component_mapping() != input_component_mapping_e::identity ||
+        b->input_component_mapping() != input_component_mapping_e::identity) {
+        throw std::logic_error("raw transfer textures cannot be used directly by the mix shader");
+    }
+#endif
 
     a->bind(0);
     b->bind(1);

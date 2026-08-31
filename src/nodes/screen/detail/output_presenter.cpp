@@ -612,7 +612,8 @@ class output_presenter_s::impl_s
 
         auto& slot = slots_.at(index);
         if (!slot.target || slot.target->texture()->texture_dimensions() != dimensions) {
-            slot.target = std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::pixel_format_e::bgra_u8);
+            slot.target =
+                std::make_unique<gpu::framebuffer_s>(dimensions, gpu::texture_s::storage_format_e::rgba_unorm8);
         }
         return output_presenter_s::render_frame_s(this, index);
     }
