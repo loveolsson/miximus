@@ -121,7 +121,9 @@ class node_impl : public node_i
         window_settings_changed |= monitor_id_.observe(monitor_id);
 
         const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
-        if (presenter_ && (presenter_settings_changed || window_settings_changed) && !presenter_stopping_) {
+        const bool output_dimensions_changed  = presenter_ && presenter_->output_dimensions_changed();
+        if (presenter_ && (presenter_settings_changed || window_settings_changed || output_dimensions_changed) &&
+            !presenter_stopping_) {
             presenter_->request_stop();
             presenter_stopping_ = true;
         }
@@ -162,9 +164,8 @@ class node_impl : public node_i
             return;
         }
 
-        auto* texture    = iface_tex_.resolve_value(app, nodes, state);
-        auto  dimensions = texture != nullptr ? texture->texture_dimensions() : gpu::vec2i_t{128, 128};
-        auto  frame      = presenter_->try_acquire(dimensions);
+        auto* texture = iface_tex_.resolve_value(app, nodes, state);
+        auto  frame   = presenter_->try_acquire();
         if (!frame.has_value()) {
             return;
         }
@@ -176,12 +177,15 @@ class node_impl : public node_i
                 auto* shader   = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
                 textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader, gpu::textured_quad_s::uv_e::regular);
             }
-            textured_quad_->draw(texture);
+            const auto texture_draw =
+                gpu::calculate_texture_draw({},
+                                            texture->display_dimensions(),
+                                            presenter_->output_dimensions(),
+                                            state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode"));
+            textured_quad_->draw(texture, texture_draw);
         }
         gpu::framebuffer_s::end_render();
-        const auto fill_mode          = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
-        const auto content_dimensions = texture != nullptr ? texture->display_dimensions() : dimensions;
-        frame->submit(app->frame_context().program_target_time, fill_mode, content_dimensions);
+        frame->submit(app->frame_context().program_target_time);
     }
 
     void complete(core::app_state_s* /*app*/) final {}

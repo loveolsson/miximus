@@ -503,6 +503,10 @@ drop, late presentation, and measured presentation cadence should be reported as
 The display context owns presentation and waits only through GPU-side synchronization. A shared render slot is not
 returned to the producer until the display context has finished sampling it. Window visibility or compositor behavior
 must not make the program render thread block; platform presentation stalls are contained by the bounded output queue.
+Each shared slot is a base-level texture at the presenter's exact drawable resolution. Source scaling, cropping, and
+contain placement happen once on the render thread before the slot's ready fence is published. The display context
+only performs the orientation-corrected 1:1 draw. If the drawable resolution changes, the presenter is recreated so
+queued frames never silently acquire a second scaling stage.
 
 ## Application settings
 

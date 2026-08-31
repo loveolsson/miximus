@@ -21,12 +21,23 @@ On Linux, GLFW is forced to X11 to obtain a GLX context. DVP requires GLX and ma
 
 `gpu::texture_s` owns a 2D texture and records display dimensions, storage dimensions, external pixel format/type, and color format. Storage and host formats are not necessarily byte-identical; OpenGL upload/readback operations may perform normalization or channel conversion.
 
+Color textures select either base-level linear sampling or a complete, dimension-derived mip chain with trilinear
+sampling when they are created. A render target that will only be presented 1:1 should use base-level sampling. A
+texture published for arbitrary graph minification must have its mip chain regenerated after level zero changes.
+Integer transfer textures always use one nearest-sampled level. Never allocate a fixed mip count: the legal full count
+is derived from the largest texture dimension, including for textures smaller than eight pixels.
+
 `app_state_s` owns a small transparent RGBA16 fallback texture. Nodes whose operation requires a valid sampler, such
 as a two-input mix, pass it explicitly as the fallback to texture-interface resolution. A missing texture otherwise
 remains `nullptr`; absence can represent a disabled input, unavailable frame, or unselected switch branch and is not
 globally converted into image data.
 
 `gpu::framebuffer_s` owns a render target texture. Framebuffer values represent mutable ordered rendering and therefore have stricter graph fan-out rules than texture values.
+
+Screen-output render slots are a special base-level framebuffer use. Each slot has the exact drawable pixel dimensions
+captured when its presenter is created. The render thread applies the source fill mode while drawing into that slot;
+the presentation context samples the completed slot 1:1 and does not perform a second scaling pass. An unexpected
+drawable-size change retires and recreates the presenter instead of resampling slots of the old size.
 
 Each framebuffer input interface owns a private fallback render target while disconnected. Its dimensions come from the
 frame-local copy of `$app.default_framebuffer_size`, and its format is RGBA16F. The target is retained and cleared when

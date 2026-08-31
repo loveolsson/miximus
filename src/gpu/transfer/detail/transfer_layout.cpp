@@ -106,20 +106,22 @@ texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layo
     return result;
 }
 
-size_t estimate_slot_memory_usage(const texture_transfer_plan_s& transfer_plan)
+size_t estimate_slot_memory_usage(const texture_transfer_plan_s& transfer_plan, texture_s::sampling_e sampling)
 {
     // CUDA may own both pinned host storage and an interop PBO. Other
     // asynchronous backends use no more, so this is a conservative cap.
-    return checked_add(
-        checked_multiply(transfer_plan.host_layout.buffer_size_bytes, 2),
-        texture_s::estimate_storage_byte_size(transfer_plan.texture_dimensions, transfer_plan.storage_format));
+    return checked_add(checked_multiply(transfer_plan.host_layout.buffer_size_bytes, 2),
+                       texture_s::estimate_storage_byte_size(
+                           transfer_plan.texture_dimensions, transfer_plan.storage_format, sampling));
 }
 
-size_t slot_memory_usage(const texture_transfer_plan_s& transfer_plan, size_t backend_allocation_bytes)
+size_t slot_memory_usage(const texture_transfer_plan_s& transfer_plan,
+                         size_t                         backend_allocation_bytes,
+                         texture_s::sampling_e          sampling)
 {
-    return checked_add(
-        backend_allocation_bytes,
-        texture_s::estimate_storage_byte_size(transfer_plan.texture_dimensions, transfer_plan.storage_format));
+    return checked_add(backend_allocation_bytes,
+                       texture_s::estimate_storage_byte_size(
+                           transfer_plan.texture_dimensions, transfer_plan.storage_format, sampling));
 }
 
 } // namespace miximus::gpu::transfer::detail

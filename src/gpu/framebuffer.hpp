@@ -21,7 +21,9 @@ class framebuffer_s
         clear,
     };
 
-    framebuffer_s(vec2i_t dimensions, texture_s::storage_format_e storage_format);
+    framebuffer_s(vec2i_t                     dimensions,
+                  texture_s::storage_format_e storage_format,
+                  texture_s::sampling_e       sampling = texture_s::sampling_e::mipmapped_linear);
     explicit framebuffer_s(texture_s* texture);
     ~framebuffer_s();
 

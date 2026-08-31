@@ -23,7 +23,8 @@ class texture_frame_s
     texture_frame_s(vec2i_t                     display_dimensions,
                     vec2i_t                     texture_dimensions,
                     texture_s::storage_format_e storage_format,
-                    input_component_mapping_e   input_component_mapping);
+                    input_component_mapping_e   input_component_mapping,
+                    texture_s::sampling_e       sampling = texture_s::sampling_e::mipmapped_linear);
     ~texture_frame_s();
 
     texture_frame_s(const texture_frame_s&)            = delete;

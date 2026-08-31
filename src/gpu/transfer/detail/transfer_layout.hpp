@@ -18,7 +18,9 @@ struct texture_transfer_plan_s
 };
 
 texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layout);
-size_t                  estimate_slot_memory_usage(const texture_transfer_plan_s& transfer_plan);
-size_t slot_memory_usage(const texture_transfer_plan_s& transfer_plan, size_t backend_allocation_bytes);
+size_t estimate_slot_memory_usage(const texture_transfer_plan_s& transfer_plan, texture_s::sampling_e sampling);
+size_t slot_memory_usage(const texture_transfer_plan_s& transfer_plan,
+                         size_t                         backend_allocation_bytes,
+                         texture_s::sampling_e          sampling);
 
 } // namespace miximus::gpu::transfer::detail

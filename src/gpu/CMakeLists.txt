@@ -80,6 +80,8 @@ add_sanitizers(gpu)
 
 if(BUILD_TESTING)
     add_executable(gpu_test
+        tests/geometry_test.cpp
+        tests/texture_test.cpp
         tests/transfer_layout_test.cpp
     )
     target_link_libraries(gpu_test PRIVATE gpu GTest::gtest_main)

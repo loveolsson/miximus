@@ -111,7 +111,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
         size_t reserved{};
         bool   reserved_memory{};
         try {
-            reserved = estimate_slot_memory_usage(stream->transfer_plan);
+            reserved = estimate_slot_memory_usage(stream->transfer_plan, texture_s::sampling_e::linear);
             if (!reserve_memory(reserved)) {
                 throw std::bad_alloc();
             }
@@ -122,13 +122,14 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
             slot->frame          = std::make_shared<texture_frame_s>(stream->transfer_plan.host_layout.image_dimensions,
                                                             stream->transfer_plan.texture_dimensions,
                                                             stream->transfer_plan.storage_format,
-                                                            stream->transfer_plan.input_mapping);
+                                                            stream->transfer_plan.input_mapping,
+                                                            texture_s::sampling_e::linear);
             auto transfer_backend = create_texture_transfer_backend(
                 stream->transfer_plan, texture_transfer_backend_i::direction_e::gpu_to_cpu, slot->frame->texture());
             slot->transfer_backend = std::move(transfer_backend.transfer_backend);
 
-            const auto actual_reserved =
-                slot_memory_usage(stream->transfer_plan, transfer_backend.backend_allocation_bytes);
+            const auto actual_reserved = slot_memory_usage(
+                stream->transfer_plan, transfer_backend.backend_allocation_bytes, texture_s::sampling_e::linear);
             if (!resize_memory_reservation(reserved, actual_reserved)) {
                 throw std::bad_alloc();
             }

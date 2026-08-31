@@ -60,7 +60,7 @@ class output_presenter_s
         render_frame_s& operator=(render_frame_s&& other) noexcept;
 
         gpu::framebuffer_s* target() const noexcept;
-        void submit(utils::flicks program_target_time, gpu::fill_mode_e fill_mode, gpu::vec2i_t content_dimensions);
+        void                submit(utils::flicks program_target_time);
     };
 
   private:
@@ -85,7 +85,9 @@ class output_presenter_s
     bool stopped() const noexcept;
     void stop();
 
-    std::optional<render_frame_s> try_acquire(gpu::vec2i_t dimensions);
+    gpu::vec2i_t                  output_dimensions() const noexcept;
+    bool                          output_dimensions_changed() const noexcept;
+    std::optional<render_frame_s> try_acquire();
     output_presenter_metrics_s    metrics() const;
 };
 

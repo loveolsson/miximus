@@ -105,7 +105,9 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         size_t reserved_bytes  = 0;
         bool   memory_reserved = false;
         try {
-            reserved_bytes = estimate_slot_memory_usage(stream->transfer_plan);
+            const auto sampling = stream->config.generate_mip_maps ? texture_s::sampling_e::mipmapped_linear
+                                                                   : texture_s::sampling_e::linear;
+            reserved_bytes      = estimate_slot_memory_usage(stream->transfer_plan, sampling);
             if (!reserve_memory(reserved_bytes)) {
                 throw std::bad_alloc();
             }
@@ -116,13 +118,14 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
             slot->frame          = std::make_shared<texture_frame_s>(stream->transfer_plan.host_layout.image_dimensions,
                                                             stream->transfer_plan.texture_dimensions,
                                                             stream->transfer_plan.storage_format,
-                                                            stream->transfer_plan.input_mapping);
+                                                            stream->transfer_plan.input_mapping,
+                                                            sampling);
             auto transfer_backend = create_texture_transfer_backend(
                 stream->transfer_plan, texture_transfer_backend_i::direction_e::cpu_to_gpu, slot->frame->texture());
             slot->transfer_backend = std::move(transfer_backend.transfer_backend);
 
             const auto actual_reserved =
-                slot_memory_usage(stream->transfer_plan, transfer_backend.backend_allocation_bytes);
+                slot_memory_usage(stream->transfer_plan, transfer_backend.backend_allocation_bytes, sampling);
             if (!resize_memory_reservation(reserved_bytes, actual_reserved)) {
                 throw std::bad_alloc();
             }
