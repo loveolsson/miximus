@@ -15,6 +15,9 @@ enum class topic_e
     node_status,
 };
 
-constexpr std::optional<topic_e> topic_from_string(std::string_view value) { return enum_from_string<topic_e>(value); }
+[[nodiscard]] constexpr std::optional<topic_e> topic_from_string(std::string_view value)
+{
+    return enum_from_string<topic_e>(value);
+}
 
 } // namespace miximus

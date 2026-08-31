@@ -14,7 +14,7 @@ struct late_frame_policy_s
 {
     uint32_t allowed_lateness_frames{1};
 
-    uint64_t frames_to_skip(utils::flicks now, utils::flicks next_target, utils::flicks duration) const;
+    [[nodiscard]] uint64_t frames_to_skip(utils::flicks now, utils::flicks next_target, utils::flicks duration) const;
 };
 
 struct frame_scheduler_metrics_s

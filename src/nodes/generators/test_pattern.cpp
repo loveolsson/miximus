@@ -42,22 +42,22 @@ struct generation_s
 {
     request_s                                               request;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
-    boost::fibers::future<void>                             worker;
+    boost::fibers::future<bool>                             worker;
     gpu::transfer::texture_upload_id_s                      upload_id{};
     bool                                                    submitted{};
 };
 
-void generate_pattern(gpu::vec2i_t                          dimensions,
-                      render::test_pattern_e                pattern,
-                      bool                                  show_logo,
-                      gpu::transfer::texture_upload_lease_s upload)
+[[nodiscard]] bool generate_pattern(gpu::vec2i_t                          dimensions,
+                                    render::test_pattern_e                pattern,
+                                    bool                                  show_logo,
+                                    gpu::transfer::texture_upload_lease_s upload)
 {
     render::surface_s surface(dimensions, upload.writable_host_bytes());
     render::render_test_pattern(surface, pattern);
     if (show_logo) {
         render::render_test_pattern_logo(surface);
     }
-    upload.submit();
+    return upload.submit();
 }
 
 class node_impl : public node_i
@@ -101,7 +101,12 @@ class node_impl : public node_i
                 return;
             }
             try {
-                generation_->worker.get();
+                if (!generation_->worker.get()) {
+                    getlog("gpu")->error("Unable to submit generated test-pattern surface");
+                    failed_request_ = generation_->request;
+                    generation_.reset();
+                    return;
+                }
             } catch (const std::exception& error) {
                 getlog("gpu")->error("Test-pattern generation failed: {}", error.what());
                 failed_request_ = generation_->request;

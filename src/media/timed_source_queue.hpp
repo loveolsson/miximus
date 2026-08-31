@@ -88,7 +88,7 @@ class source_frame_s
         return false;
     }
 
-    bool await() const noexcept
+    [[nodiscard]] bool await() const noexcept
     {
         auto state = readiness();
         while (state != source_frame_readiness_e::ready && state != source_frame_readiness_e::failed) {
@@ -136,7 +136,7 @@ class prepared_frame_ticket_s
     const frame_ptr_t&         frame() const noexcept { return frame_; }
     prepared_frame_selection_e selection() const noexcept { return selection_; }
     bool                       discontinuity() const noexcept { return discontinuity_; }
-    bool                       await() const noexcept { return frame_ != nullptr && frame_->await(); }
+    [[nodiscard]] bool         await() const noexcept { return frame_ != nullptr && frame_->await(); }
 };
 
 struct timed_source_queue_config_s

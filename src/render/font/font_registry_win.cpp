@@ -13,10 +13,10 @@ namespace miximus::render {
 
 struct init_data_s
 {
-    HDC                                                hdc;
-    std::map<std::string, font_variant_s, std::less<>> files;
-    std::map<std::string, font_info_s, std::less<>>    fonts;
-    font_info_s*                                       font;
+    HDC                                 hdc;
+    utils::string_map_t<font_variant_s> files;
+    utils::string_map_t<font_info_s>    fonts;
+    font_info_s*                        font;
 };
 
 static std::string wchar_to_string(std::wstring_view wstr)

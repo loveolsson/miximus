@@ -49,15 +49,15 @@ class media_to_program_clock_s
   public:
     explicit media_to_program_clock_s(media_clock_mapping_config_s config = {});
 
-    media_clock_observation_e    observe(const media_clock_sample_s& sample,
-                                         utils::flicks               program_time_observation) noexcept;
-    std::optional<utils::flicks> map_media_pts_to_program_time(utils::flicks media_pts) const noexcept;
-    std::optional<double>        recovered_rate() const noexcept;
-    std::optional<double>        observed_rate() const noexcept;
-    std::optional<utils::flicks> phase_offset() const noexcept;
-    std::optional<utils::flicks> phase_error() const noexcept;
-    std::optional<utils::flicks> phase_adjustment() const noexcept;
-    void                         reset() noexcept;
+    media_clock_observation_e                  observe(const media_clock_sample_s& sample,
+                                                       utils::flicks               program_time_observation) noexcept;
+    [[nodiscard]] std::optional<utils::flicks> map_media_pts_to_program_time(utils::flicks media_pts) const noexcept;
+    std::optional<double>                      recovered_rate() const noexcept;
+    std::optional<double>                      observed_rate() const noexcept;
+    std::optional<utils::flicks>               phase_offset() const noexcept;
+    std::optional<utils::flicks>               phase_error() const noexcept;
+    std::optional<utils::flicks>               phase_adjustment() const noexcept;
+    void                                       reset() noexcept;
 };
 
 } // namespace miximus::media

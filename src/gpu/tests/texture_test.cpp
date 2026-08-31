@@ -28,7 +28,7 @@ TEST(Texture, LinearAndIntegerTexturesUseOnlyTheBaseLevel)
 
 TEST(Texture, MipLevelCalculationRejectsInvalidDimensions)
 {
-    EXPECT_THROW(texture_s::mip_map_level_count(
+    EXPECT_THROW((void)texture_s::mip_map_level_count(
                      {0, 1080}, texture_s::storage_format_e::rgba_unorm8, texture_s::sampling_e::mipmapped_linear),
                  std::invalid_argument);
 }

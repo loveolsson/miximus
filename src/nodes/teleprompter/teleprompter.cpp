@@ -45,7 +45,7 @@ class node_impl : public node_i
     struct line_info_s
     {
         std::mutex                                              mtx;
-        ::future<void>                                          ready;
+        ::future<bool>                                          ready;
         int                                                     line_no{-1};
         gpu::transfer::texture_upload_id_s                      upload_id{};
         std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream;
@@ -93,7 +93,7 @@ class node_impl : public node_i
         for (auto& rl : render_lines_) {
             if (rl->ready.valid()) {
                 try {
-                    rl->ready.get();
+                    (void)rl->ready.get();
                 } catch (...) { // NOLINT(bugprone-empty-catch) -- destructor must not throw
                 }
             }
@@ -183,7 +183,7 @@ class node_impl : public node_i
                 if (line->ready.wait_for(0ms) != ::future_status::ready) {
                     return;
                 }
-                line->ready.get();
+                (void)line->ready.get();
             }
 
             file_path_.commit(file_path);
@@ -245,7 +245,7 @@ class node_impl : public node_i
                     if (rl->ready.wait_for(0ms) != ::future_status::ready) {
                         break;
                     }
-                    rl->ready.get();
+                    (void)rl->ready.get();
                 }
 
                 render_lines_.pop_back();
@@ -312,7 +312,10 @@ class node_impl : public node_i
 
                 if (rl->ready.wait_for(0ms) == ::future_status::ready) {
                     // Processing is done
-                    rl->ready.get();
+                    if (!rl->ready.get()) {
+                        rl->line_no = -1;
+                        continue;
+                    }
                     if (rl->line_no == txt_line_index) {
                         // The upload service publishes the new texture when ready.
                     } else {
@@ -423,10 +426,10 @@ class node_impl : public node_i
         return res;
     }
 
-    void process_line(line_info_s*                          line,
-                      const std::u32string&                 str,
-                      const gpu::vec2i_t&                   dim,
-                      gpu::transfer::texture_upload_lease_s upload)
+    [[nodiscard]] bool process_line(line_info_s*                          line,
+                                    const std::u32string&                 str,
+                                    const gpu::vec2i_t&                   dim,
+                                    gpu::transfer::texture_upload_lease_s upload)
     {
         const std::unique_lock line_lock(line->mtx);
         const std::unique_lock font_lock(font_mtx_);
@@ -434,7 +437,7 @@ class node_impl : public node_i
         render::surface_s surface(dim, upload.writable_host_bytes());
         surface.clear({0, 0, 0, 0});
         text_.font->render_string(str, &surface, {0, font_size_.value()});
-        upload.submit();
+        return upload.submit();
     }
 };
 

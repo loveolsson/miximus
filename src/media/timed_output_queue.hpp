@@ -95,7 +95,7 @@ class timed_output_queue_s
         }
     }
 
-    output_frame_selection_s<T> select(utils::flicks program_target_time)
+    [[nodiscard]] output_frame_selection_s<T> select(utils::flicks program_target_time)
     {
         const auto limit    = program_target_time + config_.early_tolerance;
         auto       selected = frames_.end();

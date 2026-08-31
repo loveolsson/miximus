@@ -2,16 +2,49 @@
 #include "render/surface/surface.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 namespace {
 using namespace miximus;
 using pixel_t = render::surface_s::pixel_t;
+
+TEST(StridedImageView, AddressesPaddedRowsFromTheLogicalFirstRow)
+{
+    const std::array<uint32_t, 6> storage{1, 2, 0, 3, 4, 0};
+    const auto                    view = render::strided_image_view_s<uint32_t>::from_rows(
+        storage.data(), {2, 2}, 3 * static_cast<ptrdiff_t>(sizeof(uint32_t)));
+
+    EXPECT_EQ(view.row(0)[0], 1);
+    EXPECT_EQ(view.row(0)[1], 2);
+    EXPECT_EQ(view.row(1)[0], 3);
+    EXPECT_EQ(view.row(1)[1], 4);
+}
+
+TEST(StridedImageView, AddressesNegativeStridesFromTheLogicalFirstRow)
+{
+    const std::array<uint32_t, 6> storage{1, 2, 0, 3, 4, 0};
+    const auto                    view = render::strided_image_view_s<uint32_t>::from_rows(
+        storage.data() + 3, {2, 2}, -3 * static_cast<ptrdiff_t>(sizeof(uint32_t)));
+
+    EXPECT_EQ(view.row(0)[0], 3);
+    EXPECT_EQ(view.row(0)[1], 4);
+    EXPECT_EQ(view.row(1)[0], 1);
+    EXPECT_EQ(view.row(1)[1], 2);
+}
+
+TEST(StridedImageView, RejectsStridesThatMisalignRows)
+{
+    const std::array<uint32_t, 4> storage{};
+    EXPECT_THROW((void)render::strided_image_view_s<uint32_t>::from_rows(storage.data(), {2, 2}, 9),
+                 std::invalid_argument);
+}
 
 TEST(Surface, AcceptsStorageWithoutPreferredAlignment)
 {

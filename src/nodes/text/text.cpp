@@ -199,9 +199,9 @@ class node_impl : public node_i
 
         // Render text in white
         font_instance_->render_string(utf32_text, &surface, text_position);
-        upload->submit();
-
-        text_info_->needs_update = false;
+        if (upload->submit()) {
+            text_info_->needs_update = false;
+        }
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

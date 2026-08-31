@@ -14,7 +14,7 @@ template <decklink_com_object T>
 class decklink_ptr;
 
 template <decklink_com_object T, decklink_com_object U>
-decklink_ptr<T> query_decklink_interface(U* source) noexcept;
+[[nodiscard]] decklink_ptr<T> query_decklink_interface(U* source) noexcept;
 
 template <decklink_com_object T>
 class decklink_ptr
@@ -36,8 +36,8 @@ class decklink_ptr
     decklink_ptr<T>& operator=(const decklink_ptr<T>& other) noexcept;
     decklink_ptr<T>& operator=(decklink_ptr<T>&& other) noexcept;
 
-    T*  get() const noexcept;
-    T** releaseAndGetAddressOf() noexcept;
+    T*                get() const noexcept;
+    [[nodiscard]] T** releaseAndGetAddressOf() noexcept;
 
     const T* operator->() const noexcept;
     T*       operator->() noexcept;
@@ -47,7 +47,7 @@ class decklink_ptr
     explicit operator bool() const noexcept;
 
     template <decklink_com_object U>
-    decklink_ptr<U> query() const noexcept;
+    [[nodiscard]] decklink_ptr<U> query() const noexcept;
 
     auto operator<=>(const decklink_ptr<T>& other) const = default;
 
@@ -189,7 +189,7 @@ void decklink_ptr<T>::release() noexcept
 }
 
 template <decklink_com_object T, decklink_com_object U>
-decklink_ptr<T> query_decklink_interface(U* source) noexcept
+[[nodiscard]] decklink_ptr<T> query_decklink_interface(U* source) noexcept
 {
     if (source == nullptr) {
         return {};
@@ -204,7 +204,7 @@ decklink_ptr<T> query_decklink_interface(U* source) noexcept
 }
 
 template <decklink_com_object T, class... Args>
-decklink_ptr<T> make_decklink_ptr(Args&&... args)
+[[nodiscard]] decklink_ptr<T> make_decklink_ptr(Args&&... args)
 {
     return decklink_ptr(new T(std::forward<Args>(args)...), false);
 }

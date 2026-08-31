@@ -14,7 +14,7 @@ const auto _log = [] { return getlog("gpu"); };
  * @param v OpenGL enum value (source, type, severity, etc.)
  * @return Human-readable string representation
  */
-constexpr std::string_view get_opengl_string_from_enum(GLenum v)
+[[nodiscard]] constexpr std::string_view get_opengl_string_from_enum(GLenum v)
 {
     switch (v) {
         // Debug sources

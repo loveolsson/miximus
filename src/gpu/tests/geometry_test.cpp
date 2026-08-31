@@ -4,6 +4,11 @@
 
 namespace miximus::gpu { namespace {
 
+constexpr auto COMPILE_TIME_DRAW = calculate_texture_draw({}, {1920, 1080}, {2000, 500}, fill_mode_e::contain);
+static_assert(COMPILE_TIME_DRAW.destination.size.x > 0.0);
+static_assert(COMPILE_TIME_DRAW.destination.size.y == 1.0);
+static_assert(COMPILE_TIME_DRAW.source == rect_s{});
+
 TEST(Geometry, ScreenScaleUsesTheCompleteOutputTarget)
 {
     const auto draw = calculate_texture_draw({}, {1920, 1080}, {2000, 500}, fill_mode_e::scale);

@@ -1,12 +1,11 @@
 #pragma once
-#include "utils/transparent_string_hash.hpp"
+#include "utils/string_map.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace miximus::core {
@@ -21,8 +20,7 @@ class node_status_registry_s
     };
 
   private:
-    using state_map_t =
-        std::unordered_map<std::string, nlohmann::json, utils::transparent_string_hash, std::equal_to<>>;
+    using state_map_t = utils::unordered_string_map_t<nlohmann::json>;
 
     mutable std::mutex mutex_;
     state_map_t        states_;

@@ -188,7 +188,7 @@ class frame_queue_s
         return res;
     }
 
-    auto get_lock() { return std::unique_lock(mtx_); }
+    [[nodiscard]] auto get_lock() { return std::unique_lock(mtx_); }
 
   private:
     Mtx                  mtx_;

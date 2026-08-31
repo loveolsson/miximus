@@ -35,7 +35,8 @@ class presentation_timeline_s
         return *latency_;
     }
 
-    std::optional<utils::flicks> map_presentation_to_program_target(utils::flicks presentation_time) const noexcept
+    [[nodiscard]] std::optional<utils::flicks>
+    map_presentation_to_program_target(utils::flicks presentation_time) const noexcept
     {
         if (!latency_.has_value()) {
             return std::nullopt;

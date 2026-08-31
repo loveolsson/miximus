@@ -1,12 +1,12 @@
 #pragma once
 #include "nodes/node_fwd.hpp"
+#include "utils/string_map.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
 #include <concepts>
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -45,6 +45,6 @@ struct node_definition_s
     }
 };
 
-using node_definition_map_t = std::map<std::string_view, node_definition_s>;
+using node_definition_map_t = utils::string_view_map_t<node_definition_s>;
 
 } // namespace miximus::nodes

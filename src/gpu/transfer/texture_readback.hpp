@@ -114,18 +114,18 @@ class texture_readback_stream_s
     texture_readback_stream_s& operator=(texture_readback_stream_s&&)      = delete;
 
     // Render-thread API. Returns immediately if no target is available.
-    std::optional<texture_readback_target_s> try_acquire_render_target();
+    [[nodiscard]] std::optional<texture_readback_target_s> try_acquire_render_target();
 
     // CPU worker API. The returned lease keeps the buffer unavailable until
     // the external consumer has finished reading it.
-    std::optional<texture_readback_frame_s> try_consume_oldest();
-    std::optional<texture_readback_frame_s> try_consume_latest();
+    [[nodiscard]] std::optional<texture_readback_frame_s> try_consume_oldest();
+    [[nodiscard]] std::optional<texture_readback_frame_s> try_consume_latest();
 
-    bool allocation_failed() const;
-    bool initial_slots_pending() const;
-    bool wait_for_initial_slots(std::chrono::milliseconds timeout) const;
-    auto metrics() const -> texture_readback_stream_metrics_s;
-    auto configuration() const noexcept -> texture_readback_config_s;
+    bool               allocation_failed() const;
+    bool               initial_slots_pending() const;
+    [[nodiscard]] bool wait_for_initial_slots(std::chrono::milliseconds timeout) const;
+    auto               metrics() const -> texture_readback_stream_metrics_s;
+    auto               configuration() const noexcept -> texture_readback_config_s;
 };
 
 class texture_readback_service_s
@@ -143,7 +143,7 @@ class texture_readback_service_s
     texture_readback_service_s(texture_readback_service_s&&)                 = delete;
     texture_readback_service_s& operator=(texture_readback_service_s&&)      = delete;
 
-    std::shared_ptr<texture_readback_stream_s> create_stream(texture_readback_config_s config);
+    [[nodiscard]] std::shared_ptr<texture_readback_stream_s> create_stream(texture_readback_config_s config);
 
     size_t memory_usage() const noexcept;
     size_t memory_budget() const noexcept;

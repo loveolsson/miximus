@@ -4,7 +4,7 @@
 
 namespace miximus::nodes::decklink::detail {
 
-inline gpu::color_transfer_e get_color_transfer(BMDColorspace colorspace)
+[[nodiscard]] constexpr gpu::color_transfer_e get_color_transfer(BMDColorspace colorspace) noexcept
 {
     switch (colorspace) {
         case bmdColorspaceRec601:
@@ -17,7 +17,7 @@ inline gpu::color_transfer_e get_color_transfer(BMDColorspace colorspace)
     }
 }
 
-inline BMDColorspace get_display_mode_colorspace(IDeckLinkDisplayMode* mode)
+[[nodiscard]] inline BMDColorspace get_display_mode_colorspace(IDeckLinkDisplayMode* mode)
 {
     const auto flags  = mode->GetFlags();
     const bool is_uhd = mode->GetWidth() > 1920 || mode->GetHeight() > 1080;

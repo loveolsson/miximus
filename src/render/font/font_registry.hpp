@@ -1,10 +1,10 @@
 #pragma once
 #include "font_info.hpp"
 #include "types/settings_option.hpp"
+#include "utils/string_map.hpp"
 
 #include <atomic>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <optional>
 #include <shared_mutex>
@@ -25,7 +25,7 @@ constexpr std::string_view get_default_font_name() noexcept
 
 class font_registry_s
 {
-    using font_map_t = std::map<std::string, font_info_s, std::less<>>;
+    using font_map_t = utils::string_map_t<font_info_s>;
 
     font_map_t                fonts_;
     std::atomic<uint64_t>     font_list_version_{0};
@@ -49,7 +49,7 @@ class font_registry_s
     std::vector<settings_option_s> get_font_options() const;
     std::vector<settings_option_s> get_font_variant_options(std::string_view name) const;
 
-    static std::unique_ptr<font_registry_s> create_font_registry();
+    [[nodiscard]] static std::unique_ptr<font_registry_s> create_font_registry();
 };
 
 } // namespace miximus::render

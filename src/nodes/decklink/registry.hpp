@@ -1,6 +1,7 @@
 #pragma once
 #include "types/settings_option.hpp"
 #include "utils/serial_executor_fwd.hpp"
+#include "utils/string_map.hpp"
 #include "wrapper/decklink-sdk/decklink_ptr.hpp"
 
 #include <atomic>
@@ -56,14 +57,14 @@ class decklink_registry_s
     decklink_sdk::decklink_ptr<IDeckLinkDeviceNotificationCallback> callback_;
     bool                                                            notifications_installed_{};
 
-    std::shared_mutex                                                               device_mutex_;
-    std::map<IDeckLink*, std::string>                                               names_;
-    std::map<std::string, decklink_sdk::decklink_ptr<IDeckLinkInput>, std::less<>>  inputs_;
-    std::map<std::string, decklink_sdk::decklink_ptr<IDeckLinkOutput>, std::less<>> outputs_;
-    std::map<std::string, std::shared_ptr<detail::device_monitor_s>, std::less<>>   monitors_;
-    std::atomic<uint64_t>                                                           device_list_version_{0};
-    std::jthread                                                                    statistics_thread_;
-    std::unique_ptr<utils::serial_executor_s>                                       control_executor_;
+    std::shared_mutex                                                device_mutex_;
+    std::map<IDeckLink*, std::string>                                names_;
+    utils::string_map_t<decklink_sdk::decklink_ptr<IDeckLinkInput>>  inputs_;
+    utils::string_map_t<decklink_sdk::decklink_ptr<IDeckLinkOutput>> outputs_;
+    utils::string_map_t<std::shared_ptr<detail::device_monitor_s>>   monitors_;
+    std::atomic<uint64_t>                                            device_list_version_{0};
+    std::jthread                                                     statistics_thread_;
+    std::unique_ptr<utils::serial_executor_s>                        control_executor_;
 
     friend class discovery_callback;
 

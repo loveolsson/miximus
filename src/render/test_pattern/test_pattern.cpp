@@ -28,14 +28,14 @@ constexpr std::array            LOGO_PATHS{
     std::string_view{"images/miximus_32x32.png"},
 };
 
-constexpr uint8_t rec709_to_linear(double encoded) noexcept
+[[nodiscard]] constexpr uint8_t rec709_to_linear(double encoded) noexcept
 {
     encoded             = std::clamp(encoded, 0.0, 1.0);
     const double linear = detail::rec709_to_linear(encoded);
     return detail::normalized_to_u8(linear);
 }
 
-constexpr pixel_t video_rgb(uint8_t red, uint8_t green, uint8_t blue) noexcept
+[[nodiscard]] constexpr pixel_t video_rgb(uint8_t red, uint8_t green, uint8_t blue) noexcept
 {
     return {
         detail::VIDEO_REC709_TO_LINEAR_U8[red],   // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)

@@ -55,9 +55,12 @@ struct clipped_rect_s
     gpu::vec2i_t end;
 };
 
-gpu::recti_s make_rect(gpu::vec2i_t position, gpu::vec2i_t size) noexcept { return {.pos = position, .size = size}; }
+[[nodiscard]] constexpr gpu::recti_s make_rect(gpu::vec2i_t position, gpu::vec2i_t size) noexcept
+{
+    return {.pos = position, .size = size};
+}
 
-std::optional<clipped_rect_s> clip_rect(gpu::recti_s rect, gpu::vec2i_t dimensions) noexcept
+[[nodiscard]] constexpr std::optional<clipped_rect_s> clip_rect(gpu::recti_s rect, gpu::vec2i_t dimensions) noexcept
 {
     if (rect.size.x <= 0 || rect.size.y <= 0) {
         return std::nullopt;
@@ -145,7 +148,8 @@ void copy_operation(const strided_image_view_s<SrcT>& source,
     }
 }
 
-uint8_t interpolate_channel(uint8_t from, uint8_t to, int64_t numerator, int64_t denominator) noexcept
+[[nodiscard]] constexpr uint8_t
+interpolate_channel(uint8_t from, uint8_t to, int64_t numerator, int64_t denominator) noexcept
 {
     if (denominator <= 0) {
         return from;
@@ -155,7 +159,7 @@ uint8_t interpolate_channel(uint8_t from, uint8_t to, int64_t numerator, int64_t
     return static_cast<uint8_t>(value / denominator);
 }
 
-surface_s::pixel_t
+[[nodiscard]] constexpr surface_s::pixel_t
 interpolate(surface_s::pixel_t from, surface_s::pixel_t to, int64_t numerator, int64_t denominator) noexcept
 {
     return {
@@ -166,13 +170,13 @@ interpolate(surface_s::pixel_t from, surface_s::pixel_t to, int64_t numerator, i
     };
 }
 
-uint8_t multiply_channel(uint8_t lhs, uint8_t rhs) noexcept
+[[nodiscard]] constexpr uint8_t multiply_channel(uint8_t lhs, uint8_t rhs) noexcept
 {
     constexpr uint32_t channel_max = 255;
     return static_cast<uint8_t>(((static_cast<uint32_t>(lhs) * rhs) + (channel_max / 2)) / channel_max);
 }
 
-surface_s::pixel_t premultiply(straight_rgba_pixel_s source) noexcept
+[[nodiscard]] constexpr surface_s::pixel_t premultiply(straight_rgba_pixel_s source) noexcept
 {
     return {
         multiply_channel(source.r, source.a),
@@ -197,7 +201,7 @@ void composite_source_over(surface_s::pixel_t source, surface_s::pixel_t* destin
     destination->a = composite_channel(source.a, destination->a);
 }
 
-uint8_t unpremultiply_channel(uint8_t channel, uint8_t alpha) noexcept
+[[nodiscard]] constexpr uint8_t unpremultiply_channel(uint8_t channel, uint8_t alpha) noexcept
 {
     if (alpha == 0) {
         return 0;
@@ -206,7 +210,8 @@ uint8_t unpremultiply_channel(uint8_t channel, uint8_t alpha) noexcept
         std::min<uint32_t>(255, ((static_cast<uint32_t>(channel) * 255) + (alpha / 2)) / alpha));
 }
 
-surface_s::pixel_t convert_srgb_premultiplied_bgra(srgb_premultiplied_bgra_pixel_s source) noexcept
+[[nodiscard]] constexpr surface_s::pixel_t
+convert_srgb_premultiplied_bgra(srgb_premultiplied_bgra_pixel_s source) noexcept
 {
     const auto lookup = [](uint8_t value) noexcept {
         // Every uint8_t value is a valid index into the 256-entry LUT.
@@ -303,7 +308,8 @@ bool clip_line(gpu::vec2i_t dimensions, gpu::vec2i_t* from, gpu::vec2i_t* to) no
     return true;
 }
 
-double normalized_ellipse_distance_squared(double x, double y, double radius_x, double radius_y) noexcept
+[[nodiscard]] constexpr double
+normalized_ellipse_distance_squared(double x, double y, double radius_x, double radius_y) noexcept
 {
     return ((x * x) / (radius_x * radius_x)) + ((y * y) / (radius_y * radius_y));
 }

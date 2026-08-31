@@ -8,6 +8,7 @@
 #include "types/connection.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/lookup.hpp"
+#include "utils/string_map.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -20,7 +21,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <utility>
 
 namespace {
@@ -55,7 +55,7 @@ struct node_load_info_s
     uint32_t                                 original_version;
 };
 
-using node_load_info_map_t = std::unordered_map<std::string, node_load_info_s>;
+using node_load_info_map_t = utils::unordered_string_map_t<node_load_info_s>;
 
 const miximus::nodes::node_migration_s&
 get_migration(const node_load_info_s& info, uint32_t version, std::string_view type)

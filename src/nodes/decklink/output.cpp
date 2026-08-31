@@ -59,9 +59,12 @@ constexpr size_t READBACK_PIPELINE_HEADROOM   = 3;
 constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
 constexpr size_t PROGRAM_QUEUE_RESERVE        = 1;
 
-constexpr size_t get_output_queue_capacity(size_t buffer_frames) { return buffer_frames + OUTPUT_QUEUE_HEADROOM; }
+[[nodiscard]] constexpr size_t get_output_queue_capacity(size_t buffer_frames)
+{
+    return buffer_frames + OUTPUT_QUEUE_HEADROOM;
+}
 
-constexpr size_t get_readback_slot_count(size_t scheduled_frames, size_t program_queue_capacity)
+[[nodiscard]] constexpr size_t get_readback_slot_count(size_t scheduled_frames, size_t program_queue_capacity)
 {
     // The timed queue retains its current frame separately from queued(), so
     // it needs its own slot in addition to scheduled frames, queued program

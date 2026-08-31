@@ -9,7 +9,7 @@
 
 namespace miximus::web_server {
 
-inline std::optional<action_e> get_action_from_payload(const nlohmann::json& payload)
+[[nodiscard]] inline std::optional<action_e> get_action_from_payload(const nlohmann::json& payload)
 {
     auto act = payload.find("action");
     if (act == payload.cend() || !act->is_string()) {
@@ -19,7 +19,7 @@ inline std::optional<action_e> get_action_from_payload(const nlohmann::json& pay
     return action_from_string(act->get<std::string_view>());
 }
 
-inline std::optional<topic_e> get_topic_from_payload(const nlohmann::json& payload)
+[[nodiscard]] inline std::optional<topic_e> get_topic_from_payload(const nlohmann::json& payload)
 {
     auto top = payload.find("topic");
     if (top == payload.cend() || !top->is_string()) {
@@ -29,7 +29,7 @@ inline std::optional<topic_e> get_topic_from_payload(const nlohmann::json& paylo
     return topic_from_string(top->get<std::string_view>());
 }
 
-inline std::string_view get_token_from_payload(const nlohmann::json& payload)
+[[nodiscard]] inline std::string_view get_token_from_payload(const nlohmann::json& payload)
 {
     auto token = payload.find("token");
     if (token == payload.cend() || !token->is_string()) {

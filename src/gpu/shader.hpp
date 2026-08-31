@@ -2,11 +2,10 @@
 #include "gpu/component_mapping.hpp"
 #include "gpu/glad.hpp"
 #include "gpu/types.hpp"
-#include "utils/transparent_string_hash.hpp"
+#include "utils/string_map.hpp"
 
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 namespace miximus::gpu {
 
@@ -19,7 +18,7 @@ class shader_program_s
         GLint  size;
     };
 
-    using uniform_map_t = std::unordered_map<std::string, uniform_s, utils::transparent_string_hash, std::equal_to<>>;
+    using uniform_map_t = utils::unordered_string_map_t<uniform_s>;
 
     GLuint        program_;
     uniform_map_t uniforms_;

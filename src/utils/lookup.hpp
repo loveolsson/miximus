@@ -41,7 +41,7 @@ constexpr auto enum_to_string = [](auto v) -> std::string_view { return magic_en
  * Returns std::nullopt if no match was found.
  */
 template <typename E>
-constexpr std::optional<E> enum_from_string(std::string_view e)
+[[nodiscard]] constexpr std::optional<E> enum_from_string(std::string_view e)
 {
     return magic_enum::enum_cast<E>(e);
 }

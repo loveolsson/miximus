@@ -7,7 +7,7 @@
 namespace miximus::render::detail {
 
 template <size_t Root>
-constexpr double nth_root(double value) noexcept
+[[nodiscard]] constexpr double nth_root(double value) noexcept
 {
     static_assert(Root >= 2);
     if (value <= 0.0) {
@@ -25,7 +25,7 @@ constexpr double nth_root(double value) noexcept
     return estimate;
 }
 
-constexpr double srgb_to_linear(double encoded) noexcept
+[[nodiscard]] constexpr double srgb_to_linear(double encoded) noexcept
 {
     if (encoded <= 0.04045) {
         return encoded / 12.92;
@@ -36,7 +36,7 @@ constexpr double srgb_to_linear(double encoded) noexcept
     return squared * nth_root<5>(squared);
 }
 
-constexpr double rec709_to_linear(double encoded) noexcept
+[[nodiscard]] constexpr double rec709_to_linear(double encoded) noexcept
 {
     if (encoded < 0.081) {
         return encoded / 4.5;
@@ -47,7 +47,7 @@ constexpr double rec709_to_linear(double encoded) noexcept
     return squared * nth_root<9>(squared);
 }
 
-constexpr uint8_t normalized_to_u8(double value) noexcept
+[[nodiscard]] constexpr uint8_t normalized_to_u8(double value) noexcept
 {
     const double clamped = value < 0.0 ? 0.0 : value > 1.0 ? 1.0 : value;
     return static_cast<uint8_t>((clamped * 255.0) + 0.5);

@@ -85,10 +85,10 @@ class output_presenter_s
     bool stopped() const noexcept;
     void stop();
 
-    gpu::vec2i_t                  output_dimensions() const noexcept;
-    bool                          output_dimensions_changed() const noexcept;
-    std::optional<render_frame_s> try_acquire();
-    output_presenter_metrics_s    metrics() const;
+    gpu::vec2i_t                                output_dimensions() const noexcept;
+    bool                                        output_dimensions_changed() const noexcept;
+    [[nodiscard]] std::optional<render_frame_s> try_acquire();
+    output_presenter_metrics_s                  metrics() const;
 };
 
 } // namespace miximus::nodes::screen::detail

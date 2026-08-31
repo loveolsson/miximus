@@ -2,6 +2,7 @@
 #include "shader.hpp"
 #include "types.hpp"
 #include "types/settings_option.hpp"
+#include "utils/string_map.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -52,9 +53,9 @@ class context_s
         vec2i_t            dimensions{};
     };
 
-    static inline thread_local std::vector<GLFWwindow*>                current_stack_;
-    static inline std::atomic<uint64_t>                                monitor_list_version_{0};
-    static inline std::map<std::string, monitor_record_s, std::less<>> monitors_;
+    static inline thread_local std::vector<GLFWwindow*> current_stack_;
+    static inline std::atomic<uint64_t>                 monitor_list_version_{0};
+    static inline utils::string_map_t<monitor_record_s> monitors_;
 
     GLFWwindow*  window_{};
     shader_map_t shaders_;

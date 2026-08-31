@@ -9,7 +9,7 @@ namespace miximus::media {
 
 // Samples bytes across the complete frame. This is intended for cadence
 // diagnostics, not content identity or integrity checks.
-inline uint64_t sampled_frame_fingerprint(std::span<const std::byte> bytes) noexcept
+[[nodiscard]] inline uint64_t sampled_frame_fingerprint(std::span<const std::byte> bytes) noexcept
 {
     constexpr size_t   SAMPLE_COUNT = 8'192;
     constexpr uint64_t FNV_OFFSET   = 14'695'981'039'346'656'037ULL;

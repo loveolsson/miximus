@@ -67,18 +67,18 @@ class textured_quad_s
     textured_quad_s& operator=(const textured_quad_s&) = delete;
     textured_quad_s& operator=(textured_quad_s&&)      = delete;
 
-    shader_program_s* shader() const { return shader_; }
-    void              set_blending_enabled(bool enabled) noexcept { draw_state_.set_blending_enabled(enabled); }
-    batch_s           begin_batch() { return batch_s(this); }
-    void              draw(texture_s* texture, rect_s rect = {}, double opacity = 1.0);
-    void              draw(texture_s* texture, const texture_draw_s& draw, double opacity = 1.0);
-    void              draw_transfer_input(texture_s* texture, const texture_draw_s& draw = {}, double opacity = 1.0);
-    void              draw_mix(texture_s*            a,
-                               texture_s*            b,
-                               double                t,
-                               const texture_draw_s& a_draw,
-                               const texture_draw_s& b_draw,
-                               mix_space_e           mix_space);
+    shader_program_s*     shader() const { return shader_; }
+    void                  set_blending_enabled(bool enabled) noexcept { draw_state_.set_blending_enabled(enabled); }
+    [[nodiscard]] batch_s begin_batch() { return batch_s(this); }
+    void                  draw(texture_s* texture, rect_s rect = {}, double opacity = 1.0);
+    void                  draw(texture_s* texture, const texture_draw_s& draw, double opacity = 1.0);
+    void draw_transfer_input(texture_s* texture, const texture_draw_s& draw = {}, double opacity = 1.0);
+    void draw_mix(texture_s*            a,
+                  texture_s*            b,
+                  double                t,
+                  const texture_draw_s& a_draw,
+                  const texture_draw_s& b_draw,
+                  mix_space_e           mix_space);
 };
 
 } // namespace miximus::gpu

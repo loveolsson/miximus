@@ -1,6 +1,7 @@
 #pragma once
+#include "utils/string_map.hpp"
+
 #include <filesystem>
-#include <map>
 #include <string>
 
 namespace miximus::render {
@@ -14,8 +15,8 @@ struct font_variant_s
 
 struct font_info_s
 {
-    std::string                                        name;
-    std::map<std::string, font_variant_s, std::less<>> variants;
+    std::string                         name;
+    utils::string_map_t<font_variant_s> variants;
 };
 
 } // namespace miximus::render

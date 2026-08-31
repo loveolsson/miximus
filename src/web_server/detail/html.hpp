@@ -12,7 +12,7 @@ struct html_escape_s
     std::string_view value;
 };
 
-constexpr html_escape_s html_escape(std::string_view value) noexcept { return {value}; }
+[[nodiscard]] constexpr html_escape_s html_escape(std::string_view value) noexcept { return {value}; }
 
 inline std::ostream& operator<<(std::ostream& output, html_escape_s escaped)
 {
@@ -38,7 +38,7 @@ inline std::ostream& operator<<(std::ostream& output, html_escape_s escaped)
     return output;
 }
 
-inline std::string create_404_body(std::string_view resource)
+[[nodiscard]] inline std::string create_404_body(std::string_view resource)
 {
     std::ostringstream output;
     output << "<!doctype html><html><head>"

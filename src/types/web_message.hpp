@@ -3,6 +3,7 @@
 #include "connection.hpp"
 #include "error.hpp"
 #include "topic.hpp"
+#include "utils/string_map.hpp"
 
 #include <boost/describe.hpp>
 #include <nlohmann/json.hpp>
@@ -10,7 +11,6 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace miximus {
@@ -69,7 +69,7 @@ struct node_s
     nlohmann::json          options;
 };
 
-using node_status_map_t = std::unordered_map<std::string, nlohmann::json>;
+using node_status_map_t = utils::unordered_string_map_t<nlohmann::json>;
 
 struct config_s
 {

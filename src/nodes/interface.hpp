@@ -48,8 +48,10 @@ class interface_i
     std::string_view name() const noexcept { return name_; }
 
   protected:
-    static const interface_i* resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&);
-    static resolved_cons_t    resolve_connections(core::app_state_s*, const node_map_t&, std::span<const connection_s>);
+    [[nodiscard]] static const interface_i*
+    resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&);
+    [[nodiscard]] static resolved_cons_t
+    resolve_connections(core::app_state_s*, const node_map_t&, std::span<const connection_s>);
 
     size_t           max_connection_count_{1};
     std::string_view name_;
@@ -86,12 +88,12 @@ class input_interface_s : public interface_i
                 return type == target_type;
         }
     }
-    static T cast_iface_to_value(const interface_i* iface, const T& fallback);
+    [[nodiscard]] static T cast_iface_to_value(const interface_i* iface, const T& fallback);
 
-    T resolve_value(core::app_state_s*  app,
-                    const node_map_t&   nodes,
-                    const node_state_s& state,
-                    T const&            fallback = T{}) const
+    [[nodiscard]] T resolve_value(core::app_state_s*  app,
+                                  const node_map_t&   nodes,
+                                  const node_state_s& state,
+                                  T const&            fallback = T{}) const
     {
         assert(max_connection_count_ == 1); // Should only be called on interfaces expecting a single value
 
@@ -108,10 +110,10 @@ class input_interface_s : public interface_i
     }
 
     template <size_t S = 4>
-    resolved_values_t<S> resolve_values(core::app_state_s*  app,
-                                        const node_map_t&   nodes,
-                                        const node_state_s& state,
-                                        T const&            fallback = T{}) const
+    [[nodiscard]] resolved_values_t<S> resolve_values(core::app_state_s*  app,
+                                                      const node_map_t&   nodes,
+                                                      const node_state_s& state,
+                                                      T const&            fallback = T{}) const
     {
         resolved_values_t<S> res;
 

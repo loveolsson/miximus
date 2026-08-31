@@ -94,14 +94,14 @@ constexpr flicks k_flicks_min_time{std::numeric_limits<flicks::rep>::min()};
 
 //! Convert flicks to seconds as doubles
 //!
-constexpr double to_seconds(const flicks ns) noexcept
+[[nodiscard]] constexpr double to_seconds(const flicks ns) noexcept
 {
     return std::chrono::duration_cast<std::chrono::duration<double>>(ns).count();
 }
 
 //! Convert doubles (as seconds) to flicks
 //!
-constexpr flicks to_flicks(const double s) noexcept
+[[nodiscard]] constexpr flicks to_flicks(const double s) noexcept
 {
     return std::chrono::duration_cast<flicks>(std::chrono::duration<double>{s});
 }
@@ -109,12 +109,15 @@ constexpr flicks to_flicks(const double s) noexcept
 //! Convert a regular duration to flicks
 //!
 template <class Rep, class Period>
-constexpr flicks flicks_cast(const std::chrono::duration<Rep, Period> in_duration) noexcept
+[[nodiscard]] constexpr flicks flicks_cast(const std::chrono::duration<Rep, Period> in_duration) noexcept
 {
     return std::chrono::duration_cast<flicks>(in_duration);
 }
 
-inline flicks flicks_now() noexcept { return flicks_cast(std::chrono::steady_clock::now().time_since_epoch()); }
+[[nodiscard]] inline flicks flicks_now() noexcept
+{
+    return flicks_cast(std::chrono::steady_clock::now().time_since_epoch());
+}
 
 //! This is a std::hash-esque hash functor
 //!

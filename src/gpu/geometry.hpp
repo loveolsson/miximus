@@ -9,7 +9,7 @@
 namespace miximus::gpu {
 
 /** Linearly interpolate both components of a rectangle. */
-[[nodiscard]] inline rect_s interpolate(rect_s from, rect_s to, double amount) noexcept
+[[nodiscard]] constexpr rect_s interpolate(rect_s from, rect_s to, double amount) noexcept
 {
     return {
         .pos  = from.pos + ((to.pos - from.pos) * amount),
@@ -36,7 +36,7 @@ namespace miximus::gpu {
 }
 
 /** Convert a pixel-space vector into normalized coordinates for a target. */
-[[nodiscard]] inline vec2_t pixels_to_normalized(vec2_t value, vec2i_t target_dimensions)
+[[nodiscard]] constexpr vec2_t pixels_to_normalized(vec2_t value, vec2i_t target_dimensions)
 {
     if (target_dimensions.x <= 0 || target_dimensions.y <= 0) {
         throw std::invalid_argument("coordinate conversion requires positive target dimensions");
@@ -71,7 +71,7 @@ struct texture_draw_s
  * pixel dimensions are `target_dimensions`. `cover` may return a rectangle
  * larger than bounds and therefore requires clipping by the caller.
  */
-[[nodiscard]] inline rect_s
+[[nodiscard]] constexpr rect_s
 scale_rect_to_aspect(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions, aspect_scale_e mode)
 {
     if (content_dimensions.x <= 0 || content_dimensions.y <= 0 || target_dimensions.x <= 0 ||
@@ -101,18 +101,19 @@ scale_rect_to_aspect(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_d
     };
 }
 
-[[nodiscard]] inline rect_s contain_aspect_ratio(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions)
+[[nodiscard]] constexpr rect_s
+contain_aspect_ratio(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions)
 {
     return scale_rect_to_aspect(bounds, content_dimensions, target_dimensions, aspect_scale_e::contain);
 }
 
-[[nodiscard]] inline rect_s cover_aspect_ratio(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions)
+[[nodiscard]] constexpr rect_s cover_aspect_ratio(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions)
 {
     return scale_rect_to_aspect(bounds, content_dimensions, target_dimensions, aspect_scale_e::cover);
 }
 
 /** Calculate destination placement and source cropping for drawing a texture into bounds. */
-[[nodiscard]] inline texture_draw_s
+[[nodiscard]] constexpr texture_draw_s
 calculate_texture_draw(rect_s bounds, vec2i_t content_dimensions, vec2i_t target_dimensions, fill_mode_e fill_mode)
 {
     if (fill_mode == fill_mode_e::scale || bounds.size.x == 0.0 || bounds.size.y == 0.0) {
