@@ -6,8 +6,6 @@
 
 namespace miximus::gpu::transfer::detail {
 
-constexpr size_t HOST_MEMORY_ALIGNMENT_BYTES = 16;
-
 class texture_transfer_backend_i
 {
   public:
@@ -43,9 +41,6 @@ class texture_transfer_backend_i
         assert(texture_ != nullptr);
         return texture_;
     }
-
-    void allocate_host_memory();
-    void free_host_memory();
 
     virtual bool register_texture_impl(texture_s*) { return true; }
     virtual bool unregister_texture_impl(texture_s*) { return true; }

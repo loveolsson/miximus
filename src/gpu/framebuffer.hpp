@@ -30,7 +30,6 @@ class framebuffer_s
     void        bind() const;
     void        begin_render(load_op_e load_op = load_op_e::preserve) const;
     void        begin_render(recti_s viewport, load_op_e load_op = load_op_e::preserve) const;
-    void        blit(framebuffer_s* target) const;
     static void end_render();
     static void unbind();
     texture_s*  texture() const noexcept { return texture_; }

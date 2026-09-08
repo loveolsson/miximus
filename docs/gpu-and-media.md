@@ -141,10 +141,9 @@ A readback stream owns bounded render-target/readback slots. The render thread c
 renders into the target framebuffer, and calls `submit()`. Submission only inserts and flushes a fence. The readback
 worker waits for rendering and performs the DVP/CUDA/PBO/basic readback on its shared context.
 
-CPU consumers normally poll `try_consume_latest()`. PTS-aware consumers use `try_consume_oldest()` to retain FIFO
-ordering and perform their own timed selection. A frame lease exposes `readable_host_bytes()` and keeps host memory
-reserved until the external SDK has finished using it. If no render target is free, the node drops that output frame
-instead of waiting.
+CPU consumers poll `try_consume_oldest()` to retain FIFO ordering and perform their own timed selection. A frame lease
+exposes `readable_host_bytes()` and keeps host memory reserved until the external SDK has finished using it. If no render
+target is free, the node drops that output frame instead of waiting.
 
 Both services enforce memory budgets and catch allocation failures. Streams may request an initial bounded slot set when
 their steady-state retention is known; those allocations still run asynchronously on the owning GL worker. Otherwise,
@@ -169,7 +168,7 @@ This distinction is intentional. A texture's CUDA array reflects native storage,
 
 Completion is represented by the transfer service's publication state, not by queue ownership alone. An upload texture
 is not visible through `select_latest_completed_upload()` or reported ready by `wait_for_upload()` until its transfer
-fence has completed. A readback frame is not visible through `try_consume_latest()` until its host buffer is safe to
+fence has completed. A readback frame is not visible through `try_consume_oldest()` until its host buffer is safe to
 read. Queue
 mutexes alone never imply GPU/DVP/CUDA completion.
 
@@ -310,7 +309,10 @@ carry the same requirement into their upload-stream configuration.
 
 ## Real-time queues and workers
 
-`utils::frame_queue_s<T>` is the standard mutex-protected FIFO containing a frame and flick timestamp. Real-time paths commonly maintain free, pending, and in-flight slots. When no free slot exists, dropping a frame is generally preferable to blocking the render thread.
+`media::timed_source_queue_s<T>` aligns incoming frames to the program timeline, while
+`media::timed_output_queue_s<T>` selects frames for presentation. Transfer services maintain their own bounded free,
+pending, and in-flight slots. When no free slot exists, dropping a frame is generally preferable to blocking the
+render thread.
 
 Worker/callback rules:
 
@@ -338,4 +340,5 @@ Worker/callback rules:
 - `src/nodes/ndi/`
 - `src/render/font/`
 - `src/render/surface/`
-- `src/utils/frame_queue.hpp`
+- `src/media/timed_source_queue.hpp`
+- `src/media/timed_output_queue.hpp`

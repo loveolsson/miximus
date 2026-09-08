@@ -224,8 +224,6 @@ Current wrappers include:
 - system FFmpeg components;
 - stb implementation sources.
 
-CEF remains in the repository but is not enabled by `src/wrapper/CMakeLists.txt`.
-
 The project-local `ndi` wrapper discovers the NDI headers and library in the platform's standard SDK installation
 locations. `NDI_ROOT` or `NDI_SDK_DIR` may select another SDK root, which must contain NDI 6.2 or newer. Consumers link
 the wrapper and do not depend on the SDK discovery mechanism or an external target name.

@@ -55,7 +55,6 @@ class shader_program_s
 
     void        use() const;
     static void unuse();
-    GLuint      get_id() { return program_; }
     bool        supports_input_component_mapping() const noexcept;
     bool        supports_output_component_mapping() const noexcept;
 

@@ -37,7 +37,7 @@ import SettingsIcon from "./components/SettingsIcon.vue";
 import { websocket_key, ws_wrapper } from "./websocket";
 import { SETTINGS_NODE_ID, useApplicationSettings } from "./application_settings";
 import { register_node_types, register_interface_types } from "./nodes/types";
-import { update_node_status, clear_all_status } from "./nodes/status_store";
+import { update_node_status, remove_node_status, clear_all_status } from "./nodes/status_store";
 import { useServerSync } from "./server_sync";
 import {
   action_e,
@@ -122,6 +122,8 @@ ws.subscribe<add_node_command_s>(topic_e.add_node, (msg, is_origin) => {
 ws.subscribe<remove_node_command_s>(topic_e.remove_node, (msg, is_origin) => {
   if (msg.action !== action_e.command) return;
   if (msg.id === SETTINGS_NODE_ID) return;
+  // Our own removal already changed the graph, but still needs cache cleanup.
+  remove_node_status(msg.id);
   if (is_origin) return;
   handle_server_remove_node(msg.id);
 });
@@ -159,6 +161,13 @@ ws.subscribe<remove_connection_command_s>(topic_e.remove_connection, (msg, _is_o
 // --- node_status (push broadcasts) ---
 ws.subscribe<node_status_command_s>(topic_e.node_status, (msg) => {
   if (msg.action !== action_e.command) return;
+  // A final render-thread delta can arrive after the node's removal broadcast.
+  if (
+    msg.id !== SETTINGS_NODE_ID &&
+    !baklava.editor.graph.nodes.some((node) => node.id === msg.id)
+  ) {
+    return;
+  }
   update_node_status(msg.id, msg.status);
   handle_server_init_node_status(msg.id);
 });
@@ -179,14 +188,11 @@ ws.on("on_connected", () => {
       handle_server_remove_node(node.id);
     }
 
-    // Restore persisted status.
-    if (config.status) {
-      for (const [id, status] of Object.entries(config.status)) {
-        update_node_status(id, status);
-      }
-    }
-
+    // A full snapshot replaces the status cache, including the settings node.
+    clear_all_status();
     for (const node of config.nodes) {
+      const status = config.status?.[node.id];
+      if (status) update_node_status(node.id, status);
       if (node.id === SETTINGS_NODE_ID) {
         applyApplicationSettings(node.options);
         continue;

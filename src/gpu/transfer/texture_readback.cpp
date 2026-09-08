@@ -453,28 +453,6 @@ std::optional<texture_readback_target_s> texture_readback_stream_s::try_acquire_
     return texture_readback_target_s(state_, std::move(slot));
 }
 
-std::optional<texture_readback_frame_s> texture_readback_stream_s::try_consume_latest()
-{
-    std::shared_ptr<detail::texture_readback_slot_s> selected;
-    {
-        const std::scoped_lock lock(state_->mutex);
-        if (!state_->active || state_->ready_slots.empty()) {
-            return std::nullopt;
-        }
-        while (!state_->ready_slots.empty()) {
-            if (selected) {
-                selected->state = detail::slot_state_e::free;
-                state_->free_slots.emplace_back(std::move(selected));
-            }
-            selected = std::move(state_->ready_slots.front());
-            state_->ready_slots.pop_front();
-        }
-        selected->state = detail::slot_state_e::cpu_reading;
-        ++state_->active_frames;
-    }
-    return texture_readback_frame_s(state_, std::move(selected));
-}
-
 std::optional<texture_readback_frame_s> texture_readback_stream_s::try_consume_oldest()
 {
     std::shared_ptr<detail::texture_readback_slot_s> selected;

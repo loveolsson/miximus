@@ -119,7 +119,6 @@ class texture_readback_stream_s
     // CPU worker API. The returned lease keeps the buffer unavailable until
     // the external consumer has finished reading it.
     [[nodiscard]] std::optional<texture_readback_frame_s> try_consume_oldest();
-    [[nodiscard]] std::optional<texture_readback_frame_s> try_consume_latest();
 
     bool               allocation_failed() const;
     bool               initial_slots_pending() const;

@@ -1,6 +1,4 @@
 #pragma once
-#include "utils/lookup.hpp"
-
 namespace miximus {
 
 enum class error_e
@@ -15,10 +13,5 @@ enum class error_e
     not_found,
     circular_connection,
 };
-
-[[nodiscard]] constexpr std::optional<error_e> error_from_string(std::string_view value)
-{
-    return enum_from_string<error_e>(value);
-}
 
 } // namespace miximus
