@@ -1,4 +1,5 @@
 #pragma once
+#include "types/node_status_json.hpp"
 #include "utils/string_map.hpp"
 
 #include <nlohmann/json.hpp>
@@ -26,6 +27,8 @@ class node_status_registry_s
     state_map_t        states_;
     state_map_t        pending_;
 
+    void write_json(std::string_view node_id, nlohmann::json status);
+
   public:
     node_status_registry_s()  = default;
     ~node_status_registry_s() = default;
@@ -34,11 +37,14 @@ class node_status_registry_s
     node_status_registry_s& operator=(const node_status_registry_s&) = delete;
 
     /**
-     * Write a status object for a node. Typed status structs convert to JSON
-     * through ADL before this function is entered. Thread-safe and callable
+     * Write a registered status object for a node. Thread-safe and callable
      * from any thread; unchanged fields are filtered out.
      */
-    void write(std::string_view node_id, nlohmann::json status);
+    template <status::registered_contract T>
+    void write(std::string_view node_id, const T& value)
+    {
+        write_json(node_id, value);
+    }
 
     /**
      * Remove all status entries for a node. Called when a node is destroyed.

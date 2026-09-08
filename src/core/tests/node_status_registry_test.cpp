@@ -6,6 +6,20 @@
 
 namespace miximus::core::tests {
 
+struct unregistered_status_s
+{
+    bool connected{};
+};
+BOOST_DESCRIBE_STRUCT(unregistered_status_s, (), (connected))
+
+template <typename T>
+concept publishable_status =
+    requires(node_status_registry_s& registry, const T& value) { registry.write("node", value); };
+
+static_assert(publishable_status<status::connected_status_s>);
+static_assert(!publishable_status<unregistered_status_s>);
+static_assert(!publishable_status<nlohmann::json>);
+
 TEST(node_status_registry, described_status_is_serialized_and_delta_filtered)
 {
     node_status_registry_s         registry;

@@ -251,7 +251,7 @@ void context_s::configure_visible_window(const window_settings_s& settings, cons
         load_image("images/miximus_64x64.png"),
         load_image("images/miximus_128x128.png"),
     };
-    std::array<GLFWimage, 3> glfw_logos{};
+    std::array<GLFWimage, logos.size()> glfw_logos{};
     std::ranges::transform(logos, glfw_logos.begin(), [](auto& logo) {
         return GLFWimage{
             .width  = logo.width(),
@@ -298,7 +298,9 @@ context_s::~context_s()
     if (window_ != nullptr) {
         {
             const context_scope_s context_scope(*this);
-            shaders_.clear();
+            for (auto& shader : shaders_) {
+                shader.reset();
+            }
         }
         glfwDestroyWindow(window_);
     }
@@ -379,8 +381,9 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
 {
     using name_e = shader_program_s::name_e;
 
-    if (auto it = shaders_.find(name); it != shaders_.end()) {
-        return it->second.get();
+    auto& shader = shaders_[name];
+    if (shader) {
+        return shader.get();
     }
 
     constexpr std::string_view                         vertex_shader = "shaders/basic.vs.glsl";
@@ -415,10 +418,9 @@ shader_program_s* context_s::get_shader(shader_program_s::name_e name)
             throw std::invalid_argument("Unknown shader program");
     }
 
-    auto [it, _] = shaders_.emplace(
-        name, std::make_unique<shader_program_s>(vertex_shader, fragment_shader, component_mapping_capabilities));
+    shader = std::make_unique<shader_program_s>(vertex_shader, fragment_shader, component_mapping_capabilities);
 
-    return it->second.get();
+    return shader.get();
 }
 
 std::unique_ptr<context_s> context_s::create_unique_context(bool visible, context_s* parent)

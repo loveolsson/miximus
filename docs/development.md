@@ -143,9 +143,11 @@ A complete node generally requires native and web changes.
 9. Ensure the group is invoked from `nodes::register_all_nodes()`.
 
 Define runtime status batches in `src/types/node_status.hpp`, describe every field with `BOOST_DESCRIBE_STRUCT`, and
-publish them through the typed node-status writer. Do not add raw string-key status writes or `nlohmann::json` members
-to a status contract. The native build regenerates `web/src/generated/json_contracts.ts`; unsupported member types stop
-generation at compile time.
+register each group in `status::contracts` in the same header. The typed node-status writer accepts only registered
+groups, and the TypeScript generator emits that same catalog. Do not add raw string-key status writes or
+`nlohmann::json` members to a status contract. The native build regenerates `web/src/generated/json_contracts.ts`;
+unsupported member types stop generation at compile time. Opaque JSON fields in protocol messages need an explicit
+member-pointer mapping in `src/types/typescript_generator.hpp`.
 
 Node registration also owns persisted schema evolution. Version 1 is implicit for a factory-only registration. `node_definition_s::migrations` is an append-only vector: element 0 migrates version 1 to 2, element 1 migrates version 2 to 3, and so on. The current schema version is derived from the vector length, so every schema bump necessarily has one ordered migration. Keep each node's migration chain in a separate `<node>_migrations.hpp/.cpp` pair; a shared file is appropriate for a templated node family with one shared schema. Option migrations mutate the options object; input/output interface migrations rename the corresponding endpoint of saved connections. Migrations must throw if their claimed source data cannot be converted safely. Do not bump the schema for implementation-only changes.
 

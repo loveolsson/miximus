@@ -27,11 +27,20 @@ add_sanitizers(miximus_types)
 
 if(NOT CMAKE_CROSSCOMPILING)
     find_package(glm REQUIRED)
-    add_executable(miximus_typescript_generator typescript_generator.cpp)
+    add_library(typescript_generator_support STATIC typescript_generator.cpp typescript_generator.hpp)
     target_link_libraries(
-        miximus_typescript_generator
-        PRIVATE miximus_types Boost::headers glm::glm magic_enum::magic_enum
+        typescript_generator_support
+        PUBLIC miximus_types Boost::headers glm::glm magic_enum::magic_enum
     )
+    add_executable(miximus_typescript_generator typescript_generator_main.cpp)
+    target_link_libraries(miximus_typescript_generator PRIVATE typescript_generator_support)
+
+    if(BUILD_TESTING)
+        add_executable(typescript_generator_test tests/typescript_generator_test.cpp)
+        target_link_libraries(typescript_generator_test PRIVATE typescript_generator_support GTest::gtest_main)
+        add_sanitizers(typescript_generator_test)
+        gtest_discover_tests(typescript_generator_test)
+    endif()
 
     set(MIXIMUS_GENERATED_TYPESCRIPT
         "${CMAKE_SOURCE_DIR}/web/src/generated/json_contracts.ts"

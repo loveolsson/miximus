@@ -5,10 +5,13 @@
 
 #include <boost/describe.hpp>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace miximus::status {
@@ -449,5 +452,44 @@ BOOST_DESCRIBE_STRUCT(screen_output_metrics_status_s,
                        program_selection_offset_us,
                        completion_interval_max_us,
                        measured_refresh_hz))
+
+// Publication and TypeScript generation share this catalog. Register new status groups here.
+template <typename T>
+struct contract_s
+{
+    using type = T;
+    std::string_view name;
+};
+
+#define STATUS_CONTRACT(type)                                                                                          \
+    contract_s<type> { #type }
+inline constexpr auto contracts = std::tuple{
+    STATUS_CONTRACT(connected_status_s),
+    STATUS_CONTRACT(device_names_status_s),
+    STATUS_CONTRACT(display_modes_status_s),
+    STATUS_CONTRACT(source_names_status_s),
+    STATUS_CONTRACT(monitor_options_status_s),
+    STATUS_CONTRACT(font_names_status_s),
+    STATUS_CONTRACT(font_variants_status_s),
+    STATUS_CONTRACT(application_frame_status_s),
+    STATUS_CONTRACT(application_lifecycle_status_s),
+    STATUS_CONTRACT(application_scheduler_status_s),
+    STATUS_CONTRACT(render_delay_test_status_s),
+    STATUS_CONTRACT(source_timing_status_s),
+    STATUS_CONTRACT(decklink_input_device_status_s),
+    STATUS_CONTRACT(decklink_output_device_status_s),
+    STATUS_CONTRACT(decklink_output_keyer_status_s),
+    STATUS_CONTRACT(decklink_input_metrics_status_s),
+    STATUS_CONTRACT(ndi_input_metrics_status_s),
+    STATUS_CONTRACT(download_stream_status_s),
+    STATUS_CONTRACT(ndi_output_metrics_status_s),
+    STATUS_CONTRACT(decklink_output_metrics_status_s),
+    STATUS_CONTRACT(screen_output_metrics_status_s),
+};
+#undef STATUS_CONTRACT
+
+template <typename T>
+concept registered_contract =
+    std::apply([](auto... contract) { return (std::same_as<T, typename decltype(contract)::type> || ...); }, contracts);
 
 } // namespace miximus::status

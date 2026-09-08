@@ -4,7 +4,7 @@
 
 namespace miximus::core {
 
-void node_status_registry_s::write(std::string_view node_id, nlohmann::json status)
+void node_status_registry_s::write_json(std::string_view node_id, nlohmann::json status)
 {
     std::scoped_lock lock(mutex_);
     auto [state, _]         = states_.try_emplace(std::string(node_id), nlohmann::json::object());

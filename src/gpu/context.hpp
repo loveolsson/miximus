@@ -2,11 +2,11 @@
 #include "shader.hpp"
 #include "types.hpp"
 #include "types/settings_option.hpp"
+#include "utils/lookup.hpp"
 #include "utils/string_map.hpp"
 
 #include <atomic>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,7 +38,7 @@ class context_s
     };
 
   private:
-    using shader_map_t = std::map<shader_program_s::name_e, std::unique_ptr<shader_program_s>>;
+    using shader_cache_t = enum_array_t<shader_program_s::name_e, std::unique_ptr<shader_program_s>>;
 
     struct monitor_record_s
     {
@@ -57,16 +57,16 @@ class context_s
     static inline std::atomic<uint64_t>                 monitor_list_version_{0};
     static inline utils::string_map_t<monitor_record_s> monitors_;
 
-    GLFWwindow*  window_{};
-    shader_map_t shaders_;
-    void         make_current();
-    static void  rewind_current();
-    static void  monitor_config_callback(GLFWmonitor* monitor, int event) noexcept;
-    static void  initialize_glfw();
-    static void  initialize_glad();
-    static void  configure_window_hints(bool visible);
-    static auto  resolve_window_target(const window_settings_s& settings) -> window_target_s;
-    void         configure_visible_window(const window_settings_s& settings, const window_target_s& target);
+    GLFWwindow*    window_{};
+    shader_cache_t shaders_;
+    void           make_current();
+    static void    rewind_current();
+    static void    monitor_config_callback(GLFWmonitor* monitor, int event) noexcept;
+    static void    initialize_glfw();
+    static void    initialize_glad();
+    static void    configure_window_hints(bool visible);
+    static auto    resolve_window_target(const window_settings_s& settings) -> window_target_s;
+    void           configure_visible_window(const window_settings_s& settings, const window_target_s& target);
 
   public:
     context_s(bool visible, context_s* parent);

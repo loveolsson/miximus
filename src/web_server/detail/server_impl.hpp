@@ -7,7 +7,6 @@
 
 #include <websocketpp/common/asio.hpp>
 
-#include <array>
 #include <cstdint>
 #include <future>
 #include <map>
@@ -31,8 +30,8 @@ class web_server_impl
     using con_map_t      = std::map<con_hdl_t, websocket_connection, std::owner_less<con_hdl_t>>;
     using con_by_id_t    = std::map<int64_t, con_hdl_t>;
     using con_set_t      = std::set<con_hdl_t, std::owner_less<con_hdl_t>>;
-    using con_by_topic_t = std::array<con_set_t, enum_count<topic_e>()>;
-    using sub_by_topic_t = std::array<callback_t, enum_count<topic_e>()>;
+    using con_by_topic_t = enum_array_t<topic_e, con_set_t>;
+    using sub_by_topic_t = enum_array_t<topic_e, callback_t>;
     using msg_ptr_t      = server_t::message_ptr;
 
     void terminate_and_log(const con_hdl_t& hdl, const std::string& message);
@@ -61,14 +60,8 @@ class web_server_impl
     void send(const con_hdl_t& hdl, const std::string&);
     void send(const con_hdl_t& hdl, const nlohmann::json&);
 
-    callback_t& get_subscription_by_topic(topic_e t)
-    {
-        return subscription_by_topic_[enum_index(t)];
-    } // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
-    con_set_t& get_connections_by_topic(topic_e t)
-    {
-        return connections_by_topic_[enum_index(t)];
-    } // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+    callback_t& get_subscription_by_topic(topic_e t) { return subscription_by_topic_[t]; }
+    con_set_t&  get_connections_by_topic(topic_e t) { return connections_by_topic_[t]; }
 
     server_t         endpoint_;
     con_map_t        connections_;

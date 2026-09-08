@@ -84,8 +84,8 @@ export interface node_s {
 
 export interface config_s {
   readonly schema_version: number;
-  readonly nodes: readonly node_s[];
-  readonly connections: readonly connection_s[];
+  readonly nodes: ReadonlyArray<node_s>;
+  readonly connections: ReadonlyArray<connection_s>;
   readonly status?: Readonly<Record<string, node_status_s>> | null;
 }
 
@@ -253,27 +253,27 @@ export interface connected_status_s {
 }
 
 export interface device_names_status_s {
-  readonly device_names: readonly settings_option_s[];
+  readonly device_names: ReadonlyArray<settings_option_s>;
 }
 
 export interface display_modes_status_s {
-  readonly display_modes: readonly settings_option_s[];
+  readonly display_modes: ReadonlyArray<settings_option_s>;
 }
 
 export interface source_names_status_s {
-  readonly source_names: readonly settings_option_s[];
+  readonly source_names: ReadonlyArray<settings_option_s>;
 }
 
 export interface monitor_options_status_s {
-  readonly monitors: readonly settings_option_s[];
+  readonly monitors: ReadonlyArray<settings_option_s>;
 }
 
 export interface font_names_status_s {
-  readonly font_names: readonly settings_option_s[];
+  readonly font_names: ReadonlyArray<settings_option_s>;
 }
 
 export interface font_variants_status_s {
-  readonly font_variants: readonly settings_option_s[];
+  readonly font_variants: ReadonlyArray<settings_option_s>;
 }
 
 export interface application_frame_status_s {

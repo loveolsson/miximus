@@ -1,12 +1,15 @@
 #pragma once
 
 #include <magic_enum/magic_enum.hpp>
+#include <magic_enum/magic_enum_containers.hpp>
 
-#include <cassert>
 #include <optional>
 #include <string_view>
 
 namespace miximus {
+
+template <typename E, typename T>
+using enum_array_t = magic_enum::containers::array<E, T>;
 
 /**
  * Get count of values in an enum
@@ -20,16 +23,6 @@ constexpr auto enum_count = []() -> size_t { return magic_enum::enum_count<E>();
  */
 template <typename E>
 constexpr auto enum_value = [](size_t i) { return magic_enum::enum_value<E>(i); };
-
-/**
- * Get index of value in an enum.
- * Most likely same as enum value, but might differ.
- */
-constexpr auto enum_index = [](auto e) -> size_t {
-    const auto opt = magic_enum::enum_index(e);
-    assert(opt.has_value()); // Caller must pass a valid named enum value
-    return opt.value_or(0);
-};
 
 /**
  * Get a name of enum value.
