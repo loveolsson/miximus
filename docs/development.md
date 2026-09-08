@@ -21,6 +21,8 @@ The current render-thread latency audit and outstanding migrations are tracked i
 [render-thread-audit.md](render-thread-audit.md).
 The proposed broadcast timing, clock-recovery, frame-selection, output-buffering, and atomic graph-update architecture
 is tracked in [frame-timing-and-synchronization.md](frame-timing-and-synchronization.md).
+The proposed Vulkan/MoltenVK migration, platform transfer strategy, and hardware acceptance gates are documented in
+[vulkan-migration.md](vulkan-migration.md). This is a review proposal, not the current GPU implementation.
 
 ## Building and running
 
