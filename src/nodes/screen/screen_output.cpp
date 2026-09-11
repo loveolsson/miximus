@@ -1,12 +1,10 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/output_presenter.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
-#include "gpu/shader.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
+#include "gpu/window.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -32,10 +30,9 @@ class node_impl : public node_i
 {
     using presenter_settings_t = std::tuple<bool, int, utils::flicks>;
 
-    input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
     std::unique_ptr<output_presenter_s>           presenter_;
-    std::unique_ptr<gpu::textured_quad_s>         textured_quad_;
     utils::observed_value_s<uint64_t>             monitor_version_;
     utils::observed_value_s<gpu::recti_s>         window_rect_;
     utils::observed_value_s<bool>                 fullscreen_;
@@ -47,7 +44,6 @@ class node_impl : public node_i
     void destroy_presenter()
     {
         presenter_.reset();
-        textured_quad_.reset();
         presenter_stopping_ = false;
     }
 
@@ -62,14 +58,15 @@ class node_impl : public node_i
         status_registry->write(
             id_,
             status::screen_output_metrics_status_s{
-                .clock_quality = metrics.uses_nominal_cadence ? "Nominal monitor cadence" : "Swap completion estimate",
-                .frames_submitted             = metrics.frames_submitted,
+                .clock_quality    = metrics.uses_present_wait ? "Display completion estimate" : "Nominal FIFO estimate",
+                .frames_submitted = metrics.frames_submitted,
                 .program_queue_overflow_drops = metrics.program_queue_overflow_drops,
                 .program_timing_drops         = metrics.program_timing_drops,
                 .program_frames_repeated      = metrics.program_frames_repeated,
                 .program_frames_missing       = metrics.program_frames_missing,
                 .output_intervals_skipped     = metrics.output_intervals_skipped,
                 .swaps_completed              = metrics.swaps_completed,
+                .presentation_drops           = metrics.presentation_drops,
                 .render_acquire_misses        = metrics.render_acquire_misses,
                 .queued_frames                = metrics.queued_frames,
                 .render_slots                 = metrics.slots,
@@ -95,16 +92,16 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
     {
-        const auto monitor_version = gpu::context_s::get_monitor_list_version();
+        const auto monitor_version = gpu::window_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
             app->status_registry()->write(id_,
-                                          status::monitor_options_status_s{.monitors = gpu::context_s::get_monitors()});
+                                          status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()});
         }
 
         const auto enabled                = state.get_option<bool>("enabled", false);
         const auto monitor_id             = state.get_option<std::string>("monitor_id");
         auto       nominal_frame_duration = app->frame_context().frame_duration;
-        if (const auto refresh_rate = gpu::context_s::get_monitor_refresh_rate(monitor_id); refresh_rate.has_value()) {
+        if (const auto refresh_rate = gpu::window_s::get_monitor_refresh_rate(monitor_id); refresh_rate.has_value()) {
             nominal_frame_duration = utils::k_flicks_one_second / *refresh_rate;
         }
         const auto presenter_settings = presenter_settings_t{
@@ -145,7 +142,7 @@ class node_impl : public node_i
 
         if (!presenter_) {
             presenter_ = std::make_unique<output_presenter_s>(
-                app->ctx(),
+                *app->gpu(),
                 static_cast<size_t>(app->frame_settings().screen_output.buffer_frames),
                 nominal_frame_duration,
                 fullscreen,
@@ -171,21 +168,21 @@ class node_impl : public node_i
         }
 
         auto* target = frame->target();
-        target->begin_render(gpu::framebuffer_s::load_op_e::clear);
+        target->clear(app->commands());
         if (texture != nullptr) {
-            if (!textured_quad_) {
-                auto* shader   = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-                textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader, gpu::textured_quad_s::uv_e::regular);
-            }
             const auto texture_draw =
                 gpu::calculate_texture_draw({},
-                                            texture->display_dimensions(),
+                                            texture->dimensions(),
                                             presenter_->output_dimensions(),
                                             state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode"));
-            textured_quad_->draw(texture, texture_draw);
+            gpu::draw_texture(app->commands(), texture, target, texture_draw);
         }
-        gpu::framebuffer_s::end_render();
-        frame->submit(app->frame_context().program_target_time);
+
+        auto       pending     = std::make_shared<output_presenter_s::render_frame_s>(std::move(*frame));
+        const auto target_time = app->frame_context().program_target_time;
+        app->defer_output([pending = std::move(pending), target_time](gpu::completion_s ready) {
+            pending->submit(target_time, std::move(ready));
+        });
     }
 
     void complete(core::app_state_s* /*app*/) final {}

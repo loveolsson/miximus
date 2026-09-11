@@ -25,6 +25,7 @@ program_options::options_description make_options_description()
     add_option("help,h", "Show this help message");
     add_option("log-debug", "Enable debug logging");
     add_option("log-trace", "Enable trace logging");
+    add_option("use-cuda", "Require CUDA/Vulkan host transfers (default: Vulkan staging)");
     add_option("settings", program_options::value<String>(), "Path to the settings file");
     add_option("stop-after", program_options::value<double>(), "Stop after a positive number of seconds");
     add_option("test-render-delay-ms",
@@ -61,6 +62,7 @@ command_line_options_s parse_command_line_options_impl(int argc, Character** arg
     }
 
     result.show_help = values.contains("help");
+    result.use_cuda  = values.contains("use-cuda");
 
     if (values.contains("log-debug") && values.contains("log-trace")) {
         throw_invalid_option("--log-debug and --log-trace cannot be used together");

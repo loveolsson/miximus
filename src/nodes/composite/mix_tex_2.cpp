@@ -1,37 +1,27 @@
 #include "core/app_state.hpp"
 #include "glm/common.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
+#include "gpu/window.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 
-#include <cstdint>
 #include <memory>
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 
-enum class blend_mode_e : uint8_t
-{
-    video,
-    linear,
-};
-
 class node_impl : public node_i
 {
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
-    input_interface_s<gpu::texture_s*>      iface_a_{*this, "a"};
-    input_interface_s<gpu::texture_s*>      iface_b_{*this, "b"};
-    input_interface_s<double>               iface_t_{*this, "t"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
-
-    std::unique_ptr<gpu::textured_quad_s> textured_quad_;
+    input_interface_s<gpu::texture_s*>       iface_fb_in_{*this, "fb_in"};
+    input_interface_s<const gpu::texture_s*> iface_a_{*this, "a"};
+    input_interface_s<const gpu::texture_s*> iface_b_{*this, "b"};
+    input_interface_s<double>                iface_t_{*this, "t"};
+    output_interface_s<gpu::texture_s*>      iface_fb_out_{*this, "fb_out"};
 
   public:
     void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
@@ -70,8 +60,8 @@ class node_impl : public node_i
         const auto t        = glm::clamp(t_value, 0.0, 1.0);
         auto*      fallback = app->fallback_texture();
 
-        gpu::texture_s* a{};
-        gpu::texture_s* b{};
+        const gpu::texture_s* a{};
+        const gpu::texture_s* b{};
         if (t <= 0.0) {
             a = iface_a_.resolve_value(app, nodes, state, fallback);
             b = a;
@@ -83,24 +73,14 @@ class node_impl : public node_i
             b = iface_b_.resolve_value(app, nodes, state, fallback);
         }
 
-        const auto target_dimensions = framebuffer->texture()->display_dimensions();
+        const auto target_dimensions = framebuffer->dimensions();
         const auto fill_mode         = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
 
-        const auto a_draw     = gpu::calculate_texture_draw({}, a->display_dimensions(), target_dimensions, fill_mode);
-        const auto b_draw     = gpu::calculate_texture_draw({}, b->display_dimensions(), target_dimensions, fill_mode);
-        const auto blend_mode = state.get_enum_option_unchecked<blend_mode_e>("blend_mode");
-        const auto mix_space  = blend_mode == blend_mode_e::video ? gpu::textured_quad_s::mix_space_e::video
-                                                                  : gpu::textured_quad_s::mix_space_e::linear;
+        const auto a_draw     = gpu::calculate_texture_draw({}, a->dimensions(), target_dimensions, fill_mode);
+        const auto b_draw     = gpu::calculate_texture_draw({}, b->dimensions(), target_dimensions, fill_mode);
+        const auto blend_mode = state.get_enum_option_unchecked<gpu::blend_mode_e>("blend_mode");
 
-        framebuffer->begin_render();
-
-        if (!textured_quad_) {
-            auto* shader   = app->ctx()->get_shader(gpu::shader_program_s::name_e::texture_mix);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
-        }
-
-        textured_quad_->draw_mix(a, b, t, a_draw, b_draw, mix_space);
-        gpu::framebuffer_s::end_render();
+        gpu::mix_textures(app->commands(), a, b, framebuffer, t, a_draw, b_draw, blend_mode);
     }
 
     nlohmann::json get_default_options() const final
@@ -108,7 +88,7 @@ class node_impl : public node_i
         return {
             {"name",       "Mix A/B"                                },
             {"t",          0                                        },
-            {"blend_mode", enum_to_string(blend_mode_e::video)      },
+            {"blend_mode", enum_to_string(gpu::blend_mode_e::video) },
             {"fill_mode",  enum_to_string(gpu::fill_mode_e::contain)},
         };
     }
@@ -119,7 +99,7 @@ class node_impl : public node_i
             return normalize_option_value<double>(value, 0, 1);
         }
         if (name == "blend_mode") {
-            return normalize_enum_option_value<blend_mode_e>(value);
+            return normalize_enum_option_value<gpu::blend_mode_e>(value);
         }
         if (name == "fill_mode") {
             return normalize_enum_option_value<gpu::fill_mode_e>(value);

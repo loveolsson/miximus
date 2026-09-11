@@ -8,4 +8,5 @@ Detailed project guides:
 - [GPU and media](../docs/gpu-and-media.md)
 - [Development](../docs/development.md)
 
-Keep native and web definitions synchronized, preserve render-thread/OpenGL ownership rules, and run the validation commands specified by `AGENTS.md` before completing changes.
+Keep native and web definitions synchronized, preserve render-thread/Vulkan recording ownership rules, and run the
+validation commands specified by `AGENTS.md` before completing changes.

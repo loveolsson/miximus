@@ -26,7 +26,7 @@ this document continues to describe the current runtime until each migration sta
 
 `core::app_state_s` owns application-wide services:
 
-- the root hidden OpenGL context;
+- the Vulkan device, explicit recordings, bounded transfer services, and GLFW window service;
 - the configuration `boost::asio::io_context`, work guard, and configuration thread;
 - a small FiberPool used for explicitly submitted background work;
 - DeckLink, NDI, and font registries;
@@ -36,7 +36,8 @@ The main thread is the render thread. Normal node `prepare`, `execute`, and `com
 
 - WebSocket/configuration callbacks mutate the authoritative graph on the configuration thread.
 - DeckLink and SDK callbacks run on SDK-owned threads.
-- NDI discovery and output use dedicated threads.
+- NDI discovery, capture, and output use dedicated threads.
+- GPU transfer services, submission, and presentation have explicit workers and independent recording contexts.
 - Teleprompter/font work may be submitted to the application pool.
 
 Each explicit background path owns its locks, queues, completion signals, and shutdown procedure.
@@ -52,7 +53,7 @@ Configuration changes mark node IDs dirty or removed. At frame start, the render
 
 1. configuration does not remain locked during rendering;
 2. every frame sees stable node state;
-3. nodes copied to the render graph are destroyed on the render thread, where GL cleanup is safe.
+3. nodes copied to the render graph are destroyed on the render thread, with native GPU retirement deferred through completion.
 
 Node records contain a shared `node_i` instance plus copyable `node_state_s`. State contains sanitized JSON options and per-interface connection sets.
 
@@ -60,7 +61,7 @@ Node records contain a shared `node_i` instance plus copyable `node_state_s`. St
 
 The order in `node_manager_s::tick_one_frame()` is an invariant:
 
-1. Make the root GL context current.
+1. Begin render-thread lifecycle work; no graphics context is made current.
 2. Apply dirty and removed records to `nodes_copy_` and read the reserved settings node from that stable snapshot.
 3. Create the immutable frame context for this evaluation.
 4. Call `prepare()` on every render-snapshot node and collect the sinks that demand a frame.
@@ -69,22 +70,27 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 6. Finish the complete submission traversal before execution begins.
 7. Execute the demanding sinks. Resolving an input recursively executes its upstream node.
 8. Record executed IDs so each node executes at most once per frame.
-9. Call `complete()` on every node without waiting for unrelated GPU work. Nodes that consumed a cross-context frame
-   attach that frame's render-release fence here.
-10. Rewind the root GL context.
+9. Commit the frame scope: enqueue pending GPU work and output publication callbacks. Publish outputs only after
+   successful native submission on the submission worker; retain GPU uses through timeline completion.
+10. Call `complete()` on every node without waiting for unrelated GPU work. Release CPU frame references here.
 11. Flush and broadcast node-status deltas.
 12. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
 
+The frame scope releases unpublished output leases on every exit, including exceptions. A command batch flushed before
+a later node fails remains owned by the GPU service but cannot publish that unfinished evaluation. Timed NDI/DeckLink
+inputs start uploads before entering their capture FIFO; graph submission selects them and execution waits for the
+exact PTS-selected upload at FIFO consumption.
+
 ### Node lifecycle responsibilities
 
-- `init()`: lightweight one-time setup after construction; there is no GL context.
+- `init()`: lightweight one-time setup after construction; do not record GPU work here.
 - `prepare()`: advance all-node state, read options, update status, create lazy render resources, and report whether a
   sink demands execution.
 - `submit()`: park frame-local work or initiate asynchronous work for the demanded upstream closure without waiting.
-- `execute()`: resolve inputs and submit render work with the root GL context current.
+- `execute()`: resolve inputs and submit render work through explicit GPU recordings.
 - `complete()`: perform post-execution CPU lifecycle work. GPU commands may still be running; consume readbacks only
   through their explicit transfer completion state and avoid slow I/O.
-- destructor: GL-resource destruction is arranged on the render thread with a context current.
+- destructor: node destruction stays on the render thread; native GPU allocations retire after completion.
 
 Submission is conservative for routing controlled by a connected interface: a submitted node is not guaranteed to
 execute in that evaluation. Work started by `submit()` must therefore remain owned by a bounded service or queue until
@@ -100,8 +106,8 @@ Supported native interface types are:
 - `double` (`f64`)
 - `gpu::vec2_t`
 - `gpu::rect_s`
-- `gpu::texture_s*`
-- `gpu::framebuffer_s*`
+- `const gpu::texture_s*` (sampled `texture` port)
+- `gpu::texture_s*` (writable `framebuffer` port)
 
 `input_interface_s<T>::resolve_value()` follows its connection and lazily executes the upstream node before reading its output value. `resolve_values()` is used only after increasing the interface's connection limit.
 
@@ -116,7 +122,7 @@ Compatibility and native implicit conversions live in `src/nodes/interface.cpp`.
 
 Framebuffer outputs intentionally allow one downstream connection because they represent ordered mutation. Texture
 outputs may fan out. Use the framebuffer-to-texture utility node before fan-out. A disconnected framebuffer input owns
-a private RGBA16F render target using the default size from `$app`. It is retained and cleared when resolved for each
+a private four-channel UNORM16 render target using the default size from `$app`. It is retained and cleared when resolved for each
 program frame. Resolving a connected input releases the private target on the render thread; connected framebuffer
 inputs use only their upstream value.
 
@@ -149,7 +155,9 @@ status is added only to client snapshots and is not written to disk.
 
 Unversioned documents and nodes are the version 1 baseline. When a node schema changes, its registered transitions migrate the options JSON in place. Connections replay the output-interface migrations for their source node and the input-interface migrations for their destination node over the same version range. Migration completes before the existing node and connection construction paths are called; any missing transition or construction error aborts startup.
 
-`main.cpp` loads settings before installing adapters so the initial import does not broadcast mutation events. On shutdown it removes adapters, saves the authoritative graph, and clears nodes with GL current.
+`main.cpp` loads settings before installing adapters so the initial import does not broadcast mutation events. On
+shutdown it removes adapters, saves the authoritative graph, and clears nodes on the render thread before draining media
+and GPU services.
 
 ## WebSocket and web-client synchronization
 

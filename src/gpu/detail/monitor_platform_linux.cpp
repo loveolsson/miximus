@@ -15,7 +15,7 @@ namespace miximus::gpu::detail {
 
 std::string get_monitor_id(GLFWmonitor* monitor)
 {
-    auto* display = glfwGetX11Display();
+    auto* display = glfwGetPlatform() == GLFW_PLATFORM_X11 ? glfwGetX11Display() : nullptr;
     if (display != nullptr) {
         const auto output    = glfwGetX11Monitor(monitor);
         auto*      resources = XRRGetScreenResourcesCurrent(display, DefaultRootWindow(display));

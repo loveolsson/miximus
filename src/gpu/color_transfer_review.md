@@ -1,4 +1,7 @@
-# color_transfer.hpp — Review Notes
+# color_transfer.hpp — Historical OpenGL Review Notes
+
+The Vulkan port retains these corrected numerical conventions through explicit row-padded parameters in `drawing.hpp`
+and the v210 compute shaders. References below describe the pre-cutover shader implementation.
 
 These issues were confirmed against the shader matrix orientation, the normalized
 OpenGL texture representation, and ITU-R BT.709-6. They have been corrected.

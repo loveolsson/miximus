@@ -134,12 +134,12 @@ std::shared_ptr<node_i> create_switch_rect_8_node()
 
 std::shared_ptr<node_i> create_switch_tex_4_node()
 {
-    return std::make_shared<node_impl<gpu::texture_s*, 4>>("switch_tex_4", "Switch Texture x4", "tex");
+    return std::make_shared<node_impl<const gpu::texture_s*, 4>>("switch_tex_4", "Switch Texture x4", "tex");
 }
 
 std::shared_ptr<node_i> create_switch_tex_8_node()
 {
-    return std::make_shared<node_impl<gpu::texture_s*, 8>>("switch_tex_8", "Switch Texture x8", "tex");
+    return std::make_shared<node_impl<const gpu::texture_s*, 8>>("switch_tex_8", "Switch Texture x8", "tex");
 }
 
 } // namespace miximus::nodes::switch_nodes

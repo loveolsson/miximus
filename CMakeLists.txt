@@ -66,6 +66,9 @@ if(MIXIMUS_ENABLE_CLANG_TIDY)
 endif()
 
 # Strict warnings — applied only to our own targets, after submodules are added.
+if(MSVC)
+    add_compile_options(/W4 /permissive-)
+else()
 add_compile_options(
     -Wall
     -Wextra
@@ -80,6 +83,7 @@ add_compile_options(
     -Wformat=2
     -Wimplicit-fallthrough
 )
+endif()
 
 add_subdirectory(src)
 add_subdirectory(static)

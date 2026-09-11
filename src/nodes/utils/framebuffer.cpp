@@ -1,5 +1,5 @@
-#include "gpu/framebuffer.hpp"
-
+#include "core/app_state.hpp"
+#include "gpu/texture.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -15,10 +15,10 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::vec2_t>          iface_size_{*this, "size"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_{*this, "fb"};
+    input_interface_s<gpu::vec2_t>      iface_size_{*this, "size"};
+    output_interface_s<gpu::texture_s*> iface_fb_{*this, "fb"};
 
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
+    std::unique_ptr<gpu::texture_s> framebuffer_;
 
   public:
     explicit node_impl() = default;
@@ -31,12 +31,11 @@ class node_impl : public node_i
 
         size = glm::max(size, gpu::vec2i_t{128, 128});
 
-        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != size) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(size, gpu::texture_s::storage_format_e::rgba_unorm16);
+        if (!framebuffer_ || framebuffer_->dimensions() != size) {
+            framebuffer_ = std::make_unique<gpu::texture_s>(*app->gpu(), size, gpu::format_e::rgba_unorm16);
         }
 
-        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        gpu::framebuffer_s::end_render();
+        framebuffer_->clear(app->commands());
 
         iface_fb_.set_value(framebuffer_.get());
     }

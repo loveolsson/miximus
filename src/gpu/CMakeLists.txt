@@ -1,34 +1,66 @@
+find_package(nlohmann_json REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+find_package(glm REQUIRED)
+
 add_library(gpu
-    vertex_buffer.hpp
-    vertex_buffer.cpp
-    vertex_array.hpp
-    vertex_array.cpp
-    context.hpp
-    context_fwd.hpp
-    context.cpp
-    context_logging.hpp
-    context_logging.cpp
-    shader.hpp
-    shader.cpp
-    framebuffer.hpp
-    framebuffer_fwd.hpp
-    framebuffer.cpp
-    vertex.hpp
-    fence.hpp
-    fence.cpp
+    device.hpp
+    device.cpp
+    resource_types.hpp
     texture.hpp
-    texture_fwd.hpp
     texture.cpp
-    component_mapping.hpp
+    buffer.hpp
+    buffer.cpp
+    completion.hpp
+    completion.cpp
+    recording.hpp
+    recording.cpp
+    presenter.hpp
+    presenter.cpp
+    detail/device.hpp
+    detail/submission.cpp
+    detail/drawing.cpp
+    detail/pipeline.cpp
+    detail/conversion.cpp
+)
+target_link_libraries(gpu PUBLIC glm::glm)
+target_include_directories(gpu PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(gpu PRIVATE
+    static_files
+    vulkan_dependencies
+    magic_enum::magic_enum
+    logger
+    glfw
+    nlohmann_json::nlohmann_json
+    Threads::Threads
+)
+
+include(${PROJECT_SOURCE_DIR}/cmake/gpu_sanitizer_defaults.cmake)
+
+add_sanitizers(gpu)
+
+if(BUILD_TESTING)
+    add_executable(gpu_vulkan_test tests/device_test.cpp)
+    target_link_libraries(gpu_vulkan_test PRIVATE gpu logger GTest::gtest_main)
+    add_sanitizers(gpu_vulkan_test)
+    # Hardware tests are explicit: ordinary CTest remains usable without a GPU.
+    option(MIXIMUS_TEST_VULKAN "Register Vulkan hardware tests with CTest" OFF)
+    if(MIXIMUS_TEST_VULKAN)
+        gtest_discover_tests(gpu_vulkan_test PROPERTIES LABELS "vulkan;hardware")
+    endif()
+endif()
+
+target_sources(gpu PRIVATE
+    window.hpp
+    window_fwd.hpp
+    window.cpp
+    texture_fwd.hpp
     texture_frame.hpp
     texture_frame.cpp
+
     types.hpp
     types.cpp
     geometry.hpp
-    draw_state.hpp
-    draw_state.cpp
-    textured_quad.hpp
-    textured_quad.cpp
+    drawing.hpp
     color_transfer.hpp
     detail/monitor_platform.hpp
 )
@@ -43,40 +75,28 @@ elseif(APPLE)
     target_link_libraries(gpu PRIVATE ${COLORSYNC_FRAMEWORK} ${COREFOUNDATION_FRAMEWORK} ${COREGRAPHICS_FRAMEWORK})
 else()
     target_sources(gpu PRIVATE detail/monitor_platform_linux.cpp)
-    find_package(X11 REQUIRED COMPONENTS Xrandr)
-    target_link_libraries(gpu PRIVATE X11::Xrandr)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(gpu PRIVATE x11_dependencies)
+    endif()
 endif()
 
 add_subdirectory(transfer)
 
-find_package(glfw3 CONFIG REQUIRED)
-find_package(glm REQUIRED)
+# Build the cross-machine transfer comparison tool only when explicitly requested.
+add_executable(miximus_transfer_benchmark EXCLUDE_FROM_ALL benchmarks/transfer_benchmark.cpp)
+target_link_libraries(miximus_transfer_benchmark PRIVATE gpu logger nlohmann_json::nlohmann_json)
+add_sanitizers(miximus_transfer_benchmark)
+set_target_properties(miximus_transfer_benchmark PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 target_link_libraries(gpu
 PRIVATE
-    static_files
-    glfw
-    logger
     stb
     miximus_types
-    $<$<PLATFORM_ID:Linux>:GL>   # provides glXGetCurrentContext for DVP EGL detection
-PUBLIC
-    glad_gl
-    glm::glm
-    cuda
-    dvp
-)
-
-target_compile_definitions(
-    gpu
-    PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:MIXIMUS_VALIDATE_SHADER_UNIFORMS>
 )
 
 if(MIXIMUS_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(gpu PRIVATE <spdlog/spdlog.h>)
 endif()
-
-add_sanitizers(gpu)
 
 if(BUILD_TESTING)
     add_executable(gpu_test
@@ -87,4 +107,27 @@ if(BUILD_TESTING)
     target_link_libraries(gpu_test PRIVATE gpu GTest::gtest_main)
     add_sanitizers(gpu_test)
     gtest_discover_tests(gpu_test)
+endif()
+
+if(BUILD_TESTING)
+    add_executable(gpu_transfer_vulkan_test tests/transfer_vulkan_test.cpp)
+    target_link_libraries(gpu_transfer_vulkan_test PRIVATE gpu logger GTest::gtest_main)
+    if(TARGET decklink)
+        target_sources(gpu_transfer_vulkan_test PRIVATE ${PROJECT_SOURCE_DIR}/src/nodes/decklink/detail/allocator.cpp)
+        target_link_libraries(gpu_transfer_vulkan_test PRIVATE decklink)
+        target_compile_definitions(gpu_transfer_vulkan_test PRIVATE MIXIMUS_TEST_DECKLINK=1)
+    endif()
+    add_sanitizers(gpu_transfer_vulkan_test)
+    if(MIXIMUS_TEST_VULKAN)
+        gtest_discover_tests(gpu_transfer_vulkan_test PROPERTIES LABELS "vulkan;hardware")
+    endif()
+endif()
+
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(gpu_window_test tests/window_test.cpp)
+    target_link_libraries(gpu_window_test PRIVATE gpu logger glfw GTest::gtest_main)
+    add_sanitizers(gpu_window_test)
+    if(MIXIMUS_TEST_VULKAN)
+        gtest_discover_tests(gpu_window_test PROPERTIES LABELS "window;hardware")
+    endif()
 endif()

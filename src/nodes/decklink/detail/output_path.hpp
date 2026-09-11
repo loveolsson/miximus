@@ -14,7 +14,7 @@
 #include <string_view>
 
 namespace miximus::gpu {
-class context_s;
+
 class texture_s;
 namespace transfer {
 class texture_readback_target_s;
@@ -53,8 +53,10 @@ class output_frame_renderer_i
     output_frame_renderer_i(output_frame_renderer_i&&)                 = delete;
     output_frame_renderer_i& operator=(output_frame_renderer_i&&)      = delete;
 
-    virtual void
-    render(gpu::texture_s* source, gpu::transfer::texture_readback_target_s& target, gpu::fill_mode_e fill_mode) = 0;
+    virtual void render(gpu::recording_s&                         commands,
+                        const gpu::texture_s*                     source,
+                        gpu::transfer::texture_readback_target_s& target,
+                        gpu::fill_mode_e                          fill_mode) = 0;
 };
 
 class output_path_i
@@ -81,8 +83,8 @@ class output_path_i
     const gpu::transfer::host_frame_layout_s& host_layout() const noexcept { return host_layout_; }
 
     virtual auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
-        -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame>                                                  = 0;
-    virtual auto create_renderer(gpu::context_s* context) const -> std::unique_ptr<output_frame_renderer_i> = 0;
+        -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame>                           = 0;
+    virtual auto create_renderer() const -> std::unique_ptr<output_frame_renderer_i> = 0;
 };
 
 class v210_output_path_s final : public output_path_i
@@ -95,12 +97,12 @@ class v210_output_path_s final : public output_path_i
 
     auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
         -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame> final;
-    auto create_renderer(gpu::context_s* context) const -> std::unique_ptr<output_frame_renderer_i> final;
+    auto create_renderer() const -> std::unique_ptr<output_frame_renderer_i> final;
 };
 
-class premultiplied_bgra_output_path_s final : public output_path_i
+class premultiplied_argb_output_path_s final : public output_path_i
 {
-    premultiplied_bgra_output_path_s(output_display_mode_s              display_mode,
+    premultiplied_argb_output_path_s(output_display_mode_s              display_mode,
                                      gpu::transfer::host_frame_layout_s host_layout);
 
   public:
@@ -109,7 +111,7 @@ class premultiplied_bgra_output_path_s final : public output_path_i
 
     auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
         -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame> final;
-    auto create_renderer(gpu::context_s* context) const -> std::unique_ptr<output_frame_renderer_i> final;
+    auto create_renderer() const -> std::unique_ptr<output_frame_renderer_i> final;
 };
 
 struct active_output_s

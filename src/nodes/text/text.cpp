@@ -1,12 +1,11 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
+#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -46,11 +45,10 @@ class node_impl : public node_i
         utils::observed_value_s<int>                            font_size;
     };
 
-    input_interface_s<gpu::vec2_t>          iface_position_in_{*this, "position"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
+    input_interface_s<gpu::vec2_t>      iface_position_in_{*this, "position"};
+    input_interface_s<gpu::texture_s*>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::texture_s*> iface_fb_out_{*this, "fb_out"};
 
-    std::unique_ptr<gpu::textured_quad_s>    textured_quad_;
     std::shared_ptr<render::font_loader_s>   font_loader_{std::make_shared<render::font_loader_s>()};
     std::unique_ptr<text_render_info_s>      text_info_{std::make_unique<text_render_info_s>()};
     ::mutex                                  font_mtx_;
@@ -78,11 +76,6 @@ class node_impl : public node_i
                 status::font_variants_status_s{
                     .font_variants = app->font_registry()->get_font_variant_options(font_name),
                 });
-        }
-
-        if (!textured_quad_) {
-            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
         }
 
         // Check if text or font settings have changed
@@ -234,27 +227,25 @@ class node_impl : public node_i
             return;
         }
         rendered_text_frame_ = std::move(frame);
-        rendered_text_frame_->wait_for_upload_on_gpu();
 
         auto position = iface_position_in_.resolve_value(app, nodes, state, {0.0, 0.0});
 
-        fb->begin_render();
-
         // Calculate the scale to render text at its natural pixel size
         // Convert surface dimensions to framebuffer coordinates
-        const gpu::vec2i_t fb_dim       = fb->texture()->texture_dimensions();
+        const gpu::vec2i_t fb_dim       = fb->dimensions();
         const auto         surface_size = text_info_->surface_size;
 
         const auto scale = gpu::pixels_to_normalized(gpu::vec2_t(surface_size), fb_dim);
 
-        textured_quad_->draw(rendered_text_frame_->texture(), {.pos = position, .size = scale});
-        gpu::framebuffer_s::end_render();
+        const gpu::texture_draw_s geometry{
+            .destination = {.pos = position, .size = scale}
+        };
+        gpu::draw_texture(app->commands(), rendered_text_frame_->texture(), fb, geometry);
     }
 
     void complete(core::app_state_s* /*app*/) final
     {
         if (rendered_text_frame_) {
-            rendered_text_frame_->publish_render_release_fence();
             rendered_text_frame_.reset();
         }
     }

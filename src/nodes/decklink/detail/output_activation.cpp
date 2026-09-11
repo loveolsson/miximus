@@ -135,7 +135,7 @@ auto output_activation_s::start(const output_display_mode_s& display_mode, keyer
     if (requested_keyer_mode != keyer_mode_e::disabled) {
         active_output.keyer_fallback_reason = keyed_output_fallback_reason(display_mode.mode, requested_keyer_mode);
         if (!active_output.keyer_fallback_reason) {
-            active_output.path = premultiplied_bgra_output_path_s::create(device_.get(), display_mode, device_name_);
+            active_output.path = premultiplied_argb_output_path_s::create(device_.get(), display_mode, device_name_);
             if (!active_output.path) {
                 return std::nullopt;
             }

@@ -1,0 +1,101 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, std430) writeonly buffer Output
+{
+    uint words[];
+} destination;
+
+layout(set = 0, binding = 1, rgba16) readonly uniform image2D source;
+
+layout(push_constant) uniform Parameters
+{
+    uint image_width;
+    uint image_height;
+    uint row_stride_words;
+    uint channel_order;
+
+    // Matrix rows use xyz; w is unused so each row occupies 16 bytes in memory.
+    vec4 conversion_row_0;
+    vec4 conversion_row_1;
+    vec4 conversion_row_2;
+
+    vec4 gamut_row_0;
+    vec4 gamut_row_1;
+    vec4 gamut_row_2;
+
+    vec4 offset;
+} parameters;
+
+vec3 load_encoded_yuv(uint x, uint y)
+{
+    // Replicate the last active pixel to complete a partial six-pixel packing group.
+    vec3 linear_rgb = imageLoad(source, ivec2(min(x, parameters.image_width - 1), y)).rgb;
+    vec3 output_rgb = vec3(dot(parameters.gamut_row_0.xyz, linear_rgb),
+                           dot(parameters.gamut_row_1.xyz, linear_rgb),
+                           dot(parameters.gamut_row_2.xyz, linear_rgb));
+    vec3 encoded_rgb = from_linear(output_rgb);
+
+    return vec3(dot(parameters.conversion_row_0.xyz, encoded_rgb),
+                dot(parameters.conversion_row_1.xyz, encoded_rgb),
+                dot(parameters.conversion_row_2.xyz, encoded_rgb)) + parameters.offset.xyz;
+}
+
+void main()
+{
+    uvec2 word_position = gl_GlobalInvocationID.xy;
+    if (word_position.x >= parameters.row_stride_words || word_position.y >= parameters.image_height) {
+        return;
+    }
+
+    uint word_index = word_position.y * parameters.row_stride_words + word_position.x;
+    // Zero unused buffer words between the packed image data and the next SDK row.
+    if (word_position.x >= ((parameters.image_width + 5) / 6) * 4) {
+        destination.words[word_index] = 0;
+        return;
+    }
+
+    uint group_start_pixel = word_position.x / 4 * 6;
+    vec3 sample_a;
+    vec3 sample_b;
+    vec3 sample_c;
+    vec3 sample_d;
+    vec3 packed_components;
+
+    // Each word stores three ten-bit components; adjacent pixels share averaged chroma.
+    switch (word_position.x % 4) {
+        case 0:
+            sample_a          = load_encoded_yuv(group_start_pixel, word_position.y);
+            sample_b          = load_encoded_yuv(group_start_pixel + 1, word_position.y);
+            packed_components = vec3((sample_a.y + sample_b.y) * .5, sample_a.x, (sample_a.z + sample_b.z) * .5);
+            break;
+
+        case 1:
+            sample_a          = load_encoded_yuv(group_start_pixel + 1, word_position.y);
+            sample_b          = load_encoded_yuv(group_start_pixel + 2, word_position.y);
+            sample_c          = load_encoded_yuv(group_start_pixel + 3, word_position.y);
+            packed_components = vec3(sample_a.x, (sample_b.y + sample_c.y) * .5, sample_b.x);
+            break;
+
+        case 2:
+            sample_a          = load_encoded_yuv(group_start_pixel + 2, word_position.y);
+            sample_b          = load_encoded_yuv(group_start_pixel + 3, word_position.y);
+            sample_c          = load_encoded_yuv(group_start_pixel + 4, word_position.y);
+            sample_d          = load_encoded_yuv(group_start_pixel + 5, word_position.y);
+            packed_components = vec3((sample_a.z + sample_b.z) * .5, sample_b.x, (sample_c.y + sample_d.y) * .5);
+            break;
+
+        default:
+            sample_a          = load_encoded_yuv(group_start_pixel + 4, word_position.y);
+            sample_b          = load_encoded_yuv(group_start_pixel + 5, word_position.y);
+            packed_components = vec3(sample_a.x, (sample_a.z + sample_b.z) * .5, sample_b.x);
+            break;
+    }
+
+    uvec3 codes                   = uvec3(round(clamp(packed_components, 0.0, 1.0) * 1023.0));
+    destination.words[word_index] = codes.x | (codes.y << 10) | (codes.z << 20);
+}

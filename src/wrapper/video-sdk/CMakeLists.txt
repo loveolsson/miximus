@@ -1,3 +1,8 @@
+option(MIXIMUS_ENABLE_NVIDIA_VIDEO "Discover the optional NVIDIA Video Codec SDK" OFF)
+if(NOT MIXIMUS_ENABLE_NVIDIA_VIDEO)
+    return()
+endif()
+
 set(VIDEO_SDK_ROOT ${CMAKE_SOURCE_DIR}/3rd-party/video-sdk)
 
 add_library(video-sdk INTERFACE)

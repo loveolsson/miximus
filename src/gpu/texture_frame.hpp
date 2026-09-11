@@ -1,52 +1,35 @@
 #pragma once
 
+#include "buffer.hpp"
+#include "completion.hpp"
 #include "texture.hpp"
+#include "transfer/texture_transfer.hpp"
 
 #include <memory>
-#include <mutex>
 
 namespace miximus::gpu {
 
-class fence_s;
-
-// A texture shared by two GL contexts. The producing context publishes an
-// upload-ready fence; the consuming render context publishes a render-release
-// fence after its last use. Pooling and transfer policy deliberately live elsewhere.
+// CPU leases and native recording/timeline uses must both retire before reuse.
 class texture_frame_s
 {
-    std::unique_ptr<texture_s> texture_;
-    std::mutex                 fence_mutex_;
-    std::unique_ptr<fence_s>   upload_ready_fence_;
-    std::unique_ptr<fence_s>   render_release_fence_;
+    texture_s                     texture_;
+    buffer_s                      buffer_;
+    transfer::host_frame_layout_s layout_;
+    completion_s                  upload_completion_;
+    std::shared_ptr<texture_s>    conversion_texture_;
 
   public:
-    texture_frame_s(vec2i_t                     display_dimensions,
-                    vec2i_t                     texture_dimensions,
-                    texture_s::storage_format_e storage_format,
-                    input_component_mapping_e   input_component_mapping,
-                    texture_s::sampling_e       sampling = texture_s::sampling_e::mipmapped_linear);
-    ~texture_frame_s();
-
-    texture_frame_s(const texture_frame_s&)            = delete;
-    texture_frame_s(texture_frame_s&&)                 = delete;
-    texture_frame_s& operator=(const texture_frame_s&) = delete;
-    texture_frame_s& operator=(texture_frame_s&&)      = delete;
-
-    texture_s* texture() const noexcept { return texture_.get(); }
-
-    // Called with the worker context current after all producer-side commands.
-    void publish_upload_ready_fence();
-
-    // Called with the render context current before sampling the texture.
-    void wait_for_upload_on_gpu();
-
-    // Called with the render context current after the traversal's last use.
-    void publish_render_release_fence();
-
-    // Called by the worker before beginning a new transaction on the texture.
-    bool wait_for_render_release_on_worker();
+    texture_frame_s(device_s& device, transfer::host_frame_layout_s layout, sampling_e sampling);
+    texture_s*                           texture() noexcept { return texture_ ? &texture_ : nullptr; }
+    const texture_s*                     texture() const noexcept { return texture_ ? &texture_ : nullptr; }
+    const buffer_s&                      buffer() const noexcept { return buffer_; }
+    const transfer::host_frame_layout_s& layout() const noexcept { return layout_; }
+    const std::shared_ptr<texture_s>&    conversion_texture() const noexcept { return conversion_texture_; }
+    void set_conversion_texture(std::shared_ptr<texture_s> texture) { conversion_texture_ = std::move(texture); }
+    const completion_s& upload_completion() const noexcept { return upload_completion_; }
+    void                set_upload_completion(completion_s completion) { upload_completion_ = std::move(completion); }
+    bool                ready_for_reuse() const { return texture_.idle() && buffer_.idle(); }
 };
 
 using texture_frame_ptr = std::shared_ptr<texture_frame_s>;
-
 } // namespace miximus::gpu

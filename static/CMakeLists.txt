@@ -4,6 +4,28 @@ add_subdirectory(bundler)
 
 set(BUNDLER_NAMESPACE "miximus::static_files")
 
+add_library(static_files SHARED
+  src/files.cpp
+  include/static_files/files.hpp
+)
+
+# Validated shader binaries use the same bundler and file API as other assets.
+foreach(shader IN ITEMS quad.vert texture.frag unpack_rgba.comp pack_rgba.comp unpack_v210.comp pack_v210.comp mix.frag)
+  miximus_compile_shader(static_files "${PROJECT_SOURCE_DIR}/shaders/${shader}")
+endforeach()
+get_target_property(SHADER_FILES static_files MIXIMUS_SPIRV_FILES)
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp"
+  COMMAND $<TARGET_FILE:bundler>
+    --src "${CMAKE_CURRENT_BINARY_DIR}/shaders/"
+    --dst "${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp"
+    --namespace ${BUNDLER_NAMESPACE} --mapname get_shader_files
+  DEPENDS bundler ${SHADER_FILES}
+  COMMENT "Bundling validated SPIR-V shaders"
+  VERBATIM
+)
+target_sources(static_files PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shader_files.cpp")
+
 # Generate hash files to track bundled directory changes
 set(WEB_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/web_files.hash")
 set(RESOURCE_HASH_FILE "${CMAKE_CURRENT_BINARY_DIR}/resource_files.hash")
@@ -30,7 +52,7 @@ endif()
 
 # Step 2: hash web/dist; remove web_files.cpp if the bundled output needs refreshing
 add_custom_target(check_web_files_hash ALL
-  COMMAND ${CMAKE_COMMAND} 
+  COMMAND ${CMAKE_COMMAND}
     -DWEB_SOURCE_DIR=${CMAKE_SOURCE_DIR}/web/dist
     -DWEB_HASH_FILE=${WEB_HASH_FILE}
     -DWEB_FILES_CPP=${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
@@ -53,11 +75,11 @@ add_custom_target(check_resource_files_hash ALL
 )
 
 add_custom_command(
-  OUTPUT 
+  OUTPUT
     ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
-  COMMAND 
-    $<TARGET_FILE:bundler> 
-  ARGS 
+  COMMAND
+    $<TARGET_FILE:bundler>
+  ARGS
     --src ${CMAKE_SOURCE_DIR}/web/dist/ --dst ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp --namespace ${BUNDLER_NAMESPACE} --mapname get_web_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS bundler check_web_files_hash
@@ -65,22 +87,20 @@ add_custom_command(
 )
 
 add_custom_command(
-  OUTPUT 
+  OUTPUT
     ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp
-  COMMAND 
-    $<TARGET_FILE:bundler> 
-  ARGS 
+  COMMAND
+    $<TARGET_FILE:bundler>
+  ARGS
     --src ${CMAKE_SOURCE_DIR}/resources/ --dst ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp --namespace ${BUNDLER_NAMESPACE} --mapname get_resource_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS bundler check_resource_files_hash
   COMMENT "Generating resource_files.cpp from resources/"
 )
 
-add_library(static_files SHARED
-  src/files.cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp
-  include/static_files/files.hpp
+target_sources(static_files PRIVATE
+  "${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp"
+  "${CMAKE_CURRENT_BINARY_DIR}/resource_files.cpp"
 )
 
 target_include_directories(static_files PUBLIC include)

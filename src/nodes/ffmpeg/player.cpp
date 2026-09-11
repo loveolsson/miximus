@@ -1,4 +1,4 @@
-#include "gpu/framebuffer.hpp"
+#include "gpu/texture.hpp"
 #include "gpu/types.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -18,9 +18,9 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
+    output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
-    std::unique_ptr<gpu::framebuffer_s> framebuffer_;
+    std::unique_ptr<gpu::texture_s> framebuffer_;
 
   public:
     explicit node_impl() = default;

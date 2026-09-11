@@ -46,4 +46,5 @@ struct file_map_s
 
 LIBRARY_API extern const file_map_s& get_web_files();
 LIBRARY_API extern const file_map_s& get_resource_files();
+LIBRARY_API extern const file_map_s& get_shader_files();
 } // namespace miximus::static_files

@@ -2,6 +2,7 @@
 
 #include "gpu/transfer/texture_readback.hpp"
 #include "logger/logger.hpp"
+#include "media/playout_timeline.hpp"
 #include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
 #include "types/output_buffer_limits.hpp"
@@ -159,10 +160,10 @@ class output_sender_s::impl_s
     void run_stream(const stream_state_s& state)
     {
         media::timed_output_queue_s<sender_frame_s>              queue({
-                         .capacity        = output_sender_s::get_queue_capacity(state.buffer_frames),
-                         .early_tolerance = state.frame_duration / 2,
+                         .capacity = output_sender_s::get_queue_capacity(state.buffer_frames),
         });
-        media::presentation_timeline_s                           timeline;
+        media::playout_timeline_s                                timeline;
+        media::presentation_timeline_s                           observed_latency;
         utils::flicks                                            output_deadline{};
         std::shared_ptr<gpu::transfer::texture_readback_frame_s> inflight;
         bool                                                     started{};
@@ -188,8 +189,9 @@ class output_sender_s::impl_s
                     phase_ = phase_e::failed;
                     break;
                 }
-                output_deadline           = now;
-                const auto output_latency = timeline.observe_latency(output_deadline, *oldest_program_target_time);
+                output_deadline = now;
+                timeline.initialize(output_deadline, *oldest_program_target_time);
+                const auto output_latency = timeline.buffered_latency();
                 output_latency_us_ = std::chrono::duration_cast<std::chrono::microseconds>(output_latency).count();
                 started            = true;
             }
@@ -209,25 +211,22 @@ class output_sender_s::impl_s
                 output_intervals_skipped_.fetch_add(obsolete_intervals);
             }
 
-            const auto program_target = timeline.map_presentation_to_program_target(output_deadline);
-            if (!program_target.has_value()) {
-                phase_ = phase_e::failed;
-                break;
-            }
-            const auto selection = queue.select(*program_target);
+            const auto program_target = timeline.program_target(output_deadline);
+            const auto selection      = queue.select_nearest(program_target);
             publish_queue_metrics(queue);
             if (selection.frame != nullptr) {
-                if (selection.selection == media::output_frame_selection_e::new_frame) {
-                    output_latency_us_ =
-                        std::chrono::duration_cast<std::chrono::microseconds>(
-                            timeline.observe_latency(output_deadline, selection.frame->program_target_time))
-                            .count();
-                }
+                const auto handoff_time = utils::flicks_now();
+                output_latency_us_ =
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        observed_latency.observe_latency(handoff_time, selection.frame->program_target_time))
+                        .count();
+                // This is local SDK handoff timing, not receiver presentation.
+                timeline.observe(output_deadline, handoff_time);
                 program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
-                                                   selection.frame->program_target_time - *program_target)
+                                                   selection.frame->program_target_time - program_target)
                                                    .count();
                 auto next = selection.frame->payload.readback;
-                send_frame(state, selection.frame->payload, *program_target - state.program_time_origin);
+                send_frame(state, selection.frame->payload, program_target - state.program_time_origin);
                 inflight = std::move(next);
             }
 

@@ -2,11 +2,12 @@
 #include "core/command_line_options.hpp"
 #include "core/frame_context.hpp"
 #include "core/node_status_registry_fwd.hpp"
-#include "gpu/context_fwd.hpp"
+#include "gpu/device.hpp"
 #include "gpu/texture_fwd.hpp"
 #include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
+#include "gpu/window_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
@@ -17,9 +18,11 @@
 
 #include <FiberPool.hpp>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <thread>
+#include <vector>
 
 namespace miximus::core {
 
@@ -71,7 +74,11 @@ class app_state_s
     std::thread                    cfg_thread_;
     std::unique_ptr<thread_pool_t> thread_pool_;
 
-    std::unique_ptr<gpu::context_s>                            ctx_;
+    std::unique_ptr<gpu::window_system_s>                      window_system_;
+    std::unique_ptr<gpu::device_s>                             gpu_;
+    std::unique_ptr<gpu::recording_s>                          recording_;
+    gpu::completion_s                                          last_submission_;
+    std::vector<std::function<void(gpu::completion_s)>>        pending_outputs_;
     std::unique_ptr<gpu::texture_s>                            fallback_texture_;
     std::unique_ptr<gpu::transfer::texture_upload_service_s>   texture_upload_service_;
     std::unique_ptr<gpu::transfer::texture_readback_service_s> texture_readback_service_;
@@ -85,7 +92,7 @@ class app_state_s
 
   public:
     // Builds only frame-local state so graph lifecycle tests do not initialize
-    // hardware, worker threads, or OpenGL resources.
+    // hardware, worker threads, or GPU resources.
     struct test_state_t
     {
         explicit test_state_t() = default;
@@ -96,8 +103,29 @@ class app_state_s
     explicit app_state_s(test_state_t, command_line_options_s command_line_options = {});
     ~app_state_s();
 
-    auto cfg_executor() noexcept { return &cfg_executor_; }
-    auto ctx() noexcept { return ctx_.get(); }
+    auto              cfg_executor() noexcept { return &cfg_executor_; }
+    auto              gpu() noexcept { return gpu_.get(); }
+    gpu::recording_s& commands();
+    gpu::completion_s submit_gpu();
+    void              defer_output(std::function<void(gpu::completion_s)> publish);
+    void              commit_gpu_frame();
+
+    // Always cancel uncommitted output leases on stack rewind. Earlier GPU
+    // submissions remain valid, but cannot publish a partially evaluated frame.
+    class frame_scope_s
+    {
+        app_state_s& app_;
+
+      public:
+        explicit frame_scope_s(app_state_s& app)
+            : app_(app)
+        {
+        }
+        ~frame_scope_s() { app_.abort_gpu(); }
+        frame_scope_s(const frame_scope_s&)            = delete;
+        frame_scope_s& operator=(const frame_scope_s&) = delete;
+    };
+    void abort_gpu() noexcept;
     auto fallback_texture() noexcept { return fallback_texture_.get(); }
     auto texture_upload_service() noexcept { return texture_upload_service_.get(); }
     auto texture_readback_service() noexcept { return texture_readback_service_.get(); }

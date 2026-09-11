@@ -1,6 +1,5 @@
 #ifdef _WIN32
 
-#include "gpu/glad.hpp"
 #include "monitor_platform.hpp"
 
 #define GLFW_INCLUDE_NONE

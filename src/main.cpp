@@ -7,7 +7,7 @@
 #include "core/node_manager.hpp"
 #include "core/node_status_registry.hpp"
 #include "core/test_instrumentation/render_thread_delay.hpp"
-#include "gpu/context.hpp"
+#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
@@ -132,7 +132,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                 render_thread_delay_test.inject_before_render_frame();
                 node_manager.tick_one_frame(&app, frame_scheduler);
 
-                gpu::context_s::poll();
+                gpu::window_s::poll();
 
                 const auto& metrics = frame_scheduler.finish_frame();
                 const auto& context = app.frame_context();

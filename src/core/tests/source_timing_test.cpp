@@ -298,7 +298,7 @@ TEST(TimedSourceQueue, DelayedExactRateSourceDoesNotOscillateAtTheHalfFrameBound
             media_clock_sample, TARGET_TIME + offset + CALLBACK_PHASE + jitter, static_cast<int>(frame)));
         queue.advance(program_pts, TARGET_TIME + program_pts);
 
-        const auto ticket = queue.select(program_pts, EXACT_FRAME_DURATION / 2);
+        const auto ticket = queue.select_nearest(program_pts);
         if (ticket.selection() == media::prepared_frame_selection_e::missing) {
             continue;
         }
@@ -355,7 +355,7 @@ TEST(TimedSourceQueue, FasterNominalSourceDoesNotDevelopCompensatingRepeatsDurin
         }
 
         queue.advance(program_pts, program_target_time);
-        const auto ticket = queue.select(program_pts, PROGRAM_FRAME_DURATION / 2);
+        const auto ticket = queue.select_nearest(program_pts);
         if (ticket.selection() == media::prepared_frame_selection_e::missing) {
             continue;
         }
@@ -465,14 +465,14 @@ TEST(TimedSourceQueue, NeverSelectsAnOlderSourceFrameAfterClockCorrectionReorder
     queue.push(newer);
     queue.advance({}, TARGET_TIME);
 
-    const auto selected = queue.select({});
+    const auto selected = queue.select_nearest({});
     ASSERT_EQ(selected.selection(), media::prepared_frame_selection_e::new_frame);
     ASSERT_EQ(selected.frame(), newer);
     ASSERT_TRUE(newer->mark_submitted());
     ASSERT_TRUE(newer->mark_ready());
     ASSERT_TRUE(queue.commit(selected));
 
-    const auto later = queue.select(utils::to_flicks(0.1));
+    const auto later = queue.select_nearest(utils::to_flicks(0.1));
     EXPECT_EQ(later.selection(), media::prepared_frame_selection_e::repeat);
     EXPECT_EQ(later.frame(), newer);
     EXPECT_EQ(older->readiness(), media::source_frame_readiness_e::failed);
@@ -628,5 +628,61 @@ TEST(TimedSourceQueue, RepeatsDeterministicallyWhenTheSourceRateIsLower)
     }
 
     EXPECT_EQ(queue.metrics().repeated, 4);
+}
+} // namespace
+
+namespace {
+TEST(TimedSourceQueue, NearestSelectionPreservesPrerollAndWaitsForTheExactFutureFrame)
+{
+    media::timed_source_queue_s<int> queue({.playout_delay_frames = 2});
+    const auto                       first =
+        queue.create_frame(make_media_clock_sample(1, {}), {}, 1, media::source_frame_readiness_e::ready);
+    const auto next = queue.create_frame(
+        make_media_clock_sample(2, FRAME_DURATION), FRAME_DURATION, 2, media::source_frame_readiness_e::submitted);
+    queue.push(next);
+    queue.push(first);
+    queue.advance(FRAME_DURATION, FRAME_DURATION);
+    EXPECT_EQ(queue.select_nearest(FRAME_DURATION).selection(), media::prepared_frame_selection_e::missing);
+    const auto initial = queue.select_nearest(FRAME_DURATION * 2);
+    ASSERT_EQ(initial.frame(), first);
+    ASSERT_TRUE(queue.commit(initial));
+    EXPECT_EQ(queue.select_nearest(FRAME_DURATION * 5 / 2).selection(), media::prepared_frame_selection_e::repeat);
+    const auto nearest = queue.select_nearest(FRAME_DURATION * 11 / 4);
+    ASSERT_EQ(nearest.frame(), next);
+    EXPECT_FALSE(queue.commit(nearest));
+    ASSERT_TRUE(next->mark_ready());
+    EXPECT_TRUE(queue.commit(nearest));
+    EXPECT_EQ(queue.metrics().queued, 0);
+}
+
+TEST(TimedSourceQueue, DelayedCallbacksAndDuplicatesCannotRewindTheSourceEpoch)
+{
+    media::timed_source_queue_s<int> queue;
+    const auto                       newest =
+        queue.create_frame(make_media_clock_sample(5, {}, 2), {}, 5, media::source_frame_readiness_e::ready);
+    queue.push(newest);
+    queue.advance({}, {});
+    ASSERT_TRUE(queue.commit(queue.select_nearest({})));
+    const auto old_epoch = queue.create_frame(make_media_clock_sample(100, FRAME_DURATION, 1), FRAME_DURATION, 100);
+    const auto late      = queue.create_frame(make_media_clock_sample(4, {}, 2), FRAME_DURATION, 4);
+    queue.push(old_epoch);
+    queue.push(late);
+    queue.push(newest);
+    queue.advance(FRAME_DURATION, FRAME_DURATION);
+    EXPECT_EQ(queue.select_nearest(FRAME_DURATION).frame(), newest);
+    EXPECT_EQ(newest->readiness(), media::source_frame_readiness_e::ready);
+    EXPECT_EQ(old_epoch->readiness(), media::source_frame_readiness_e::failed);
+    EXPECT_EQ(late->readiness(), media::source_frame_readiness_e::failed);
+    EXPECT_EQ(queue.metrics().discontinuities, 0);
+    EXPECT_EQ(queue.metrics().queued, 0);
+    EXPECT_EQ(queue.metrics().selection_drops, 3);
+    const auto restarted = queue.create_frame(
+        make_media_clock_sample(1, {}, 3), FRAME_DURATION * 2, 1, media::source_frame_readiness_e::ready);
+    queue.push(restarted);
+    queue.advance(FRAME_DURATION * 2, FRAME_DURATION * 2);
+    const auto selected = queue.select_nearest(FRAME_DURATION * 2);
+    EXPECT_TRUE(selected.discontinuity());
+    ASSERT_EQ(selected.frame(), restarted);
+    EXPECT_TRUE(queue.commit(selected));
 }
 } // namespace

@@ -1,5 +1,7 @@
 #pragma once
-#include "gpu/framebuffer_fwd.hpp"
+
+#include "gpu/buffer.hpp"
+#include "gpu/completion.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
@@ -11,11 +13,6 @@
 #include <memory>
 #include <optional>
 #include <span>
-
-namespace miximus::gpu {
-class context_s;
-class textured_quad_s;
-} // namespace miximus::gpu
 
 namespace miximus::gpu::transfer {
 namespace detail {
@@ -29,6 +26,8 @@ struct texture_readback_config_s
     host_frame_layout_s host_layout{.memory_access = host_memory_access_e::read_only};
     size_t              max_slots{4};
     size_t              initial_slots{};
+    // Optional shared UNORM16 conversion target, allocated off the render thread.
+    std::optional<sampling_e> conversion_sampling{};
 };
 
 struct texture_readback_stream_metrics_s
@@ -52,7 +51,6 @@ class texture_readback_target_s
 {
     std::shared_ptr<detail::texture_readback_stream_state_s> stream_;
     std::shared_ptr<detail::texture_readback_slot_s>         slot_;
-    std::unique_ptr<framebuffer_s>                           framebuffer_;
     bool                                                     submitted_{};
 
     texture_readback_target_s(std::shared_ptr<detail::texture_readback_stream_state_s> stream,
@@ -68,11 +66,13 @@ class texture_readback_target_s
     texture_readback_target_s(texture_readback_target_s&&) noexcept;
     texture_readback_target_s& operator=(texture_readback_target_s&&) noexcept;
 
-    framebuffer_s* framebuffer() const noexcept;
-    void           draw(textured_quad_s* textured_quad, texture_s* texture) const;
-    void           set_program_target_time(utils::flicks program_target_time) noexcept;
-    void           submit();
-    explicit       operator bool() const noexcept { return slot_ != nullptr; }
+    texture_s*      conversion_texture() const;
+    texture_s*      texture() const noexcept;
+    const buffer_s& buffer() const;
+    channel_order_e output_order() const noexcept;
+    void            set_program_target_time(utils::flicks program_target_time) noexcept;
+    void            submit(completion_s ready);
+    explicit        operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_readback_frame_s
@@ -93,6 +93,9 @@ class texture_readback_frame_s
     texture_readback_frame_s(texture_readback_frame_s&&) noexcept;
     texture_readback_frame_s& operator=(texture_readback_frame_s&&) noexcept;
 
+    // Completed backend-owned memory; SDK wrappers retain this lease until
+    // their final external reference is released. Never copy into an SDK pool
+    // merely to hand off ownership, or recycle the address at schedule time.
     std::span<const std::byte> readable_host_bytes() const noexcept;
     utils::flicks              program_target_time() const noexcept;
     explicit                   operator bool() const noexcept { return slot_ != nullptr; }
@@ -134,7 +137,7 @@ class texture_readback_service_s
   public:
     static constexpr size_t DEFAULT_MEMORY_BUDGET = size_t{1} << 30;
 
-    explicit texture_readback_service_s(context_s* parent, size_t memory_budget = DEFAULT_MEMORY_BUDGET);
+    explicit texture_readback_service_s(device_s& device, size_t memory_budget = DEFAULT_MEMORY_BUDGET);
     ~texture_readback_service_s();
 
     texture_readback_service_s(const texture_readback_service_s&)            = delete;

@@ -26,6 +26,8 @@ namespace miximus::core {
 
 class node_manager_s
 {
+    uint64_t gpu_recording_drops_{};
+
   public:
     class adapter_i
     {

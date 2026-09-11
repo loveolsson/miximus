@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "gpu/texture.hpp"
 #include "nodes/composite/register.hpp"
 #include "nodes/frame_execution.hpp"
 #include "nodes/interface.hpp"
@@ -261,6 +262,44 @@ TEST(FrameExecution, MixSubmissionUsesOptionRouteOrBothConnectedControlRoutes)
     for (const auto id : {"framebuffer", "control", "a", "b"}) {
         EXPECT_TRUE(app.frame_info.submitted_nodes.contains(id));
     }
+}
+
+TEST(FrameExecution, TexturePortsPreserveReadOnlyAndWritableContracts)
+{
+    std::vector<std::string>                         events;
+    test_node_s                                      owner("owner", &events, false);
+    nodes::input_interface_s<const gpu::texture_s*>  sampled_input(owner, "sampled_input");
+    nodes::input_interface_s<gpu::texture_s*>        writable_input(owner, "writable_input");
+    nodes::output_interface_s<const gpu::texture_s*> sampled_output(owner, "sampled_output");
+    nodes::output_interface_s<gpu::texture_s*>       writable_output(owner, "writable_output");
+    gpu::texture_s                                   resource;
+    sampled_output.set_value(&resource);
+    writable_output.set_value(&resource);
+    EXPECT_EQ(sampled_output.type(), nodes::interface_type_e::texture);
+    EXPECT_EQ(writable_output.type(), nodes::interface_type_e::framebuffer);
+    EXPECT_TRUE(sampled_input.accepts(sampled_output.type()));
+    EXPECT_TRUE(sampled_input.accepts(writable_output.type()));
+    EXPECT_TRUE(writable_input.accepts(writable_output.type()));
+    EXPECT_FALSE(writable_input.accepts(sampled_output.type()));
+    EXPECT_EQ(sampled_input.cast_iface_to_value(&sampled_output, nullptr), &resource);
+    EXPECT_EQ(sampled_input.cast_iface_to_value(&writable_output, nullptr), &resource);
+    EXPECT_EQ(writable_input.cast_iface_to_value(&writable_output, nullptr), &resource);
+    EXPECT_EQ(writable_input.cast_iface_to_value(&sampled_output, nullptr), nullptr);
+}
+
+TEST(FrameExecution, AbandonedFrameReleasesOutputLeasesWithoutPublication)
+{
+    core::app_state_s  app(core::app_state_s::test_state_t{});
+    std::weak_ptr<int> retained;
+    bool               published = false;
+    {
+        const core::app_state_s::frame_scope_s frame(app);
+        auto                                   lease = std::make_shared<int>(1);
+        retained                                     = lease;
+        app.defer_output([lease, &published](const gpu::completion_s&) { published = true; });
+    }
+    EXPECT_TRUE(retained.expired());
+    EXPECT_FALSE(published);
 }
 
 } // namespace

@@ -1,19 +1,19 @@
 #include "texture_readback.hpp"
 
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/texture.hpp"
 #include "gpu/texture_frame.hpp"
-#include "gpu/textured_quad.hpp"
-#include "gpu/transfer/detail/texture_transfer_backend_factory.hpp"
+#include "gpu/transfer/detail/frame_staging.hpp"
 #include "gpu/transfer/detail/transfer_layout.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
 #include "logger/logger.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -25,14 +25,17 @@ enum class slot_state_e : uint8_t
     free,
     rendering,
     queued,
+    copied,
     ready,
     cpu_reading,
+    failed,
 };
 
 enum class task_type_e : uint8_t
 {
     allocate,
     readback,
+    retire_failed,
     destroy_stream,
 };
 
@@ -40,11 +43,15 @@ enum class task_type_e : uint8_t
 
 struct texture_readback_slot_s
 {
-    std::unique_ptr<texture_transfer_backend_i> transfer_backend;
-    texture_frame_ptr                           frame;
-    slot_state_e                                state{slot_state_e::free};
-    size_t                                      reserved_bytes{};
-    utils::flicks                               program_target_time{};
+    // Registrations must retire before their frame, including exception cleanup.
+    texture_frame_ptr                                    frame;
+    std::unique_ptr<frame_staging_s>                     staging;
+    slot_state_e                                         state{slot_state_e::free};
+    size_t                                               reserved_bytes{};
+    utils::flicks                                        program_target_time{};
+    completion_s                                         render_ready;
+    bool                                                 transfer_submitted{};
+    std::optional<std::chrono::steady_clock::time_point> transfer_start;
 };
 
 struct texture_readback_stream_state_s
@@ -52,15 +59,18 @@ struct texture_readback_stream_state_s
     std::weak_ptr<texture_readback_service_state_s>       service;
     texture_readback_config_s                             config;
     texture_transfer_plan_s                               transfer_plan;
+    std::shared_ptr<texture_s>                            conversion_texture;
+    size_t                                                conversion_reserved_bytes{};
     mutable std::mutex                                    mutex;
     mutable std::condition_variable                       initial_slots_condition;
     std::vector<std::shared_ptr<texture_readback_slot_s>> slots;
     std::deque<std::shared_ptr<texture_readback_slot_s>>  free_slots;
     std::deque<std::shared_ptr<texture_readback_slot_s>>  ready_slots;
+    std::deque<std::shared_ptr<texture_readback_slot_s>>  pending_slots;
     size_t                                                pending_allocations{};
     size_t                                                active_targets{};
     size_t                                                active_frames{};
-    uint64_t                                              render_target_acquire_misses{};
+    std::atomic_uint64_t                                  render_target_acquire_misses;
     uint64_t                                              transfers_completed{};
     uint64_t                                              transfer_failures{};
     std::chrono::microseconds                             transfer_duration_total{};
@@ -79,19 +89,14 @@ struct task_s
 
 struct texture_readback_service_state_s : transfer_worker_s<texture_readback_service_state_s, task_s>
 {
-    texture_readback_service_state_s(context_s* parent, size_t budget)
-        : transfer_worker_s(parent, budget)
+    texture_readback_service_state_s(device_s& device, size_t budget)
+        : transfer_worker_s(device, budget)
     {
     }
 
     void release_slot(texture_readback_slot_s& slot)
     {
-        if (slot.frame && slot.transfer_backend) {
-            (void)slot.frame->wait_for_render_release_on_worker();
-            (void)slot.transfer_backend->acquire_texture_for_gl();
-            (void)slot.transfer_backend->unregister_texture();
-        }
-        slot.transfer_backend.reset();
+        slot.staging.reset();
         slot.frame.reset();
         release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
@@ -111,31 +116,33 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
         size_t reserved{};
         bool   reserved_memory{};
         try {
-            reserved = estimate_slot_memory_usage(stream->transfer_plan, texture_s::sampling_e::linear);
+            reserved = estimate_slot_memory_usage(stream->transfer_plan, sampling_e::linear);
             if (!reserve_memory(reserved)) {
                 throw std::bad_alloc();
             }
             reserved_memory = true;
 
+            initialize_conversion_texture(*stream);
+
             auto slot            = std::make_shared<texture_readback_slot_s>();
             slot->reserved_bytes = reserved;
-            slot->frame          = std::make_shared<texture_frame_s>(stream->transfer_plan.host_layout.image_dimensions,
-                                                            stream->transfer_plan.texture_dimensions,
-                                                            stream->transfer_plan.storage_format,
-                                                            stream->transfer_plan.input_mapping,
-                                                            texture_s::sampling_e::linear);
-            auto transfer_backend = create_texture_transfer_backend(
-                stream->transfer_plan, texture_transfer_backend_i::direction_e::gpu_to_cpu, slot->frame->texture());
-            slot->transfer_backend = std::move(transfer_backend.transfer_backend);
+            slot->frame =
+                std::make_shared<texture_frame_s>(device_, stream->transfer_plan.host_layout, sampling_e::linear);
+            slot->frame->set_conversion_texture(stream->conversion_texture);
+            auto staging  = std::make_unique<frame_staging_s>(device_,
+                                                             stream->transfer_plan,
+                                                             frame_staging_s::direction_e::gpu_to_cpu,
+                                                             slot->frame.get(),
+                                                             &recording_context_);
+            slot->staging = std::move(staging);
 
-            const auto actual_reserved = slot_memory_usage(
-                stream->transfer_plan, transfer_backend.backend_allocation_bytes, texture_s::sampling_e::linear);
+            const auto actual_reserved =
+                slot_memory_usage(stream->transfer_plan, slot->staging->allocation_bytes(), sampling_e::linear);
             if (!resize_memory_reservation(reserved, actual_reserved)) {
                 throw std::bad_alloc();
             }
             reserved             = actual_reserved;
             slot->reserved_bytes = actual_reserved;
-            context_s::flush();
 
             bool active{};
             {
@@ -168,32 +175,82 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
         }
     }
 
-    static void readback_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream,
-                              const std::shared_ptr<texture_readback_slot_s>&         slot)
+    bool readback_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream,
+                       const std::shared_ptr<texture_readback_slot_s>&         slot)
     {
-        const auto start   = std::chrono::steady_clock::now();
-        bool       success = slot->frame->wait_for_render_release_on_worker();
-        success            = success && slot->transfer_backend->submit_transfer();
-        success            = success && slot->transfer_backend->wait_for_transfer_completion();
+        try {
+            if (!slot->transfer_start) {
+                slot->transfer_start = std::chrono::steady_clock::now();
+            }
+            if (!slot->transfer_submitted) {
+                if (!slot->staging->submit_transfer(slot->render_ready)) {
+                    return false;
+                }
 
-        const auto duration =
-            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
-        const std::scoped_lock lock(stream->mutex);
-        stream->transfer_duration_total += duration;
-        stream->transfer_duration_max = std::max(stream->transfer_duration_max, duration);
-        if (!success || !stream->active) {
-            if (!success) {
-                ++stream->transfer_failures;
+                slot->transfer_submitted = true;
             }
-            slot->state = slot_state_e::free;
-            if (stream->active) {
-                stream->free_slots.emplace_back(slot);
+
+            if (!slot->staging->transfer_ready()) {
+                return false;
             }
-            return;
+
+            const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - *slot->transfer_start);
+            const std::scoped_lock lock(stream->mutex);
+            stream->transfer_duration_total += duration;
+            stream->transfer_duration_max = std::max(stream->transfer_duration_max, duration);
+            ++stream->transfers_completed;
+            slot->state = slot_state_e::copied;
+        } catch (const std::exception& error) {
+            const std::scoped_lock lock(stream->mutex);
+            ++stream->transfer_failures;
+            slot->state = slot_state_e::failed;
+            enqueue({.type = task_type_e::retire_failed, .stream = stream, .slot = slot});
+            getlog("gpu")->error("Vulkan readback failed: {}", error.what());
         }
-        ++stream->transfers_completed;
-        slot->state = slot_state_e::ready;
-        stream->ready_slots.emplace_back(slot);
+
+        // Completion polling may observe newer work first. Publish in submit
+        // order so SDK output consumers never see a later frame before an
+        // earlier in-flight readback. Failed frames must not block the queue.
+        const std::scoped_lock lock(stream->mutex);
+        while (!stream->pending_slots.empty()) {
+            auto& front = stream->pending_slots.front();
+            if (front->state == slot_state_e::copied) {
+                front->state = stream->active ? slot_state_e::ready : slot_state_e::free;
+                if (stream->active) {
+                    stream->ready_slots.emplace_back(front);
+                }
+            } else if (front->state != slot_state_e::failed) {
+                break;
+            }
+
+            stream->pending_slots.pop_front();
+        }
+
+        return true;
+    }
+
+    bool retire_failed_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream,
+                            const std::shared_ptr<texture_readback_slot_s>&         slot)
+    {
+        {
+            const std::scoped_lock lock(stream->mutex);
+            if (std::ranges::find(stream->pending_slots, slot) != stream->pending_slots.end() ||
+                slot->frame.use_count() != 1 || !slot->frame->ready_for_reuse()) {
+                return false;
+            }
+        }
+
+        // Retire uncertain backend ownership before allowing a replacement slot.
+        // Failed frames never expose host bytes to an SDK consumer.
+        release_slot(*slot);
+        const std::scoped_lock lock(stream->mutex);
+        std::erase(stream->slots, slot);
+        if (stream->active) {
+            ++stream->pending_allocations;
+            enqueue({.type = task_type_e::allocate, .stream = stream, .slot = {}});
+        }
+        return true;
     }
 
     bool destroy_stream(const std::shared_ptr<texture_readback_stream_state_s>& stream)
@@ -203,7 +260,8 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
             const std::scoped_lock lock(stream->mutex);
             const bool             in_flight = std::ranges::any_of(stream->slots, [](const auto& slot) {
                 return slot->state == slot_state_e::rendering || slot->state == slot_state_e::queued ||
-                       slot->state == slot_state_e::cpu_reading;
+                       slot->state == slot_state_e::copied || slot->state == slot_state_e::cpu_reading ||
+                       slot->state == slot_state_e::failed;
             });
             if (stream->pending_allocations != 0 || stream->active_targets != 0 || stream->active_frames != 0 ||
                 in_flight) {
@@ -216,7 +274,14 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
         for (auto& slot : slots) {
             release_slot(*slot);
         }
+        release_conversion_texture(*stream);
         return true;
+    }
+
+    static bool is_resource_task(const task_s& task) noexcept
+    {
+        return task.type == task_type_e::allocate || task.type == task_type_e::retire_failed ||
+               task.type == task_type_e::destroy_stream;
     }
 
     bool process_task(task_s& task)
@@ -226,8 +291,9 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
                 allocate_slot(task.stream);
                 return true;
             case task_type_e::readback:
-                readback_slot(task.stream, task.slot);
-                return true;
+                return readback_slot(task.stream, task.slot);
+            case task_type_e::retire_failed:
+                return retire_failed_slot(task.stream, task.slot);
             case task_type_e::destroy_stream:
                 return destroy_stream(task.stream);
         }
@@ -275,7 +341,6 @@ texture_readback_target_s::texture_readback_target_s(std::shared_ptr<detail::tex
                                                      std::shared_ptr<detail::texture_readback_slot_s>         slot)
     : stream_(std::move(stream))
     , slot_(std::move(slot))
-    , framebuffer_(std::make_unique<framebuffer_s>(slot_->frame->texture()))
 {
 }
 
@@ -289,7 +354,6 @@ texture_readback_target_s::~texture_readback_target_s()
 texture_readback_target_s::texture_readback_target_s(texture_readback_target_s&& other) noexcept
     : stream_(std::move(other.stream_))
     , slot_(std::move(other.slot_))
-    , framebuffer_(std::move(other.framebuffer_))
     , submitted_(std::exchange(other.submitted_, true))
 {
 }
@@ -300,30 +364,23 @@ texture_readback_target_s& texture_readback_target_s::operator=(texture_readback
         if (!submitted_) {
             return_target(stream_, slot_);
         }
-        stream_      = std::move(other.stream_);
-        slot_        = std::move(other.slot_);
-        framebuffer_ = std::move(other.framebuffer_);
-        submitted_   = std::exchange(other.submitted_, true);
+
+        stream_    = std::move(other.stream_);
+        slot_      = std::move(other.slot_);
+        submitted_ = std::exchange(other.submitted_, true);
     }
     return *this;
 }
 
-framebuffer_s* texture_readback_target_s::framebuffer() const noexcept { return framebuffer_.get(); }
-
-void texture_readback_target_s::draw(textured_quad_s* textured_quad, texture_s* texture) const
+texture_s* texture_readback_target_s::conversion_texture() const
 {
-    if (!slot_ || textured_quad == nullptr) {
-        return;
-    }
-    textured_quad->set_blending_enabled(false);
-    if (stream_->transfer_plan.output_mapping == output_component_mapping_e::identity) {
-        textured_quad->draw(texture);
-        return;
-    }
-    textured_quad->shader()->set_output_component_mapping(stream_->transfer_plan.output_mapping);
-    textured_quad->draw(texture);
-    textured_quad->shader()->set_output_component_mapping(output_component_mapping_e::identity);
+    return slot_ ? slot_->frame->conversion_texture().get() : nullptr;
 }
+
+texture_s* texture_readback_target_s::texture() const noexcept { return slot_ ? slot_->frame->texture() : nullptr; }
+const buffer_s& texture_readback_target_s::buffer() const { return slot_->frame->buffer(); }
+
+channel_order_e texture_readback_target_s::output_order() const noexcept { return stream_->transfer_plan.output_order; }
 
 void texture_readback_target_s::set_program_target_time(utils::flicks program_target_time) noexcept
 {
@@ -332,8 +389,12 @@ void texture_readback_target_s::set_program_target_time(utils::flicks program_ta
     }
 }
 
-void texture_readback_target_s::submit()
+void texture_readback_target_s::submit(completion_s ready)
 {
+    if (!ready) {
+        throw std::invalid_argument("readback requires a submitted render dependency");
+    }
+
     if (!stream_ || !slot_ || submitted_) {
         return;
     }
@@ -347,10 +408,14 @@ void texture_readback_target_s::submit()
             return;
         }
         slot_->state = detail::slot_state_e::queued;
+        stream_->pending_slots.emplace_back(slot_);
         --stream_->active_targets;
         submitted_ = true;
     }
-    slot_->frame->publish_render_release_fence();
+
+    slot_->render_ready       = std::move(ready);
+    slot_->transfer_submitted = false;
+    slot_->transfer_start.reset();
     service->enqueue({.type = detail::task_type_e::readback, .stream = stream_, .slot = slot_});
 }
 
@@ -384,8 +449,8 @@ std::span<const std::byte> texture_readback_frame_s::readable_host_bytes() const
     if (!slot_) {
         return {};
     }
-    return {static_cast<const std::byte*>(slot_->transfer_backend->host_memory()),
-            slot_->transfer_backend->host_buffer_size_bytes()};
+
+    return {static_cast<const std::byte*>(slot_->staging->host_memory()), slot_->staging->host_buffer_size_bytes()};
 }
 
 utils::flicks texture_readback_frame_s::program_target_time() const noexcept
@@ -419,9 +484,12 @@ std::optional<texture_readback_target_s> texture_readback_stream_s::try_acquire_
         if (!state_->active) {
             return std::nullopt;
         }
-        if (!state_->free_slots.empty()) {
-            slot = std::move(state_->free_slots.front());
-            state_->free_slots.pop_front();
+
+        const auto available = std::ranges::find_if(
+            state_->free_slots, [](const auto& candidate) { return candidate->frame->ready_for_reuse(); });
+        if (available != state_->free_slots.end()) {
+            slot = std::move(*available);
+            state_->free_slots.erase(available);
             slot->state               = detail::slot_state_e::rendering;
             slot->program_target_time = utils::flicks{};
             ++state_->active_targets;
@@ -438,16 +506,7 @@ std::optional<texture_readback_target_s> texture_readback_stream_s::try_acquire_
         }
     }
     if (!slot) {
-        const std::scoped_lock lock(state_->mutex);
         ++state_->render_target_acquire_misses;
-        return std::nullopt;
-    }
-    if (!slot->transfer_backend->acquire_texture_for_gl()) {
-        {
-            const std::scoped_lock lock(state_->mutex);
-            ++state_->render_target_acquire_misses;
-        }
-        return_target(state_, slot);
         return std::nullopt;
     }
     return texture_readback_target_s(state_, std::move(slot));
@@ -498,7 +557,7 @@ texture_readback_stream_metrics_s texture_readback_stream_s::metrics() const
         .free_slots                   = state_->free_slots.size(),
         .ready_slots                  = state_->ready_slots.size(),
         .pending_allocations          = state_->pending_allocations,
-        .render_target_acquire_misses = state_->render_target_acquire_misses,
+        .render_target_acquire_misses = state_->render_target_acquire_misses.load(),
         .transfers_completed          = state_->transfers_completed,
         .transfer_failures            = state_->transfer_failures,
         .transfer_duration_total_us   = state_->transfer_duration_total.count(),
@@ -508,11 +567,13 @@ texture_readback_stream_metrics_s texture_readback_stream_s::metrics() const
     for (const auto& slot : state_->slots) {
         switch (slot->state) {
             case detail::slot_state_e::free:
+            case detail::slot_state_e::failed:
                 break;
             case detail::slot_state_e::rendering:
                 ++result.rendering_slots;
                 break;
             case detail::slot_state_e::queued:
+            case detail::slot_state_e::copied:
                 ++result.queued_slots;
                 break;
             case detail::slot_state_e::ready:
@@ -527,8 +588,8 @@ texture_readback_stream_metrics_s texture_readback_stream_s::metrics() const
 
 texture_readback_config_s texture_readback_stream_s::configuration() const noexcept { return state_->config; }
 
-texture_readback_service_s::texture_readback_service_s(context_s* parent, size_t memory_budget)
-    : state_(std::make_shared<detail::texture_readback_service_state_s>(parent, memory_budget))
+texture_readback_service_s::texture_readback_service_s(device_s& device, size_t memory_budget)
+    : state_(std::make_shared<detail::texture_readback_service_state_s>(device, memory_budget))
 {
     state_->start();
 }
@@ -542,7 +603,8 @@ texture_readback_service_s::~texture_readback_service_s()
 std::shared_ptr<texture_readback_stream_s> texture_readback_service_s::create_stream(texture_readback_config_s config)
 {
     if (config.max_slots == 0 || config.initial_slots > config.max_slots ||
-        config.host_layout.memory_access != host_memory_access_e::read_only) {
+        (config.host_layout.memory_access != host_memory_access_e::read_only &&
+         config.host_layout.memory_access != host_memory_access_e::read_write)) {
         throw std::invalid_argument("invalid texture readback stream configuration");
     }
     auto stream                 = std::make_shared<detail::texture_readback_stream_state_s>();

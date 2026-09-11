@@ -48,10 +48,10 @@ class interface_i
     std::string_view name() const noexcept { return name_; }
 
   protected:
-    [[nodiscard]] static const interface_i*
-    resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&);
-    [[nodiscard]] static resolved_cons_t
-    resolve_connections(core::app_state_s*, const node_map_t&, std::span<const connection_s>);
+    [[nodiscard]] const interface_i*
+    resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&) const;
+    [[nodiscard]] resolved_cons_t
+    resolve_connections(core::app_state_s*, const node_map_t&, std::span<const connection_s>) const;
 
     size_t           max_connection_count_{1};
     std::string_view name_;
@@ -167,10 +167,11 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_
 template <>
 gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback);
 template <>
+const gpu::texture_s*
+input_interface_s<const gpu::texture_s*>::cast_iface_to_value(const interface_i*           iface,
+                                                              const gpu::texture_s* const& fallback);
+template <>
 gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
                                                                         gpu::texture_s* const& fallback);
-template <>
-gpu::framebuffer_s* input_interface_s<gpu::framebuffer_s*>::cast_iface_to_value(const interface_i*         iface,
-                                                                                gpu::framebuffer_s* const& fallback);
 
 } // namespace miximus::nodes

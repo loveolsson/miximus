@@ -1,6 +1,15 @@
 # Vulkan migration proposal
 
-Status: proposed for review; no implementation authorized by this document. Research date: 2026-09-08.
+Status: initial Linux cutover implemented; platform hardware passes and further tuning remain. Research date:
+2026-09-08.
+See [implementation progress](vulkan-progress.md) for completed work, evidence, and remaining gates.
+
+The Vulkan rewrite replaces the GPU layer directly. General resource and recording APIs belong in `src/gpu/`,
+with implementation state in `src/gpu/detail/`; do not retain the OpenGL wrappers above a separate Vulkan backend.
+Use one native texture resource for sampled and render-target use, explicit buffers for packed media, and actual
+submission completion tokens. Third-party sources/headers belong in pinned submodules or installed SDKs, integrated
+through `src/wrapper/`, never copied into the application source tree. These constraints override any historical
+migration staging arrangement below.
 Repository baseline: `cda42ce`.
 
 Read this document for the architecture and implementation sequence, then
@@ -23,7 +32,8 @@ guarantee faster transfers or better tail latency.
 
 ## Execution order: Linux first
 
-Perform the rewrite and local benchmarks on this Linux machine, targeting native Wayland. Complete a useful Linux
+Perform the rewrite and local benchmarks on this Linux machine, preserving the existing screen-output geometry contract
+through X11/XWayland. Complete a useful Linux
 implementation and tune its real workloads first. Attempt reasonable macOS and Windows implementations from the
 shared design and documentation, using available build checks, without requiring remote hardware validation before
 Linux can progress. Then move to Mac for benchmarking and optimization, followed by Windows.
@@ -77,7 +87,7 @@ a generic abstraction for an API used by only one specialized integration.
 | `src/gpu/context.*`, `core/app_state.*`, `core/node_manager.cpp` | Device owner, recording context, submission/completion service; independent window/presentation service. |
 | `texture.*`, `framebuffer.*`, `texture_frame.*`, `fence.*` | Backend-owned images and retained frame leases; explicit resource use and completion tokens. |
 | `shader.*`, `draw_state.*`, `vertex_array.*`, `vertex_buffer.*`, `textured_quad.*` | Precompiled shaders, cached pipelines, typed draw parameters, reusable quad renderer. |
-| `resources/shaders/` | Vulkan GLSL compiled to SPIR-V; preserve color/packing math initially. |
+| `shaders/` | Vulkan GLSL sources compiled to SPIR-V; bundle only compiled binaries and preserve color/packing math initially. |
 | `gpu/transfer/texture_upload.*`, `texture_readback.*`, `detail/` | Bounded services retained conceptually; storage may be a buffer, image, or imported surface. |
 | `nodes/composite/`, `utils/`, `debug/`, `generators/`, `text/`, `teleprompter/` | Use the new recording/drawing and upload APIs, without native graphics details. |
 | `nodes/decklink/detail/`, `nodes/ndi/detail/` | Keep SDK control/timing logic; replace allocation and conversion integration. |
@@ -152,8 +162,8 @@ larger blocks use aligned uniform buffers. Verify C++/shader layouts, especially
 
 Compile shader resources to SPIR-V at build time with a pinned GLSL toolchain, explicit locations/bindings, and a single
 include mechanism for shared color functions. Validate the modules and warm the finite set of needed pipelines off the
-render thread. Key persistent pipeline caches by device/driver identity and shader/interface version; discard invalid
-caches. [Khronos glslang](https://github.com/KhronosGroup/glslang)
+render thread. Do not add app-managed persistent pipeline caching; the measured benefit did not justify the complexity
+(see [the implementation status](vulkan-progress.md)). [Khronos glslang](https://github.com/KhronosGroup/glslang)
 
 Use a generated quad or small immutable vertex buffer; a VAO class has no reason to survive. Default to color-only
 render targets: current framebuffers allocate depth/stencil storage even though these compositor operations do not
@@ -203,17 +213,19 @@ Native presentation specialization is acceptable if measurements show it is need
 ## Build and migration sequence
 
 Keep external dependency discovery under `src/wrapper/`. Add Vulkan loader/headers, a shader compiler, and Vulkan Memory
-Allocator for ordinary allocation/pooling. Keep external-memory allocations in explicit interop code where requirements
+Allocator for ordinary allocation/pooling. Third-party sources belong in pinned Git submodules under `submodules/`;
+wrappers contain only first-party integration code, never copied upstream headers. Keep external-memory allocations in
+explicit interop code where requirements
 differ. VMA already distinguishes sequential host writes, random host access, and readback usage.
 [VMA usage guidance](https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html)
 
 Remove DVP entirely. Make CUDA and NVIDIA codec discovery/linkage optional and private to their implementations. The current mandatory
 `find_package(CUDAToolkit REQUIRED)` and NVIDIA codec libraries prevent the intended vendor-independent build. Build
-Apple bridges as Objective-C++ in narrow wrapper/interop targets. Remove GLAD, Linux GL/GLX linkage, and forced-X11
-initialization at Linux cutover. Native Wayland is the target window system. Replace or isolate the current Xrandr
-monitor discovery/color metadata implementation; document unavailable compositor capabilities explicitly. Removing GLX
-alone does not port monitor discovery/color handling. X11/XWayland may provide an old-backend comparison, but are not
-acceptance targets for the new renderer.
+Apple bridges as Objective-C++ in narrow wrapper/interop targets. Remove GLAD and Linux GL/GLX linkage at Linux cutover.
+Keep X11/XWayland window creation for saved global
+positions and pixel sizes; this does not require OpenGL. Isolate Xrandr monitor identification behind a dependency
+wrapper and document unavailable compositor capabilities. Native Wayland presentation can be evaluated in probes,
+but must not replace application windowing while breaking the saved screen-output geometry contract.
 
 | Stage | Deliverable and gate |
 | --- | --- |
@@ -234,7 +246,7 @@ or mixed GL/Vulkan frame pipeline. Keep the old revision runnable for comparison
 
 1. Vulkan-first replacement with freedom to change GPU classes and node-facing operation APIs; ordinary nodes remain
    graphics-API independent.
-2. Linux/Wayland rewrite and benchmarks on this machine first, a reasonable blind Mac/Windows implementation, then
+2. Linux Vulkan rewrite and benchmarks on this machine first, a reasonable blind Mac/Windows implementation, then
    hardware optimization on Mac followed by Windows. Remove DVP entirely; no DVP replacement bridge.
 3. Workload-specific measured transfer selection; no permanent vendor-priority chain and no presumption that fewer
    named copies always means less latency.

@@ -291,6 +291,7 @@ export interface application_lifecycle_status_s {
   readonly demanding_node_count: number;
   readonly submitted_node_count: number;
   readonly executed_node_count: number;
+  readonly gpu_recording_drops: number;
 }
 
 export interface application_scheduler_status_s {
@@ -468,6 +469,7 @@ export interface screen_output_metrics_status_s {
   readonly program_frames_missing: number;
   readonly output_intervals_skipped: number;
   readonly swaps_completed: number;
+  readonly presentation_drops: number;
   readonly render_acquire_misses: number;
   readonly queued_frames: number;
   readonly render_slots: number;

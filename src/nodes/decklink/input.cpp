@@ -4,11 +4,10 @@
 #include "detail/device_reservation.hpp"
 #include "detail/input_capture.hpp"
 #include "gpu/color_transfer.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/types.hpp"
+#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -57,8 +56,7 @@ class node_impl : public node_i
 {
     std::unique_ptr<input_capture_s> capture_;
 
-    std::unique_ptr<gpu::framebuffer_s>                       framebuffer_;
-    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
+    std::shared_ptr<gpu::texture_s>                           framebuffer_;
     utils::observed_value_s<uint64_t>                         device_version_;
     utils::observed_value_s<std::pair<std::string, bool>>     capture_selection_;
     utils::observed_value_s<BMDColorspace>                    colorspace_;
@@ -68,7 +66,7 @@ class node_impl : public node_i
     gpu::mat3                                                 gamut_conversion_{1.0F};
     gpu::texture_frame_ptr                                    rendered_input_frame_;
 
-    output_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
+    output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void stop_capture()
     {
@@ -256,34 +254,24 @@ class node_impl : public node_i
     {
         if (capture_) {
             const auto& frame = app->frame_context();
-            (void)capture_->submit_frame(frame.program_pts, frame.frame_duration / 2);
+            (void)capture_->submit_frame(frame.program_pts);
         }
     }
 
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         rendered_input_frame_.reset();
+        // Let recorded graph work run while waiting for the exact PTS-selected upload.
+        app->submit_gpu();
         const auto frame = capture_ ? capture_->resolve_frame() : std::nullopt;
         if (!frame.has_value()) {
-            iface_tex_.set_value(framebuffer_ ? framebuffer_->texture() : nullptr);
+            iface_tex_.set_value(framebuffer_ ? framebuffer_.get() : nullptr);
             return;
         }
         rendered_input_frame_ = frame->frame;
-        rendered_input_frame_->wait_for_upload_on_gpu();
+        app->commands().wait_for(rendered_input_frame_->upload_completion());
 
-        if (!textured_quad_) {
-            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::yuv_to_rgb);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
-        }
-
-        const auto src_dim = frame->dimensions;
-
-        if (!framebuffer_ || framebuffer_->texture()->texture_dimensions() != src_dim) {
-            framebuffer_ = std::make_unique<gpu::framebuffer_s>(src_dim, gpu::texture_s::storage_format_e::rgb_unorm16);
-        }
-
-        auto shader = textured_quad_->shader();
-        shader->set_uniform("target_width", src_dim.x);
+        framebuffer_ = rendered_input_frame_->conversion_texture();
 
         if (colorspace_.observe(frame->colorspace)) {
             const auto transfer = get_color_transfer(colorspace_.value());
@@ -291,23 +279,22 @@ class node_impl : public node_i
             gamut_conversion_   = gpu::get_gamut_transfer_to_rec709(transfer);
         }
 
-        shader->set_uniform("transfer", yuv_conversion_.matrix);
-        shader->set_uniform("transfer_offset", yuv_conversion_.offset);
-        shader->set_uniform("gamut_transfer", gamut_conversion_);
+        framebuffer_->clear(app->commands());
+        const auto& source = *rendered_input_frame_;
+        app->commands().unpack_v210(
+            source.buffer(),
+            *framebuffer_,
+            gpu::color_parameters(yuv_conversion_, gamut_conversion_, gpu::color_conversion_direction_e::from_yuv),
+            source.layout().row_stride_bytes);
 
-        framebuffer_->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        textured_quad_->draw(rendered_input_frame_->texture());
-        gpu::framebuffer_s::end_render();
-
-        auto fb_tex = framebuffer_->texture();
-        fb_tex->generate_mip_maps();
+        auto fb_tex = framebuffer_.get();
+        app->commands().generate_mip_maps(*fb_tex);
         iface_tex_.set_value(fb_tex);
     }
 
     void complete(core::app_state_s* /*app*/) final
     {
         if (rendered_input_frame_) {
-            rendered_input_frame_->publish_render_release_fence();
             rendered_input_frame_.reset();
         }
         if (capture_) {

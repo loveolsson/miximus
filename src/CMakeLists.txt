@@ -6,6 +6,7 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
+add_subdirectory(wrapper)
 add_subdirectory(logger)
 add_subdirectory(types)
 add_subdirectory(utils)
@@ -13,7 +14,6 @@ add_subdirectory(web_server)
 add_subdirectory(media)
 add_subdirectory(nodes)
 add_subdirectory(gpu)
-add_subdirectory(wrapper)
 add_subdirectory(core)
 add_subdirectory(render)
 
@@ -21,26 +21,6 @@ add_subdirectory(render)
 add_executable(miximus
     main.cpp
 )
-
-if(SANITIZE_ADDRESS OR SANITIZE_UNDEFINED)
-    target_sources(miximus PRIVATE sanitizer_defaults.cpp)
-
-    target_compile_definitions(miximus PRIVATE
-        $<$<BOOL:${SANITIZE_ADDRESS}>:MIXIMUS_SANITIZE_ADDRESS>
-        $<$<BOOL:${SANITIZE_UNDEFINED}>:MIXIMUS_SANITIZE_UNDEFINED>
-    )
-
-    if(SANITIZE_ADDRESS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        find_program(MIXIMUS_SANITIZER_ADDR2LINE_EXECUTABLE NAMES addr2line)
-        if(NOT MIXIMUS_SANITIZER_ADDR2LINE_EXECUTABLE)
-            message(FATAL_ERROR "addr2line is required for Clang sanitizer builds")
-        endif()
-
-        target_compile_definitions(miximus PRIVATE
-            MIXIMUS_SANITIZER_ADDR2LINE="${MIXIMUS_SANITIZER_ADDR2LINE_EXECUTABLE}"
-        )
-    endif()
-endif()
 
 target_link_libraries(miximus
 PRIVATE

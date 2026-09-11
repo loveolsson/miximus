@@ -1,6 +1,8 @@
 #pragma once
-#include "gpu/framebuffer_fwd.hpp"
+
+#include "gpu/device.hpp"
 #include "gpu/geometry.hpp"
+#include "gpu/texture_fwd.hpp"
 #include "gpu/types.hpp"
 #include "utils/flicks.hpp"
 
@@ -9,10 +11,6 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-
-namespace miximus::gpu {
-class context_s;
-}
 
 namespace miximus::nodes::screen::detail {
 
@@ -25,6 +23,7 @@ struct output_presenter_metrics_s
     uint64_t program_frames_missing{};
     uint64_t output_intervals_skipped{};
     uint64_t swaps_completed{};
+    uint64_t presentation_drops{};
     uint64_t render_acquire_misses{};
     size_t   queued_frames{};
     size_t   slots{};
@@ -34,7 +33,7 @@ struct output_presenter_metrics_s
     int64_t  program_selection_offset_us{};
     int64_t  completion_interval_max_us{};
     double   measured_refresh_hz{};
-    bool     uses_nominal_cadence{};
+    bool     uses_present_wait{};
 };
 
 class output_presenter_s
@@ -44,10 +43,10 @@ class output_presenter_s
   public:
     class render_frame_s
     {
-        impl_s* impl_{};
-        size_t  slot_index_{};
+        std::shared_ptr<impl_s> impl_;
+        size_t                  slot_index_{};
 
-        render_frame_s(impl_s* impl, size_t slot_index) noexcept;
+        render_frame_s(std::shared_ptr<impl_s> impl, size_t slot_index) noexcept;
         friend class output_presenter_s;
 
       public:
@@ -59,15 +58,15 @@ class output_presenter_s
         render_frame_s(render_frame_s&& other) noexcept;
         render_frame_s& operator=(render_frame_s&& other) noexcept;
 
-        gpu::framebuffer_s* target() const noexcept;
-        void                submit(utils::flicks program_target_time);
+        gpu::texture_s* target() const noexcept;
+        void            submit(utils::flicks program_target_time, gpu::completion_s ready);
     };
 
   private:
-    std::unique_ptr<impl_s> impl_;
+    std::shared_ptr<impl_s> impl_;
 
   public:
-    output_presenter_s(gpu::context_s*     root_context,
+    output_presenter_s(gpu::device_s&      device,
                        size_t              buffer_frames,
                        utils::flicks       nominal_frame_duration,
                        bool                fullscreen,

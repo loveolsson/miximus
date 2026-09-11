@@ -44,4 +44,29 @@ TEST(NodeOptions, ReadsValidatedEnumWithoutFallback)
     EXPECT_EQ(state.get_enum_option_unchecked<test_mode_e>("mode"), test_mode_e::active);
 }
 
+TEST(NodeOptions, NdiAlphaModesAreValidatedOnBothNodes)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::register_all_nodes(&definitions);
+    for (const auto type : {"ndi_input", "ndi_output"}) {
+        SCOPED_TRACE(type);
+        const auto node = definitions.at(type).constructor();
+        EXPECT_EQ(node->get_default_options().at("alpha_mode"), "straight");
+        for (const auto mode : {"ignore", "straight", "premultiplied"}) {
+            auto       state  = node->get_default_options();
+            const auto result = node->set_options(state,
+                                                  {
+                                                      {"alpha_mode", mode}
+            });
+            EXPECT_EQ(result.error, error_e::no_error);
+            EXPECT_EQ(state.at("alpha_mode"), mode);
+        }
+
+        for (const nlohmann::json& invalid : {nlohmann::json("unknown"), nlohmann::json(true), nlohmann::json(1)}) {
+            auto value = invalid;
+            EXPECT_EQ(node->normalize_option("alpha_mode", &value), nodes::option_result_e::invalid);
+        }
+    }
+}
+
 } // namespace

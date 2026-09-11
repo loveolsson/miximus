@@ -64,6 +64,24 @@ class timed_output_queue_s
         return lhs.program_target_time < rhs.program_target_time;
     }
 
+    output_frame_selection_s<T> select_frame(typename std::deque<frame_t>::iterator selected)
+    {
+        if (selected != frames_.end()) {
+            metrics_.selection_drops += static_cast<uint64_t>(std::distance(frames_.begin(), selected));
+            current_ = std::move(*selected);
+            frames_.erase(frames_.begin(), std::next(selected));
+            return {.selection = output_frame_selection_e::new_frame, .frame = &*current_};
+        }
+
+        if (current_.has_value()) {
+            ++metrics_.repeated;
+            return {.selection = output_frame_selection_e::repeat, .frame = &*current_};
+        }
+
+        ++metrics_.missing;
+        return {};
+    }
+
   public:
     explicit timed_output_queue_s(timed_output_queue_config_s config = {})
         : config_(config)
@@ -103,20 +121,24 @@ class timed_output_queue_s
             selected = it;
         }
 
-        if (selected != frames_.end()) {
-            metrics_.selection_drops += static_cast<uint64_t>(std::distance(frames_.begin(), selected));
-            current_ = std::move(*selected);
-            frames_.erase(frames_.begin(), std::next(selected));
-            return {.selection = output_frame_selection_e::new_frame, .frame = &*current_};
-        }
+        return select_frame(selected);
+    }
 
-        if (current_.has_value()) {
-            ++metrics_.repeated;
-            return {.selection = output_frame_selection_e::repeat, .frame = &*current_};
+    // Screen playout chooses the closest PTS, including the retained image.
+    // Ties keep the older image; queued future images remain available.
+    [[nodiscard]] output_frame_selection_s<T> select_nearest(utils::flicks program_target_time)
+    {
+        auto selected = frames_.end();
+        auto distance =
+            current_ ? std::chrono::abs(current_->program_target_time - program_target_time) : utils::flicks::max();
+        for (auto it = frames_.begin(); it != frames_.end(); ++it) {
+            const auto candidate_distance = std::chrono::abs(it->program_target_time - program_target_time);
+            if (candidate_distance < distance) {
+                selected = it;
+                distance = candidate_distance;
+            }
         }
-
-        ++metrics_.missing;
-        return {};
+        return select_frame(selected);
     }
 
     const timed_output_queue_metrics_s& metrics() const noexcept { return metrics_; }

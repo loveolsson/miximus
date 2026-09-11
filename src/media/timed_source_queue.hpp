@@ -179,21 +179,29 @@ class timed_source_queue_s
     using ticket_t    = prepared_frame_ticket_s<T>;
 
   private:
+    enum class selection_policy_e
+    {
+        eligible,
+        nearest
+    };
+
     struct aligned_frame_s
     {
         frame_ptr_t   frame;
         utils::flicks program_pts;
     };
 
-    timed_source_queue_config_s  config_;
-    media_to_program_clock_s     clock_;
-    mutable std::mutex           pending_mutex_;
-    std::deque<frame_ptr_t>      pending_;
-    std::deque<aligned_frame_s>  frames_;
-    frame_ptr_t                  current_;
-    std::optional<utils::flicks> arrival_offset_origin_;
-    bool                         discontinuity_pending_{};
-    std::atomic_size_t           queued_frames_{};
+    timed_source_queue_config_s                  config_;
+    media_to_program_clock_s                     clock_;
+    mutable std::mutex                           pending_mutex_;
+    std::deque<frame_ptr_t>                      pending_;
+    std::deque<aligned_frame_s>                  frames_;
+    frame_ptr_t                                  current_;
+    utils::flicks                                current_program_pts_;
+    std::optional<std::pair<uint64_t, uint64_t>> latest_source_identity_;
+    std::optional<utils::flicks>                 arrival_offset_origin_;
+    bool                                         discontinuity_pending_{};
+    std::atomic_size_t                           queued_frames_{};
 
     std::atomic_uint64_t         pushed_{};
     std::atomic_uint64_t         overflow_drops_{};
@@ -261,6 +269,7 @@ class timed_source_queue_s
         if (reset_clock) {
             clock_.reset();
             arrival_offset_origin_.reset();
+            latest_source_identity_.reset();
         }
         for (const auto& frame : frames_) {
             cancel_frame(frame.frame);
@@ -368,7 +377,24 @@ class timed_source_queue_s
             arrival_offset_origin_    = get_arrival_phase(arrival_offset, (*newest)->media_clock_sample.frame_duration);
         }
 
+        std::ranges::stable_sort(pending, {}, [](const auto& frame) {
+            return std::pair{frame->media_clock_sample.stream_epoch, frame->media_clock_sample.frame_sequence};
+        });
         for (auto& frame : pending) {
+            const auto identity =
+                std::pair{frame->media_clock_sample.stream_epoch, frame->media_clock_sample.frame_sequence};
+            if (latest_source_identity_ && identity <= *latest_source_identity_) {
+                // Delayed callbacks and duplicate frames must not rewind the
+                // clock or resurrect an epoch that was already replaced.
+                if (frame != current_ &&
+                    !std::ranges::any_of(frames_, [&frame](const auto& queued) { return queued.frame == frame; })) {
+                    cancel_frame(frame);
+                }
+                release_queued_frames(1);
+                selection_drops_.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            latest_source_identity_        = identity;
             const auto arrival_offset      = frame->program_arrival_time - program_target_time;
             auto       program_observation = program_pts + arrival_offset - *arrival_offset_origin_;
             auto       observation         = clock_.observe(frame->media_clock_sample, program_observation);
@@ -403,13 +429,39 @@ class timed_source_queue_s
 
     ticket_t select(utils::flicks program_pts, utils::flicks early_tolerance = {})
     {
+        return select_impl(program_pts, early_tolerance, selection_policy_e::eligible);
+    }
+
+    ticket_t select_nearest(utils::flicks program_pts)
+    {
+        return select_impl(program_pts, {}, selection_policy_e::nearest);
+    }
+
+  private:
+    ticket_t select_impl(utils::flicks program_pts, utils::flicks early_tolerance, selection_policy_e policy)
+    {
         const auto limit    = program_pts + config_.early_tolerance + early_tolerance;
         auto       selected = frames_.end();
-        for (auto it = frames_.begin(); it != frames_.end() && it->program_pts <= limit; ++it) {
-            if (selected == frames_.end() ||
-                it->frame->media_clock_sample.stream_epoch > selected->frame->media_clock_sample.stream_epoch ||
-                (it->frame->media_clock_sample.stream_epoch == selected->frame->media_clock_sample.stream_epoch &&
-                 it->frame->media_clock_sample.frame_sequence > selected->frame->media_clock_sample.frame_sequence)) {
+        auto       distance = current_ ? std::chrono::abs(current_program_pts_ - program_pts) : utils::flicks::max();
+        for (auto it = frames_.begin(); it != frames_.end(); ++it) {
+            if (policy == selection_policy_e::nearest) {
+                // The first frame must reach its configured playout delay.
+                // Once primed, compare both sides of the target and the retained frame.
+                if (!current_ && it->program_pts > limit) {
+                    continue;
+                }
+                const auto candidate_distance = std::chrono::abs(it->program_pts - program_pts);
+                if (candidate_distance < distance) {
+                    distance = candidate_distance;
+                    selected = it;
+                }
+            } else if (it->program_pts <= limit &&
+                       (selected == frames_.end() ||
+                        it->frame->media_clock_sample.stream_epoch > selected->frame->media_clock_sample.stream_epoch ||
+                        (it->frame->media_clock_sample.stream_epoch ==
+                             selected->frame->media_clock_sample.stream_epoch &&
+                         it->frame->media_clock_sample.frame_sequence >
+                             selected->frame->media_clock_sample.frame_sequence))) {
                 selected = it;
             }
         }
@@ -458,6 +510,7 @@ class timed_source_queue_s
         return ticket_t({}, prepared_frame_selection_e::missing, discontinuity);
     }
 
+  public:
     bool commit(const ticket_t& ticket)
     {
         if (ticket.selection_ == prepared_frame_selection_e::repeat) {
@@ -473,6 +526,7 @@ class timed_source_queue_s
         if (match == frames_.end()) {
             return false;
         }
+        current_program_pts_ = match->program_pts;
         frames_.erase(match);
         release_queued_frames(1);
         current_ = ticket.frame_;

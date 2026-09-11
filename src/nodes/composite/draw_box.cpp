@@ -1,11 +1,10 @@
 #include "core/app_state.hpp"
 #include "glm/common.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/types.hpp"
+#include "gpu/window.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -19,13 +18,11 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::rect_s>          iface_rect_{*this, "rect"};
-    input_interface_s<gpu::texture_s*>      iface_tex_{*this, "tex"};
-    input_interface_s<double>               iface_opacity_{*this, "opacity"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
-
-    std::unique_ptr<gpu::textured_quad_s> textured_quad_;
+    input_interface_s<gpu::rect_s>           iface_rect_{*this, "rect"};
+    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<double>                iface_opacity_{*this, "opacity"};
+    input_interface_s<gpu::texture_s*>       iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::texture_s*>      iface_fb_out_{*this, "fb_out"};
 
   public:
     explicit node_impl() = default;
@@ -53,23 +50,14 @@ class node_impl : public node_i
                                                        .size = {1.0, 1.0},
         });
 
-        auto opacity_opt        = state.get_option<double>("opacity", 1.0);
-        auto opacity            = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
-        opacity                 = glm::clamp(opacity, 0.0, 1.0);
-        const auto fill_mode    = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
-        const auto texture_draw = gpu::calculate_texture_draw(
-            draw_rect, texture->display_dimensions(), fb->texture()->display_dimensions(), fill_mode);
+        auto opacity_opt     = state.get_option<double>("opacity", 1.0);
+        auto opacity         = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
+        opacity              = glm::clamp(opacity, 0.0, 1.0);
+        const auto fill_mode = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
+        const auto texture_draw =
+            gpu::calculate_texture_draw(draw_rect, texture->dimensions(), fb->dimensions(), fill_mode);
 
-        fb->begin_render();
-
-        if (!textured_quad_) {
-            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
-        }
-
-        textured_quad_->draw(texture, texture_draw, opacity);
-
-        gpu::framebuffer_s::end_render();
+        gpu::draw_texture(app->commands(), texture, fb, texture_draw, opacity);
     }
 
     nlohmann::json get_default_options() const final

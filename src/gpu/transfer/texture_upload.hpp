@@ -11,10 +11,6 @@
 #include <optional>
 #include <span>
 
-namespace miximus::gpu {
-class context_s;
-}
-
 namespace miximus::gpu::transfer {
 namespace detail {
 struct texture_upload_service_state_s;
@@ -28,6 +24,8 @@ struct texture_upload_config_s
     size_t              max_slots{3};
     size_t              initial_slots{};
     bool                generate_mip_maps{true};
+    // Optional shared UNORM16 conversion target, allocated off the render thread.
+    std::optional<sampling_e> conversion_sampling{};
 };
 
 struct texture_upload_id_s
@@ -43,6 +41,14 @@ enum class texture_upload_wait_result_e : uint8_t
     ready,
     failed,
     stopped,
+};
+
+// Stream selection owns ordinary uploads; a timed FIFO instead retains a lease
+// for each frame so dropping a queued frame also retires its exact upload.
+enum class upload_ownership_e
+{
+    stream,
+    queued_frame,
 };
 
 class texture_upload_lease_s
@@ -65,9 +71,12 @@ class texture_upload_lease_s
     texture_upload_lease_s(texture_upload_lease_s&&) noexcept;
     texture_upload_lease_s& operator=(texture_upload_lease_s&&) noexcept;
 
+    // Backend-owned stable memory, suitable for direct SDK DMA. A lease owns
+    // one write cycle; submit only after the producer has finished its access.
+    // Reusing an SDK buffer object must acquire a new lease, not reuse this address.
     std::span<std::byte> writable_host_bytes() const noexcept;
     texture_upload_id_s  upload_id() const noexcept;
-    [[nodiscard]] bool   submit();
+    [[nodiscard]] bool   submit(upload_ownership_e ownership = upload_ownership_e::stream);
     explicit             operator bool() const noexcept { return slot_ != nullptr; }
 };
 
@@ -75,6 +84,13 @@ class texture_upload_stream_s
 {
     std::shared_ptr<detail::texture_upload_stream_state_s> state_;
 
+    enum class availability_e
+    {
+        submitted,
+        completed
+    };
+    texture_frame_ptr            select_upload(texture_upload_id_s upload_id, availability_e availability);
+    texture_upload_wait_result_e wait_for_upload(texture_upload_id_s upload_id, availability_e availability) const;
     explicit texture_upload_stream_s(std::shared_ptr<detail::texture_upload_stream_state_s> state);
     friend class texture_upload_service_s;
 
@@ -89,16 +105,20 @@ class texture_upload_stream_s
     [[nodiscard]] std::optional<texture_upload_lease_s> try_acquire_upload_buffer();
     [[nodiscard]] std::optional<texture_upload_lease_s> acquire_upload_buffer_for(std::chrono::milliseconds timeout);
 
-    // Selects a frame but does not synchronize it. A consuming node calls
-    // wait_for_upload_on_gpu() before use and publish_render_release_fence() in complete().
-    // Polling consumers can retain their current frame while a newer upload is
-    // incomplete.
+    // Selects only a completed upload. Retain the returned frame through CPU
+    // use; submitted GPU uses independently prevent slot reuse until complete.
     [[nodiscard]] texture_frame_ptr select_latest_completed_upload();
     [[nodiscard]] texture_frame_ptr select_latest_completed_upload_through(texture_upload_id_s upload_id);
     // Makes one exact completed upload current and discards other completed
     // uploads. This is intended for PTS-selected sources whose host buffers may
     // be returned in a different order from their transfer-slot acquisition.
     [[nodiscard]] texture_frame_ptr select_completed_upload(texture_upload_id_s upload_id);
+
+    // FIFO consumers can hand the exact upload to the GPU before CPU completion
+    // has been reported. Record wait_for(frame->upload_completion()) before use.
+    // The slot remains unavailable to SDK producers until DMA and all uses finish.
+    [[nodiscard]] texture_frame_ptr select_submitted_upload(texture_upload_id_s upload_id);
+    texture_upload_wait_result_e    wait_for_upload_submission(texture_upload_id_s upload_id) const;
     // Returns the exact current frame for a timed-source repeat.
     [[nodiscard]] texture_frame_ptr retained_frame_for(texture_upload_id_s upload_id) const;
 
@@ -124,7 +144,7 @@ class texture_upload_service_s
   public:
     static constexpr size_t DEFAULT_MEMORY_BUDGET = size_t{1} << 30;
 
-    explicit texture_upload_service_s(context_s* parent, size_t memory_budget = DEFAULT_MEMORY_BUDGET);
+    explicit texture_upload_service_s(device_s& device, size_t memory_budget = DEFAULT_MEMORY_BUDGET);
     ~texture_upload_service_s();
 
     texture_upload_service_s(const texture_upload_service_s&)            = delete;

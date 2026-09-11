@@ -60,14 +60,15 @@ struct application_frame_status_s
 
 struct application_lifecycle_status_s
 {
-    int64_t prepare_duration_us{};
-    int64_t submit_duration_us{};
-    int64_t execute_duration_us{};
-    int64_t gpu_finish_duration_us{};
-    int64_t complete_duration_us{};
-    size_t  demanding_node_count{};
-    size_t  submitted_node_count{};
-    size_t  executed_node_count{};
+    int64_t  prepare_duration_us{};
+    int64_t  submit_duration_us{};
+    int64_t  execute_duration_us{};
+    int64_t  gpu_finish_duration_us{};
+    int64_t  complete_duration_us{};
+    size_t   demanding_node_count{};
+    size_t   submitted_node_count{};
+    size_t   executed_node_count{};
+    uint64_t gpu_recording_drops{};
 };
 
 struct application_scheduler_status_s
@@ -257,6 +258,7 @@ struct screen_output_metrics_status_s
     uint64_t    program_frames_missing{};
     uint64_t    output_intervals_skipped{};
     uint64_t    swaps_completed{};
+    uint64_t    presentation_drops{};
     uint64_t    render_acquire_misses{};
     size_t      queued_frames{};
     size_t      render_slots{};
@@ -285,7 +287,8 @@ BOOST_DESCRIBE_STRUCT(application_lifecycle_status_s,
                        complete_duration_us,
                        demanding_node_count,
                        submitted_node_count,
-                       executed_node_count))
+                       executed_node_count,
+                       gpu_recording_drops))
 BOOST_DESCRIBE_STRUCT(application_scheduler_status_s,
                       (),
                       (clock_source,
@@ -443,6 +446,7 @@ BOOST_DESCRIBE_STRUCT(screen_output_metrics_status_s,
                        program_frames_missing,
                        output_intervals_skipped,
                        swaps_completed,
+                       presentation_drops,
                        render_acquire_misses,
                        queued_frames,
                        render_slots,

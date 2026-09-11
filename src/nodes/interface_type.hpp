@@ -1,5 +1,5 @@
 #pragma once
-#include "gpu/framebuffer_fwd.hpp"
+
 #include "gpu/texture_fwd.hpp"
 #include "gpu/types.hpp"
 
@@ -36,14 +36,16 @@ template <>
     return interface_type_e::rect;
 }
 
+// Sampled ports borrow read-only handles; framebuffer ports permit ordered writes.
+// These remain distinct protocol types even though both use native Vulkan images.
 template <>
-[[nodiscard]] constexpr interface_type_e get_interface_type<gpu::texture_s*>() noexcept
+[[nodiscard]] constexpr interface_type_e get_interface_type<const gpu::texture_s*>() noexcept
 {
     return interface_type_e::texture;
 }
 
 template <>
-[[nodiscard]] constexpr interface_type_e get_interface_type<gpu::framebuffer_s*>() noexcept
+[[nodiscard]] constexpr interface_type_e get_interface_type<gpu::texture_s*>() noexcept
 {
     return interface_type_e::framebuffer;
 }

@@ -34,17 +34,14 @@ class node_i
 
     /**
      * Called once on the config thread immediately after the node is constructed,
-     * while the config lock is held. No GL context is available. Use only for
+     * while the config lock is held. Do not record GPU work here. Use only for
      * lightweight one-time setup that does not require the render thread.
      */
     virtual void init(std::string_view id);
 
     /**
-     * Called every tick on the main thread. The main GL context is current.
-     * Nodes may scope additional current contexts (e.g. for worker threads) with
-     * gpu::context_scope_s. Because the context stack makes re-entering the
-     * already-current context essentially free, nodes can create a scope
-     * unconditionally when they need the context.
+     * Called every tick on the main/render thread. Update lifecycle state,
+     * inspect options, and schedule explicit background work without blocking.
      */
     virtual void prepare(core::app_state_s*, const node_state_s&, prepare_result_s*) {};
 
@@ -56,26 +53,23 @@ class node_i
     virtual void submit(core::app_state_s*, const node_map_t&, const node_state_s&);
 
     /**
-     * Called on the main thread with the main GL context current. Invoked lazily
+     * Called on the main thread with explicit GPU recording ownership. Invoked lazily
      * via dependency resolution — at most once per tick. May be called recursively
      * from within another node's execute() when resolving interface connections.
-     * Nodes may push/pop additional contexts onto the stack.
+     * Resolve upstream targets before recording downstream operations.
      */
     virtual void execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
 
     /**
-     * Called on the main thread with the main GL context current after all
-     * execute() calls. GPU commands may still be running. Nodes sharing frames
-     * with another context attach their render-release fences here. Do not
-     * block the main thread; use workers for slow I/O and readback completion.
+     * Called on the main thread after execution. GPU commands may still run.
+     * Release CPU frame references; submitted GPU uses retain native storage.
+     * Do not block; use workers for slow I/O and readback completion.
      */
     virtual void complete(core::app_state_s*) {}
 
     /**
-     * Destructor — always called on the main thread with the main GL context
-     * current (the context scope begins before the update block that may trigger
-     * destruction, and clear_nodes() also establishes a context scope first).
-     * GL cleanup is safe from the destructor.
+     * Render-snapshot nodes are destroyed on the main thread. GPU allocations
+     * retire after their actual submitted uses and external leases complete.
      */
 
     virtual nlohmann::json               get_default_options() const;

@@ -55,8 +55,10 @@ TEST(typescript_generator, every_publishable_status_contract_is_emitted)
 
 class typescript_output : public ::testing::Test
 {
-  protected:
     std::filesystem::path directory_;
+
+  protected:
+    const std::filesystem::path& directory() const { return directory_; }
 
     void SetUp() override
     {
@@ -80,7 +82,7 @@ class typescript_output : public ::testing::Test
 
 TEST_F(typescript_output, replaces_changed_output_and_preserves_unchanged_timestamp)
 {
-    const auto path = directory_ / "generated" / "contracts.ts";
+    const auto path = directory() / "generated" / "contracts.ts";
     EXPECT_TRUE(write_if_changed(path, "original"));
     EXPECT_TRUE(write_if_changed(path, "replacement"));
     EXPECT_EQ(read(path), "replacement");
@@ -95,7 +97,7 @@ TEST_F(typescript_output, replaces_changed_output_and_preserves_unchanged_timest
 
 TEST_F(typescript_output, staging_failure_preserves_existing_output)
 {
-    const auto path = directory_ / "contracts.ts";
+    const auto path = directory() / "contracts.ts";
     ASSERT_TRUE(write_if_changed(path, "original"));
     auto staging = path;
     staging += ".tmp." + std::to_string(utils::process_id());

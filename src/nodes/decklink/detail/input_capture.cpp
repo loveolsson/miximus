@@ -31,7 +31,7 @@ auto log() { return getlog("decklink"); }
 struct captured_frame_data_s
 {
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
-    std::optional<gpu::transfer::texture_upload_lease_s>    upload;
+    gpu::transfer::texture_upload_lease_s                   upload;
     decklink_ptr<IDeckLinkVideoInputFrame>                  input_frame;
     gpu::transfer::texture_upload_id_s                      upload_id{};
     gpu::texture_frame_ptr                                  frame;
@@ -98,7 +98,6 @@ class callback_s
     std::atomic_bool                      warned_missing_custom_buffer_;
     std::atomic_uint64_t                  source_epoch_;
     std::atomic_uint64_t                  next_sequence_;
-    bool                                  warned_submit_failure_{};
     bool                                  warned_wait_failure_{};
     bool                                  warned_consume_failure_{};
     bool                                  warned_commit_failure_{};
@@ -406,9 +405,10 @@ class callback_s
                 // DeckLink continues cycling its independent buffer objects.
                 // Additional slots cover the published texture and asynchronous
                 // upload/reclaim without making StartAccess wait on rendering.
-                .max_slots         = input_video_buffer_allocator_s::UPLOAD_SLOT_COUNT,
-                .initial_slots     = input_video_buffer_allocator_s::INITIAL_UPLOAD_SLOT_COUNT,
-                .generate_mip_maps = false,
+                .max_slots           = input_video_buffer_allocator_s::UPLOAD_SLOT_COUNT,
+                .initial_slots       = input_video_buffer_allocator_s::INITIAL_UPLOAD_SLOT_COUNT,
+                .generate_mip_maps   = false,
+                .conversion_sampling = gpu::sampling_e::mipmapped_linear,
             });
 
             auto allocator = make_decklink_ptr<input_video_buffer_allocator_s>(bufferSize, stream);
@@ -583,17 +583,26 @@ class callback_s
             .media_pts      = utils::flicks{stream_time},
             .frame_duration = utils::flicks{frame_duration},
         };
-        frame_queue_.push(frame_queue_.create_frame(media_clock_sample,
-                                                    frame_observation,
-                                                    captured_frame_data_s{
-                                                        .stream      = std::move(stream),
-                                                        .upload      = std::move(upload),
-                                                        .input_frame = decklink_ptr(videoFrame),
-                                                        .upload_id   = upload_id,
-                                                        .frame       = nullptr,
-                                                        .src_dim     = src_dim,
-                                                        .colorspace  = get_frame_colorspace(videoFrame),
-                                                    }));
+        auto captured = frame_queue_.create_frame(media_clock_sample,
+                                                  frame_observation,
+                                                  captured_frame_data_s{
+                                                      .stream      = std::move(stream),
+                                                      .upload      = std::move(*upload),
+                                                      .input_frame = decklink_ptr(videoFrame),
+                                                      .upload_id   = upload_id,
+                                                      .frame       = nullptr,
+                                                      .src_dim     = src_dim,
+                                                      .colorspace  = get_frame_colorspace(videoFrame),
+                                                  });
+        // Begin the transfer before entering the timed FIFO. Consumption still waits
+        // for this exact upload, after the configured source buffering interval.
+        if (!captured->mark_submitted() ||
+            !captured->payload().upload.submit(gpu::transfer::upload_ownership_e::queued_frame)) {
+            (void)captured->mark_failed();
+            ++upload_slot_drops_;
+            return S_OK;
+        }
+        frame_queue_.push(std::move(captured));
         return S_OK;
     }
 
@@ -631,39 +640,7 @@ class callback_s
         frame_queue_.advance(program_pts, program_target_time, discontinuity);
     }
 
-    frame_ticket_t select_frame(utils::flicks program_pts, utils::flicks early_tolerance)
-    {
-        return frame_queue_.select(program_pts, early_tolerance);
-    }
-
-    bool submit_frame(frame_ticket_t& ticket)
-    {
-        if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
-            return true;
-        }
-        if (ticket.selection() != media::prepared_frame_selection_e::new_frame || ticket.frame() == nullptr) {
-            return false;
-        }
-
-        auto& frame = *ticket.frame();
-        auto& info  = frame.payload();
-        if (frame.readiness() == media::source_frame_readiness_e::submitted) {
-            return true;
-        }
-        if (!frame.mark_submitted() || !info.upload.has_value() || !info.upload->submit()) {
-            if (!warned_submit_failure_) {
-                log()->warn("DeckLink timed input failed to submit upload {} (readiness {}, lease {})",
-                            info.upload_id.sequence,
-                            static_cast<int>(frame.readiness()),
-                            info.upload.has_value());
-                warned_submit_failure_ = true;
-            }
-            frame_queue_.fail(ticket);
-            return false;
-        }
-        info.upload.reset();
-        return true;
-    }
+    frame_ticket_t select_frame(utils::flicks program_pts) { return frame_queue_.select_nearest(program_pts); }
 
     captured_frame_data_s* resolve_frame(frame_ticket_t& ticket)
     {
@@ -674,7 +651,7 @@ class callback_s
         auto& frame = *ticket.frame();
         auto& info  = frame.payload();
         if (ticket.selection() == media::prepared_frame_selection_e::new_frame) {
-            const auto wait_result = info.stream ? info.stream->wait_for_upload(info.upload_id)
+            const auto wait_result = info.stream ? info.stream->wait_for_upload_submission(info.upload_id)
                                                  : gpu::transfer::texture_upload_wait_result_e::stopped;
             if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
                 if (!warned_wait_failure_) {
@@ -686,7 +663,7 @@ class callback_s
                 frame_queue_.fail(ticket);
                 return nullptr;
             }
-            info.frame = info.stream->select_completed_upload(info.upload_id);
+            info.frame = info.stream->select_submitted_upload(info.upload_id);
             if (!info.frame || info.stream->retained_upload_id() != info.upload_id || !frame.mark_ready()) {
                 if (!warned_consume_failure_) {
                     log()->warn("DeckLink timed input failed to consume upload {} (retained {}, texture {}, "
@@ -865,15 +842,17 @@ void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks pr
     impl_->callback->advance_frames(program_pts, program_target_time, discontinuity);
 }
 
-bool input_capture_s::submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
+bool input_capture_s::submit_frame(utils::flicks program_pts)
 {
     impl_->prepared_frame.reset();
     if (!impl_->callback || impl_->callback->phase() != phase_e::running) {
         return false;
     }
 
-    impl_->prepared_frame.emplace(impl_->callback->select_frame(program_pts, early_tolerance));
-    if (!impl_->callback->submit_frame(*impl_->prepared_frame)) {
+    impl_->prepared_frame.emplace(impl_->callback->select_frame(program_pts));
+    // Capture already started this upload before placing it in the timed FIFO.
+    const auto& ticket = *impl_->prepared_frame;
+    if (ticket.selection() == media::prepared_frame_selection_e::missing || ticket.frame() == nullptr) {
         impl_->prepared_frame.reset();
         return false;
     }

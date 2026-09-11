@@ -41,7 +41,7 @@ struct source_format_s
 struct captured_frame_data_s
 {
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
-    std::optional<gpu::transfer::texture_upload_lease_s>    upload;
+    gpu::transfer::texture_upload_lease_s                   upload;
     gpu::transfer::texture_upload_id_s                      upload_id{};
     gpu::texture_frame_ptr                                  frame;
     gpu::vec2i_t                                            dimensions{};
@@ -115,7 +115,6 @@ class input_capture_s::impl_s
     std::chrono::steady_clock::time_point next_metrics_poll_;
 
     bool warned_invalid_frame_{};
-    bool warned_submit_failure_{};
     bool warned_wait_failure_{};
     bool warned_consume_failure_{};
     bool warned_commit_failure_{};
@@ -145,9 +144,10 @@ class input_capture_s::impl_s
             .memory_access     = gpu::transfer::host_memory_access_e::overwrite,
         };
         upload_stream_       = upload_service_->create_stream({
-                  .host_layout       = host_layout,
-                  .max_slots         = UPLOAD_SLOT_COUNT,
-                  .generate_mip_maps = false,
+                  .host_layout         = host_layout,
+                  .max_slots           = UPLOAD_SLOT_COUNT,
+                  .generate_mip_maps   = false,
+                  .conversion_sampling = gpu::sampling_e::mipmapped_linear,
         });
         upload_dimensions_   = dimensions;
         upload_pixel_format_ = pixel_format;
@@ -255,17 +255,26 @@ class input_capture_s::impl_s
         }
 
         const auto upload_id = upload->upload_id();
-        frame_queue_.push(frame_queue_.create_frame(*media_clock_sample,
-                                                    arrival_time,
-                                                    captured_frame_data_s{
-                                                        .stream        = std::move(stream),
-                                                        .upload        = std::move(upload),
-                                                        .upload_id     = upload_id,
-                                                        .frame         = nullptr,
-                                                        .dimensions    = dimensions,
-                                                        .ndi_timecode  = video_frame.timecode,
-                                                        .ndi_timestamp = video_frame.timestamp,
-                                                    }));
+        auto       captured  = frame_queue_.create_frame(*media_clock_sample,
+                                                  arrival_time,
+                                                  captured_frame_data_s{
+                                                             .stream        = std::move(stream),
+                                                             .upload        = std::move(*upload),
+                                                             .upload_id     = upload_id,
+                                                             .frame         = nullptr,
+                                                             .dimensions    = dimensions,
+                                                             .ndi_timecode  = video_frame.timecode,
+                                                             .ndi_timestamp = video_frame.timestamp,
+                                                  });
+        // Begin the transfer before entering the timed FIFO. Consumption still waits
+        // for this exact upload, after the configured source buffering interval.
+        if (!captured->mark_submitted() ||
+            !captured->payload().upload.submit(gpu::transfer::upload_ownership_e::queued_frame)) {
+            (void)captured->mark_failed();
+            ++upload_slot_drops_;
+            return true;
+        }
+        frame_queue_.push(std::move(captured));
         return true;
     }
 
@@ -425,14 +434,14 @@ class input_capture_s::impl_s
         frame_queue_.advance(program_pts, program_target_time, discontinuity);
     }
 
-    bool submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
+    bool submit_frame(utils::flicks program_pts)
     {
         prepared_frame_.reset();
         if (phase() != phase_e::running) {
             return false;
         }
 
-        prepared_frame_.emplace(frame_queue_.select(program_pts, early_tolerance));
+        prepared_frame_.emplace(frame_queue_.select_nearest(program_pts));
         auto& ticket = *prepared_frame_;
         if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
             return true;
@@ -442,21 +451,8 @@ class input_capture_s::impl_s
             return false;
         }
 
-        auto& frame = *ticket.frame();
-        auto& info  = frame.payload();
-        if (frame.readiness() == media::source_frame_readiness_e::submitted) {
-            return true;
-        }
-        if (!frame.mark_submitted() || !info.upload.has_value() || !info.upload->submit()) {
-            if (!warned_submit_failure_) {
-                log()->warn("NDI timed input failed to submit upload {}", info.upload_id.sequence);
-                warned_submit_failure_ = true;
-            }
-            frame_queue_.fail(ticket);
-            prepared_frame_.reset();
-            return false;
-        }
-        info.upload.reset();
+        // Capture has already started the transfer. Selection preserves its exact
+        // identity; resolve_frame() is the synchronization point after buffering.
         return true;
     }
 
@@ -470,7 +466,7 @@ class input_capture_s::impl_s
         auto& frame  = *ticket.frame();
         auto& info   = frame.payload();
         if (ticket.selection() == media::prepared_frame_selection_e::new_frame) {
-            const auto wait_result = info.stream ? info.stream->wait_for_upload(info.upload_id)
+            const auto wait_result = info.stream ? info.stream->wait_for_upload_submission(info.upload_id)
                                                  : gpu::transfer::texture_upload_wait_result_e::stopped;
             if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
                 if (!warned_wait_failure_) {
@@ -481,7 +477,7 @@ class input_capture_s::impl_s
                 return std::nullopt;
             }
 
-            info.frame = info.stream->select_completed_upload(info.upload_id);
+            info.frame = info.stream->select_submitted_upload(info.upload_id);
             if (!info.frame || info.stream->retained_upload_id() != info.upload_id || !frame.mark_ready()) {
                 if (!warned_consume_failure_) {
                     log()->warn("NDI timed input failed to consume upload {}", info.upload_id.sequence);
@@ -572,10 +568,7 @@ void input_capture_s::advance_frames(utils::flicks program_pts, utils::flicks pr
     impl_->advance_frames(program_pts, program_target_time, discontinuity);
 }
 
-bool input_capture_s::submit_frame(utils::flicks program_pts, utils::flicks early_tolerance)
-{
-    return impl_->submit_frame(program_pts, early_tolerance);
-}
+bool input_capture_s::submit_frame(utils::flicks program_pts) { return impl_->submit_frame(program_pts); }
 
 std::optional<resolved_input_frame_s> input_capture_s::resolve_frame() { return impl_->resolve_frame(); }
 

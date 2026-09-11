@@ -1,34 +1,25 @@
 #include "output_presenter.hpp"
 
-#include "gpu/context.hpp"
-#include "gpu/fence.hpp"
-#include "gpu/framebuffer.hpp"
 #include "gpu/geometry.hpp"
-#include "gpu/shader.hpp"
+#include "gpu/presenter.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
-#include "media/media_clock.hpp"
-#include "media/media_clock_sample.hpp"
-#include "media/presentation_timeline.hpp"
+#include "gpu/window.hpp"
+#include "logger/logger.hpp"
+#include "media/playout_timeline.hpp"
+#include "media/presentation_clock.hpp"
 #include "media/timed_output_queue.hpp"
 #include "types/output_buffer_limits.hpp"
-
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
-#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -62,128 +53,26 @@ int64_t to_microseconds(utils::flicks value) noexcept
     return std::chrono::duration_cast<std::chrono::microseconds>(value).count();
 }
 
-struct presentation_clock_result_s
-{
-    utils::flicks::rep interval_count{1};
-    utils::flicks      completion_interval{};
-    double             refresh_hz{};
-};
-
-class presentation_clock_s
-{
-    bool          uses_nominal_cadence_;
-    utils::flicks nominal_frame_duration_;
-
-    media::media_to_program_clock_s presentation_to_program_clock_;
-    uint64_t                        presentation_frame_sequence_{};
-    utils::flicks                   presentation_pts_{};
-    utils::flicks                   previous_completion_;
-    utils::flicks                   next_nominal_swap_;
-
-    double recovered_rate() const noexcept
-    {
-        return uses_nominal_cadence_ ? 1.0 : presentation_to_program_clock_.recovered_rate().value_or(1.0);
-    }
-
-  public:
-    presentation_clock_s(bool          uses_nominal_cadence,
-                         utils::flicks nominal_frame_duration,
-                         utils::flicks initial_completion)
-        : uses_nominal_cadence_(uses_nominal_cadence)
-        , nominal_frame_duration_(nominal_frame_duration)
-        , previous_completion_(initial_completion)
-        , next_nominal_swap_(initial_completion + nominal_frame_duration)
-    {
-        if (!uses_nominal_cadence_) {
-            presentation_to_program_clock_.observe(
-                {
-                    .stream_epoch   = 0,
-                    .frame_sequence = presentation_frame_sequence_,
-                    .media_pts      = presentation_pts_,
-                    .frame_duration = nominal_frame_duration_,
-                },
-                initial_completion);
-        }
-    }
-
-    void wait_for_next() const
-    {
-        if (!uses_nominal_cadence_) {
-            return;
-        }
-        const auto deadline = std::chrono::steady_clock::time_point{
-            std::chrono::duration_cast<std::chrono::steady_clock::duration>(next_nominal_swap_)};
-        std::this_thread::sleep_until(deadline);
-    }
-
-    utils::flicks predicted_completion() const noexcept
-    {
-        if (uses_nominal_cadence_) {
-            return next_nominal_swap_;
-        }
-        return presentation_to_program_clock_.map_media_pts_to_program_time(presentation_pts_ + nominal_frame_duration_)
-            .value_or(previous_completion_ + nominal_frame_duration_);
-    }
-
-    presentation_clock_result_s observe_completion(utils::flicks completion)
-    {
-        const auto completion_interval = completion - previous_completion_;
-        const auto rate                = recovered_rate();
-        const auto recovered_duration  = utils::flicks{
-            static_cast<utils::flicks::rep>(std::llround(static_cast<double>(nominal_frame_duration_.count()) * rate))};
-        const auto interval_count =
-            uses_nominal_cadence_
-                ? std::max<utils::flicks::rep>(
-                      1,
-                      1 + ((completion - next_nominal_swap_ + (nominal_frame_duration_ / 2)) / nominal_frame_duration_))
-                : std::max<utils::flicks::rep>(1,
-                                               (completion_interval + (recovered_duration / 2)) / recovered_duration);
-
-        presentation_frame_sequence_ += static_cast<uint64_t>(interval_count);
-        presentation_pts_ += nominal_frame_duration_ * interval_count;
-        if (uses_nominal_cadence_) {
-            next_nominal_swap_ += nominal_frame_duration_ * interval_count;
-        } else {
-            presentation_to_program_clock_.observe(
-                {
-                    .stream_epoch   = 0,
-                    .frame_sequence = presentation_frame_sequence_,
-                    .media_pts      = presentation_pts_,
-                    .frame_duration = nominal_frame_duration_,
-                },
-                completion);
-        }
-        previous_completion_ = completion;
-
-        const auto seconds = utils::to_seconds(nominal_frame_duration_) * recovered_rate();
-        return {
-            .interval_count      = interval_count,
-            .completion_interval = completion_interval,
-            .refresh_hz          = seconds > 0.0 && std::isfinite(seconds) ? 1.0 / seconds : 0.0,
-        };
-    }
-};
 } // namespace
 
-class output_presenter_s::impl_s
+class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
 {
     struct frame_slot_s
     {
-        std::unique_ptr<gpu::framebuffer_s> target;
-        std::unique_ptr<gpu::fence_s>       ready;
+        std::unique_ptr<gpu::texture_s> target;
+        gpu::completion_s               ready;
     };
 
     struct retired_slot_s
     {
-        size_t                        index{};
-        std::unique_ptr<gpu::fence_s> released;
+        size_t            index{};
+        gpu::completion_s released;
     };
 
     class slot_lease_s
     {
-        impl_s*      impl_{};
-        size_t       index_{};
-        mutable bool presented_{};
+        impl_s* impl_{};
+        size_t  index_{};
 
         void release() noexcept
         {
@@ -191,12 +80,7 @@ class output_presenter_s::impl_s
                 return;
             }
 
-            std::unique_ptr<gpu::fence_s> released;
-            if (presented_ && !impl_->display_finished_.load()) {
-                released = std::make_unique<gpu::fence_s>();
-                gpu::context_s::flush();
-            }
-            impl_->retire(index_, std::move(released));
+            impl_->retire(index_, {});
             impl_ = nullptr;
         }
 
@@ -216,7 +100,6 @@ class output_presenter_s::impl_s
         slot_lease_s(slot_lease_s&& other) noexcept
             : impl_(std::exchange(other.impl_, nullptr))
             , index_(other.index_)
-            , presented_(other.presented_)
         {
         }
 
@@ -224,51 +107,58 @@ class output_presenter_s::impl_s
         {
             if (this != &other) {
                 release();
-                impl_      = std::exchange(other.impl_, nullptr);
-                index_     = other.index_;
-                presented_ = other.presented_;
+                impl_  = std::exchange(other.impl_, nullptr);
+                index_ = other.index_;
             }
             return *this;
         }
 
         size_t index() const noexcept { return index_; }
-        void   mark_presented() const noexcept { presented_ = true; }
     };
 
-    using submitted_frame_s = media::output_frame_s<slot_lease_s>;
+    using lease_ptr         = std::shared_ptr<slot_lease_s>;
+    using submitted_frame_s = media::output_frame_s<lease_ptr>;
 
-    mutable std::mutex              mutex_;
-    std::condition_variable         condition_;
-    std::deque<size_t>              free_slots_;
-    std::deque<submitted_frame_s>   submitted_frames_;
-    std::deque<retired_slot_s>      retired_slots_;
-    std::vector<frame_slot_s>       slots_;
-    std::unique_ptr<gpu::context_s> context_;
-    gpu::vec2i_t                    output_dimensions_{};
-    std::thread                     thread_;
-    std::atomic_bool                running_{false};
-    std::atomic_bool                display_finished_{true};
-    std::atomic_bool                output_dimensions_changed_{false};
+    mutable std::mutex                mutex_;
+    std::deque<size_t>                free_slots_;
+    std::deque<submitted_frame_s>     submitted_frames_;
+    std::deque<retired_slot_s>        retired_slots_;
+    std::vector<frame_slot_s>         slots_;
+    std::unique_ptr<gpu::window_s>    window_;
+    gpu::device_s&                    device_;
+    std::unique_ptr<gpu::presenter_s> presenter_;
+    gpu::vec2i_t                      output_dimensions_{};
+    std::atomic_bool                  running_{false};
+    std::atomic_bool                  output_dimensions_changed_{false};
 
     const size_t        buffer_frames_;
     const utils::flicks nominal_frame_duration_;
 
-    std::atomic_uint64_t frames_submitted_;
-    std::atomic_uint64_t queue_overflow_drops_;
-    std::atomic_uint64_t timing_drops_;
-    std::atomic_uint64_t frames_repeated_;
-    std::atomic_uint64_t frames_missing_;
-    std::atomic_uint64_t output_intervals_skipped_;
-    std::atomic_uint64_t swaps_completed_;
-    std::atomic_uint64_t render_acquire_misses_;
-    std::atomic_size_t   queued_frames_;
-    std::atomic_int64_t  output_latency_us_;
-    std::atomic_int64_t  selection_offset_us_;
-    std::atomic_int64_t  completion_interval_max_us_;
-    std::atomic<double>  measured_refresh_hz_;
-    std::atomic_bool     uses_nominal_cadence_;
+    std::atomic_uint64_t                                  frames_submitted_;
+    std::atomic_uint64_t                                  swaps_completed_;
+    std::atomic_uint64_t                                  queue_overflow_drops_;
+    std::atomic_uint64_t                                  timing_drops_;
+    std::atomic_uint64_t                                  frames_repeated_;
+    std::atomic_uint64_t                                  frames_missing_;
+    std::atomic_uint64_t                                  output_intervals_skipped_;
+    std::atomic_uint64_t                                  render_acquire_misses_;
+    std::atomic_size_t                                    queued_frames_;
+    std::atomic_int64_t                                   output_latency_us_;
+    std::atomic_int64_t                                   selection_offset_us_;
+    std::atomic_int64_t                                   completion_interval_max_us_;
+    std::atomic<double>                                   measured_refresh_hz_;
+    std::optional<media::timed_output_queue_s<lease_ptr>> queue_;
+    media::presentation_timeline_s                        observed_latency_;
+    media::playout_timeline_s                             timeline_;
+    std::optional<media::presentation_clock_s>            presentation_clock_;
+    std::optional<utils::flicks>                          presented_program_target_;
+    std::optional<utils::flicks>                          scheduled_presentation_;
+    std::atomic_bool                                      uses_present_wait_;
 
-    void retire(size_t index, std::unique_ptr<gpu::fence_s> released) noexcept
+    std::mutex                  cadence_mutex_;
+    std::condition_variable_any cadence_wake_;
+
+    void retire(size_t index, gpu::completion_s released) noexcept
     {
         try {
             const std::scoped_lock lock(mutex_);
@@ -284,19 +174,17 @@ class output_presenter_s::impl_s
         free_slots_.push_back(index);
     }
 
-    void submit(size_t index, utils::flicks program_target_time)
+    void submit(size_t index, utils::flicks program_target_time, gpu::completion_s ready)
     {
-        auto& slot = slots_.at(index);
-        slot.ready = std::make_unique<gpu::fence_s>();
-        gpu::context_s::flush();
-
-        {
-            const std::scoped_lock lock(mutex_);
-            submitted_frames_.push_back(
-                {.program_target_time = program_target_time, .payload = slot_lease_s(this, index)});
+        const std::scoped_lock lock(mutex_);
+        if (!running_.load()) {
+            return;
         }
+        auto& slot = slots_.at(index);
+        slot.ready = std::move(ready);
+        submitted_frames_.push_back(
+            {.program_target_time = program_target_time, .payload = std::make_shared<slot_lease_s>(this, index)});
         ++frames_submitted_;
-        condition_.notify_one();
     }
 
     void reclaim_retired()
@@ -304,33 +192,36 @@ class output_presenter_s::impl_s
         const std::scoped_lock lock(mutex_);
         auto                   it = retired_slots_.begin();
         while (it != retired_slots_.end()) {
-            if (it->released && !it->released->cpu_wait(std::chrono::nanoseconds::zero())) {
+            if (!slots_.at(it->index).target->idle()) {
                 ++it;
                 continue;
             }
 
-            auto& slot = slots_.at(it->index);
-            slot.ready.reset();
-            it->released.reset();
+            auto& slot   = slots_.at(it->index);
+            slot.ready   = {};
+            it->released = {};
             free_slots_.push_back(it->index);
             it = retired_slots_.erase(it);
         }
     }
 
-    void collect_submitted(media::timed_output_queue_s<slot_lease_s>* queue)
+    void collect_submitted(media::timed_output_queue_s<lease_ptr>& queue)
     {
+        reclaim_retired();
         std::deque<submitted_frame_s> submitted;
         {
             const std::scoped_lock lock(mutex_);
+            // Submission precedes publication. Select the exact program frame
+            // even if its GPU work is unfinished; only the presenter waits.
             submitted.swap(submitted_frames_);
         }
-        while (!submitted.empty()) {
-            queue->push(std::move(submitted.front()));
-            submitted.pop_front();
+
+        for (auto& frame : submitted) {
+            queue.push(std::move(frame));
         }
     }
 
-    void publish_queue_metrics(const media::timed_output_queue_s<slot_lease_s>& queue) noexcept
+    void publish_queue_metrics(const media::timed_output_queue_s<lease_ptr>& queue) noexcept
     {
         const auto& metrics   = queue.metrics();
         queue_overflow_drops_ = metrics.overflow_drops;
@@ -340,203 +231,117 @@ class output_presenter_s::impl_s
         queued_frames_        = queue.queued();
     }
 
-    bool draw(gpu::textured_quad_s* textured_quad, const media::output_frame_selection_s<slot_lease_s>& selection)
+    std::optional<gpu::presentation_frame_s> next_frame(gpu::presentation_pacing_e pacing, const std::stop_token& stop)
     {
-        if (selection.frame == nullptr) {
-            return true;
+        if (!running_.load()) {
+            return std::nullopt;
         }
 
-        const auto& lease = selection.frame->payload;
-        auto&       slot  = slots_.at(lease.index());
-        if (selection.selection == media::output_frame_selection_e::new_frame && slot.ready) {
-            slot.ready->gpu_wait();
+        if (!queue_) {
+            throw std::logic_error("Running screen presenter has no frame queue");
         }
-
-        const auto framebuffer_size = context_->get_framebuffer_size();
-        if (framebuffer_size != output_dimensions_) {
-            output_dimensions_changed_ = true;
-            running_                   = false;
-            condition_.notify_one();
-            return false;
-        }
-        glViewport(0, 0, framebuffer_size.x, framebuffer_size.y);
-        glClearColor(0, 0, 0, 0);
-        glClear(static_cast<GLbitfield>(GL_COLOR_BUFFER_BIT) | static_cast<GLbitfield>(GL_DEPTH_BUFFER_BIT));
-        if (framebuffer_size.x <= 0 || framebuffer_size.y <= 0) {
-            lease.mark_presented();
-            return true;
-        }
-        textured_quad->draw(slot.target->texture(),
-                            {
-                                .pos = {0,   1.0 },
-                                  .size = {1.0, -1.0}
-        });
-        lease.mark_presented();
-        return true;
-    }
-
-    utils::flicks swap_and_wait()
-    {
-        context_->swap_buffers();
-
-        // Keep the established screen-output completion boundary. In
-        // particular, an interval-zero X11/XWayland swap is not sufficient
-        // evidence that the GL work which updates the visible back buffer has
-        // completed. Waiting here only parks the dedicated presenter thread;
-        // it can never stall graph rendering.
-        gpu::fence_s swap_finished;
-        gpu::context_s::flush();
-        (void)swap_finished.cpu_wait(std::chrono::hours(1));
-
-        ++swaps_completed_;
-        return utils::flicks_now();
-    }
-
-    void wait_for_preroll(media::timed_output_queue_s<slot_lease_s>* queue)
-    {
-        while (running_.load() && queue->queued() < buffer_frames_) {
-            collect_submitted(queue);
-            publish_queue_metrics(*queue);
-            if (queue->queued() >= buffer_frames_) {
-                return;
+        uses_present_wait_ = pacing == gpu::presentation_pacing_e::display;
+        if (presentation_clock_ && !uses_present_wait_) {
+            const auto deadline =
+                std::chrono::steady_clock::time_point{std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                    presentation_clock_->predicted_completion() - nominal_frame_duration_ / 2)};
+            std::unique_lock lock(cadence_mutex_);
+            cadence_wake_.wait_until(lock, stop, deadline, [] { return false; });
+            if (stop.stop_requested()) {
+                return std::nullopt;
             }
-            std::unique_lock lock(mutex_);
-            condition_.wait(lock, [this] { return !running_.load() || !submitted_frames_.empty(); });
         }
+
+        auto& queue = *queue_;
+        collect_submitted(queue);
+        if (!timeline_.initialized() && queue.queued() < buffer_frames_) {
+            publish_queue_metrics(queue);
+            return std::nullopt;
+        }
+
+        const auto    oldest = queue.oldest_program_target_time();
+        utils::flicks target{};
+        if (!presentation_clock_) {
+            if (!oldest) {
+                throw std::logic_error("Primed screen queue has no frame timestamp");
+            }
+            target = *oldest;
+        } else {
+            const auto presentation = presentation_clock_->predicted_completion();
+            target                  = timeline_.program_target(presentation);
+            if (queue.queued() == queue.capacity() && oldest && *oldest > target + nominal_frame_duration_ / 2) {
+                // Preserve the original full-queue fallback for a target that
+                // has fallen entirely behind the retained program frames.
+                timeline_.initialize(presentation, *oldest);
+                target = timeline_.program_target(presentation);
+            }
+        }
+
+        const auto selection = queue.select_nearest(target);
+        publish_queue_metrics(queue);
+        if (selection.frame == nullptr) {
+            return std::nullopt;
+        }
+
+        selection_offset_us_      = to_microseconds(selection.frame->program_target_time - target);
+        presented_program_target_ = selection.frame->program_target_time;
+        scheduled_presentation_ =
+            presentation_clock_ ? std::optional{presentation_clock_->predicted_completion()} : std::nullopt;
+        const auto& lease = selection.frame->payload;
+        const auto& slot  = slots_.at(lease->index());
+        return gpu::presentation_frame_s{.image = *slot.target, .ready = slot.ready, .lease = lease};
     }
 
-    std::optional<utils::flicks> present_preroll(media::timed_output_queue_s<slot_lease_s>* queue,
-                                                 gpu::textured_quad_s*                      textured_quad,
-                                                 media::presentation_timeline_s*            timeline)
+    void presentation_complete(gpu::presentation_feedback_s feedback)
     {
-        const auto oldest_target = queue->oldest_program_target_time();
-        if (!running_.load() || !oldest_target.has_value()) {
-            return std::nullopt;
+        const auto completion = feedback.time;
+        uses_present_wait_    = feedback.timing == gpu::presentation_timing_e::present_wait;
+        ++swaps_completed_;
+        if (!presented_program_target_) {
+            throw std::logic_error("Screen presentation completed without a selected frame");
         }
 
-        const auto selection = queue->select(*oldest_target);
-        publish_queue_metrics(*queue);
-        if (!draw(textured_quad, selection)) {
-            return std::nullopt;
-        }
-        const auto completion = swap_and_wait();
-        output_latency_us_    = to_microseconds(timeline->observe_latency(completion, *oldest_target));
-        return completion;
-    }
+        output_latency_us_ = to_microseconds(observed_latency_.observe_latency(completion, *presented_program_target_));
 
-    std::optional<media::output_frame_selection_s<slot_lease_s>>
-    select_frame(media::timed_output_queue_s<slot_lease_s>* queue,
-                 media::presentation_timeline_s*            timeline,
-                 utils::flicks                              predicted_completion)
-    {
-        auto program_target = timeline->map_presentation_to_program_target(predicted_completion);
-        if (!program_target.has_value()) {
-            return std::nullopt;
+        if (!presentation_clock_) {
+            timeline_.initialize(completion, *presented_program_target_);
+            const auto mode = uses_present_wait_ ? media::presentation_clock_mode_e::observed
+                                                 : media::presentation_clock_mode_e::nominal;
+            presentation_clock_.emplace(mode, nominal_frame_duration_, completion);
+            measured_refresh_hz_ = 1.0 / utils::to_seconds(nominal_frame_duration_);
+            return;
         }
 
-        const auto oldest_queued = queue->oldest_program_target_time();
-        if (queue->queued() == queue->capacity() && oldest_queued.has_value() &&
-            *oldest_queued > *program_target + (nominal_frame_duration_ / 2)) {
-            output_latency_us_ = to_microseconds(timeline->observe_latency(predicted_completion, *oldest_queued));
-            program_target     = timeline->map_presentation_to_program_target(predicted_completion);
+        if (scheduled_presentation_) {
+            timeline_.observe(*scheduled_presentation_, completion);
         }
-        if (!program_target.has_value()) {
-            return std::nullopt;
-        }
-        const auto selected_program_target = program_target.value();
+        presented_program_target_.reset();
 
-        auto selection = queue->select(selected_program_target);
-        publish_queue_metrics(*queue);
-        if (selection.frame != nullptr) {
-            selection_offset_us_ = to_microseconds(selection.frame->program_target_time - selected_program_target);
-        }
-        return selection;
-    }
-
-    void publish_clock_result(const presentation_clock_result_s& result) noexcept
-    {
+        const auto result = presentation_clock_->observe_completion(completion);
         completion_interval_max_us_ =
             std::max(completion_interval_max_us_.load(), to_microseconds(result.completion_interval));
+        measured_refresh_hz_ = result.refresh_hz;
         if (result.interval_count > 1) {
             output_intervals_skipped_.fetch_add(static_cast<uint64_t>(result.interval_count - 1));
         }
-        if (result.refresh_hz > 0.0) {
-            measured_refresh_hz_ = result.refresh_hz;
-        }
-    }
-
-    void run()
-    {
-        {
-            const gpu::context_scope_s context_scope(*context_);
-            glEnable(GL_FRAMEBUFFER_SRGB);
-
-            // Miximus deliberately uses X11/XWayland on Linux. Mutter may stop
-            // presenting an occluded or borderless XWayland window while a
-            // swap-interval wait continues to return normally. In that case swap
-            // completion is not a usable display clock, so pace against the
-            // monitor's nominal refresh period instead.
-            const bool use_nominal_cadence = glfwGetPlatform() == GLFW_PLATFORM_X11;
-            uses_nominal_cadence_          = use_nominal_cadence;
-            glfwSwapInterval(use_nominal_cadence ? 0 : 1);
-
-            media::timed_output_queue_s<slot_lease_s> queue({
-                .capacity        = get_queue_capacity(buffer_frames_),
-                .early_tolerance = nominal_frame_duration_ / 2,
-            });
-            media::presentation_timeline_s            timeline;
-            auto*                shader = context_->get_shader(gpu::shader_program_s::name_e::basic);
-            gpu::textured_quad_s textured_quad(shader, gpu::textured_quad_s::uv_e::regular);
-
-            wait_for_preroll(&queue);
-            if (auto completion = present_preroll(&queue, &textured_quad, &timeline); completion.has_value()) {
-                presentation_clock_s clock(use_nominal_cadence, nominal_frame_duration_, *completion);
-                while (running_.load()) {
-                    clock.wait_for_next();
-                    collect_submitted(&queue);
-
-                    auto selection = select_frame(&queue, &timeline, clock.predicted_completion());
-                    if (!selection.has_value()) {
-                        break;
-                    }
-                    if (!draw(&textured_quad, *selection)) {
-                        break;
-                    }
-                    const auto presented_at = swap_and_wait();
-                    if (selection->frame != nullptr &&
-                        selection->selection == media::output_frame_selection_e::new_frame) {
-                        output_latency_us_ = to_microseconds(
-                            timeline.observe_latency(presented_at, selection->frame->program_target_time));
-                    }
-                    publish_clock_result(clock.observe_completion(presented_at));
-                }
-            }
-
-            collect_submitted(&queue);
-            gpu::context_s::finish();
-        }
-        display_finished_ = true;
     }
 
   public:
-    impl_s(gpu::context_s*     root_context,
+    impl_s(gpu::device_s&      device,
            size_t              buffer_frames,
            utils::flicks       nominal_frame_duration,
            bool                fullscreen,
            std::string_view    monitor_id,
            const gpu::recti_s& window_rect)
         : slots_(get_slot_count(buffer_frames))
-        , context_(gpu::context_s::create_unique_context(
-              {
-                  .visible    = true,
-                  .fullscreen = fullscreen,
-                  .monitor_id = monitor_id,
-                  .rect       = window_rect,
-              },
-              root_context))
-        , output_dimensions_(context_->get_framebuffer_size())
+        , window_(std::make_unique<gpu::window_s>(gpu::window_s::window_settings_s{.fullscreen = fullscreen,
+                                                                                   .monitor_id = monitor_id,
+                                                                                   .rect       = window_rect}))
+        , device_(device)
+        , output_dimensions_(window_->get_framebuffer_size())
         , buffer_frames_(buffer_frames)
         , nominal_frame_duration_(nominal_frame_duration)
+        , queue_(std::in_place, media::timed_output_queue_config_s{.capacity = get_queue_capacity(buffer_frames)})
     {
         if (buffer_frames == 0 || nominal_frame_duration <= utils::flicks::zero() || output_dimensions_.x <= 0 ||
             output_dimensions_.y <= 0) {
@@ -556,44 +361,55 @@ class output_presenter_s::impl_s
 
     void start()
     {
-        if (thread_.joinable()) {
+        if (presenter_) {
             return;
         }
-        display_finished_ = false;
-        running_          = true;
-        thread_           = std::thread(&impl_s::run, this);
+
+        running_   = true;
+        presenter_ = std::make_unique<gpu::presenter_s>(
+            device_,
+            window_->native_window(),
+            gpu::extent_s{.width  = static_cast<uint32_t>(output_dimensions_.x),
+                          .height = static_cast<uint32_t>(output_dimensions_.y)},
+            gpu::presentation_source_s{
+                .next_frame = [this](gpu::presentation_pacing_e pacing,
+                                     const std::stop_token&     stop) { return next_frame(pacing, stop); },
+                .complete   = [this](gpu::presentation_feedback_s feedback) { presentation_complete(feedback); },
+            });
     }
 
     void request_stop() noexcept
     {
         running_ = false;
-        condition_.notify_one();
+        if (presenter_) {
+            presenter_->request_stop();
+        }
     }
 
-    bool stopped() const noexcept { return display_finished_.load(); }
+    bool stopped() const noexcept { return !presenter_ || presenter_->metrics().stopped; }
 
     void stop()
     {
-        if (!thread_.joinable()) {
-            return;
-        }
         request_stop();
-        thread_.join();
-        reclaim_retired();
-
+        presenter_.reset();
+        // The callback and its final GPU copy have retired before releasing
+        // the timed queue's leases or any of their owning render slots.
+        queue_.reset();
         std::deque<submitted_frame_s> submitted;
         {
             const std::scoped_lock lock(mutex_);
             submitted.swap(submitted_frames_);
         }
         submitted.clear();
-
+        const std::scoped_lock lock(mutex_);
         retired_slots_.clear();
         for (auto& slot : slots_) {
-            slot.ready.reset();
+            slot.ready = {};
             slot.target.reset();
         }
     }
+
+    void close_window() { window_.reset(); }
 
     gpu::vec2i_t output_dimensions() const noexcept { return output_dimensions_; }
 
@@ -601,30 +417,41 @@ class output_presenter_s::impl_s
 
     std::optional<output_presenter_s::render_frame_s> try_acquire()
     {
-        reclaim_retired();
+        if (window_->get_framebuffer_size() != output_dimensions_) {
+            output_dimensions_changed_ = true;
+            request_stop();
+            return std::nullopt;
+        }
 
         size_t index{};
         {
             const std::scoped_lock lock(mutex_);
-            if (free_slots_.empty()) {
+            const auto             available = std::ranges::find_if(free_slots_, [this](size_t candidate) {
+                return !slots_[candidate].target || slots_[candidate].target->idle();
+            });
+            if (available == free_slots_.end()) {
                 ++render_acquire_misses_;
                 return std::nullopt;
             }
-            index = free_slots_.front();
-            free_slots_.pop_front();
+
+            index = *available;
+            free_slots_.erase(available);
         }
 
         auto& slot = slots_.at(index);
         if (!slot.target) {
-            slot.target = std::make_unique<gpu::framebuffer_s>(
-                output_dimensions_, gpu::texture_s::storage_format_e::rgba_unorm8, gpu::texture_s::sampling_e::linear);
+            slot.target = std::make_unique<gpu::texture_s>(device_,
+                                                           output_dimensions_,
+                                                           gpu::format_e::rgba_unorm8,
+                                                           gpu::channel_order_e::rgba,
+                                                           gpu::sampling_e::linear);
         }
-        return output_presenter_s::render_frame_s(this, index);
+        return output_presenter_s::render_frame_s(shared_from_this(), index);
     }
 
     void abandon(size_t index) noexcept { return_unsubmitted(index); }
 
-    gpu::framebuffer_s* target(size_t index) noexcept { return slots_.at(index).target.get(); }
+    gpu::texture_s* target(size_t index) noexcept { return slots_.at(index).target.get(); }
 
     output_presenter_metrics_s metrics() const
     {
@@ -643,6 +470,7 @@ class output_presenter_s::impl_s
             .program_frames_missing       = frames_missing_.load(),
             .output_intervals_skipped     = output_intervals_skipped_.load(),
             .swaps_completed              = swaps_completed_.load(),
+            .presentation_drops           = presenter_ ? presenter_->metrics().mailbox_drops : 0,
             .render_acquire_misses        = render_acquire_misses_.load(),
             .queued_frames                = queued_frames_.load(),
             .slots                        = slots_.size(),
@@ -652,15 +480,15 @@ class output_presenter_s::impl_s
             .program_selection_offset_us  = selection_offset_us_.load(),
             .completion_interval_max_us   = completion_interval_max_us_.load(),
             .measured_refresh_hz          = measured_refresh_hz_.load(),
-            .uses_nominal_cadence         = uses_nominal_cadence_.load(),
+            .uses_present_wait            = uses_present_wait_.load(),
         };
     }
 
     friend class output_presenter_s::render_frame_s;
 };
 
-output_presenter_s::render_frame_s::render_frame_s(impl_s* impl, size_t slot_index) noexcept
-    : impl_(impl)
+output_presenter_s::render_frame_s::render_frame_s(std::shared_ptr<impl_s> impl, size_t slot_index) noexcept
+    : impl_(std::move(impl))
     , slot_index_(slot_index)
 {
 }
@@ -690,36 +518,38 @@ output_presenter_s::render_frame_s& output_presenter_s::render_frame_s::operator
     return *this;
 }
 
-gpu::framebuffer_s* output_presenter_s::render_frame_s::target() const noexcept
+gpu::texture_s* output_presenter_s::render_frame_s::target() const noexcept
 {
     return impl_ != nullptr ? impl_->target(slot_index_) : nullptr;
 }
 
-void output_presenter_s::render_frame_s::submit(utils::flicks program_target_time)
+void output_presenter_s::render_frame_s::submit(utils::flicks program_target_time, gpu::completion_s ready)
 {
     if (impl_ == nullptr) {
         throw std::logic_error("screen output frame was already submitted");
     }
-    auto* impl = std::exchange(impl_, nullptr);
-    impl->submit(slot_index_, program_target_time);
+    auto impl = std::exchange(impl_, nullptr);
+    impl->submit(slot_index_, program_target_time, std::move(ready));
 }
 
-output_presenter_s::output_presenter_s(gpu::context_s*     root_context,
+output_presenter_s::output_presenter_s(gpu::device_s&      device,
                                        size_t              buffer_frames,
                                        utils::flicks       nominal_frame_duration,
                                        bool                fullscreen,
                                        std::string_view    monitor_id,
                                        const gpu::recti_s& window_rect)
-    : impl_(std::make_unique<impl_s>(root_context,
-                                     buffer_frames,
-                                     nominal_frame_duration,
-                                     fullscreen,
-                                     monitor_id,
-                                     window_rect))
+    : impl_(
+          std::make_shared<impl_s>(device, buffer_frames, nominal_frame_duration, fullscreen, monitor_id, window_rect))
 {
 }
 
-output_presenter_s::~output_presenter_s() = default;
+output_presenter_s::~output_presenter_s()
+{
+    impl_->stop();
+    // Window destruction belongs to the main thread. Pending publication leases
+    // may retain only the stopped slot state beyond this point.
+    impl_->close_window();
+}
 
 void output_presenter_s::start() { impl_->start(); }
 

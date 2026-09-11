@@ -1,6 +1,6 @@
 #include "texture.hpp"
 
-#include "context.hpp"
+#include "detail/device.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -26,105 +26,70 @@ size_t checked_multiply(size_t lhs, size_t rhs)
 }
 } // namespace
 
-texture_s::storage_format_info_s texture_s::storage_format_info(storage_format_e storage_format)
+texture_s::storage_format_info_s texture_s::storage_format_info(format_e storage_format)
 {
     switch (storage_format) {
-        case storage_format_e::rgb_unorm16:
-            return {
-                .internal_format         = GL_RGB16,
-                .clear_format            = GL_RGB,
-                .clear_type              = GL_UNSIGNED_SHORT,
-                .storage_bytes_per_texel = 6,
-                .integer                 = false,
-            };
-        case storage_format_e::rgba_unorm16:
-            return {
-                .internal_format         = GL_RGBA16,
-                .clear_format            = GL_RGBA,
-                .clear_type              = GL_UNSIGNED_SHORT,
-                .storage_bytes_per_texel = 8,
-                .integer                 = false,
-            };
-        case storage_format_e::rgba_unorm8:
-            return {
-                .internal_format         = GL_RGBA8,
-                .clear_format            = GL_RGBA,
-                .clear_type              = GL_UNSIGNED_BYTE,
-                .storage_bytes_per_texel = 4,
-                .integer                 = false,
-            };
-        case storage_format_e::r32_uint:
-            return {
-                .internal_format         = GL_R32UI,
-                .clear_format            = GL_RED_INTEGER,
-                .clear_type              = GL_UNSIGNED_INT,
-                .storage_bytes_per_texel = 4,
-                .integer                 = true,
-            };
+        case format_e::rgba16_float:
+        case format_e::rgba_unorm16:
+            return {.storage_bytes_per_texel = 8, .integer = false};
+        case format_e::rgba_unorm8:
+            return {.storage_bytes_per_texel = 4, .integer = false};
+        case format_e::r32_uint:
+            return {.storage_bytes_per_texel = 4, .integer = true};
     }
     throw std::invalid_argument("Invalid texture storage format");
 }
 
-texture_s::texture_s(vec2i_t                   display_dimensions,
-                     vec2i_t                   texture_dimensions,
-                     storage_format_e          storage_format,
-                     input_component_mapping_e input_component_mapping,
-                     sampling_e                sampling)
-    : display_dimensions_(display_dimensions)
-    , texture_dimensions_(texture_dimensions)
-    , storage_format_(storage_format)
-    , sampling_(storage_format_info(storage_format).integer ? sampling_e::nearest : sampling)
-    , mip_map_levels_(mip_map_level_count(texture_dimensions, storage_format, sampling_))
-    , input_component_mapping_(input_component_mapping)
+texture_s::texture_s(device_s&       device,
+                     vec2i_t         dimensions,
+                     format_e        format,
+                     channel_order_e mapping,
+                     sampling_e      sampling)
+    : texture_s(device.create_texture(
+          {.width = static_cast<uint32_t>(dimensions.x), .height = static_cast<uint32_t>(dimensions.y)},
+          format,
+          sampling))
 {
-    const auto info = storage_format_info(storage_format);
+    channel_order_ = mapping;
+}
 
-    glCreateTextures(GL_TEXTURE_2D, 1, &id_);
+vec2i_t texture_s::dimensions() const
+{
+    const auto size = extent();
+    return {size.width, size.height};
+}
 
-    glTextureParameteri(id_, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTextureParameteri(id_, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    GLint min_filter = GL_LINEAR;
-    if (sampling_ == sampling_e::nearest) {
-        min_filter = GL_NEAREST;
-    } else if (sampling_ == sampling_e::mipmapped_linear) {
-        min_filter = GL_LINEAR_MIPMAP_LINEAR;
+texture_s::texture_s(std::shared_ptr<detail::texture_state_s> state)
+    : state_(std::move(state))
+{
+}
+
+extent_s texture_s::extent() const
+{
+    if (!state_) {
+        throw std::logic_error("empty image");
     }
-    const auto mag_filter = sampling_ == sampling_e::nearest ? GL_NEAREST : GL_LINEAR;
-    glTextureParameteri(id_, GL_TEXTURE_MIN_FILTER, min_filter);
-    glTextureParameteri(id_, GL_TEXTURE_MAG_FILTER, mag_filter);
-
-    glTextureStorage2D(id_, mip_map_levels_, info.internal_format, texture_dimensions_.x, texture_dimensions_.y);
+    return state_->extent;
 }
 
-texture_s::texture_s(vec2i_t                   dimensions,
-                     storage_format_e          storage_format,
-                     input_component_mapping_e input_component_mapping,
-                     sampling_e                sampling)
-    : texture_s(dimensions, dimensions, storage_format, input_component_mapping, sampling)
+format_e texture_s::format() const
 {
-}
-
-texture_s::~texture_s()
-{
-    if (!context_s::require_current()) {
-        return;
+    if (!state_) {
+        throw std::logic_error("empty image");
     }
-    glDeleteTextures(1, &id_);
+    return state_->format;
 }
 
-void texture_s::bind(GLuint sampler) const { glBindTextureUnit(sampler, id_); }
-
-void texture_s::unbind(GLuint sampler) { glBindTextureUnit(sampler, 0); }
-
-void texture_s::clear() const
+uint32_t texture_s::mip_levels() const { return state_ ? state_->mip_levels : 0; }
+bool     texture_s::idle() const
 {
-    const auto info = storage_format_info(storage_format_);
-    for (GLsizei level = 0; level < mip_map_levels_; ++level) {
-        glClearTexImage(id_, level, info.clear_format, info.clear_type, nullptr);
-    }
+    return !state_ ||
+           (state_->recording_uses.load() == 0 && state_->last_use_timeline_value.load() <= state_->owner->completed());
 }
 
-GLsizei texture_s::mip_map_level_count(vec2i_t dimensions, storage_format_e storage_format, sampling_e sampling)
+void texture_s::clear(recording_s& recording) const { recording.clear(*this); }
+
+int texture_s::mip_map_level_count(vec2i_t dimensions, format_e storage_format, sampling_e sampling)
 {
     if (dimensions.x <= 0 || dimensions.y <= 0) {
         throw std::invalid_argument("texture dimensions must be positive");
@@ -135,10 +100,10 @@ GLsizei texture_s::mip_map_level_count(vec2i_t dimensions, storage_format_e stor
     }
 
     const auto maximum_dimension = static_cast<unsigned>(std::max(dimensions.x, dimensions.y));
-    return static_cast<GLsizei>(std::bit_width(maximum_dimension));
+    return std::bit_width(maximum_dimension);
 }
 
-size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, storage_format_e storage_format, sampling_e sampling)
+size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, format_e storage_format, sampling_e sampling)
 {
     const auto mip_map_levels = mip_map_level_count(dimensions, storage_format, sampling);
 
@@ -147,7 +112,7 @@ size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, storage_format_
     auto       height = static_cast<size_t>(dimensions.y);
     size_t     byte_size{};
 
-    for (GLsizei level = 0; level < mip_map_levels; ++level) {
+    for (int level = 0; level < mip_map_levels; ++level) {
         const auto texel_count = checked_multiply(width, height);
         byte_size              = checked_add(byte_size, checked_multiply(texel_count, info.storage_bytes_per_texel));
         width                  = std::max<size_t>(1, width / 2);
@@ -157,11 +122,33 @@ size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, storage_format_
     return byte_size;
 }
 
-void texture_s::generate_mip_maps() const
+namespace detail {
+
+texture_state_s::~texture_state_s()
 {
-    if (mip_map_levels_ > 1) {
-        glGenerateTextureMipmap(id_);
+    if (image == nullptr) {
+        return;
     }
+    const auto allocator    = owner->allocator;
+    const auto device       = owner->device;
+    const auto destroy_view = owner->vk.vkDestroyImageView;
+    owner->retire(last_use_timeline_value.load(),
+                  [allocator,
+                   device,
+                   destroy_view,
+                   handle     = image,
+                   image_view = view,
+                   sampled    = sampled_view,
+                   memory     = allocation] {
+                      if (sampled && sampled != image_view) {
+                          destroy_view(device, sampled, nullptr);
+                      }
+                      if (image_view) {
+                          destroy_view(device, image_view, nullptr);
+                      }
+                      vmaDestroyImage(allocator, handle, memory);
+                  });
 }
+} // namespace detail
 
 } // namespace miximus::gpu

@@ -5,24 +5,27 @@
 - `src/main.cpp`: startup, settings, frame timing, shutdown.
 - `src/core/`: application services, graph management, WebSocket adapter, status.
 - `src/nodes/`: native node groups, interfaces, connection model, validation, registration.
-- `src/gpu/`: OpenGL and transfer infrastructure.
+- `src/gpu/`: Vulkan recordings, images, presentation, and bounded transfer services.
 - `src/render/`: CPU surfaces and fonts.
 - `src/web_server/`: embedded web transport.
 - `src/wrapper/`: CMake targets wrapping system libraries and SDKs.
 - `src/utils/`: reusable low-level utilities.
 - `web/`: Vue/Baklava remote editor.
 - `static/`: build-time web/resource bundling.
-- `resources/`: embedded shaders, images, and settings resources.
+- `resources/`: embedded images and settings resources.
+- `shaders/`: GLSL sources and shared includes; only compiled SPIR-V is bundled.
 - `3rd-party/`: SDK installations and stable alias symlinks.
 - `submodules/`: source dependencies built with the project.
 
-Read [architecture.md](architecture.md) before changing graph/config/web synchronization. Read [gpu-and-media.md](gpu-and-media.md) before changing GL, transfers, SDK callbacks, registries, or workers.
+Read [architecture.md](architecture.md) before changing graph/config/web synchronization. Read
+[gpu-and-media.md](gpu-and-media.md) before changing GPU recording, transfers, SDK callbacks, registries, or workers.
 The current render-thread latency audit and outstanding migrations are tracked in
 [render-thread-audit.md](render-thread-audit.md).
 The proposed broadcast timing, clock-recovery, frame-selection, output-buffering, and atomic graph-update architecture
 is tracked in [frame-timing-and-synchronization.md](frame-timing-and-synchronization.md).
 The proposed Vulkan/MoltenVK migration, platform transfer strategy, and hardware acceptance gates are documented in
-[vulkan-migration.md](vulkan-migration.md). This is a review proposal, not the current GPU implementation.
+[vulkan-migration.md](vulkan-migration.md). [Implementation progress](vulkan-progress.md) documents the Vulkan
+implementation and local results, including the application cutover.
 
 ## Building and running
 
@@ -38,10 +41,11 @@ Release builds do not enable interprocedural optimization by default. Enable IPO
 libraries and their executable consumers with `-DMIXIMUS_ENABLE_RELEASE_IPO=ON`. External dependencies and the
 separately loaded `static_files` shared library are not included.
 
-Enable clang-tidy during native compilation with:
+Use a separate build directory for clang-tidy so normal builds remain unaffected:
 
 ```bash
-cmake -S . -B build -DMIXIMUS_ENABLE_CLANG_TIDY=ON
+cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON
+cmake --build build-tidy -j
 ```
 
 The repository-root `.clang-tidy` contains the shared check configuration used by both CMake and supporting IDE
@@ -49,6 +53,9 @@ extensions. CMake also exports `build/compile_commands.json` for clangd and othe
 Precompiled headers are enabled by default for targets that make extensive use of expensive third-party headers and
 can be disabled with `-DMIXIMUS_ENABLE_PRECOMPILED_HEADERS=OFF`. They are disabled automatically while clang-tidy is
 enabled because the compiler and clang-tidy may use incompatible PCH formats.
+
+GPU tests inherit these checks and exclude GoogleTest macro expansions from cognitive-complexity scoring.
+Their own loops and conditionals are still checked; assertion implementation details do not inflate the score.
 
 ### Sanitizers
 
@@ -67,24 +74,17 @@ cmake -S . -B build-asan \
 cmake --build build-asan -j
 ```
 
-On Linux, CUDA/OpenGL interoperability may fail during `cudaGLGetDevices()` with `cudaErrorMemoryAllocation` when
-AddressSanitizer protects its shadow-memory gap. This happens before Miximus allocates pinned memory, streams, events,
-CUDA images, or CUDA pixel buffers and therefore does not indicate exhausted GPU memory. Sanitized Miximus executables
-supply the required AddressSanitizer runtime setting themselves. The current CUDA 11.4 setup has been verified to
-initialize and exercise both direct-image and pixel-buffer transfers with:
+Sanitized GPU-linked binaries share runtime defaults from `src/sanitizer_defaults.cpp`, including the app, GPU tests and
+benchmarks. CUDA-enabled builds retain `protect_shadow_gap=0`: CUDA initialization still fails with ASan's guarded shadow
+gap on the tested toolkit/driver. CUDA-free builds keep the default guard. This is selected at build time because ASan
+initializes before `--use-cuda` is parsed; instrumentation and leak detection remain enabled.
 
-```bash
-./build-asan/miximus --settings build/settings.json --stop-after 5
-```
-
-`protect_shadow_gap=0` leaves AddressSanitizer instrumentation enabled, but removes the inaccessible guard over its unused
-shadow gap so CUDA can establish its unified virtual-address mappings. The setting is compiled into AddressSanitizer builds
-only. An out-of-memory error in a normal build, or from a later operation such as `cudaHostAlloc()` or CUDA resource
-registration, must still be investigated as a real allocation or driver failure.
-
-LeakSanitizer remains enabled for Miximus and its dependencies. Its built-in suppression excludes only allocations whose
-stack includes `libnvidia-glcore.so`; the proprietary driver retains a small set of process-lifetime OpenGL and DBus
-allocations even after CUDA and GLFW teardown. Do not broaden this suppression to CUDA, DBus, or other libraries.
+On Linux, ASan builds default Vulkan Loader's `VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING` to `1`, retaining
+driver/layer libraries for exit-time root inspection and symbolization. An explicit environment value is respected for
+diagnostic comparisons. NVIDIA's Vulkan ICD also uses `libnvidia-glcore.so` and `libGLX_nvidia.so`; allocations with
+these driver frames are suppressed after reproducing their presentation leaks. XCB, DBus and application allocations are
+not broadly suppressed. See [sanitizer verification](gpu-sanitizers.md) for the reproduced failures, test results and
+scope.
 
 Clang sanitizer builds select the system's conventional `addr2line` executable through CMake and compile that choice
 into the sanitizer runtime defaults. This keeps online stack symbolization enabled while avoiding a deadlock observed
@@ -102,8 +102,11 @@ under a debugger or another environment that uses `ptrace`; leave leak detection
 Run:
 
 ```bash
-./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds]
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda]
 ```
+
+Host transfers use Vulkan staging by default. `--use-cuda` requires the optional CUDA/Vulkan backend; see [CUDA
+transfers and benchmarking](cuda-transfers.md).
 
 The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the
 given positive number of seconds and is useful for repeatable runtime and sanitizer checks.
@@ -122,7 +125,9 @@ Native deterministic tests use GoogleTest and are registered individually with C
 ctest --test-dir build --output-on-failure
 ```
 
-The native build hashes web sources, rebuilds `web/dist` only when needed, and bundles web output and `resources/` into `static_files`. Web-build failures are reported at the end of the native build.
+The native build hashes web sources, rebuilds `web/dist` only when needed, and bundles web output and `resources/` into
+`static_files`. Shader sources in `shaders/` are compiled and validated into the build tree, then bundled separately as
+SPIR-V through the same file bundler. Web-build failures are reported at the end of the native build.
 
 ## Adding or changing a node
 
@@ -218,13 +223,23 @@ Project targets are composed in the root and `src/**/CMakeLists.txt` files. Exte
 
 Current wrappers include:
 
-- CUDA via CMake `CUDAToolkit` and `CUDA::cudart`;
-- NVIDIA DVP from `3rd-party/dvp170_linux` or `dvp170_win`;
+- Vulkan SDK headers/toolchain plus pinned Volk and VMA submodules;
+- Linux X11/Xrandr window-system support for saved screen-output geometry and monitor IDs;
 - Blackmagic DeckLink SDK through `3rd-party/decklink-sdk`;
 - NDI 6.2 or newer through the system-installed NDI SDK;
-- NVIDIA Video Codec SDK through `3rd-party/video-sdk`;
+- optional NVIDIA Video Codec SDK through `3rd-party/video-sdk`;
 - system FFmpeg components;
 - stb implementation sources.
+
+The Vulkan wrapper requires SDK headers/loader discovery, GLFW 3.4, glslang 16.2.0, and `spirv-val`. VMA 3.3.0 and Volk
+SDK 1.4.341.0 are pinned submodules; no upstream implementation/header is copied into `src/`. Shader modules are
+validated
+and bundled into `static_files` during the native build using the existing file bundler. The macOS package baseline is
+MoltenVK 1.4.1, checked against the installed SDK's
+headers. See [Vulkan implementation status](vulkan-progress.md) for device/validation settings, Linux verification and
+remaining platform work. Linux window geometry regression checks run explicitly with `build/src/gpu/gpu_window_test`
+on a display. Ordinary CTest stays GPU-independent; run `build/src/gpu/gpu_vulkan_test` and
+`build/src/gpu/gpu_transfer_vulkan_test` explicitly for GPU validation.
 
 The project-local `ndi` wrapper discovers the NDI headers and library in the platform's standard SDK installation
 locations. `NDI_ROOT` or `NDI_SDK_DIR` may select another SDK root, which must contain NDI 6.2 or newer. Consumers link
@@ -267,7 +282,7 @@ Before adding a thread, callback, or asynchronously refreshed collection, docume
 - what mutex/queue/fence provides ordering;
 - when workers stop and join;
 - whether returned pointers/views remain valid;
-- whether GL context ownership is required at construction/destruction.
+- how submitted GPU uses and external leases defer native destruction.
 
 Mutable registries should protect collections, return owned values or stable handles, increment an atomic version after refresh, and let render nodes publish expensive lists only after version changes.
 
@@ -295,7 +310,9 @@ npm run build
 
 The web build runs Vue TypeScript checking and a Vite production build.
 
-For changes involving nodes or the protocol, inspect both native and TypeScript definitions. For DeckLink, NDI, CUDA, DVP, font discovery, or display timing, perform runtime validation on suitable hardware; compilation alone cannot validate behavior.
+For changes involving nodes or the protocol, inspect both native and TypeScript definitions. For DeckLink, NDI, CUDA,
+font discovery, or display timing, perform runtime validation on suitable hardware; compilation alone cannot validate
+behavior.
 
 ### Long-running timing soak
 
@@ -395,10 +412,10 @@ Shutdown order is deliberate:
 
 1. Stop the web server and clear adapters.
 2. Save authoritative settings.
-3. Clear nodes with the root GL context current.
-4. Uninstall device discovery.
-5. Shut down CUDA/DVP transfer contexts while root GL is current.
-6. Destroy root GL and stop/join application service threads.
+3. Abort pending recordings and clear nodes on the render thread.
+4. Uninstall device discovery and drain DeckLink/NDI control workers and SDK leases.
+5. Drain transfer services and retire GPU resources/device.
+6. Destroy GLFW windows, terminate GLFW, and stop/join application service threads.
 
 `web_server` is declared after `app_state_s`, so it is destroyed first; websocketpp retains a raw pointer to the app's
 Asio executor. A no-progress watchdog forces exit if teardown hangs in any build configuration, using a ten-second

@@ -11,6 +11,7 @@
 #include "media/frame_fingerprint.hpp"
 #include "media/media_clock.hpp"
 #include "media/output_runtime_metrics.hpp"
+#include "media/playout_timeline.hpp"
 #include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
 #include "nodes/interface.hpp"
@@ -151,6 +152,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         uint64_t                          output_frame_sequence{};
         utils::flicks                     decklink_media_pts{};
         utils::flicks                     program_target_time{};
+        utils::flicks                     selected_program_pts{};
+        std::optional<utils::flicks>      scheduled_presentation;
     };
 
     std::atomic_ulong ref_count_{1};
@@ -180,6 +183,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     uint64_t                                                                       next_output_frame_sequence_{};
     utils::flicks                                                                  program_frame_duration_;
     media::media_to_program_clock_s                                                decklink_to_program_clock_;
+    std::optional<uint64_t>                                                        last_observed_completion_;
+    media::playout_timeline_s                                                      playout_timeline_;
     media::presentation_timeline_s                                                 presentation_timeline_;
     size_t                                                                         configured_buffer_frames_{};
     size_t                                                                         scheduled_frame_target_{};
@@ -325,15 +330,15 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         const auto buffer_frames = std::max(configured_buffer_frames_, device_minimum);
         scheduled_frame_target_  = buffer_frames;
         output_queue_.emplace(media::timed_output_queue_config_s{
-            .capacity        = get_output_queue_capacity(buffer_frames),
-            .early_tolerance = program_frame_duration_ / 2,
+            .capacity = get_output_queue_capacity(buffer_frames),
         });
 
         const auto readback_slot_count = get_readback_slot_count(scheduled_frame_target_, output_queue_->capacity());
         const auto stream              = readback_service_->create_stream({
-                         .host_layout   = active_output->path->host_layout(),
-                         .max_slots     = readback_slot_count,
-                         .initial_slots = readback_slot_count,
+                         .host_layout         = active_output->path->host_layout(),
+                         .max_slots           = readback_slot_count,
+                         .initial_slots       = readback_slot_count,
+                         .conversion_sampling = gpu::sampling_e::linear,
         });
         if (!stream->wait_for_initial_slots(5s)) {
             log()->error("Failed to initialize the DeckLink output transfer pool for {}", device_name_);
@@ -475,7 +480,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             return false;
         }
         auto&      output_queue = *output_queue_;
-        const auto selection    = output_queue.select(program_target_time);
+        const auto selection    = output_queue.select_nearest(program_target_time);
         runtime_metrics_.observe_selection(selection.selection, output_queue.queued() != 0);
         if (selection.frame != nullptr) {
             last_buffer_                 = selection.frame->payload;
@@ -509,6 +514,9 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             .output_frame_sequence = next_output_frame_sequence_,
             .decklink_media_pts    = decklink_media_pts,
             .program_target_time   = program_target_time,
+            .selected_program_pts =
+                selection.frame != nullptr ? selection.frame->program_target_time : program_target_time,
+            .scheduled_presentation = decklink_to_program_clock_.map_media_pts_to_program_time(decklink_media_pts),
         });
         next_decklink_stream_time_ += active_output_.path->display_mode().frame_duration;
         ++next_output_frame_sequence_;
@@ -618,10 +626,16 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         const auto completed_output_frame_sequence = completed->output_frame_sequence;
         const auto completed_decklink_media_pts    = completed->decklink_media_pts;
         const auto completed_program_target_time   = completed->program_target_time;
+        const auto selected_program_pts            = completed->selected_program_pts;
+        const auto scheduled_presentation          = completed->scheduled_presentation;
         const auto completed_start_time =
             observe_completion_time ? completed_frame_start_time(completed_frame) : std::nullopt;
         scheduled_frames_.erase(completed);
-        if (completed_start_time.has_value()) {
+        if (completed_start_time.has_value() &&
+            (!last_observed_completion_ || completed_output_frame_sequence > *last_observed_completion_)) {
+            // Reclaim every SDK completion, but never let a delayed callback
+            // rewind the hardware clock used to schedule subsequent frames.
+            last_observed_completion_ = completed_output_frame_sequence;
             runtime_metrics_.observe_completion(*completed_start_time);
             decklink_to_program_clock_.observe(
                 {
@@ -631,7 +645,12 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                     .frame_duration = active_output_.path->display_mode().frame_duration_flicks,
                 },
                 *completed_start_time);
-            presentation_timeline_.observe_latency(*completed_start_time, completed_program_target_time);
+            if (!playout_timeline_.initialized()) {
+                playout_timeline_.initialize(*completed_start_time, completed_program_target_time);
+            } else if (scheduled_presentation) {
+                playout_timeline_.observe(*scheduled_presentation, *completed_start_time);
+            }
+            presentation_timeline_.observe_latency(*completed_start_time, selected_program_pts);
         }
         sample_buffered_video_frames();
         collect_completed_readbacks();
@@ -639,8 +658,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                                              static_cast<utils::flicks::rep>(next_output_frame_sequence_);
         const auto next_presentation_time =
             decklink_to_program_clock_.map_media_pts_to_program_time(next_decklink_media_pts);
-        auto program_target = next_presentation_time.has_value()
-                                  ? presentation_timeline_.map_presentation_to_program_target(*next_presentation_time)
+        auto program_target = next_presentation_time.has_value() && playout_timeline_.initialized()
+                                  ? std::optional{playout_timeline_.program_target(*next_presentation_time)}
                                   : std::nullopt;
         if (!program_target.has_value()) {
             log()->error("Failed to query the DeckLink output playhead for {}", device_name_);
@@ -650,8 +669,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         const auto oldest_program_target = output_queue.oldest_program_target_time();
         if (oldest_program_target.has_value() &&
             *program_target + program_frame_duration_ / 2 < *oldest_program_target) {
-            presentation_timeline_.observe_latency(*next_presentation_time, *oldest_program_target);
-            program_target = presentation_timeline_.map_presentation_to_program_target(*next_presentation_time);
+            playout_timeline_.initialize(*next_presentation_time, *oldest_program_target);
+            program_target = std::optional{playout_timeline_.program_target(*next_presentation_time)};
         }
         if (!program_target.has_value()) {
             log()->error("Failed to remap the DeckLink output playhead for {}", device_name_);
@@ -911,13 +930,11 @@ class node_impl : public node_i
     std::chrono::steady_clock::time_point                     next_start_attempt_;
     std::chrono::steady_clock::time_point                     next_metrics_status_;
     uint64_t                                                  render_target_drops_{};
-    std::optional<gpu::transfer::texture_readback_target_s>   render_target_;
 
-    input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void stop_playback()
     {
-        render_target_.reset();
         render_state_.reset();
         frame_renderer_.reset();
         mode_options_version_.reset();
@@ -1148,7 +1165,6 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        render_target_.reset();
         const auto texture = iface_tex_.resolve_value(app, nodes, state);
         if (texture == nullptr || !render_state_) {
             return;
@@ -1161,23 +1177,18 @@ class node_impl : public node_i
         }
 
         if (!frame_renderer_) {
-            frame_renderer_ = render_state_->active_output.path->create_renderer(app->ctx());
+            frame_renderer_ = render_state_->active_output.path->create_renderer();
         }
         const auto fill_mode = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
-        frame_renderer_->render(texture, *target, fill_mode);
+        frame_renderer_->render(app->commands(), texture, *target, fill_mode);
         target->set_program_target_time(app->frame_context().program_target_time);
-        render_target_ = std::move(target);
-    }
-
-    void complete(core::app_state_s* /*app*/) final
-    {
-        if (render_target_) {
-            render_target_->submit();
-            render_target_.reset();
-            if (callback_) {
-                callback_->request_preroll_pump();
+        auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
+        app->defer_output([pending = std::move(pending), callback = callback_](gpu::completion_s ready) mutable {
+            pending->submit(std::move(ready));
+            if (callback) {
+                callback->request_preroll_pump();
             }
-        }
+        });
     }
 
     nlohmann::json get_default_options() const final

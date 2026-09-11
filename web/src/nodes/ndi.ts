@@ -1,3 +1,4 @@
+import { DropdownInterface } from "./interfaces";
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
@@ -121,12 +122,20 @@ const ndiOutputStatus: readonly NodeStatusSection[] = [
   },
 ];
 
+const createAlphaModeInterface = () =>
+  new DropdownInterface("Alpha mode", "straight", [
+    { id: "ignore", label: "Ignore alpha" },
+    { id: "straight", label: "Straight" },
+    { id: "premultiplied", label: "Premultiplied" },
+  ]);
+
 export const NdiInputNode = defineNode({
   type: node_type_e.ndi_input,
   title: "NDI Input",
   inputs: {
     status: () => new NodeStatusInterface(ndiInputStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
+    alpha_mode: createAlphaModeInterface,
     source_name: () => new StatusDropdownInterface("Source", "source_names"),
   },
   outputs: {
@@ -141,6 +150,7 @@ export const NdiOutputNode = defineNode({
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
     status: () => new NodeStatusInterface(ndiOutputStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
+    alpha_mode: createAlphaModeInterface,
     source_name: () => new FocusTrackingStringInterface("Sender Name", ""),
   },
   outputs: {},

@@ -1,11 +1,10 @@
 #include "core/app_state.hpp"
 #include "glm/common.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/types.hpp"
+#include "gpu/window.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -19,11 +18,9 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::texture_s*>      iface_tex_{*this, "tex"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
-
-    std::unique_ptr<gpu::textured_quad_s> textured_quad_;
+    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<gpu::texture_s*>       iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::texture_s*>      iface_fb_out_{*this, "fb_out"};
 
   public:
     explicit node_impl() { iface_tex_.set_max_connection_count(INT_MAX); }
@@ -50,16 +47,8 @@ class node_impl : public node_i
 
         const double box_dim = 1.0 / static_cast<double>(cols);
 
-        fb->begin_render();
-
-        if (!textured_quad_) {
-            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
-        }
-
-        const auto target_dimensions = fb->texture()->display_dimensions();
+        const auto target_dimensions = fb->dimensions();
         const auto fill_mode         = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
-        auto       batch             = textured_quad_->begin_batch();
 
         for (size_t i = 0, y = 0; y < cols && i < tex_count; y++) {
             for (size_t x = 0; x < cols && i < tex_count; x++, i++) {
@@ -73,12 +62,11 @@ class node_impl : public node_i
                     .size = {box_dim,                          box_dim                         },
                 };
                 const auto texture_draw =
-                    gpu::calculate_texture_draw(cell, texture->display_dimensions(), target_dimensions, fill_mode);
+                    gpu::calculate_texture_draw(cell, texture->dimensions(), target_dimensions, fill_mode);
 
-                batch.draw(texture, texture_draw);
+                gpu::draw_texture(app->commands(), texture, fb, texture_draw);
             }
         }
-        gpu::framebuffer_s::end_render();
     }
 
     nlohmann::json get_default_options() const final

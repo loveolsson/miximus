@@ -76,7 +76,7 @@ class input_capture_s
     void acknowledge_render_release();
 
     void advance_frames(utils::flicks program_pts, utils::flicks program_target_time, bool discontinuity);
-    bool submit_frame(utils::flicks program_pts, utils::flicks early_tolerance);
+    bool submit_frame(utils::flicks program_pts);
     std::optional<captured_input_frame_s> resolve_frame();
     void                                  release_prepared_frame();
     void                                  reset_frames();

@@ -1,5 +1,7 @@
 #include "media/media_clock.hpp"
 #include "media/output_runtime_metrics.hpp"
+#include "media/playout_timeline.hpp"
+#include "media/presentation_clock.hpp"
 #include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
 #include "utils/flicks.hpp"
@@ -176,17 +178,31 @@ TEST(PresentationTimeline, RetainedFramesSmoothlyCorrectADelayedStartupObservati
 
     for (size_t frame = 1; frame <= 64; ++frame) {
         const auto presentation = origin + FRAME_DURATION * static_cast<utils::flicks::rep>(frame);
-        timeline.observe_latency(presentation, presentation - timeline.latency().value());
+        const auto latency      = timeline.latency();
+        if (!latency.has_value()) {
+            ADD_FAILURE() << "Expected a retained latency observation";
+            return;
+        }
+        timeline.observe_latency(presentation, presentation - *latency);
 
         const auto oldest_retained = presentation - RETAINED_DELAY;
-        const auto requested       = timeline.map_presentation_to_program_target(presentation).value();
-        if (requested + FRAME_DURATION / 2 < oldest_retained) {
+        const auto requested       = timeline.map_presentation_to_program_target(presentation);
+        if (!requested.has_value()) {
+            ADD_FAILURE() << "Expected a mapped presentation target";
+            return;
+        }
+        if (*requested + FRAME_DURATION / 2 < oldest_retained) {
             timeline.observe_latency(presentation, oldest_retained);
         }
     }
 
-    EXPECT_LT(timeline.latency().value(), RETAINED_DELAY + FRAME_DURATION);
-    EXPECT_GT(timeline.latency().value(), RETAINED_DELAY - FRAME_DURATION);
+    const auto latency = timeline.latency();
+    if (!latency.has_value()) {
+        ADD_FAILURE() << "Expected a retained latency observation";
+        return;
+    }
+    EXPECT_LT(*latency, RETAINED_DELAY + FRAME_DURATION);
+    EXPECT_GT(*latency, RETAINED_DELAY - FRAME_DURATION);
 }
 
 TEST(PresentationTimeline, ConvertsSixtyFpsProgramToNtscOutputWithoutTimelineDrift)
@@ -302,6 +318,303 @@ TEST(OutputRuntimeMetrics, RetainsCompletionBufferAndQueueExtrema)
     EXPECT_EQ(snapshot.buffered_below_target_samples, 2);
     EXPECT_EQ(snapshot.buffered_zero_samples, 1);
     EXPECT_EQ(snapshot.refill_shortfalls, 1);
+}
+
+TEST(PresentationClock, NominalCadenceDoesNotFollowCompletionJitter)
+{
+    constexpr auto              DURATION = utils::to_flicks(1.0 / 60.0);
+    constexpr auto              ORIGIN   = utils::to_flicks(100.0);
+    media::presentation_clock_s clock(media::presentation_clock_mode_e::nominal, DURATION, ORIGIN);
+
+    for (int frame = 1; frame <= 1'000; ++frame) {
+        const auto expected = ORIGIN + DURATION * frame;
+        EXPECT_EQ(clock.predicted_completion(), expected);
+        const auto delay  = utils::to_flicks(frame % 2 == 0 ? 0.0001 : 0.002);
+        const auto result = clock.observe_completion(expected + delay);
+        EXPECT_EQ(result.interval_count, 1);
+        EXPECT_DOUBLE_EQ(result.refresh_hz, 60.0);
+    }
+}
+
+TEST(PresentationClock, MissedNominalIntervalsAdvanceWithoutCatchUpBursts)
+{
+    constexpr auto              DURATION = utils::to_flicks(1.0 / 60.0);
+    constexpr auto              ORIGIN   = utils::to_flicks(100.0);
+    media::presentation_clock_s clock(media::presentation_clock_mode_e::nominal, DURATION, ORIGIN);
+
+    const auto result = clock.observe_completion(ORIGIN + DURATION * 4 + utils::to_flicks(0.0002));
+    EXPECT_EQ(result.interval_count, 4);
+    EXPECT_EQ(clock.predicted_completion(), ORIGIN + DURATION * 5);
+    EXPECT_EQ(clock.observe_completion(ORIGIN + DURATION * 5).interval_count, 1);
+    EXPECT_EQ(clock.predicted_completion(), ORIGIN + DURATION * 6);
+}
+
+TEST(PresentationClock, MissedObservedIntervalsDoNotSlowTheRecoveredRefreshRate)
+{
+    constexpr auto              DURATION = utils::to_flicks(1.0 / 60.0);
+    constexpr auto              ORIGIN   = utils::to_flicks(100.0);
+    media::presentation_clock_s clock(media::presentation_clock_mode_e::observed, DURATION, ORIGIN);
+
+    for (int frame = 3; frame <= 3'000; frame += 3) {
+        const auto result = clock.observe_completion(ORIGIN + DURATION * frame);
+        EXPECT_EQ(result.interval_count, 3);
+        EXPECT_NEAR(result.refresh_hz, 60.0, 0.001);
+        EXPECT_EQ(clock.predicted_completion(), ORIGIN + DURATION * (frame + 1));
+    }
+}
+
+TEST(PresentationClock, NominalCadencePreservesNtscRepeatsDespiteCompletionJitter)
+{
+    constexpr auto                   PROGRAM_DURATION = utils::flicks{11'771'760};
+    constexpr auto                   OUTPUT_DURATION  = utils::to_flicks(1.0 / 60.0);
+    constexpr auto                   ORIGIN           = utils::to_flicks(100.0);
+    constexpr auto                   LATENCY          = OUTPUT_DURATION * 3;
+    media::timed_output_queue_s<int> queue({.capacity = 6'000, .early_tolerance = PROGRAM_DURATION / 2});
+    for (int frame = 0; frame < 6'000; ++frame) {
+        queue.push(make_frame(ORIGIN + PROGRAM_DURATION * frame, frame));
+    }
+
+    ASSERT_NE(queue.select(ORIGIN).frame, nullptr);
+    media::presentation_clock_s    clock(media::presentation_clock_mode_e::nominal, OUTPUT_DURATION, ORIGIN + LATENCY);
+    media::presentation_timeline_s timeline;
+    timeline.observe_latency(ORIGIN + LATENCY, ORIGIN);
+    for (int frame = 1; frame < 6'000; ++frame) {
+        const auto presentation = clock.predicted_completion();
+        const auto target       = timeline.map_presentation_to_program_target(presentation);
+        ASSERT_TRUE(target);
+        ASSERT_NE(queue.select(target.value_or(utils::flicks{})).frame, nullptr);
+        clock.observe_completion(presentation + utils::to_flicks(frame % 2 == 0 ? 0.0001 : 0.002));
+    }
+
+    EXPECT_EQ(queue.metrics().repeated, 6);
+    EXPECT_EQ(queue.metrics().selection_drops, 0);
+    EXPECT_EQ(timeline.latency(), LATENCY);
+}
+
+TEST(TimedOutputQueue, NearestSelectionComparesRetainedAndFutureFrames)
+{
+    constexpr auto                   DURATION = utils::flicks{23'520'000}; // 30 fps.
+    media::timed_output_queue_s<int> queue({.capacity = 5});
+    queue.push(make_frame(utils::flicks{}, 0));
+    queue.push(make_frame(DURATION, 1));
+    queue.push(make_frame(DURATION * 2, 2));
+
+    ASSERT_EQ(queue.select_nearest(utils::flicks{}).frame->payload, 0);
+    EXPECT_EQ(queue.select_nearest(DURATION / 2).frame->payload, 0);
+    EXPECT_EQ(queue.select_nearest(utils::to_flicks(0.020)).frame->payload, 1);
+    EXPECT_EQ(queue.queued(), 1);
+    EXPECT_EQ(queue.select_nearest(DURATION).selection, media::output_frame_selection_e::repeat);
+    EXPECT_EQ(queue.select_nearest(DURATION * 2).frame->payload, 2);
+    EXPECT_EQ(queue.metrics().selection_drops, 0);
+}
+
+TEST(TimedOutputQueue, NearestSelectionReleasesObsoleteLeasesAndKeepsFutureFrames)
+{
+    media::timed_output_queue_s<std::shared_ptr<int>> queue({.capacity = 5});
+    auto                                              obsolete = std::make_shared<int>(0);
+    auto                                              selected = std::make_shared<int>(1);
+    auto                                              future   = std::make_shared<int>(2);
+    queue.push({.program_target_time = utils::to_flicks(0.00), .payload = obsolete});
+    queue.push({.program_target_time = utils::to_flicks(0.01), .payload = selected});
+    queue.push({.program_target_time = utils::to_flicks(0.02), .payload = future});
+
+    ASSERT_NE(queue.select_nearest(utils::to_flicks(0.012)).frame, nullptr);
+    EXPECT_EQ(obsolete.use_count(), 1);
+    EXPECT_EQ(selected.use_count(), 2);
+    EXPECT_EQ(future.use_count(), 2);
+    EXPECT_EQ(queue.metrics().selection_drops, 1);
+    EXPECT_EQ(queue.queued(), 1);
+}
+
+class ScreenCadence : public testing::TestWithParam<std::pair<utils::flicks, utils::flicks>>
+{
+};
+
+void verify_screen_cadence(utils::flicks program_duration,
+                           utils::flicks display_duration,
+                           utils::flicks notification_jitter)
+{
+    constexpr auto                   ORIGIN      = utils::to_flicks(100.0);
+    constexpr auto                   RENDER_TIME = utils::to_flicks(0.001);
+    constexpr auto                   FRAME_COUNT = 6'000;
+    media::timed_output_queue_s<int> queue({.capacity = 5});
+    media::playout_timeline_s        timeline;
+
+    // Match the app: two program frames of preroll, then one display interval
+    // before the first image appears. Subsequent frames arrive continuously.
+    queue.push(make_frame(ORIGIN, 0));
+    queue.push(make_frame(ORIGIN + program_duration, 1));
+    const auto initial_presentation = ORIGIN + program_duration + RENDER_TIME + display_duration;
+    timeline.initialize(initial_presentation, queue.select_nearest(ORIGIN).frame->program_target_time);
+    media::presentation_clock_s clock(
+        media::presentation_clock_mode_e::observed, utils::flicks{11'760'000}, initial_presentation);
+    int  next_program_frame    = 2;
+    int  previous_frame        = 0;
+    int  previous_advance      = 1;
+    auto previous_presentation = initial_presentation;
+
+    for (int refresh = 1; refresh <= FRAME_COUNT; ++refresh) {
+        while (ORIGIN + program_duration * next_program_frame + RENDER_TIME <= previous_presentation) {
+            queue.push(make_frame(ORIGIN + program_duration * next_program_frame, next_program_frame));
+            ++next_program_frame;
+        }
+        const auto scheduled = clock.predicted_completion();
+        const auto target    = timeline.program_target(scheduled);
+        const auto selection = queue.select_nearest(target);
+        ASSERT_NE(selection.frame, nullptr);
+        const auto advance = selection.frame->payload - previous_frame;
+        EXPECT_GE(advance, 0);
+        EXPECT_LE(advance, 2);
+        if (program_duration > display_duration) {
+            EXPECT_LE(advance, 1) << "unexpected skip at " << refresh;
+            EXPECT_FALSE(advance == 0 && previous_advance == 0) << "repeat burst at " << refresh;
+        } else {
+            EXPECT_GT(advance, 0) << "unexpected repeat at " << refresh;
+            EXPECT_FALSE(advance == 2 && previous_advance == 2) << "drop burst at " << refresh;
+        }
+        previous_frame   = selection.frame->payload;
+        previous_advance = advance;
+
+        const auto jitter = notification_jitter * (refresh % 17);
+        const auto actual = initial_presentation + display_duration * refresh + jitter;
+        // Feedback is deliberately supplied on EVERY refresh, including repeats.
+        timeline.observe(scheduled, actual);
+        clock.observe_completion(actual);
+        previous_presentation = actual;
+    }
+
+    EXPECT_EQ(queue.metrics().overflow_drops, 0);
+    EXPECT_EQ(queue.metrics().missing, 0);
+    EXPECT_NEAR(
+        utils::to_seconds(timeline.buffered_latency()), utils::to_seconds(initial_presentation - ORIGIN), 0.001);
+    const auto expected_program_frame = (display_duration * FRAME_COUNT + program_duration / 2) / program_duration;
+    EXPECT_NEAR(previous_frame, expected_program_frame, 1);
+}
+
+TEST_P(ScreenCadence, ContinuousFeedbackKeepsLiveBoundedQueueStable)
+{
+    const auto [program_duration, display_duration] = GetParam();
+    verify_screen_cadence(program_duration, display_duration, utils::flicks{});
+}
+
+TEST_P(ScreenCadence, NotificationJitterDoesNotCreateExtraCadenceTransitions)
+{
+    const auto [program_duration, display_duration] = GetParam();
+    verify_screen_cadence(program_duration, display_duration, utils::to_flicks(0.0001));
+}
+
+TEST_P(ScreenCadence, DelayedHardwareFeedbackKeepsScheduledOutputCadenceStable)
+{
+    const auto [program_duration, output_duration] = GetParam();
+    constexpr auto                   ORIGIN        = utils::to_flicks(100.0);
+    constexpr int                    PREROLL       = 4;
+    media::timed_output_queue_s<int> queue({.capacity = 8});
+    media::playout_timeline_s        timeline;
+    timeline.initialize(ORIGIN + program_duration * PREROLL, ORIGIN);
+    std::deque<std::pair<utils::flicks, utils::flicks>> feedback;
+    int                                                 next_frame     = 0;
+    int                                                 previous_frame = -1;
+    for (int interval = 0; interval < 6'000; ++interval) {
+        const auto scheduled = ORIGIN + program_duration * PREROLL + output_duration * interval;
+        while (ORIGIN + program_duration * next_frame < scheduled) {
+            queue.push(make_frame(ORIGIN + program_duration * next_frame, next_frame));
+            ++next_frame;
+        }
+        const auto target   = timeline.program_target(scheduled);
+        const auto selected = queue.select_nearest(target);
+        ASSERT_NE(selected.frame, nullptr);
+        EXPECT_GE(selected.frame->payload, previous_frame);
+        EXPECT_LE(std::chrono::abs(selected.frame->program_target_time - target), program_duration / 2);
+        previous_frame = selected.frame->payload;
+        // Hardware completion arrives after several later frames were scheduled.
+        // Feed back the prediction saved for this frame, not today's prediction.
+        feedback.emplace_back(scheduled, scheduled + utils::to_flicks(0.00005) * (interval % 7));
+        if (feedback.size() > PREROLL) {
+            timeline.observe(feedback.front().first, feedback.front().second);
+            feedback.pop_front();
+        }
+    }
+    EXPECT_EQ(queue.metrics().overflow_drops, 0);
+    EXPECT_EQ(queue.metrics().missing, 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(RateMismatch,
+                         ScreenCadence,
+                         testing::Values(std::pair{utils::flicks{11'760'000}, utils::flicks{11'771'760}},
+                                         std::pair{utils::flicks{11'771'760}, utils::flicks{11'760'000}},
+                                         std::pair{utils::flicks{14'112'000}, utils::flicks{11'760'000}},
+                                         std::pair{utils::flicks{23'520'000}, utils::flicks{11'760'000}},
+                                         std::pair{utils::flicks{11'760'000}, utils::flicks{11'760'000}}));
+
+TEST(ScreenTimeline, ContinuousLatenessCorrectionDoesNotAccumulateOrDependOnSelectedPts)
+{
+    constexpr auto            LATENCY  = utils::to_flicks(0.04);
+    constexpr auto            DURATION = utils::flicks{11'760'000};
+    constexpr auto            DELAY    = utils::to_flicks(0.002);
+    media::playout_timeline_s timeline;
+    timeline.initialize(LATENCY, utils::flicks{});
+    for (int refresh = 1; refresh <= 1'000; ++refresh) {
+        const auto scheduled = LATENCY + DURATION * refresh;
+        timeline.observe(scheduled, scheduled + DELAY);
+        EXPECT_LE(timeline.program_target(scheduled), scheduled + DELAY - LATENCY);
+        if (refresh > 900) {
+            EXPECT_NEAR(utils::to_seconds(timeline.program_target(scheduled) - scheduled + LATENCY),
+                        utils::to_seconds(DELAY),
+                        0.00001);
+        }
+    }
+    for (int refresh = 1; refresh <= 1'000; ++refresh) {
+        const auto scheduled = LATENCY + DURATION * (1'000 + refresh);
+        timeline.observe(scheduled, scheduled);
+    }
+    EXPECT_EQ(timeline.buffered_latency(), LATENCY);
+    EXPECT_NEAR(utils::to_seconds(timeline.program_target(LATENCY)), 0.0, 0.00001);
+}
+
+TEST(PresentationClock, DelayedNotificationDoesNotAddAnExtraIntervalToTheClock)
+{
+    constexpr auto              DURATION = utils::flicks{11'760'000};
+    constexpr auto              ORIGIN   = utils::to_flicks(100.0);
+    media::presentation_clock_s clock(media::presentation_clock_mode_e::observed, DURATION, ORIGIN);
+    for (int refresh = 1; refresh <= 600; ++refresh) {
+        // A notification arrives 10 ms late; the following refresh is on time.
+        // Counting only consecutive arrival deltas would insert an extra tick.
+        const auto delay  = refresh % 120 == 1 ? utils::to_flicks(0.010) : utils::flicks{};
+        const auto result = clock.observe_completion(ORIGIN + DURATION * refresh + delay);
+        if (refresh % 120 == 0) {
+            EXPECT_NEAR(utils::to_seconds(clock.predicted_completion() - ORIGIN),
+                        utils::to_seconds(DURATION * (refresh + 1)),
+                        0.001);
+            EXPECT_NEAR(result.refresh_hz, 60.0, 0.01);
+        }
+    }
+}
+
+TEST(PresentationClock, WakeupJitterAndAMissedRefreshKeepContinuousFeedbackBounded)
+{
+    constexpr auto              DURATION = utils::flicks{11'760'000};
+    constexpr auto              ORIGIN   = utils::to_flicks(100.0);
+    constexpr auto              LATENCY  = DURATION * 2;
+    media::presentation_clock_s clock(media::presentation_clock_mode_e::observed, DURATION, ORIGIN);
+    media::playout_timeline_s   timeline;
+    timeline.initialize(ORIGIN, ORIGIN - LATENCY);
+    for (int refresh = 1; refresh <= 3'000; ++refresh) {
+        if (refresh == 300) {
+            continue; // One genuine missed display refresh.
+        }
+        const auto scheduled = clock.predicted_completion();
+        const auto jitter    = utils::to_flicks(refresh % 2 == 0 ? 0.0001 : 0.002);
+        const auto actual    = ORIGIN + DURATION * refresh + jitter;
+        timeline.observe(scheduled, actual);
+        clock.observe_completion(actual);
+        // The missed refresh itself cannot be predicted. The next selection
+        // must immediately follow the recovered display interval instead of
+        // replaying the missed slot or retaining its error as permanent latency.
+        const auto next_target = timeline.program_target(clock.predicted_completion());
+        EXPECT_LT(std::chrono::abs(next_target - (ORIGIN + DURATION * (refresh + 1) - LATENCY)), DURATION / 2)
+            << "refresh " << refresh;
+    }
+    EXPECT_EQ(timeline.buffered_latency(), LATENCY);
 }
 
 } // namespace

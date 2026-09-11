@@ -3,7 +3,7 @@
 #include "core/app_state.hpp"
 #include "core/frame_scheduler.hpp"
 #include "core/node_status_registry.hpp"
-#include "gpu/context.hpp"
+#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/frame_execution.hpp"
 #include "nodes/interface.hpp"
@@ -432,8 +432,6 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
     status_registry_ = app->status_registry();
 
     {
-        const gpu::context_scope_s context_scope(*app->ctx());
-
         {
             /**
              * A few things are accomplished by copying the node map here:
@@ -505,7 +503,17 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 
         app->frame_info.executed_nodes.clear();
         app->frame_info.executed_nodes.reserve(nodes_copy_.size());
-        nodes::execute_demanding_nodes(app, nodes_copy_, demanding_nodes);
+        try {
+            const app_state_s::frame_scope_s frame(*app);
+            nodes::execute_demanding_nodes(app, nodes_copy_, demanding_nodes);
+            app->commit_gpu_frame();
+        } catch (const gpu::recording_unavailable_s&) {
+            ++gpu_recording_drops_;
+        } catch (...) {
+            nodes::complete_all_nodes(app, nodes_copy_);
+            throw;
+        }
+
         const auto execute_end = utils::flicks_now();
 
         const auto finish_end = execute_end;
@@ -528,6 +536,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
                                               .demanding_node_count   = demanding_nodes.size(),
                                               .submitted_node_count   = app->frame_info.submitted_nodes.size(),
                                               .executed_node_count    = app->frame_info.executed_nodes.size(),
+                                              .gpu_recording_drops    = gpu_recording_drops_,
                                           });
             next_lifecycle_status_ = now + 1s;
         }
@@ -544,7 +553,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 
 void node_manager_s::clear_nodes(app_state_s* app)
 {
-    const gpu::context_scope_s context_scope(*app->ctx());
+    app->abort_gpu();
 
     nodes_copy_.clear();
     nodes_.clear();

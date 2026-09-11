@@ -1,6 +1,0 @@
-#pragma once
-
-namespace miximus::gpu {
-class context_scope_s;
-class context_s;
-} // namespace miximus::gpu

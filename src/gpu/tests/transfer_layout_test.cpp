@@ -21,39 +21,36 @@ TEST(TransferLayout, KeepsRgbaBytesRaw)
 {
     const auto plan = make_texture_transfer_plan(make_layout(host_pixel_format_e::rgba_u8));
 
-    EXPECT_EQ(plan.texture_dimensions, (vec2i_t{1920, 1080}));
-    EXPECT_EQ(plan.storage_format, texture_s::storage_format_e::rgba_unorm8);
-    EXPECT_EQ(plan.pixel_format, GL_RGBA);
-    EXPECT_EQ(plan.pixel_type, GL_UNSIGNED_BYTE);
-    EXPECT_EQ(plan.input_mapping, input_component_mapping_e::identity);
-    EXPECT_EQ(plan.output_mapping, output_component_mapping_e::identity);
+    EXPECT_EQ(plan.host_layout.image_dimensions, (vec2i_t{1920, 1080}));
+    EXPECT_EQ(plan.packed_buffer_bytes, 0);
+    EXPECT_EQ(plan.input_order, channel_order_e::rgba);
+    EXPECT_EQ(plan.output_order, channel_order_e::rgba);
 }
 
 TEST(TransferLayout, DescribesBgraMappingWithoutChangingRawStorage)
 {
     const auto plan = make_texture_transfer_plan(make_layout(host_pixel_format_e::bgra_u8));
 
-    EXPECT_EQ(plan.storage_format, texture_s::storage_format_e::rgba_unorm8);
-    EXPECT_EQ(plan.pixel_format, GL_RGBA);
-    EXPECT_EQ(plan.input_mapping, input_component_mapping_e::bgra_to_rgba);
-    EXPECT_EQ(plan.output_mapping, output_component_mapping_e::rgba_to_bgra_bytes);
+    EXPECT_EQ(plan.packed_buffer_bytes, 0);
+    EXPECT_EQ(plan.input_order, channel_order_e::bgra);
+    EXPECT_EQ(plan.output_order, channel_order_e::bgra);
 }
 
 TEST(TransferLayout, ForcesOpaqueAlphaForBgrxInput)
 {
     const auto plan = make_texture_transfer_plan(make_layout(host_pixel_format_e::bgrx_u8));
 
-    EXPECT_EQ(plan.input_mapping, input_component_mapping_e::bgrx_to_rgba);
-    EXPECT_EQ(plan.output_mapping, output_component_mapping_e::identity);
+    EXPECT_EQ(plan.input_order, channel_order_e::bgrx);
+    EXPECT_EQ(plan.output_order, channel_order_e::rgba);
 }
 
 TEST(TransferLayout, DescribesArgbMappingWithoutChangingRawStorage)
 {
     const auto plan = make_texture_transfer_plan(make_layout(host_pixel_format_e::argb_u8));
 
-    EXPECT_EQ(plan.storage_format, texture_s::storage_format_e::rgba_unorm8);
-    EXPECT_EQ(plan.input_mapping, input_component_mapping_e::argb_to_rgba);
-    EXPECT_EQ(plan.output_mapping, output_component_mapping_e::rgba_to_argb_bytes);
+    EXPECT_EQ(plan.packed_buffer_bytes, 0);
+    EXPECT_EQ(plan.input_order, channel_order_e::argb);
+    EXPECT_EQ(plan.output_order, channel_order_e::argb);
 }
 
 TEST(TransferLayout, StoresV210AsRawWordsIncludingRowPadding)
@@ -64,10 +61,8 @@ TEST(TransferLayout, StoresV210AsRawWordsIncludingRowPadding)
 
     const auto plan = make_texture_transfer_plan(layout);
 
-    EXPECT_EQ(plan.texture_dimensions, (vec2i_t{1280, 1080}));
-    EXPECT_EQ(plan.storage_format, texture_s::storage_format_e::r32_uint);
-    EXPECT_EQ(plan.pixel_format, GL_RED_INTEGER);
-    EXPECT_EQ(plan.pixel_type, GL_UNSIGNED_INT);
+    EXPECT_EQ(plan.host_layout.image_dimensions, (vec2i_t{1920, 1080}));
+    EXPECT_EQ(plan.packed_buffer_bytes, size_t{5120} * 1080);
 }
 
 TEST(TransferLayout, RejectsV210RowsTooShortForTheImage)

@@ -1,9 +1,9 @@
 target_sources(gpu 
 PRIVATE
-    detail/texture_transfer_backend.hpp
-    detail/texture_transfer_backend.cpp
-    detail/texture_transfer_backend_factory.hpp
-    detail/texture_transfer_backend_factory.cpp
+    detail/frame_staging.hpp
+    detail/frame_staging.cpp
+    detail/transfer_backend.hpp
+    detail/transfer_backend.cpp
     detail/transfer_layout.hpp
     detail/transfer_layout.cpp
     detail/transfer_worker.hpp
@@ -14,10 +14,10 @@ PRIVATE
     texture_readback_fwd.hpp
     texture_readback.hpp
     texture_readback.cpp
-    detail/persistent.hpp
-    detail/persistent.cpp
-    detail/dvp.hpp
-    detail/dvp.cpp
-    detail/cuda.hpp
-    detail/cuda.cpp
 )
+
+if(TARGET cuda_dependencies)
+    target_sources(gpu PRIVATE detail/cuda_staging.cpp)
+    target_link_libraries(gpu PRIVATE cuda_dependencies)
+    target_compile_definitions(gpu PRIVATE MIXIMUS_HAS_CUDA=1)
+endif()

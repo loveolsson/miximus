@@ -10,3 +10,7 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 build*
+
+# Python test and benchmark runners
+__pycache__/
+*.pyc

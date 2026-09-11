@@ -1,12 +1,11 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
+#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -57,12 +56,11 @@ class node_impl : public node_i
         std::unique_ptr<render::font_instance_s> font;
     };
 
-    input_interface_s<gpu::rect_s>          iface_rect_in_{*this, "rect"};
-    input_interface_s<double>               iface_scroll_pos_in_{*this, "scroll_pos"};
-    input_interface_s<gpu::framebuffer_s*>  iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::framebuffer_s*> iface_fb_out_{*this, "fb_out"};
+    input_interface_s<gpu::rect_s>      iface_rect_in_{*this, "rect"};
+    input_interface_s<double>           iface_scroll_pos_in_{*this, "scroll_pos"};
+    input_interface_s<gpu::texture_s*>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<gpu::texture_s*> iface_fb_out_{*this, "fb_out"};
 
-    std::unique_ptr<gpu::textured_quad_s>     textured_quad_;
     ::mutex                                   font_mtx_;
     std::shared_ptr<render::font_loader_s>    font_loader_ = std::make_shared<render::font_loader_s>();
     ::future<text_s>                          text_future_;
@@ -118,11 +116,6 @@ class node_impl : public node_i
                     .font_variants = app->font_registry()->get_font_variant_options(font_name),
                 });
         }
-
-        if (!textured_quad_) {
-            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::basic);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
-        }
     }
 
     // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -152,7 +145,7 @@ class node_impl : public node_i
         auto scroll_pos = state.get_option<double>("scroll_pos", 0);
         scroll_pos      = iface_scroll_pos_in_.resolve_value(app, nodes, state, scroll_pos);
 
-        const gpu::vec2i_t fb_dim   = fb->texture()->texture_dimensions();
+        const gpu::vec2i_t fb_dim   = fb->dimensions();
         const gpu::recti_s viewport = gpu::normalized_to_pixel_rect(draw_rect, fb_dim);
         if (viewport.size.x <= 0 || viewport.size.y <= 0) {
             return;
@@ -252,8 +245,6 @@ class node_impl : public node_i
             }
         }
 
-        fb->begin_render(viewport);
-        auto       batch = textured_quad_->begin_batch();
         const auto scale = gpu::pixels_to_normalized(gpu::vec2_t(tx_dim), viewport.size);
 
         /**
@@ -331,25 +322,28 @@ class node_impl : public node_i
             if (!frame || rl->upload_stream->retained_upload_id() != rl->upload_id) {
                 continue;
             }
-            frame->wait_for_upload_on_gpu();
 
             const int    line_height_px = font_size_.value() + line_height_extra_;
             const double px_pos         = std::floor((txt_line_index - scroll_pos) * line_height_px);
             const auto   pos            = gpu::pixels_to_normalized({0, px_pos}, viewport.size);
 
-            batch.draw(frame->texture(), {.pos = pos, .size = scale});
+            const gpu::texture_draw_s geometry{
+                .destination = {.pos = pos, .size = scale}
+            };
+            gpu::draw_texture(app->commands(),
+                              frame->texture(),
+                              fb,
+                              geometry,
+                              1,
+                              gpu::color_operation_e::none,
+                              gpu::compositing_e::source_over,
+                              gpu::channel_order_e::rgba,
+                              viewport);
             rendered_line_frames_.emplace_back(std::move(frame));
         }
-        gpu::framebuffer_s::end_render();
     }
 
-    void complete(core::app_state_s* /*app*/) final
-    {
-        for (auto& frame : rendered_line_frames_) {
-            frame->publish_render_release_fence();
-        }
-        rendered_line_frames_.clear();
-    }
+    void complete(core::app_state_s* /*app*/) final { rendered_line_frames_.clear(); }
 
     nlohmann::json get_default_options() const final
     {

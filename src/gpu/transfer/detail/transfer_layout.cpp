@@ -32,7 +32,6 @@ texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layo
 
     constexpr size_t bytes_per_storage_texel = 4;
     size_t           minimum_row_stride{};
-    vec2i_t          texture_dimensions = host_layout.image_dimensions;
     switch (host_layout.pixel_format) {
         case host_pixel_format_e::rgba_u8:
         case host_pixel_format_e::bgra_u8:
@@ -54,12 +53,9 @@ texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layo
         host_layout.row_stride_bytes % bytes_per_storage_texel != 0) {
         throw std::invalid_argument("texture transfer row stride is invalid for its pixel format");
     }
-    if (host_layout.row_stride_bytes / bytes_per_storage_texel >
-        static_cast<size_t>(std::numeric_limits<GLint>::max())) {
-        throw std::invalid_argument("texture transfer row length exceeds the OpenGL limit");
-    }
-    if (host_layout.pixel_format == host_pixel_format_e::v210) {
-        texture_dimensions.x = static_cast<int>(host_layout.row_stride_bytes / bytes_per_storage_texel);
+
+    if (host_layout.row_stride_bytes / bytes_per_storage_texel > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("texture transfer row length exceeds the supported limit");
     }
 
     const auto height = static_cast<size_t>(host_layout.image_dimensions.y);
@@ -77,51 +73,47 @@ texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layo
 
     texture_transfer_plan_s result{
         .host_layout             = host_layout,
-        .texture_dimensions      = texture_dimensions,
-        .storage_format          = texture_s::storage_format_e::rgba_unorm8,
-        .pixel_format            = GL_RGBA,
-        .pixel_type              = GL_UNSIGNED_BYTE,
         .storage_bytes_per_texel = bytes_per_storage_texel,
     };
     switch (host_layout.pixel_format) {
         case host_pixel_format_e::rgba_u8:
             break;
         case host_pixel_format_e::bgra_u8:
-            result.input_mapping  = input_component_mapping_e::bgra_to_rgba;
-            result.output_mapping = output_component_mapping_e::rgba_to_bgra_bytes;
+            result.input_order  = channel_order_e::bgra;
+            result.output_order = channel_order_e::bgra;
             break;
         case host_pixel_format_e::bgrx_u8:
-            result.input_mapping = input_component_mapping_e::bgrx_to_rgba;
+            result.input_order = channel_order_e::bgrx;
             break;
         case host_pixel_format_e::argb_u8:
-            result.input_mapping  = input_component_mapping_e::argb_to_rgba;
-            result.output_mapping = output_component_mapping_e::rgba_to_argb_bytes;
+            result.input_order  = channel_order_e::argb;
+            result.output_order = channel_order_e::argb;
             break;
         case host_pixel_format_e::v210:
-            result.storage_format = texture_s::storage_format_e::r32_uint;
-            result.pixel_format   = GL_RED_INTEGER;
-            result.pixel_type     = GL_UNSIGNED_INT;
+            result.packed_buffer_bytes = checked_multiply(host_layout.row_stride_bytes, height);
             break;
     }
     return result;
 }
 
-size_t estimate_slot_memory_usage(const texture_transfer_plan_s& transfer_plan, texture_s::sampling_e sampling)
+size_t estimate_slot_memory_usage(const texture_transfer_plan_s& transfer_plan, sampling_e sampling)
 {
-    // CUDA may own both pinned host storage and an interop PBO. Other
-    // asynchronous backends use no more, so this is a conservative cap.
+    // Reserve a conservative allowance for host-buffer allocation padding.
     return checked_add(checked_multiply(transfer_plan.host_layout.buffer_size_bytes, 2),
-                       texture_s::estimate_storage_byte_size(
-                           transfer_plan.texture_dimensions, transfer_plan.storage_format, sampling));
+                       (transfer_plan.packed_buffer_bytes != 0
+                            ? transfer_plan.packed_buffer_bytes
+                            : texture_s::estimate_storage_byte_size(
+                                  transfer_plan.host_layout.image_dimensions, format_e::rgba_unorm8, sampling)));
 }
 
-size_t slot_memory_usage(const texture_transfer_plan_s& transfer_plan,
-                         size_t                         backend_allocation_bytes,
-                         texture_s::sampling_e          sampling)
+size_t
+slot_memory_usage(const texture_transfer_plan_s& transfer_plan, size_t backend_allocation_bytes, sampling_e sampling)
 {
     return checked_add(backend_allocation_bytes,
-                       texture_s::estimate_storage_byte_size(
-                           transfer_plan.texture_dimensions, transfer_plan.storage_format, sampling));
+                       (transfer_plan.packed_buffer_bytes != 0
+                            ? transfer_plan.packed_buffer_bytes
+                            : texture_s::estimate_storage_byte_size(
+                                  transfer_plan.host_layout.image_dimensions, format_e::rgba_unorm8, sampling)));
 }
 
 } // namespace miximus::gpu::transfer::detail

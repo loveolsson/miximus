@@ -27,7 +27,7 @@ uint8_t rec709_to_linear(uint8_t value)
     return static_cast<uint8_t>(std::lround(std::clamp(linear, 0.0, 1.0) * 255.0));
 }
 
-std::shared_ptr<const image_asset_s> create_image_asset(std::string_view resource_path)
+std::shared_ptr<const image_asset_s> create_texture_asset(std::string_view resource_path)
 {
     const auto encoded      = static_files::get_resource_files().get_file_or_throw(resource_path).unzip();
     const auto image        = stb::decode_image(std::as_bytes(std::span{encoded}), stb::image_channels_e::rgba);
@@ -55,7 +55,7 @@ std::shared_ptr<const image_asset_s> create_image_asset(std::string_view resourc
 
 std::shared_ptr<const image_asset_s> load_image_asset(std::string_view resource_path)
 {
-    return create_image_asset(resource_path);
+    return create_texture_asset(resource_path);
 }
 
 gpu::vec2i_t image_asset_dimensions(const image_asset_s& asset) { return asset.dimensions; }

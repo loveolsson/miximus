@@ -1,5 +1,5 @@
 #pragma once
-#include "gpu/framebuffer_fwd.hpp"
+
 #include "gpu/texture_fwd.hpp"
 #include "gpu/types.hpp"
 
@@ -31,13 +31,13 @@ inline bool is_finite<gpu::rect_s>(const gpu::rect_s& value) noexcept
 }
 
 template <>
-inline bool is_finite<gpu::texture_s*>(gpu::texture_s* const& /*value*/) noexcept
+inline bool is_finite<const gpu::texture_s*>(const gpu::texture_s* const& /*value*/) noexcept
 {
     return true;
 }
 
 template <>
-inline bool is_finite<gpu::framebuffer_s*>(gpu::framebuffer_s* const& /*value*/) noexcept
+inline bool is_finite<gpu::texture_s*>(gpu::texture_s* const& /*value*/) noexcept
 {
     return true;
 }

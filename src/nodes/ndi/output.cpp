@@ -1,12 +1,10 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/output_sender.hpp"
-#include "gpu/context.hpp"
-#include "gpu/framebuffer.hpp"
-#include "gpu/shader.hpp"
+#include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/textured_quad.hpp"
 #include "gpu/transfer/texture_readback.hpp"
+#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -38,26 +36,22 @@ class node_impl : public node_i
 
     std::shared_ptr<output_sender_s>                          sender_;
     std::shared_ptr<gpu::transfer::texture_readback_stream_s> readback_stream_;
-    std::unique_ptr<gpu::textured_quad_s>                     textured_quad_;
 
-    utils::observed_value_s<std::pair<std::string, bool>>   sender_selection_;
-    utils::observed_value_s<timing_selection_t>             timing_selection_;
-    utils::observed_value_s<gpu::vec2i_t>                   stream_dimensions_;
-    std::chrono::steady_clock::time_point                   next_metrics_status_;
-    uint64_t                                                render_target_drops_{};
-    std::optional<gpu::transfer::texture_readback_target_s> render_target_;
+    utils::observed_value_s<std::pair<std::string, bool>> sender_selection_;
+    utils::observed_value_s<timing_selection_t>           timing_selection_;
+    utils::observed_value_s<gpu::vec2i_t>                 stream_dimensions_;
+    std::chrono::steady_clock::time_point                 next_metrics_status_;
+    uint64_t                                              render_target_drops_{};
 
-    input_interface_s<gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
     void clear_render_state()
     {
-        render_target_.reset();
         if (sender_) {
             sender_->clear_stream();
         }
         readback_stream_.reset();
         stream_dimensions_.reset();
-        textured_quad_.reset();
     }
 
     void stop_sender()
@@ -225,7 +219,6 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        render_target_.reset();
         if (!sender_ || sender_->phase() != output_sender_s::phase_e::running) {
             return;
         }
@@ -235,7 +228,7 @@ class node_impl : public node_i
             return;
         }
 
-        ensure_readback_stream(app, texture->display_dimensions());
+        ensure_readback_stream(app, texture->dimensions());
         if (readback_stream_->initial_slots_pending()) {
             return;
         }
@@ -245,44 +238,44 @@ class node_impl : public node_i
             return;
         }
 
-        // Convert the internal linear image to the Rec.709 RGBA representation
-        // advertised in the NDI metadata, with top-to-bottom row order.
-        if (!textured_quad_) {
-            auto shader    = app->ctx()->get_shader(gpu::shader_program_s::name_e::apply_gamma);
-            textured_quad_ = std::make_unique<gpu::textured_quad_s>(shader);
-            textured_quad_->set_blending_enabled(false);
-        }
+        // Convert linear premultiplied working RGB to the selected wire alpha
+        // representation before RGBA8 quantization. Row order stays top-to-bottom.
 
-        target->framebuffer()->begin_render(gpu::framebuffer_s::load_op_e::clear);
-        target->draw(textured_quad_.get(), texture);
-        gpu::framebuffer_s::end_render();
+        target->texture()->clear(app->commands());
+        gpu::draw_texture(
+            app->commands(),
+            texture,
+            target->texture(),
+            {},
+            1,
+            gpu::rec709_encode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
+            gpu::compositing_e::replace,
+            target->output_order());
 
         target->set_program_target_time(app->frame_context().program_target_time);
-        render_target_ = std::move(target);
-    }
-
-    void complete(core::app_state_s* /*app*/) final
-    {
-        if (render_target_) {
-            render_target_->submit();
-            render_target_.reset();
-        }
-        if (sender_) {
-            sender_->notify_frame();
-        }
+        auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
+        app->defer_output([pending = std::move(pending), sender = sender_](gpu::completion_s ready) {
+            pending->submit(std::move(ready));
+            sender->notify_frame();
+        });
     }
 
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",        "NDI Output"},
-            {"enabled",     true        },
-            {"source_name", id_         },
+            {"name",        "NDI Output"                               },
+            {"alpha_mode",  enum_to_string(gpu::alpha_mode_e::straight)},
+            {"enabled",     true                                       },
+            {"source_name", id_                                        },
         };
     }
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
+        if (name == "alpha_mode") {
+            return normalize_enum_option_value<gpu::alpha_mode_e>(value);
+        }
+
         if (name == "source_name") {
             return normalize_option_value<std::string_view>(value);
         }

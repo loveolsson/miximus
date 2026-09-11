@@ -1,0 +1,35 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, std430) writeonly buffer Output
+{
+    uint words[];
+} destination;
+
+layout(set = 0, binding = 1, rgba16) readonly uniform image2D source;
+
+layout(push_constant) uniform Parameters
+{
+    uint image_width;
+    uint image_height;
+    uint row_stride_words;
+    uint channel_order;
+} parameters;
+
+void main()
+{
+    uvec2 pixel_position = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(pixel_position, uvec2(parameters.image_width, parameters.image_height)))) {
+        return;
+    }
+
+    uint word_index = pixel_position.y * parameters.row_stride_words + pixel_position.x;
+    vec4 color      = imageLoad(source, ivec2(pixel_position));
+    color           = map_output_channels(color, parameters.channel_order);
+
+    destination.words[word_index] = packUnorm4x8(color);
+}

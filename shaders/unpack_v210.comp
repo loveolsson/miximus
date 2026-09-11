@@ -1,0 +1,106 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer Input
+{
+    uint words[];
+} source;
+
+layout(set = 0, binding = 1, rgba16) writeonly uniform image2D destination;
+
+layout(push_constant) uniform Parameters
+{
+    uint image_width;
+    uint image_height;
+    uint row_stride_words;
+    uint channel_order;
+
+    // Matrix rows use xyz; w is unused so each row occupies 16 bytes in memory.
+    vec4 conversion_row_0;
+    vec4 conversion_row_1;
+    vec4 conversion_row_2;
+
+    vec4 gamut_row_0;
+    vec4 gamut_row_1;
+    vec4 gamut_row_2;
+
+    vec4 offset;
+} parameters;
+
+vec3 unpack_v210_word(uint word_index)
+{
+    uint word = source.words[word_index];
+    return vec3(word & 1023u, (word >> 10) & 1023u, (word >> 20) & 1023u) / 1023.0;
+}
+
+void main()
+{
+    uvec2 pixel_position = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(pixel_position, uvec2(parameters.image_width, parameters.image_height)))) {
+        return;
+    }
+
+    uint  group_start_word = pixel_position.y * parameters.row_stride_words + pixel_position.x / 6 * 4;
+    vec3  word_0           = unpack_v210_word(group_start_word);
+    vec3  word_1           = unpack_v210_word(group_start_word + 1);
+    vec3  word_2           = unpack_v210_word(group_start_word + 2);
+    vec3  word_3           = unpack_v210_word(group_start_word + 3);
+
+    float luma;
+    float cb;
+    float cr;
+
+    // Four packed words hold six luma samples and three shared Cb/Cr pairs.
+    switch (pixel_position.x % 6) {
+        case 0:
+            luma = word_0.y;
+            cb   = word_0.x;
+            cr   = word_0.z;
+            break;
+
+        case 1:
+            luma = word_1.x;
+            cb   = word_0.x;
+            cr   = word_0.z;
+            break;
+
+        case 2:
+            luma = word_1.z;
+            cb   = word_1.y;
+            cr   = word_2.x;
+            break;
+
+        case 3:
+            luma = word_2.y;
+            cb   = word_1.y;
+            cr   = word_2.x;
+            break;
+
+        case 4:
+            luma = word_3.x;
+            cb   = word_2.z;
+            cr   = word_3.y;
+            break;
+
+        default:
+            luma = word_3.z;
+            cb   = word_2.z;
+            cr   = word_3.y;
+            break;
+    }
+
+    vec3 offset_yuv = vec3(luma, cb, cr) - parameters.offset.xyz;
+    vec3 encoded_rgb = vec3(dot(parameters.conversion_row_0.xyz, offset_yuv),
+                            dot(parameters.conversion_row_1.xyz, offset_yuv),
+                            dot(parameters.conversion_row_2.xyz, offset_yuv));
+    vec3 linear_rgb = to_linear(encoded_rgb);
+
+    vec3 working_rgb = vec3(dot(parameters.gamut_row_0.xyz, linear_rgb),
+                            dot(parameters.gamut_row_1.xyz, linear_rgb),
+                            dot(parameters.gamut_row_2.xyz, linear_rgb));
+    imageStore(destination, ivec2(pixel_position), vec4(working_rgb, 1.0));
+}
