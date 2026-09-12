@@ -40,15 +40,17 @@ texture_s::storage_format_info_s texture_s::storage_format_info(format_e storage
     throw std::invalid_argument("Invalid texture storage format");
 }
 
-texture_s::texture_s(device_s&       device,
-                     vec2i_t         dimensions,
-                     format_e        format,
-                     channel_order_e mapping,
-                     sampling_e      sampling)
+texture_s::texture_s(device_s&          device,
+                     vec2i_t            dimensions,
+                     format_e           format,
+                     channel_order_e    mapping,
+                     sampling_e         sampling,
+                     resource_sharing_e sharing)
     : texture_s(device.create_texture(
           {.width = static_cast<uint32_t>(dimensions.x), .height = static_cast<uint32_t>(dimensions.y)},
           format,
-          sampling))
+          sampling,
+          sharing))
 {
     channel_order_ = mapping;
 }
@@ -129,13 +131,18 @@ texture_state_s::~texture_state_s()
     if (image == nullptr) {
         return;
     }
-    const auto allocator    = owner->allocator;
-    const auto device       = owner->device;
-    const auto destroy_view = owner->vk.vkDestroyImageView;
+    const auto allocator     = owner->allocator;
+    const auto device        = owner->device;
+    const auto destroy_view  = owner->vk.vkDestroyImageView;
+    const auto destroy_image = owner->vk.vkDestroyImage;
+    const auto free_memory   = owner->vk.vkFreeMemory;
     owner->retire(last_use_timeline_value.load(),
                   [allocator,
                    device,
                    destroy_view,
+                   destroy_image,
+                   free_memory,
+                   external   = external_memory,
                    handle     = image,
                    image_view = view,
                    sampled    = sampled_view,
@@ -146,7 +153,14 @@ texture_state_s::~texture_state_s()
                       if (image_view) {
                           destroy_view(device, image_view, nullptr);
                       }
-                      vmaDestroyImage(allocator, handle, memory);
+                      if (external) {
+                          destroy_image(device, handle, nullptr);
+                          free_memory(device, external, nullptr);
+                      } else if (memory) {
+                          vmaDestroyImage(allocator, handle, memory);
+                      } else {
+                          destroy_image(device, handle, nullptr);
+                      }
                   });
 }
 } // namespace detail

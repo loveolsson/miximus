@@ -17,7 +17,7 @@ class completion_s
     friend class recording_s;
     friend struct detail::recording_state_s;
     friend struct detail::presenter_state_s;
-    friend class transfer::detail::cuda_staging_s;
+    friend class transfer::detail::cuda_transfer_s;
 
   public:
     completion_s() = default;

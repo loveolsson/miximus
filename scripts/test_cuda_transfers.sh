@@ -16,9 +16,9 @@ fi
 run_dir="${build_dir}/integration-tests/cuda-transfers-$(date -u +%Y%m%dT%H%M%S)-$$"
 mkdir -p "${run_dir}"
 echo 'Requiring CUDA: fallback to Vulkan staging is forbidden.'
-"${binary}" --use-cuda --log-debug --gtest_repeat="${repeats}" 2>&1 | tee "${run_dir}/tests.log"
+"${binary}" --log-debug --gtest_repeat="${repeats}" 2>&1 | tee "${run_dir}/tests.log"
 for direction in upload readback; do
-    if ! rg -q "Transfer completed: backend=cuda-vulkan-buffer direction=${direction}" "${run_dir}/tests.log"; then
+    if ! rg -q "Transfer completed: backend=cuda-vulkan-direct direction=${direction}" "${run_dir}/tests.log"; then
         echo "No completed CUDA ${direction} found; verification failed." >&2
         exit 1
     fi

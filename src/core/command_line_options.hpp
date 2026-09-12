@@ -23,7 +23,7 @@ struct command_line_options_s
     std::optional<std::chrono::duration<double>>      stop_after;
     std::optional<render_thread_delay_test_options_s> render_thread_delay_test;
     bool                                              show_help{};
-    bool                                              use_cuda{};
+    bool                                              disable_cuda{};
 };
 
 command_line_options_s parse_command_line_options(int argc, char** argv);

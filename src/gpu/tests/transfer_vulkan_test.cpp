@@ -1,5 +1,6 @@
 #include "gpu/device.hpp"
 #include "gpu/drawing.hpp"
+#include "gpu/transfer/detail/frame_staging.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
 #include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"
@@ -24,14 +25,14 @@ namespace {
 class transfer_vulkan : public testing::Test
 {
     std::unique_ptr<device_s> device_;
-    static inline bool        use_cuda_{};
+    static inline bool        disable_cuda_{};
     static inline bool        log_debug_{};
 
   public:
-    static void configure(bool use_cuda, bool log_debug)
+    static void configure(bool disable_cuda, bool log_debug)
     {
-        use_cuda_  = use_cuda;
-        log_debug_ = log_debug;
+        disable_cuda_ = disable_cuda;
+        log_debug_    = log_debug;
     }
 
   protected:
@@ -46,7 +47,8 @@ class transfer_vulkan : public testing::Test
         device_ = std::make_unique<device_s>(
             // Test options are read from an environment that the test does not modify.
             // NOLINTNEXTLINE(concurrency-mt-unsafe)
-            device_options_s{.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .use_cuda = use_cuda_});
+            device_options_s{.validation   = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr,
+                             .disable_cuda = disable_cuda_});
     }
 
     void TearDown() override
@@ -616,6 +618,115 @@ TEST_F(transfer_vulkan, FullHdFramesRetainEveryActiveByteAcrossRepeatedTransfers
     }
 }
 
+TEST_F(transfer_vulkan, DirectBackendDoesNotAllocateASecondDeviceFrame)
+{
+    for (const auto format : {host_pixel_format_e::rgba_u8, host_pixel_format_e::v210}) {
+        const host_frame_layout_s layout{
+            .image_dimensions  = {1920, 1080},
+            .pixel_format      = format,
+            .row_stride_bytes  = format == host_pixel_format_e::v210 ? size_t{5120}
+               : size_t{7680},
+            .buffer_size_bytes = (format == host_pixel_format_e::v210 ? size_t{5120}
+               : size_t{7680}
+               ) * 1080,
+        };
+        const auto                             plan = gpu::transfer::detail::make_texture_transfer_plan(layout);
+        texture_frame_s                        frame(gpu(), layout, sampling_e::linear);
+        gpu::transfer::detail::frame_staging_s transfer(
+            gpu(), plan, gpu::transfer::detail::transfer_direction_e::cpu_to_gpu, &frame);
+        EXPECT_EQ(transfer.backend_name(), gpu().uses_cuda_transfers() ? "cuda-vulkan-direct" : "vulkan-staging");
+        // Host allocation plus native alignment slack is allowed. A second full
+        // device frame would nearly double this and violate the direct contract.
+        EXPECT_LT(transfer.allocation_bytes(), layout.buffer_size_bytes + (1U << 20));
+    }
+}
+
+// Every host byte layout shares one CUDA-compatible storage format. Exercise the
+// shader mappings in both directions and regenerate mipmaps after slot reuse.
+TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers)
+{
+    for (const auto format : {host_pixel_format_e::rgba_u8,
+                              host_pixel_format_e::bgra_u8,
+                              host_pixel_format_e::bgrx_u8,
+                              host_pixel_format_e::argb_u8}) {
+        SCOPED_TRACE(static_cast<int>(format));
+        texture_upload_service_s   uploads(gpu(), 4 << 20);
+        texture_readback_service_s downloads(gpu(), 4 << 20);
+        const host_frame_layout_s  input_layout{
+             .image_dimensions  = {16, 8},
+             .pixel_format      = format,
+             .row_stride_bytes  = 80,
+             .buffer_size_bytes = 640,
+        };
+        auto input = uploads.create_stream(
+            {.host_layout = input_layout, .max_slots = 2, .initial_slots = 2, .generate_mip_maps = true});
+        auto output = downloads.create_stream({
+            .host_layout   = {.image_dimensions  = {4, 2},
+                              .pixel_format      = format,
+                              .row_stride_bytes  = 24,
+                              .buffer_size_bytes = 48,
+                              .memory_access     = host_memory_access_e::read_only},
+            .max_slots     = 1,
+            .initial_slots = 1
+        });
+        ASSERT_TRUE(output->wait_for_initial_slots(3s));
+        const auto order = format == host_pixel_format_e::argb_u8   ? channel_order_e::argb
+                           : format == host_pixel_format_e::rgba_u8 ? channel_order_e::rgba
+                                                                    : channel_order_e::bgra;
+        for (uint8_t sequence = 0; sequence < 4; ++sequence) {
+            auto lease = input->acquire_upload_buffer_for(3s);
+            ASSERT_TRUE(lease);
+            const std::array<std::byte, 4> raw{std::byte(31 + sequence),
+                                               std::byte(73 + sequence),
+                                               std::byte(119 + sequence),
+                                               std::byte(183 + sequence)};
+            auto                           host = lease->writable_host_bytes();
+            std::ranges::fill(host, std::byte{241}); // Row padding must never enter the image.
+            for (size_t row = 0; row < 8; ++row) {
+                for (size_t pixel = 0; pixel < 16; ++pixel) {
+                    std::ranges::copy(raw, host.begin() + static_cast<ptrdiff_t>(row * 80 + pixel * 4));
+                }
+            }
+            const auto id = lease->upload_id();
+            ASSERT_TRUE(lease->submit());
+            ASSERT_EQ(input->wait_for_upload(id), texture_upload_wait_result_e::ready);
+            auto source = input->select_completed_upload(id);
+            ASSERT_TRUE(source);
+            EXPECT_EQ(source->texture()->format(), format_e::rgba_unorm8);
+            EXPECT_GT(source->texture()->mip_levels(), 1);
+            auto target = until([&] { return output->try_acquire_render_target(); });
+            ASSERT_TRUE(target);
+            auto commands = until([&] { return gpu().try_record(); });
+            ASSERT_TRUE(commands);
+            draw_texture(*commands,
+                         source->texture(),
+                         target->texture(),
+                         {},
+                         1,
+                         color_operation_e::none,
+                         compositing_e::replace,
+                         order);
+            target->submit(commands->submit());
+            commands.reset();
+            target.reset();
+            auto result = until([&] { return output->try_consume_oldest(); });
+            ASSERT_TRUE(result);
+            auto expected = raw;
+            if (format == host_pixel_format_e::bgrx_u8) {
+                expected[3] = std::byte{255};
+            }
+            const auto bytes = result->readable_host_bytes();
+            for (size_t row = 0; row < 2; ++row) {
+                for (size_t pixel = 0; pixel < 4; ++pixel) {
+                    for (size_t channel = 0; channel < 4; ++channel) {
+                        EXPECT_EQ(bytes[row * 24 + pixel * 4 + channel], expected[channel]);
+                    }
+                }
+            }
+        }
+    }
+}
+
 TEST_F(transfer_vulkan, NodeColorParametersPreserveRec709RedPackingAndDecoding)
 {
     auto source     = gpu().create_texture({.width = 6, .height = 1});
@@ -786,13 +897,13 @@ TEST_F(transfer_vulkan, DeckLinkUsesTransferMemoryDirectlyAndRetainsItThroughSdk
 
 int main(int argc, char** argv)
 {
-    bool use_cuda{};
+    bool disable_cuda{};
     bool log_debug{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
-        if (argument == "--use-cuda" || argument == "--log-debug") {
-            if (argument == "--use-cuda") {
-                use_cuda = true;
+        if (argument == "--disable-cuda" || argument == "--log-debug") {
+            if (argument == "--disable-cuda") {
+                disable_cuda = true;
             } else {
                 log_debug = true;
             }
@@ -806,7 +917,7 @@ int main(int argc, char** argv)
         }
     }
 
-    transfer_vulkan::configure(use_cuda, log_debug);
+    transfer_vulkan::configure(disable_cuda, log_debug);
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

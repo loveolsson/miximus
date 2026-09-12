@@ -34,8 +34,8 @@ class transfer_backend_i
 
     virtual void*  host_memory() const noexcept            = 0;
     virtual size_t host_buffer_size_bytes() const noexcept = 0;
-    // Include host storage, padding and private device buffers in budgets;
-    // the frame's allocation is accounted for separately by the transfer service.
+    // Include host storage, native allocation padding and backend-private storage;
+    // the frame's payload storage is accounted for separately by the transfer service.
     virtual size_t           allocation_bytes() const      = 0;
     virtual std::string_view backend_name() const noexcept = 0;
 

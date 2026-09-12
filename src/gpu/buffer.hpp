@@ -26,7 +26,7 @@ class buffer_s
     explicit buffer_s(std::shared_ptr<detail::buffer_state_s> state);
     friend class device_s;
     friend class recording_s;
-    friend class transfer::detail::cuda_staging_s;
+    friend class transfer::detail::cuda_transfer_s;
 
   public:
     buffer_s() = default;

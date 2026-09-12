@@ -5,7 +5,7 @@
 namespace miximus::gpu {
 namespace transfer::detail {
 
-class cuda_staging_s;
+class cuda_transfer_s;
 }
 
 namespace detail {
@@ -26,6 +26,8 @@ struct extent_s
     bool     operator==(const extent_s&) const = default;
 };
 
+// Transfer images use raw RGBA8; channel order and video packing belong in shaders.
+// Four-channel UNORM16 working targets retain precision without packed RGB formats.
 enum class format_e
 {
     rgba_unorm8,
@@ -47,6 +49,13 @@ enum class sampling_e
     nearest,
     linear,
     mipmapped_linear
+};
+
+// Export only resources shared with an external transfer API. Working targets stay local.
+enum class resource_sharing_e
+{
+    local,
+    cuda
 };
 
 enum class host_access_e

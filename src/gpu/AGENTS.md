@@ -14,5 +14,6 @@ Read [../../docs/gpu-and-media.md](../../docs/gpu-and-media.md) before changing 
 - Keep GLFW window, monitor, and event operations on the main thread; presentation acquires independently of graph recording.
 - Keep GPU completion, presentation semaphore consumption, and display timing distinct.
 - Preserve explicit host format, row stride, alignment, component mapping, UNORM precision, and premultiplied alpha contracts.
+- Keep transfer storage directly shareable: RGBA/BGRA/BGRX/ARGB bytes use RGBA8 images with shader swizzling; v210 uses raw 32-bit words with shader packing. CUDA imports the actual frame resource, never an intermediate device frame. New formats must preserve this design; startup must qualify every required representation and disable CUDA for the entire run if any fails; selection is strict once chosen; `--disable-cuda` forces staging.
 - Run both GPU test executables with synchronization validation and exercise native Wayland, DeckLink, and NDI separately from ordinary CTest.
 - Format touched C++ and run the full native build and `git diff --check`.

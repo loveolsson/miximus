@@ -77,7 +77,7 @@ cmake --build build-asan -j
 Sanitized GPU-linked binaries share runtime defaults from `src/sanitizer_defaults.cpp`, including the app, GPU tests and
 benchmarks. CUDA-enabled builds retain `protect_shadow_gap=0`: CUDA initialization still fails with ASan's guarded shadow
 gap on the tested toolkit/driver. CUDA-free builds keep the default guard. This is selected at build time because ASan
-initializes before `--use-cuda` is parsed; instrumentation and leak detection remain enabled.
+initializes before `--disable-cuda` is parsed; instrumentation and leak detection remain enabled.
 
 On Linux, ASan builds default Vulkan Loader's `VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING` to `1`, retaining
 driver/layer libraries for exit-time root inspection and symbolization. An explicit environment value is respected for
@@ -102,10 +102,10 @@ under a debugger or another environment that uses `ptrace`; leave leak detection
 Run:
 
 ```bash
-./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda]
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--disable-cuda]
 ```
 
-Host transfers use Vulkan staging by default. `--use-cuda` requires the optional CUDA/Vulkan backend; see [CUDA
+Host transfers automatically use CUDA when available on the selected Vulkan device. `--disable-cuda` forces Vulkan staging; see [CUDA
 transfers and benchmarking](cuda-transfers.md).
 
 The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the

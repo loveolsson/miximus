@@ -1,6 +1,9 @@
 #include "detail/device.hpp"
 
 #include "logger/logger.hpp"
+#ifdef MIXIMUS_HAS_CUDA
+#include "transfer/detail/cuda_transfer.hpp"
+#endif
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -429,14 +432,30 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
                        has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
                        has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);
         device_extensions.clear();
+        cuda_missing_support.clear();
 #ifdef MIXIMUS_HAS_CUDA
-        cuda_external_memory = options.use_cuda && has_device_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME) &&
-                               has_device_extension(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
+        cuda_device_index = -1;
+        if (!options.disable_cuda) {
+            cuda_device_index = transfer::detail::find_cuda_device(identity.deviceUUID, cuda_missing_support);
+            if (cuda_device_index >= 0) {
+                for (const auto* extension :
+                     {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME}) {
+                    if (!has_device_extension(extension)) {
+                        cuda_missing_support.emplace_back(extension);
+                    }
+                }
+                if (!cuda_missing_support.empty()) {
+                    cuda_device_index = -1;
+                }
+            }
+        }
+        cuda_external_memory = cuda_device_index >= 0;
         if (cuda_external_memory) {
             device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
             device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
         }
-
+#else
+        cuda_missing_support.emplace_back("CUDA support was not compiled into this build");
 #endif
         if (options.presentation) {
             device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -463,7 +482,8 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
     report["swapchain_maintenance"]  = swapchain_maintenance;
     report["present_wait"]           = present_wait;
     report["cuda_external_memory"]   = cuda_external_memory;
-    report["use_cuda"]               = options.use_cuda;
+    report["disable_cuda"]           = options.disable_cuda;
+    report["use_cuda"]               = cuda_external_memory;
     diagnostics                      = report.dump(2);
     if (physical == nullptr) {
         throw std::runtime_error("No matching Vulkan device meets the feature/format floor: " + diagnostics);
@@ -654,10 +674,88 @@ void resource_state_s::check_host_access() const
 namespace miximus::gpu {
 
 using detail::check;
+
+namespace {
+void allocate_external_memory(detail::device_state_s&     device,
+                              const VkMemoryRequirements& requirements,
+                              VkImage                     image,
+                              VkBuffer                    buffer,
+                              VkDeviceMemory&             memory)
+{
+    uint32_t memory_type = UINT32_MAX;
+    for (uint32_t index = 0; index < device.memory.memoryTypeCount; ++index) {
+        if ((requirements.memoryTypeBits & (1U << index)) != 0U &&
+            (std::span(device.memory.memoryTypes)[index].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0U) {
+            memory_type = index;
+            break;
+        }
+    }
+    if (memory_type == UINT32_MAX) {
+        throw std::runtime_error("CUDA shared resource has no device-local memory type");
+    }
+
+    // Importers need the complete dedicated allocation, never a VMA suballocation.
+    VkMemoryDedicatedAllocateInfo dedicated{};
+    dedicated.sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+    dedicated.image  = image;
+    dedicated.buffer = buffer;
+
+    VkExportMemoryAllocateInfo export_info{};
+    export_info.sType       = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+    export_info.pNext       = &dedicated;
+    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    VkMemoryAllocateInfo allocate{};
+    allocate.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocate.pNext           = &export_info;
+    allocate.allocationSize  = requirements.size;
+    allocate.memoryTypeIndex = memory_type;
+    check(device.vk.vkAllocateMemory(device.device, &allocate, nullptr, &memory), "allocate CUDA shared resource");
+}
+} // namespace
+
 device_s::device_s(const device_options_s& options)
     : state_(std::make_shared<detail::device_state_s>())
 {
     state_->initialize(options);
+
+    auto report = nlohmann::json::parse(state_->diagnostics);
+#ifdef MIXIMUS_HAS_CUDA
+    if (state_->cuda_external_memory) {
+        // CUDA is only a candidate until every required resource imports. This
+        // constructor has not exposed the device or started any stream workers.
+        state_->cuda_missing_support              = transfer::detail::qualify_cuda_transfers(*this);
+        report["cuda_transfer_formats_qualified"] = state_->cuda_missing_support.empty();
+        if (!state_->cuda_missing_support.empty()) {
+            state_->cuda_external_memory   = false;
+            state_->cuda_device_index      = -1;
+            report["cuda_external_memory"] = false;
+            report["use_cuda"]             = false;
+        }
+    }
+#endif
+    report["cuda_missing_support"] = state_->cuda_missing_support;
+    state_->diagnostics            = report.dump(2);
+
+    // Report the final selection once, after examining only the selected device.
+    // Stream allocation and per-frame transfer paths do not repeat this message.
+    if (options.disable_cuda) {
+        getlog("gpu")->warn("CUDA transfers disabled by --disable-cuda");
+    } else if (!state_->cuda_external_memory) {
+        const auto& reasons = state_->cuda_missing_support;
+        if (reasons.size() == 1 && reasons.front() == "CUDA is not supported on this device") {
+            getlog("gpu")->warn("CUDA transfers disabled: {}", reasons.front());
+        } else {
+            std::string details;
+            for (const auto& reason : reasons) {
+                details += std::format("\n   --- {}", reason);
+            }
+            getlog("gpu")->warn("CUDA transfers disabled due to missing support:{}", details);
+        }
+    } else {
+        getlog("gpu")->info("CUDA transfers enabled");
+    }
+
     default_context_ = std::make_unique<recording_context_s>(create_recording_context(options.max_recordings));
     state_->start_submission_worker();
 }
@@ -683,10 +781,11 @@ std::string device_s::diagnostics_json() const
     return report.dump(2);
 }
 
-uint64_t  device_s::validation_errors() const noexcept { return state_->errors.load(); }
-bool      device_s::uses_cuda_transfers() const noexcept { return state_->options.use_cuda; }
-void      device_s::collect() { state_->collect(); }
-texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e sampling)
+uint64_t device_s::validation_errors() const noexcept { return state_->errors.load(); }
+bool     device_s::uses_cuda_transfers() const noexcept { return state_->cuda_external_memory; }
+void     device_s::collect() { state_->collect(); }
+
+texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e sampling, resource_sharing_e sharing)
 {
     if ((extent.width == 0U) || (extent.height == 0U) || extent.width > state_->properties.limits.maxImageDimension2D ||
         extent.height > state_->properties.limits.maxImageDimension2D) {
@@ -733,10 +832,50 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
         info.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
 
-    VmaAllocationCreateInfo allocation{};
-    allocation.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    check(vmaCreateImage(state_->allocator, &info, &allocation, &image->image, &image->allocation, nullptr),
-          "allocate image");
+    if (sharing == resource_sharing_e::cuda) {
+        if (!state_->cuda_external_memory) {
+            throw std::runtime_error("CUDA shared images require external-memory support");
+        }
+
+        VkPhysicalDeviceExternalImageFormatInfo external_format{};
+        external_format.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO;
+        external_format.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        VkPhysicalDeviceImageFormatInfo2 query{};
+        query.sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2;
+        query.pNext  = &external_format;
+        query.format = info.format;
+        query.type   = info.imageType;
+        query.tiling = info.tiling;
+        query.usage  = info.usage;
+        VkExternalImageFormatProperties external_properties{};
+        external_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES;
+        VkImageFormatProperties2 properties{};
+        properties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
+        properties.pNext = &external_properties;
+        check(state_->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(state_->physical, &query, &properties),
+              "query CUDA shared image format");
+        if ((external_properties.externalMemoryProperties.externalMemoryFeatures &
+             VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) == 0U) {
+            throw std::runtime_error("CUDA shared image format is not exportable");
+        }
+
+        VkExternalMemoryImageCreateInfo external{};
+        external.sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+        external.handleTypes = external_format.handleType;
+        info.pNext           = &external;
+        check(state_->vk.vkCreateImage(state_->device, &info, nullptr, &image->image), "create CUDA shared image");
+        VkMemoryRequirements requirements{};
+        state_->vk.vkGetImageMemoryRequirements(state_->device, image->image, &requirements);
+        allocate_external_memory(*state_, requirements, image->image, VK_NULL_HANDLE, image->external_memory);
+        check(state_->vk.vkBindImageMemory(state_->device, image->image, image->external_memory, 0),
+              "bind CUDA shared image");
+        image->external_allocation_bytes = requirements.size;
+    } else {
+        VmaAllocationCreateInfo allocation{};
+        allocation.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        check(vmaCreateImage(state_->allocator, &info, &allocation, &image->image, &image->allocation, nullptr),
+              "allocate image");
+    }
 
     VkImageViewCreateInfo view{};
     view.sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -759,7 +898,7 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
     return texture_s(std::move(image));
 }
 
-buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alignment)
+buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alignment, resource_sharing_e sharing)
 {
     if ((bytes == 0U) || (alignment == 0U) || (alignment & (alignment - 1)) != 0) {
         throw std::invalid_argument("invalid buffer size/alignment");
@@ -775,6 +914,36 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
     info.size  = bytes;
     info.usage =
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+    if (sharing == resource_sharing_e::cuda) {
+        if (!state_->cuda_external_memory || access != host_access_e::device_only) {
+            throw std::invalid_argument("CUDA shared buffers require device-only external memory");
+        }
+        VkPhysicalDeviceExternalBufferInfo query{};
+        query.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO;
+        query.usage      = info.usage;
+        query.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        VkExternalBufferProperties properties{};
+        properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES;
+        state_->instance_vk.vkGetPhysicalDeviceExternalBufferProperties(state_->physical, &query, &properties);
+        if ((properties.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) ==
+            0U) {
+            throw std::runtime_error("CUDA shared storage buffer is not exportable");
+        }
+        VkExternalMemoryBufferCreateInfo external{};
+        external.sType          = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+        external.handleTypes    = query.handleType;
+        info.pNext              = &external;
+        buffer->external_buffer = true;
+        check(state_->vk.vkCreateBuffer(state_->device, &info, nullptr, &buffer->buffer), "create CUDA shared buffer");
+        VkMemoryRequirements requirements{};
+        state_->vk.vkGetBufferMemoryRequirements(state_->device, buffer->buffer, &requirements);
+        allocate_external_memory(*state_, requirements, VK_NULL_HANDLE, buffer->buffer, buffer->external_memory);
+        check(state_->vk.vkBindBufferMemory(state_->device, buffer->buffer, buffer->external_memory, 0),
+              "bind CUDA shared buffer");
+        buffer->info = {.bytes = static_cast<size_t>(requirements.size), .device_local = true};
+        return buffer_s(std::move(buffer));
+    }
 
     VmaAllocationCreateInfo allocation{};
     allocation.usage =

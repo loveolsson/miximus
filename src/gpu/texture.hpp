@@ -17,6 +17,7 @@ class texture_s
     explicit texture_s(std::shared_ptr<detail::texture_state_s> state);
     friend class device_s;
     friend class recording_s;
+    friend class transfer::detail::cuda_transfer_s;
     friend struct detail::presenter_state_s;
 
     channel_order_e channel_order_{channel_order_e::rgba};
@@ -24,11 +25,12 @@ class texture_s
   public:
     texture_s() = default;
 
-    texture_s(device_s&       device,
-              vec2i_t         dimensions,
-              format_e        format,
-              channel_order_e mapping  = channel_order_e::rgba,
-              sampling_e      sampling = sampling_e::mipmapped_linear);
+    texture_s(device_s&          device,
+              vec2i_t            dimensions,
+              format_e           format,
+              channel_order_e    mapping  = channel_order_e::rgba,
+              sampling_e         sampling = sampling_e::mipmapped_linear,
+              resource_sharing_e sharing  = resource_sharing_e::local);
     struct storage_format_info_s
     {
         size_t storage_bytes_per_texel;

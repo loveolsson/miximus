@@ -92,7 +92,7 @@ class recording_s
     friend class device_s;
     friend class recording_context_s;
     friend struct detail::presenter_state_s;
-    friend class transfer::detail::cuda_staging_s;
+    friend class transfer::detail::cuda_transfer_s;
 
   public:
     ~recording_s();

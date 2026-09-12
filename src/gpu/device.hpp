@@ -21,7 +21,7 @@ struct device_options_s
     std::string device_uuid{};
     bool        validation{};
     bool        presentation{};
-    bool        use_cuda{};
+    bool        disable_cuda{};
     uint32_t    max_recordings{8};
     uint32_t    descriptor_page_size{512};
 };
@@ -31,7 +31,7 @@ class device_s
     std::shared_ptr<detail::device_state_s> state_;
     std::unique_ptr<recording_context_s>    default_context_;
     friend struct detail::presenter_state_s;
-    friend class transfer::detail::cuda_staging_s;
+    friend class transfer::detail::cuda_transfer_s;
 
   public:
     explicit device_s(const device_options_s& options = {});
@@ -39,9 +39,14 @@ class device_s
     device_s(const device_s&)            = delete;
     device_s& operator=(const device_s&) = delete;
 
-    texture_s
-    create_texture(extent_s extent, format_e format = format_e::rgba_unorm16, sampling_e sampling = sampling_e::linear);
-    buffer_s            create_buffer(size_t bytes, host_access_e access, size_t alignment = 1);
+    texture_s           create_texture(extent_s           extent,
+                                       format_e           format   = format_e::rgba_unorm16,
+                                       sampling_e         sampling = sampling_e::linear,
+                                       resource_sharing_e sharing  = resource_sharing_e::local);
+    buffer_s            create_buffer(size_t             bytes,
+                                      host_access_e      access,
+                                      size_t             alignment = 1,
+                                      resource_sharing_e sharing   = resource_sharing_e::local);
     recording_context_s create_recording_context(uint32_t capacity = 8);
 
     // The device's default context is reserved for its owning render thread.

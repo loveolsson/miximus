@@ -89,6 +89,8 @@ struct device_state_s : std::enable_shared_from_this<device_state_s>
     bool                             swapchain_maintenance{};
     bool                             present_wait{};
     bool                             cuda_external_memory{};
+    int                              cuda_device_index{-1};
+    std::vector<std::string>         cuda_missing_support;
     bool                             buffer_conversion{};
 
     // Only the submission worker calls vkQueueSubmit. Present shares its queue
@@ -164,6 +166,8 @@ struct texture_state_s : resource_state_s
     VkImageView                view{};
     VkImageView                sampled_view{};
     VmaAllocation              allocation{};
+    VkDeviceMemory             external_memory{};
+    size_t                     external_allocation_bytes{};
     extent_s                   extent;
     format_e                   format{};
     sampling_e                 sampling{};

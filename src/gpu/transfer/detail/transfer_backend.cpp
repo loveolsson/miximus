@@ -1,6 +1,6 @@
 #include "transfer_backend.hpp"
 #ifdef MIXIMUS_HAS_CUDA
-#include "cuda_staging.hpp"
+#include "cuda_transfer.hpp"
 #endif
 
 #include <algorithm>
@@ -111,7 +111,7 @@ std::unique_ptr<transfer_backend_i> create_transfer_backend(device_s&           
     if (device.uses_cuda_transfers()) {
         try {
 #ifdef MIXIMUS_HAS_CUDA
-            backend = std::make_unique<cuda_staging_s>(device, plan, direction, frame, recording_context);
+            backend = std::make_unique<cuda_transfer_s>(device, plan, direction, frame, recording_context);
 #else
             throw std::runtime_error("CUDA/Vulkan support was not compiled in (requires Linux and the CUDA toolkit)");
 #endif

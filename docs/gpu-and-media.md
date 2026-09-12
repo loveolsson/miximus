@@ -94,14 +94,20 @@ leases. Each service has a resource worker for allocation, registration and dest
 progress worker. Starting or resizing a stream cannot delay reporting unrelated transfers simply because pool
 allocation is still running. Conversion targets for NDI/DeckLink inputs and DeckLink output are allocated alongside
 their transfer pools, with the same UNORM16 precision and mipmap policy, and are included in the memory budget.
-Eight-bit transfers use image staging; v210 uses buffer copies and compute conversion. Native Vulkan staging is
-the default. On Linux, builds with the CUDA toolkit use the CUDA/Vulkan buffer backend only when launched with
-`--use-cuda`; that flag requires CUDA without fallback. Backend controls and verification are documented in
+Eight-bit transfers use raw RGBA8 images; v210 uses raw-word buffers and compute conversion. On Linux, builds with the CUDA toolkit
+automatically select direct CUDA transfers when the selected Vulkan device
+has a matching, usable CUDA device and external-memory/semaphore support. Startup also creates and imports every
+required transfer representation, sampling mode and direction through the production allocation/registration path.
+If any qualification fails, CUDA is disabled for the entire run before streams start; all streams use Vulkan staging.
+`--disable-cuda` forces staging without probing CUDA. Selection is fixed for the device lifetime; CUDA transfer or
+format failures never trigger a per-stream fallback. Backend controls and verification are documented in
 [cuda-transfers.md](cuda-transfers.md).
 
 Vulkan staging allocates and maps host memory through VMA with the requested alignment. The CUDA backend instead uses
-aligned CUDA-pinned host storage and a dedicated exportable Vulkan buffer, with external semaphores and explicit
-queue-family ownership hand-offs. Full-overwrite inputs prefer sequential host writes; read/modify/write inputs and SDK
+aligned CUDA-pinned host storage and imports the frame's actual dedicated exportable RGBA8 image or raw-word buffer,
+with external semaphores and explicit queue-family ownership hand-offs. CUDA copies directly between host memory
+and that resource; no intermediate device frame or Vulkan transfer copy is involved. Channel swizzling remains in
+shaders so all byte orders share the same CUDA-compatible format. CUDA mode never falls back by format. Full-overwrite inputs prefer sequential host writes; read/modify/write inputs and SDK
 output allocations use cached host-accessible memory. Noncoherent Vulkan host writes are flushed before GPU use, and
 readback memory is invalidated only after completion. DeckLink may request writable access even to output buffers, so
 output allocations permit it while retaining the external lease.

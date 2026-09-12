@@ -56,8 +56,8 @@ def main():
             ]
             if selected_uuid:
                 command += ['--device', selected_uuid]
-            if backend == 'cuda':
-                command += ['--use-cuda']
+            if backend == 'vulkan':
+                command += ['--disable-cuda']
 
             print(f'Running {name}', flush=True)
             with (args.output / f'{name}.log').open('w') as log:
@@ -70,7 +70,7 @@ def main():
 
             report = json.loads(result_file.read_text())
             selected_uuid = selected_uuid or report['selected_uuid']
-            expected = 'cuda-vulkan-buffer' if backend == 'cuda' else 'vulkan-staging'
+            expected = 'cuda-vulkan-direct' if backend == 'cuda' else 'vulkan-staging'
             valid_rows = all(
                 row['backend'] == expected and row['pixels_verified']
                 for row in report['results']
