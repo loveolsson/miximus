@@ -3,6 +3,9 @@
 Status: proposed; 2026-09-08. Companion to the [migration plan](vulkan-migration.md) and
 [transfer strategy](vulkan-transfers.md). This is a test plan, not a report of completed hardware validation.
 
+The [macOS / MoltenVK hardware validation checklist](macos-moltenvk-validation.md) records the 2026-09-13 source
+review concerns and concrete experiments for the future Mac hardware pass.
+
 ## Stage 0: local Linux probes
 
 Build a small native probe/benchmark target using the real transfer formats and SDK allocator contracts. It should
