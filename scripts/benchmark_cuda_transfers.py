@@ -56,8 +56,8 @@ def main():
             ]
             if selected_uuid:
                 command += ['--device', selected_uuid]
-            if backend == 'vulkan':
-                command += ['--disable-cuda']
+            if backend == 'cuda':
+                command += ['--use-cuda']
 
             print(f'Running {name}', flush=True)
             with (args.output / f'{name}.log').open('w') as log:

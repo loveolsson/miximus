@@ -119,7 +119,7 @@ pipelines. Doing that during device startup avoids introducing driver compilatio
 pipeline-creation costs are recorded in [the implementation status](vulkan-progress.md). The application disk cache
 remains removed as requested. The source/bundler/submodule layout follows the project's established dependency rules.
 
-**Remaining explicitly requested behavior.** CUDA is selected automatically when available (`--disable-cuda` forces staging), with no fallback once it
+**Remaining explicitly requested behavior.** CUDA is requested with `--use-cuda` and selected after startup qualification, with no fallback once it
 is explicitly required. Producers submit before putting frames into their timed FIFOs. DeckLink retains direct access
 to backend-owned transfer memory and its external lease contract for future DVP. These are retained user instructions,
 not independent reinterpretations of the migration plan.

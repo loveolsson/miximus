@@ -290,6 +290,41 @@ bool device_state_s::initialize_instance()
     return has_instance_extension(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
 }
 
+std::vector<const char*>
+device_state_s::select_cuda_extensions([[maybe_unused]] std::span<const uint8_t, VK_UUID_SIZE> uuid,
+                                       [[maybe_unused]] std::span<const VkExtensionProperties> extensions)
+{
+    std::vector<const char*> device_extensions;
+    cuda_missing_support.clear();
+#ifdef MIXIMUS_HAS_CUDA
+    cuda_device_index = -1;
+    if (options.use_cuda) {
+        cuda_device_index = transfer::detail::find_cuda_device(uuid, cuda_missing_support);
+        if (cuda_device_index >= 0) {
+            for (const auto* extension :
+                 {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME}) {
+                if (!std::ranges::any_of(extensions, [&](const auto& available) {
+                        return std::strcmp(available.extensionName, extension) == 0;
+                    })) {
+                    cuda_missing_support.emplace_back(extension);
+                }
+            }
+            if (!cuda_missing_support.empty()) {
+                cuda_device_index = -1;
+            }
+        }
+    }
+    cuda_external_memory = cuda_device_index >= 0;
+    if (cuda_external_memory) {
+        device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+        device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
+    }
+#else
+    cuda_missing_support.emplace_back("CUDA support was not compiled into this build");
+#endif
+    return device_extensions;
+}
+
 std::vector<const char*> device_state_s::select_physical_device(bool surface_maintenance_available)
 {
     uint32_t count{};
@@ -431,32 +466,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
                        present_id_features.presentId != 0U &&
                        has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
                        has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);
-        device_extensions.clear();
-        cuda_missing_support.clear();
-#ifdef MIXIMUS_HAS_CUDA
-        cuda_device_index = -1;
-        if (!options.disable_cuda) {
-            cuda_device_index = transfer::detail::find_cuda_device(identity.deviceUUID, cuda_missing_support);
-            if (cuda_device_index >= 0) {
-                for (const auto* extension :
-                     {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME}) {
-                    if (!has_device_extension(extension)) {
-                        cuda_missing_support.emplace_back(extension);
-                    }
-                }
-                if (!cuda_missing_support.empty()) {
-                    cuda_device_index = -1;
-                }
-            }
-        }
-        cuda_external_memory = cuda_device_index >= 0;
-        if (cuda_external_memory) {
-            device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-            device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
-        }
-#else
-        cuda_missing_support.emplace_back("CUDA support was not compiled into this build");
-#endif
+        device_extensions = select_cuda_extensions(identity.deviceUUID, extensions);
         if (options.presentation) {
             device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         }
@@ -482,7 +492,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
     report["swapchain_maintenance"]  = swapchain_maintenance;
     report["present_wait"]           = present_wait;
     report["cuda_external_memory"]   = cuda_external_memory;
-    report["disable_cuda"]           = options.disable_cuda;
+    report["cuda_requested"]         = options.use_cuda;
     report["use_cuda"]               = cuda_external_memory;
     diagnostics                      = report.dump(2);
     if (physical == nullptr) {
@@ -517,9 +527,11 @@ void device_state_s::initialize_logical_device(std::span<const char* const> devi
     maintenance.pNext             = present_wait ? &present_id_features : nullptr;
 
     VkPhysicalDeviceVulkan13Features vulkan13_features{};
-    vulkan13_features.pNext            = swapchain_maintenance ? static_cast<void*>(&maintenance)
-                                         : present_wait        ? static_cast<void*>(&present_id_features)
-                                                               : nullptr;
+    if (swapchain_maintenance) {
+        vulkan13_features.pNext = &maintenance;
+    } else if (present_wait) {
+        vulkan13_features.pNext = &present_id_features;
+    }
     vulkan13_features.sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vulkan13_features.dynamicRendering = VK_TRUE;
     vulkan13_features.synchronization2 = VK_TRUE;
@@ -739,8 +751,8 @@ device_s::device_s(const device_options_s& options)
 
     // Report the final selection once, after examining only the selected device.
     // Stream allocation and per-frame transfer paths do not repeat this message.
-    if (options.disable_cuda) {
-        getlog("gpu")->warn("CUDA transfers disabled by --disable-cuda");
+    if (!options.use_cuda) {
+        getlog("gpu")->warn("CUDA transfers disabled: --use-cuda was not specified");
     } else if (!state_->cuda_external_memory) {
         const auto& reasons = state_->cuda_missing_support;
         if (reasons.size() == 1 && reasons.front() == "CUDA is not supported on this device") {

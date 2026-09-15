@@ -21,7 +21,7 @@ struct device_options_s
     std::string device_uuid{};
     bool        validation{};
     bool        presentation{};
-    bool        disable_cuda{};
+    bool        use_cuda{};
     uint32_t    max_recordings{8};
     uint32_t    descriptor_page_size{512};
 };

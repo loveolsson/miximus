@@ -2,7 +2,7 @@
 
 DVP implementation removal does **not** remove its architectural requirements. DeckLink must continue to DMA directly
 into/from the transfer backend's host allocation, without an intermediate CPU frame copy. CUDA remains a supported
-backend selected automatically when available; one P2000's measurements are not a reason to remove it or infer performance on other
+backend requested with `--use-cuda` and selected after startup qualification; one P2000's measurements are not a reason to remove it or infer performance on other
 machines.
 
 ## Reviewed sources
@@ -45,8 +45,8 @@ outstanding upload lease, retained GPU-frame ownership, and output reuse only af
 It runs on both Vulkan and CUDA; it does not emulate DVP calls or claim DVP hardware validation.
 
 ```bash
-build/src/gpu/gpu_transfer_vulkan_test --disable-cuda --gtest_filter='*DeckLinkUsesTransferMemory*'
 build/src/gpu/gpu_transfer_vulkan_test --gtest_filter='*DeckLinkUsesTransferMemory*'
+build/src/gpu/gpu_transfer_vulkan_test --use-cuda --gtest_filter='*DeckLinkUsesTransferMemory*'
 ```
 
 Run the full transfer suite as well; it covers exact upload IDs, abandoned recordings, row strides, concurrent readback

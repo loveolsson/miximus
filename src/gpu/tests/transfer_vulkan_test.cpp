@@ -25,14 +25,14 @@ namespace {
 class transfer_vulkan : public testing::Test
 {
     std::unique_ptr<device_s> device_;
-    static inline bool        disable_cuda_{};
+    static inline bool        use_cuda_{};
     static inline bool        log_debug_{};
 
   public:
-    static void configure(bool disable_cuda, bool log_debug)
+    static void configure(bool use_cuda, bool log_debug)
     {
-        disable_cuda_ = disable_cuda;
-        log_debug_    = log_debug;
+        use_cuda_  = use_cuda;
+        log_debug_ = log_debug;
     }
 
   protected:
@@ -47,8 +47,7 @@ class transfer_vulkan : public testing::Test
         device_ = std::make_unique<device_s>(
             // Test options are read from an environment that the test does not modify.
             // NOLINTNEXTLINE(concurrency-mt-unsafe)
-            device_options_s{.validation   = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr,
-                             .disable_cuda = disable_cuda_});
+            device_options_s{.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .use_cuda = use_cuda_});
     }
 
     void TearDown() override
@@ -247,7 +246,7 @@ TEST_F(transfer_vulkan, PendingTransfersAreRetriedBeforeNewArrivals)
         {
         }
 
-        static bool is_resource_task(const task_s&) noexcept { return false; }
+        static bool is_resource_task(const task_s& /*task*/) noexcept { return false; }
 
         bool process_task(task_s& task)
         {
@@ -291,7 +290,7 @@ TEST_F(transfer_vulkan, PendingTransfersAreRetriedBeforeNewArrivals)
 
 TEST_F(transfer_vulkan, ResourceAllocationDoesNotBlockTransferProgress)
 {
-    enum class task_e
+    enum class task_e : uint8_t
     {
         resource,
         transfer
@@ -358,7 +357,10 @@ TEST_F(transfer_vulkan, SubmittedUploadsChainThroughConversionAndReadbackWithout
     std::shared_ptr<texture_s> conversion;
     for (unsigned value = 1; value <= 32; ++value) {
         auto lease = input->acquire_upload_buffer_for(3s);
-        ASSERT_TRUE(lease);
+        if (!lease.has_value()) {
+            ADD_FAILURE() << "Expected lease to hold a value";
+            return;
+        }
         const auto id = lease->upload_id();
         std::ranges::fill(lease->writable_host_bytes(), std::byte(value));
         ASSERT_TRUE(lease->submit(upload_ownership_e::queued_frame));
@@ -371,7 +373,10 @@ TEST_F(transfer_vulkan, SubmittedUploadsChainThroughConversionAndReadbackWithout
         }
         conversion  = frame->conversion_texture();
         auto target = until([&] { return output->try_acquire_render_target(); });
-        ASSERT_TRUE(target);
+        if (!target.has_value()) {
+            ADD_FAILURE() << "Expected target to hold a value";
+            return;
+        }
         ASSERT_NE(target->conversion_texture(), nullptr);
         auto commands = until([&] { return gpu().try_record(); });
         ASSERT_TRUE(commands);
@@ -397,7 +402,10 @@ TEST_F(transfer_vulkan, SubmittedUploadsChainThroughConversionAndReadbackWithout
         commands.reset();
         lease.reset();
         auto result = until([&] { return output->try_consume_oldest(); });
-        ASSERT_TRUE(result);
+        if (!result.has_value()) {
+            ADD_FAILURE() << "Expected result to hold a value";
+            return;
+        }
         for (const auto byte : result->readable_host_bytes()) {
             EXPECT_EQ(byte, std::byte(value));
         }
@@ -641,6 +649,26 @@ TEST_F(transfer_vulkan, DirectBackendDoesNotAllocateASecondDeviceFrame)
     }
 }
 
+void fill_raw_pixels(std::span<std::byte> bytes, const std::array<std::byte, 4>& raw)
+{
+    for (size_t row = 0; row < 8; ++row) {
+        for (size_t pixel = 0; pixel < 16; ++pixel) {
+            std::ranges::copy(raw, bytes.begin() + static_cast<ptrdiff_t>((row * 80) + (pixel * 4)));
+        }
+    }
+}
+
+void expect_raw_pixels(std::span<const std::byte> bytes, const std::array<std::byte, 4>& expected)
+{
+    for (size_t row = 0; row < 2; ++row) {
+        for (size_t pixel = 0; pixel < 4; ++pixel) {
+            for (size_t channel = 0; channel < 4; ++channel) {
+                EXPECT_EQ(bytes[(row * 24) + (pixel * 4) + channel], expected.at(channel));
+            }
+        }
+    }
+}
+
 // Every host byte layout shares one CUDA-compatible storage format. Exercise the
 // shader mappings in both directions and regenerate mipmaps after slot reuse.
 TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers)
@@ -670,23 +698,25 @@ TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers
             .initial_slots = 1
         });
         ASSERT_TRUE(output->wait_for_initial_slots(3s));
-        const auto order = format == host_pixel_format_e::argb_u8   ? channel_order_e::argb
-                           : format == host_pixel_format_e::rgba_u8 ? channel_order_e::rgba
-                                                                    : channel_order_e::bgra;
+        auto order = channel_order_e::bgra;
+        if (format == host_pixel_format_e::argb_u8) {
+            order = channel_order_e::argb;
+        } else if (format == host_pixel_format_e::rgba_u8) {
+            order = channel_order_e::rgba;
+        }
         for (uint8_t sequence = 0; sequence < 4; ++sequence) {
             auto lease = input->acquire_upload_buffer_for(3s);
-            ASSERT_TRUE(lease);
+            if (!lease.has_value()) {
+                ADD_FAILURE() << "Expected lease to hold a value";
+                return;
+            }
             const std::array<std::byte, 4> raw{std::byte(31 + sequence),
                                                std::byte(73 + sequence),
                                                std::byte(119 + sequence),
                                                std::byte(183 + sequence)};
             auto                           host = lease->writable_host_bytes();
             std::ranges::fill(host, std::byte{241}); // Row padding must never enter the image.
-            for (size_t row = 0; row < 8; ++row) {
-                for (size_t pixel = 0; pixel < 16; ++pixel) {
-                    std::ranges::copy(raw, host.begin() + static_cast<ptrdiff_t>(row * 80 + pixel * 4));
-                }
-            }
+            fill_raw_pixels(host, raw);
             const auto id = lease->upload_id();
             ASSERT_TRUE(lease->submit());
             ASSERT_EQ(input->wait_for_upload(id), texture_upload_wait_result_e::ready);
@@ -695,7 +725,10 @@ TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers
             EXPECT_EQ(source->texture()->format(), format_e::rgba_unorm8);
             EXPECT_GT(source->texture()->mip_levels(), 1);
             auto target = until([&] { return output->try_acquire_render_target(); });
-            ASSERT_TRUE(target);
+            if (!target.has_value()) {
+                ADD_FAILURE() << "Expected target to hold a value";
+                return;
+            }
             auto commands = until([&] { return gpu().try_record(); });
             ASSERT_TRUE(commands);
             draw_texture(*commands,
@@ -710,19 +743,16 @@ TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers
             commands.reset();
             target.reset();
             auto result = until([&] { return output->try_consume_oldest(); });
-            ASSERT_TRUE(result);
+            if (!result.has_value()) {
+                ADD_FAILURE() << "Expected result to hold a value";
+                return;
+            }
             auto expected = raw;
             if (format == host_pixel_format_e::bgrx_u8) {
                 expected[3] = std::byte{255};
             }
             const auto bytes = result->readable_host_bytes();
-            for (size_t row = 0; row < 2; ++row) {
-                for (size_t pixel = 0; pixel < 4; ++pixel) {
-                    for (size_t channel = 0; channel < 4; ++channel) {
-                        EXPECT_EQ(bytes[row * 24 + pixel * 4 + channel], expected[channel]);
-                    }
-                }
-            }
+            expect_raw_pixels(bytes, expected);
         }
     }
 }
@@ -897,13 +927,13 @@ TEST_F(transfer_vulkan, DeckLinkUsesTransferMemoryDirectlyAndRetainsItThroughSdk
 
 int main(int argc, char** argv)
 {
-    bool disable_cuda{};
+    bool use_cuda{};
     bool log_debug{};
     for (int i = 1; i < argc; ++i) {
         const std::string_view argument = argv[i];
-        if (argument == "--disable-cuda" || argument == "--log-debug") {
-            if (argument == "--disable-cuda") {
-                disable_cuda = true;
+        if (argument == "--use-cuda" || argument == "--log-debug") {
+            if (argument == "--use-cuda") {
+                use_cuda = true;
             } else {
                 log_debug = true;
             }
@@ -917,7 +947,7 @@ int main(int argc, char** argv)
         }
     }
 
-    transfer_vulkan::configure(disable_cuda, log_debug);
+    transfer_vulkan::configure(use_cuda, log_debug);
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

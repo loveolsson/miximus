@@ -10,7 +10,7 @@ do not silently bypass it.
 
 | Setting | Reason and scope |
 | --- | --- |
-| `protect_shadow_gap=0` | Required for CUDA initialization on the tested system. Enabled only in ASan builds that include the CUDA backend. CUDA-free builds retain ASan's default guard. This must be selected at build time: ASan initializes before `--disable-cuda` is parsed. |
+| `protect_shadow_gap=0` | Required for CUDA initialization on the tested system. Enabled only in ASan builds that include the CUDA backend. CUDA-free builds retain ASan's default guard. This must be selected at build time: ASan initializes before `--use-cuda` is parsed. |
 | `VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING=1` | Set before `main()` on Linux ASan builds, unless explicitly set in the environment. Keeps Vulkan driver/layer libraries available for exit-time leak inspection and symbolization. Ordinary builds are unaffected. |
 | `leak:libnvidia-glcore.so` and `leak:libGLX_nvidia.so` | Linux ASan builds suppress allocations whose stacks contain these NVIDIA driver libraries. NVIDIA's Vulkan ICD uses both, despite their OpenGL-related names. Presentation reproduces leaks through both even with library retention. There is no blanket suppression of XCB, DBus, CUDA, GLFW or application code. |
 | System `addr2line` with `allow_addr2line=1` | Retains symbolized reports in Clang ASan builds, preserving the previous workaround for an exit-time `llvm-symbolizer` protocol deadlock after NVIDIA driver use. That historical deadlock was not independently reproduced in this review. |
@@ -65,5 +65,5 @@ requires process inspection and fails in the agent's restricted execution sandbo
 sandbox. Do not disable leak detection to obtain passing results. Vulkan synchronization validation remains a separate
 check from host ASan/UBSan.
 
-The CUDA script uses automatic selection, verifies completed upload and readback through `cuda-vulkan-direct`, and rejects
+The CUDA script passes `--use-cuda`, verifies completed upload and readback through `cuda-vulkan-direct`, and rejects
 fallback. Driver suppression summaries at exit are expected; unsuppressed sanitizer reports still fail the process.

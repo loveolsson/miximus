@@ -241,10 +241,12 @@ std::vector<std::string> qualify_cuda_transfers(device_s& device)
                 plan.host_layout.memory_access = host_memory_access_e::read_write;
                 cuda_transfer_s readback(device, plan, transfer_direction_e::gpu_to_cpu, frame, nullptr);
             } catch (const std::exception& error) {
-                const auto representation = format == host_pixel_format_e::v210        ? "v210 word buffer"
-                                            : sampling == sampling_e::mipmapped_linear ? "RGBA8 image with mipmaps"
-                                                                                       : "RGBA8 image without mipmaps";
-                const auto failure        = std::format("{}: {}", representation, error.what());
+                auto representation = sampling == sampling_e::mipmapped_linear ? "RGBA8 image with mipmaps"
+                                                                               : "RGBA8 image without mipmaps";
+                if (format == host_pixel_format_e::v210) {
+                    representation = "v210 word buffer";
+                }
+                const auto failure = std::format("{}: {}", representation, error.what());
                 // Channel-order aliases use the same native resource. Report each
                 // missing capability once instead of repeating it for every alias.
                 if (std::ranges::find(missing_support, failure) == missing_support.end()) {
@@ -362,8 +364,8 @@ void cuda_transfer_s::import_frame_memory()
     } else {
         const auto&                          image = *state.frame.texture();
         cudaExternalMemoryMipmappedArrayDesc mapped{};
-        mapped.formatDesc = {8, 8, 8, 8, cudaChannelFormatKindUnsigned};
-        mapped.extent     = {image.extent().width, image.extent().height, 0};
+        mapped.formatDesc = {.x = 8, .y = 8, .z = 8, .w = 8, .f = cudaChannelFormatKindUnsigned};
+        mapped.extent     = {.width = image.extent().width, .height = image.extent().height, .depth = 0};
         mapped.flags      = cudaArrayColorAttachment;
         mapped.numLevels  = image.mip_levels();
         check_cuda(cudaExternalMemoryGetMappedMipmappedArray(&state.image_mipmaps, state.imported_memory, &mapped),
@@ -498,7 +500,11 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
         image_barrier.oldLayout            = VK_IMAGE_LAYOUT_GENERAL;
         image_barrier.newLayout            = VK_IMAGE_LAYOUT_GENERAL;
         image_barrier.image                = image->image;
-        image_barrier.subresourceRange     = {VK_IMAGE_ASPECT_COLOR_BIT, 0, image->mip_levels, 0, 1};
+        image_barrier.subresourceRange     = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                              .baseMipLevel   = 0,
+                                              .levelCount     = image->mip_levels,
+                                              .baseArrayLayer = 0,
+                                              .layerCount     = 1};
         dependency.imageMemoryBarrierCount = 1;
         dependency.pImageMemoryBarriers    = &image_barrier;
     }
@@ -612,7 +618,7 @@ bool cuda_transfer_s::submit_transfer(const completion_s& dependency)
         }
 
         record_ownership_transfer(*record, ownership_operation_e::acquire_from_cuda);
-        if (state.direction == transfer_direction_e::cpu_to_gpu && state.frame.texture()) {
+        if (state.direction == transfer_direction_e::cpu_to_gpu && state.frame.texture() != nullptr) {
             record->generate_mip_maps(*state.frame.texture());
         }
 

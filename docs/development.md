@@ -77,7 +77,7 @@ cmake --build build-asan -j
 Sanitized GPU-linked binaries share runtime defaults from `src/sanitizer_defaults.cpp`, including the app, GPU tests and
 benchmarks. CUDA-enabled builds retain `protect_shadow_gap=0`: CUDA initialization still fails with ASan's guarded shadow
 gap on the tested toolkit/driver. CUDA-free builds keep the default guard. This is selected at build time because ASan
-initializes before `--disable-cuda` is parsed; instrumentation and leak detection remain enabled.
+initializes before `--use-cuda` is parsed; instrumentation and leak detection remain enabled.
 
 On Linux, ASan builds default Vulkan Loader's `VK_LOADER_DISABLE_DYNAMIC_LIBRARY_UNLOADING` to `1`, retaining
 driver/layer libraries for exit-time root inspection and symbolization. An explicit environment value is respected for
@@ -102,10 +102,10 @@ under a debugger or another environment that uses `ptrace`; leave leak detection
 Run:
 
 ```bash
-./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--disable-cuda]
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda]
 ```
 
-Host transfers automatically use CUDA when available on the selected Vulkan device. `--disable-cuda` forces Vulkan staging; see [CUDA
+Host transfers use Vulkan staging by default. `--use-cuda` enables CUDA only after all startup checks pass; see [CUDA
 transfers and benchmarking](cuda-transfers.md).
 
 The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the
@@ -313,6 +313,29 @@ The web build runs Vue TypeScript checking and a Vite production build.
 For changes involving nodes or the protocol, inspect both native and TypeScript definitions. For DeckLink, NDI, CUDA,
 font discovery, or display timing, perform runtime validation on suitable hardware; compilation alone cannot validate
 behavior.
+
+### GPU tests from an agent
+
+Run GPU and display tests outside the agent's restricted execution sandbox. With `exec_command`, use
+`sandbox_permissions: "require_escalated"`; the sandbox may hide GPU device nodes and driver access. Ordinary CTest
+remains GPU-independent and can run inside the sandbox.
+
+Set the validation environment in the **same elevated invocation** as the test. The local SDK layer is not in the
+system's default layer search path. From the repository root, for the dedicated clang-tidy build:
+
+```sh
+export VK_LAYER_PATH="$PWD/build/tools/vulkan-validation/1.4.357.0/x86_64/share/vulkan/explicit_layer.d"
+export MIXIMUS_VULKAN_VALIDATION=1
+unset VK_LAYER_FINE_GRAINED_LOCKING
+build-tidy/src/gpu/gpu_vulkan_test
+build-tidy/src/gpu/gpu_transfer_vulkan_test
+```
+
+The SDK stays under `build/tools/` regardless of the tested build directory. Substitute `build` or the sanitizer build
+for the executable paths as needed. See [Vulkan verification](vulkan-progress.md#build-and-verification) for SDK setup,
+CUDA and window tests. Before reporting missing hardware or `VK_LAYER_KHRONOS_validation`, verify the elevated
+execution context and the manifest/library at the configured layer path. Do not disable validation to bypass a setup
+failure.
 
 ### Long-running timing soak
 

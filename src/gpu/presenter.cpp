@@ -594,69 +594,82 @@ struct presenter_state_s
         return true;
     }
 
+    static bool wait_for_producer_submission(const completion_s& ready, const std::stop_token& stop)
+    {
+        // Resolve a pending submission ticket without waiting for its GPU
+        // work. Screen-node frames have already passed this boundary.
+        const auto submitted = ready.wait_submitted(retirement_timeout, stop);
+        if (submitted == wait_result_e::cancelled) {
+            return false;
+        }
+        if (submitted != wait_result_e::ready) {
+            throw std::runtime_error("presentation producer submission timed out");
+        }
+        return true;
+    }
+
+    void run_frames(const std::stop_token& stop)
+    {
+        texture_s                   current;
+        completion_s                current_ready;
+        std::shared_ptr<const void> current_lease;
+        bool                        rebuild = true;
+        bool                        needs_present{};
+        extent_s                    previous_request{};
+        while (!stop.stop_requested()) {
+            const auto request = take_pending_frame(current, current_ready, current_lease, needs_present);
+
+            // The producer owns frame cadence, including intentional
+            // repeats. FIFO backpressure must not become a second producer
+            // that inserts stale frames between scheduled publications.
+            // A retained image is redrawn only for a swapchain change.
+            const bool surface_hidden           = request.width == 0 || request.height == 0;
+            const bool retained_frame_unchanged = !needs_present && !rebuild && request == previous_request;
+            const bool mailbox_waiting          = !source.next_frame && (!current || retained_frame_unchanged);
+            if (surface_hidden || mailbox_waiting) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                continue;
+            }
+
+            if (rebuild || request != previous_request) {
+                recreate(request);
+                previous_request = request;
+                rebuild          = false;
+            }
+
+            const auto acquired = acquire_next_image(rebuild);
+            if (!acquired) {
+                continue;
+            }
+            const auto index = *acquired;
+
+            if (source.next_frame) {
+                auto frame = next_source_frame(stop);
+                if (!frame) {
+                    break; // Retirement consumes the outstanding acquire semaphore.
+                }
+
+                current       = std::move(frame->image);
+                current_ready = std::move(frame->ready);
+                current_lease = std::move(frame->lease);
+            }
+
+            if (!wait_for_producer_submission(current_ready, stop)) {
+                break;
+            }
+
+            rebuild       = present_frame(current, current_ready, current_lease, index) || rebuild;
+            needs_present = false;
+            if (!rebuild && !complete_presentation(stop, rebuild)) {
+                break;
+            }
+        }
+    }
+
     void run(const std::stop_token& stop) noexcept
     {
         try {
-            texture_s                   current;
-            completion_s                current_ready;
-            std::shared_ptr<const void> current_lease;
-            bool                        rebuild = true;
-            bool                        needs_present{};
-            extent_s                    previous_request{};
-            while (!stop.stop_requested()) {
-                const auto request = take_pending_frame(current, current_ready, current_lease, needs_present);
-
-                // The producer owns frame cadence, including intentional
-                // repeats. FIFO backpressure must not become a second producer
-                // that inserts stale frames between scheduled publications.
-                // A retained image is redrawn only for a swapchain change.
-                const bool surface_hidden           = request.width == 0 || request.height == 0;
-                const bool retained_frame_unchanged = !needs_present && !rebuild && request == previous_request;
-                const bool mailbox_waiting          = !source.next_frame && (!current || retained_frame_unchanged);
-                if (surface_hidden || mailbox_waiting) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-                    continue;
-                }
-
-                if (rebuild || request != previous_request) {
-                    recreate(request);
-                    previous_request = request;
-                    rebuild          = false;
-                }
-
-                const auto acquired = acquire_next_image(rebuild);
-                if (!acquired) {
-                    continue;
-                }
-                const auto index = *acquired;
-
-                if (source.next_frame) {
-                    auto frame = next_source_frame(stop);
-                    if (!frame) {
-                        break; // Retirement consumes the outstanding acquire semaphore.
-                    }
-
-                    current       = std::move(frame->image);
-                    current_ready = std::move(frame->ready);
-                    current_lease = std::move(frame->lease);
-                }
-
-                // Resolve a pending submission ticket without waiting for its GPU
-                // work. Screen-node frames have already passed this boundary.
-                const auto submitted = current_ready.wait_submitted(retirement_timeout, stop);
-                if (submitted == wait_result_e::cancelled) {
-                    break;
-                }
-                if (submitted != wait_result_e::ready) {
-                    throw std::runtime_error("presentation producer submission timed out");
-                }
-
-                rebuild       = present_frame(current, current_ready, current_lease, index) || rebuild;
-                needs_present = false;
-                if (!rebuild && !complete_presentation(stop, rebuild)) {
-                    break;
-                }
-            }
+            run_frames(stop);
         } catch (const std::exception& error) {
             const std::scoped_lock guard(mutex);
             counters.failure = error.what();

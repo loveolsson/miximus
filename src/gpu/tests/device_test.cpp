@@ -912,12 +912,12 @@ TEST_F(device_test, PendingDependencyDefersOnlyItsConsumerContext)
     {
         std::binary_semaphore entered{0};
         std::binary_semaphore resume{0};
-        std::atomic_bool      independent_ran_before_producer{};
+        std::atomic_bool      independent_ran_before_producer;
     };
     auto pause               = std::make_shared<pause_s>();
     auto producer_context    = device->create_recording_context(2);
     auto independent_context = device->create_recording_context(1);
-    auto image               = device->create_texture({1, 1}, format_e::rgba_unorm8);
+    auto image               = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm8);
     auto output              = device->create_buffer(4, host_access_e::readback);
     auto blocker             = device->try_record();
     auto consumer            = device->try_record();

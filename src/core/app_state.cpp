@@ -23,7 +23,7 @@ namespace {
 gpu::device_options_s gpu_options(const command_line_options_s& command_line)
 {
     gpu::device_options_s options;
-    options.disable_cuda   = command_line.disable_cuda;
+    options.use_cuda       = command_line.use_cuda;
     options.presentation   = true;
     options.max_recordings = 32;
     // Startup reads only: the app does not mutate the process environment.

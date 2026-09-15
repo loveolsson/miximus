@@ -1,6 +1,7 @@
 # CUDA/Vulkan transfers and verification
 
-CUDA transfers are selected automatically on Linux builds with CUDA support when the selected Vulkan GPU has a matching,
+Vulkan staging is the default. Pass `--use-cuda` to request CUDA transfers on Linux builds with CUDA support.
+CUDA is enabled only when the selected Vulkan GPU has a matching,
 usable CUDA device and the required external-memory/semaphore extensions. Before selecting CUDA, startup creates and
 imports every required host-format/sampling combination through the production allocator and CUDA backend, for uploads
 and readbacks. This covers raw RGBA8 images with and without mipmaps, padded v210 word buffers, aligned pinned host
@@ -11,8 +12,7 @@ entire run**, before any stream starts. One startup warning lists the missing ca
 are reported once. The same list is available as `cuda_missing_support` in device diagnostics. A usable CUDA runtime alone is not sufficient. Missing CUDA support likewise selects Vulkan staging.
 This is format/resource qualification, not a guarantee against later memory exhaustion, device loss or driver faults.
 
-Pass `--disable-cuda` to force Vulkan staging. This bypasses CUDA probing and transfer initialization entirely. The old
-`--use-cuda` flag is removed. Selection is immutable for the device lifetime: once CUDA is chosen, allocation, format or
+Without `--use-cuda`, startup skips CUDA probing and initialization entirely. `--disable-cuda` is removed. Selection is immutable for the device lifetime: once CUDA is chosen, allocation, format or
 transfer failures are errors, never reasons for a per-stream staging fallback. The former
 `MIXIMUS_GPU_TRANSFER_BACKEND` environment variable remains ignored.
 
@@ -30,7 +30,7 @@ CUDA transfers disabled due to missing support:
    --- v210 word buffer: map CUDA packed frame buffer: operation not supported
 ```
 
-`--disable-cuda` logs `CUDA transfers disabled by --disable-cuda` at WARN. Successful qualification logs `CUDA transfers enabled` at INFO.
+Omitting `--use-cuda` logs `CUDA transfers disabled: --use-cuda was not specified` at WARN. Successful qualification logs `CUDA transfers enabled` at INFO.
 These messages occur once during device startup, never once per stream or transfer. Individual transfer-slot selection
 messages remain DEBUG-only.
 
@@ -45,7 +45,7 @@ The backend is named **`cuda-vulkan-direct`**. It registers the actual frame all
   representation. Neither a native BGRA image nor a packed RGB/YUV image is introduced at a transfer boundary.
 
 This restores the pre-Vulkan direct-resource design. There is no intermediate CUDA device buffer, no device-to-device
-transfer copy, and no format-dependent fallback to Vulkan staging. Automatic CUDA selection is strict for every transfer stream once chosen.
+transfer copy, and no format-dependent fallback to Vulkan staging. CUDA selection is strict for every transfer stream once chosen.
 A future media format must have a simple, directly shareable byte/word representation with shader conversion;
 choosing an incompatible native image format and falling back is not an acceptable integration strategy.
 
@@ -92,7 +92,7 @@ ordinary test runs need no manual `ASAN_OPTIONS` or suppression file. Use a Clan
 ./scripts/test_cuda_transfers.sh build 3
 ```
 
-The script passes `--log-debug` to the GPU test executable, runs the transfer tests three times, requires log
+The script passes `--use-cuda --log-debug` to the GPU test executable, runs the transfer tests three times, requires log
 evidence of completed uploads **and** readbacks, and rejects any Vulkan fallback. It uses synthetic pixels and does not
 open NDI/DeckLink sources, transmit video, or create screen outputs. It saves its log under
 `build/integration-tests/cuda-transfers-<timestamp>-<pid>/tests.log`.
@@ -119,7 +119,7 @@ A missing requested layer fails the test instead of silently running without val
 Start a single mixer instance with debug logging to verify the backend:
 
 ```bash
-./build/miximus --log-debug --settings build/settings.json
+./build/miximus --use-cuda --log-debug --settings build/settings.json
 ```
 
 Enable the NDI/DeckLink inputs and outputs you intend to test. Text and generated-image uploads also use the same
@@ -151,8 +151,8 @@ synthetic test script.
 See [recorded CUDA/Vulkan measurements](cuda-transfer-benchmark.md) for results and their implementation scope.
 Measurements of the former intermediate-buffer backend do not characterize this direct-resource backend.
 
-Normal runs prefer CUDA when the startup capability check succeeds. `--disable-cuda` always selects staging, even on a
-CUDA-capable machine. Builds without CUDA support and devices without matching CUDA/Vulkan interoperability use staging
+Normal runs use staging, including on CUDA-capable machines. `--use-cuda` requests CUDA and runs the startup
+qualification checks. Builds without CUDA support and devices without matching CUDA/Vulkan interoperability use staging
 automatically. A selected CUDA backend never changes because an individual transfer fails.
 
 Compare separate runs of the same synthetic production-backend workloads:
@@ -164,7 +164,7 @@ python3 scripts/benchmark_cuda_transfers.py \
   --iterations 500 --repeat 3
 ```
 
-Use a new output directory for each campaign. Staging runs pass `--disable-cuda`; CUDA runs use automatic selection
+Use a new output directory for each campaign. Staging runs pass no CUDA flag; CUDA runs pass `--use-cuda`
 and the runner rejects them if CUDA was not selected. The runner launches six separate processes in Vulkan/CUDA, CUDA/Vulkan,
 Vulkan/CUDA order and pins subsequent runs to the first run's device UUID. Each process tests upload and readback at
 720p, 1080p, and UHD in RGBA8 and packed v210, using the same transfer backends as the application. Each
@@ -185,7 +185,7 @@ run these commands separately:
 
 ```bash
 ./build/miximus --settings build/settings.json
-./build/miximus --disable-cuda --settings build/settings.json
+./build/miximus --use-cuda --settings build/settings.json
 ```
 
 ## Hardware verification
@@ -196,7 +196,7 @@ single-level images succeeded; another rejected v210 buffers after all image var
 Both cases ran with synchronization validation and released probe resources before continuing.
 
 On 2026-09-12, the normal build and 132 ordinary tests passed. All 14 GPU transfer tests passed with synchronization
-validation in three configurations: automatic CUDA selection, forced staging (`--disable-cuda`), and automatic staging
+validation with the then-current automatic CUDA selection, forced staging (`--disable-cuda`), and automatic staging
 with CUDA devices hidden using `CUDA_VISIBLE_DEVICES`. Logs confirmed actual uploads/readbacks with the expected
 backend in each case; the CUDA verification script still rejects staging when checking CUDA operation.
 

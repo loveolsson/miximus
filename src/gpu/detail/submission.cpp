@@ -232,6 +232,18 @@ void device_state_s::stop_submission_worker()
 
 namespace {
 
+bool dependencies_submitted(const recording_state_s& recording)
+{
+    try {
+        return std::ranges::all_of(recording.dependencies,
+                                   [](const auto& dependency) { return dependency.submitted(); });
+    } catch (const std::exception&) {
+        // Allow submission to consume failed dependencies: submit_native reports
+        // their failure through the ticket instead of leaving this recording queued.
+        return true;
+    }
+}
+
 std::unique_ptr<recording_state_s> take_next_recording(recording_context_state_s& context)
 {
     // A freed arena can be reused before an older arena. Follow enqueue order,
@@ -242,13 +254,8 @@ std::unique_ptr<recording_state_s> take_next_recording(recording_context_state_s
             // Never put a wait for a not-yet-submitted producer on the shared
             // graphics queue: that producer might need this same worker/queue.
             // Failed dependencies are consumed below to propagate their failure.
-            try {
-                if (!std::ranges::all_of(queued->dependencies,
-                                         [](const auto& dependency) { return dependency.submitted(); })) {
-                    return nullptr;
-                }
-            } catch (const std::exception&) {
-                // submit_native reports the failed dependency through the ticket.
+            if (!dependencies_submitted(*queued)) {
+                return nullptr;
             }
             ++context.submitted_sequence;
             return std::unique_ptr<recording_state_s>(arena->queued.exchange(nullptr));

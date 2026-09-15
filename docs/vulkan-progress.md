@@ -8,7 +8,7 @@ code have been removed. Vulkan headers come from the SDK; Volk and VMA are pinne
 
 - Working images retain the linear, premultiplied UNORM16 color contract. Drawing and conversion APIs use explicit
   blend, compositing, transfer-function and alpha-mode enums. See [GPU and media](gpu-and-media.md).
-- Linux CUDA/Vulkan transfers are selected automatically when available and refuse per-stream fallback. `--disable-cuda` forces Vulkan staging.
+- Vulkan staging is the default. `--use-cuda` requests Linux CUDA/Vulkan transfers, enabled only after startup qualification and without per-stream fallback.
   The [CUDA guide](cuda-transfers.md) includes repeatable verification and cross-machine benchmarking commands.
 - DeckLink retains direct SDK access to backend-owned host allocations and external leases. Future DVP integration
   must preserve the [direct-memory contract](decklink-direct-memory.md).

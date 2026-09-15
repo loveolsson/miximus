@@ -1,5 +1,5 @@
 // Shared runtime defaults for sanitizer builds of GPU-linked executables.
-// ASan options are consumed before main(), before --disable-cuda can be parsed.
+// ASan options are consumed before main(), before --use-cuda can be parsed.
 
 #ifdef MIXIMUS_SANITIZE_ADDRESS
 #include <cstdlib>

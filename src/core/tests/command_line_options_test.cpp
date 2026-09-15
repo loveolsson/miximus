@@ -33,7 +33,7 @@ TEST(CommandLineOptions, DefaultsSettingsPathRelativeToExecutable)
     EXPECT_EQ(options.settings_path, "/opt/miximus/bin/settings.json");
     EXPECT_EQ(options.log_level, spdlog::level::info);
     EXPECT_FALSE(options.stop_after.has_value());
-    EXPECT_FALSE(options.disable_cuda);
+    EXPECT_FALSE(options.use_cuda);
     EXPECT_FALSE(options.render_thread_delay_test.has_value());
 }
 
@@ -42,7 +42,7 @@ TEST(CommandLineOptions, ParsesRuntimeAndTestOptions)
     auto argument_values = std::array{
         std::string{"miximus"},
         std::string{"--log-trace"},
-        std::string{"--disable-cuda"},
+        std::string{"--use-cuda"},
         std::string{"--settings"},
         std::string{"/tmp/test settings.json"},
         std::string{"--stop-after"},
@@ -57,7 +57,7 @@ TEST(CommandLineOptions, ParsesRuntimeAndTestOptions)
     const auto options = core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data());
 
     EXPECT_EQ(options.log_level, spdlog::level::trace);
-    EXPECT_TRUE(options.disable_cuda);
+    EXPECT_TRUE(options.use_cuda);
     EXPECT_EQ(options.settings_path, "/tmp/test settings.json");
     ASSERT_TRUE(options.stop_after.has_value());
     EXPECT_DOUBLE_EQ(options.stop_after.value_or(std::chrono::duration<double>{}).count(), 2.5);

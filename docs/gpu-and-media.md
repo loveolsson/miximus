@@ -95,11 +95,11 @@ progress worker. Starting or resizing a stream cannot delay reporting unrelated 
 allocation is still running. Conversion targets for NDI/DeckLink inputs and DeckLink output are allocated alongside
 their transfer pools, with the same UNORM16 precision and mipmap policy, and are included in the memory budget.
 Eight-bit transfers use raw RGBA8 images; v210 uses raw-word buffers and compute conversion. On Linux, builds with the CUDA toolkit
-automatically select direct CUDA transfers when the selected Vulkan device
+use Vulkan staging by default. `--use-cuda` requests direct CUDA transfers when the selected Vulkan device
 has a matching, usable CUDA device and external-memory/semaphore support. Startup also creates and imports every
 required transfer representation, sampling mode and direction through the production allocation/registration path.
 If any qualification fails, CUDA is disabled for the entire run before streams start; all streams use Vulkan staging.
-`--disable-cuda` forces staging without probing CUDA. Selection is fixed for the device lifetime; CUDA transfer or
+Without `--use-cuda`, startup skips CUDA probing entirely. Selection is fixed for the device lifetime; CUDA transfer or
 format failures never trigger a per-stream fallback. Backend controls and verification are documented in
 [cuda-transfers.md](cuda-transfers.md).
 

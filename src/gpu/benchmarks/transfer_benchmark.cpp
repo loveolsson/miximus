@@ -95,8 +95,8 @@ probe_options_s parse_options(int argc, char** argv)
             return argv[i];
         };
 
-        if (arg == "--disable-cuda") {
-            options.disable_cuda = true;
+        if (arg == "--use-cuda") {
+            options.use_cuda = true;
         } else if (arg == "--validation") {
             options.validation = true;
         } else if (arg == "--device") {
@@ -113,7 +113,7 @@ probe_options_s parse_options(int argc, char** argv)
 
             iterations = static_cast<uint32_t>(count);
         } else {
-            throw std::invalid_argument("usage: miximus_transfer_benchmark [--disable-cuda] [--validation] "
+            throw std::invalid_argument("usage: miximus_transfer_benchmark [--use-cuda] [--validation] "
                                         "[--device UUID] [--iterations N] [--output FILE]");
         }
     }

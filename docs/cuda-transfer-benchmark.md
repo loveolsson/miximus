@@ -1,5 +1,10 @@
 # CUDA transfer measurements
 
+The measured 1,094 → 759 MiB reduction compares the former Vulkan CUDA implementation with the corrected direct CUDA
+implementation. It is **not** a reduction from enabling CUDA over Vulkan staging: staging used 735 MiB in that graph,
+24 MiB less than direct CUDA. This memory comparison does not justify making CUDA the default. Normal runs use staging;
+`--use-cuda` requests the qualified direct CUDA backend.
+
 ## Direct-resource implementation — 2026-09-11
 
 `cuda-vulkan-direct` imports the actual RGBA8 frame image or packed v210 storage buffer. CUDA copies directly between
@@ -115,7 +120,7 @@ failed pixel checks, or unsuccessful runs. It makes no per-transfer log calls af
 
 The full native build and all 104 ordinary tests passed. The 22 renderer tests and eight transfer tests in each backend
 mode passed with synchronization validation. The CUDA benchmark also passed its separate validation run. The CLI tests
-verified the then-current opt-in `--use-cuda` behavior. Current builds select CUDA automatically and use `--disable-cuda` to force staging.
+verified the then-current opt-in `--use-cuda` behavior. Current builds also default to staging; `--use-cuda` requests CUDA subject to startup qualification.
 
 ## Live application comparison
 
