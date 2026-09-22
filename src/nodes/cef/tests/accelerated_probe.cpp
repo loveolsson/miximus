@@ -6,17 +6,43 @@
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/runtime.hpp"
 
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <linux/dma-buf.h>
+#include <linux/sync_file.h>
 #include <mutex>
+#include <sys/ioctl.h>
+#include <system_error>
+#include <unistd.h>
 
 namespace {
 using namespace std::chrono_literals;
 using namespace miximus;
+
+void log_producer_fence(int dma_buf)
+{
+    dma_buf_export_sync_file exported{};
+    exported.flags = DMA_BUF_SYNC_READ;
+    exported.fd    = -1;
+    if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0)
+        throw std::system_error(errno, std::generic_category(), "inspect CEF producer fence");
+    struct owned_fd_s
+    {
+        int value;
+        ~owned_fd_s() { close(value); }
+    } fence{exported.fd};
+    sync_file_info info{};
+    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0)
+        throw std::system_error(errno, std::generic_category(), "inspect CEF sync-file metadata");
+    // Metadata only: this does not map or read any image memory. A signalled
+    // snapshot alone cannot prove that every producer write was published.
+    std::cout << "CEF producer sync-file: fences=" << info.num_fences << " status=" << info.status << '\n';
+}
 
 class task_s final : public CefTask
 {
@@ -38,6 +64,7 @@ class client_s final
 {
     gpu::texture_s           destination_;
     gpu::recording_context_s context_;
+    bool                     fence_logged_{};
     IMPLEMENT_REFCOUNTING(client_s);
 
   public:
@@ -123,7 +150,11 @@ class client_s final
             source.modifier = info.modifier;
             source.offset   = info.planes[0].offset;
             source.stride   = info.planes[0].stride;
-            auto recording  = context_.try_record();
+            if (!fence_logged_) {
+                log_producer_fence(source.fd);
+                fence_logged_ = true;
+            }
+            auto recording = context_.try_record();
             if (!recording)
                 throw gpu::recording_unavailable_s{};
             gpu::draw_s conversion;

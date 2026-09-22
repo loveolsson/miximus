@@ -272,3 +272,11 @@ the special completion wait for CPU-mappable outputs therefore no longer applies
 must still be qualified before enabling ingress; callback arrival alone must not be treated as GPU completion.
 The existing contained DMA-BUF helper exports and waits for published write fences, and retains the borrowed image
 until its own GPU copy completes. No CPU pixel transfer or synchronization fallback has been introduced.
+
+The accelerated probe now logs the first incoming DMA-BUF's exported sync-file fence count and status before
+copying. This reads synchronization metadata only. Neither a signalled snapshot nor a zero-fence snapshot proves
+that all producer writes were published; those observations must be interpreted with the driver and Chromium path.
+The pinned Chromium EGL import sources do not select `EGL_IMPORT_EXPLICIT_SYNC_EXT`. The
+[EGL implicit-sync control extension](https://registry.khronos.org/EGL/extensions/EXT/EGL_EXT_image_implicit_sync_control.txt)
+describes implicit synchronization as the default, but that is not evidence that this driver's capture path publishes
+the required fences. This diagnostic builds successfully; its actual CEF result awaits the patched binary.
