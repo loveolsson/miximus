@@ -53,6 +53,21 @@ DEPS-pinned siso revision that upstream automation otherwise overrides with `lat
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
+Packaging also emits `miximus_cef_linux64_native_handle_r1.json`, an acquisition manifest containing the actual
+archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
+Use the local archive and its generated manifest to extract a verified SDK:
+
+```sh
+cmake \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r1.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r1.tar.bz2" \
+    -DCEF_DESTINATION="$PWD/build-cef-sdk" \
+    -P src/wrapper/cef/acquire.cmake
+```
+
+The destination must be new. The stock `sdk.json` remains the default acquisition manifest for baseline comparisons;
+it does not silently acquire the custom build. Preserve the generated manifest and source provenance with each artifact.
+
 Before promoting the artifact, verify the provenance and package digest, configure the application against that SDK,
 and run the fresh-profile runtime and accelerated probes under Vulkan validation. Require actual accelerated delivery
 and completed GPU copies; no software paint, CPU pixel fallback or sandbox disabling is acceptable. Adapter identity,

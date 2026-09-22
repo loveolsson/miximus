@@ -173,7 +173,12 @@ def main():
     provenance["libcef_sha256"] = digest(sdk / "Release/libcef.so")
     (sdk / "miximus-source-build.json").write_text(json.dumps(provenance, indent=2) + "\n")
     archive = Path(shutil.make_archive(str(output / name), "bztar", output, name))
-    (output / (name + ".sha256")).write_text(f"{digest(archive)}  {archive.name}\n")
+    archive_hash = digest(archive)
+    (output / (name + ".sha256")).write_text(f"{archive_hash}  {archive.name}\n")
+    artifact = json.loads((ROOT / "sdk.json").read_text())
+    artifact.update(url="", sha256=archive_hash, archive_root=name,
+                    patches=MANIFEST["patches"], source_build_revision=MANIFEST["revision"])
+    (output / (name + ".json")).write_text(json.dumps(artifact, indent=2) + "\n")
     print(f"Created {archive}; hardware qualification is still required.")
 
 
