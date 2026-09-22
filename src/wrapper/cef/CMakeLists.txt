@@ -32,21 +32,29 @@ set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "${MIXIMUS_CEF_PARENT_OPTIONS}")
 set(CEF_STAGE "${CMAKE_BINARY_DIR}/cef")
 file(MAKE_DIRECTORY "${CEF_STAGE}")
 set(CEF_STAGE_COMMANDS)
+set(CEF_STAGE_DEPENDENCIES
+    "${CMAKE_CURRENT_SOURCE_DIR}/sdk.json"
+    "${CEF_ROOT}/include/cef_version.h"
+)
 foreach(FILE IN LISTS CEF_BINARY_FILES)
     if(NOT EXISTS "${CEF_ROOT}/Release/${FILE}")
         message(FATAL_ERROR "Missing CEF runtime file: ${FILE}")
     endif()
     list(APPEND CEF_STAGE_COMMANDS COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${CEF_ROOT}/Release/${FILE}" "${CEF_STAGE}/${FILE}")
+    list(APPEND CEF_STAGE_DEPENDENCIES "${CEF_ROOT}/Release/${FILE}")
 endforeach()
 foreach(FILE IN LISTS CEF_RESOURCE_FILES)
     if(NOT EXISTS "${CEF_RESOURCE_DIR}/${FILE}")
         message(FATAL_ERROR "Missing CEF resource: ${FILE}")
     endif()
     if(IS_DIRECTORY "${CEF_RESOURCE_DIR}/${FILE}")
+        file(GLOB_RECURSE CEF_RESOURCE_DEPENDENCIES CONFIGURE_DEPENDS "${CEF_RESOURCE_DIR}/${FILE}/*")
+        list(APPEND CEF_STAGE_DEPENDENCIES ${CEF_RESOURCE_DEPENDENCIES})
         list(APPEND CEF_STAGE_COMMANDS COMMAND "${CMAKE_COMMAND}" -E copy_directory
             "${CEF_RESOURCE_DIR}/${FILE}" "${CEF_STAGE}/${FILE}")
     else()
+        list(APPEND CEF_STAGE_DEPENDENCIES "${CEF_RESOURCE_DIR}/${FILE}")
         list(APPEND CEF_STAGE_COMMANDS COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "${CEF_RESOURCE_DIR}/${FILE}" "${CEF_STAGE}/${FILE}")
     endif()
@@ -54,11 +62,23 @@ endforeach()
 foreach(FILE LICENSE.txt CREDITS.html)
     list(APPEND CEF_STAGE_COMMANDS COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${CEF_ROOT}/${FILE}" "${CEF_STAGE}/${FILE}")
+    list(APPEND CEF_STAGE_DEPENDENCIES "${CEF_ROOT}/${FILE}")
 endforeach()
+# Patched builds retain the upstream version string. Track the binary itself,
+# and stage its provenance alongside it, rather than relying on the header date.
+file(GLOB CEF_SOURCE_MANIFEST CONFIGURE_DEPENDS "${CEF_ROOT}/miximus-source-build.json")
+if(CEF_SOURCE_MANIFEST)
+    list(APPEND CEF_STAGE_DEPENDENCIES "${CEF_ROOT}/miximus-source-build.json")
+    list(APPEND CEF_STAGE_COMMANDS COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CEF_ROOT}/miximus-source-build.json" "${CEF_STAGE}/miximus-source-build.json")
+else()
+    list(APPEND CEF_STAGE_COMMANDS COMMAND "${CMAKE_COMMAND}" -E rm -f
+        "${CEF_STAGE}/miximus-source-build.json")
+endif()
 add_custom_command(OUTPUT "${CEF_STAGE}/.staged"
     ${CEF_STAGE_COMMANDS}
     COMMAND "${CMAKE_COMMAND}" -E touch "${CEF_STAGE}/.staged"
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sdk.json" "${CEF_ROOT}/include/cef_version.h"
+    DEPENDS ${CEF_STAGE_DEPENDENCIES}
     VERBATIM
 )
 add_custom_target(cef_runtime_files DEPENDS "${CEF_STAGE}/.staged")

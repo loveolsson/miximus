@@ -182,6 +182,15 @@ CEF children use the full `cef/` runtime directory. The runtime probe verified t
 Vulkan loader before and after CEF initialization. Resource symlinks are necessary because Chromium locates ICU
 relative to the loaded library even when `resources_dir_path` is supplied.
 
+The wrapper install rules were also exercised into an isolated prefix. Relative `cef-link/` links, including the
+locales directory link, were preserved and the installed helper retained an `$ORIGIN` RUNPATH. A relocated runtime
+probe with its ordinary Miximus resource library initialized and shut down against that installed stock bundle with
+a fresh profile, no agreement dialog, and zero Vulkan validation errors; it retained the system Vulkan loader.
+This verifies the local bundle layout, not a clean-machine dependency audit or the still-building patched artifact.
+Staging now depends on the runtime binaries and resource files themselves, and includes patched-build provenance
+when present. A manual check changing only the SDK library timestamp retriggered staging; the native build passed.
+This prevents a same-version patched library from being missed merely because its version header did not change.
+
 Two explicit probes are available when CEF and testing are enabled:
 
 ```sh
