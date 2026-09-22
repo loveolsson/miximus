@@ -33,6 +33,7 @@ enum class color_operation_e : int32_t
     decode_rec709_premultiplied  = 6,
     decode_rec709_ignore_alpha   = 7,
     encode_rec709_ignore_alpha   = 8,
+    decode_srgb_premultiplied    = 9,
 };
 
 enum class alpha_mode_e

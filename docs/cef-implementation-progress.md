@@ -241,3 +241,22 @@ are involved. A completed binary, upstream regression-test results and accelerat
 Checkpoint validation: native build and all 135 non-hardware tests pass. Fresh-profile CEF initialization/shutdown
 passes with the system Vulkan loader retained and no validation errors. The real accelerated probe fails at the
 documented capture gate; it must not be counted as passing or used to enable a browser node.
+
+## CEF sRGB GPU conversion
+
+Added an explicit `decode_srgb_premultiplied` draw operation. It recovers straight RGB for nonzero alpha, applies
+the SDR sRGB transfer function, then premultiplies in linear light; alpha is not gamma-corrected and zero alpha
+produces transparent black. The CEF accelerated probe requests this operation for its copy into the ordinary
+UNORM16 destination. Existing operation values, defaults, Rec.709 functions and consumers are unchanged. This is an
+additive draw operation, not a change to recording, submission, graph evaluation or scheduling.
+
+The controlled DMA-BUF producer test now exercises both raw copying and this conversion with GPU-cleared,
+partially transparent source values. The native build, 135 non-hardware tests and all 54 GPU tests pass, including
+the five DMA-BUF tests, with synchronization validation. There is no pixel readback; these results establish
+execution and lifetime validity, not numerical color accuracy or actual CEF transparency correctness.
+
+The native-handle Chromium backport sets `populates_mappable_shared_image` to false. In the pinned Skia copy path,
+the special completion wait for CPU-mappable outputs therefore no longer applies. Actual producer fence publication
+must still be qualified before enabling ingress; callback arrival alone must not be treated as GPU completion.
+The existing contained DMA-BUF helper exports and waits for published write fences, and retains the borrowed image
+until its own GPU copy completes. No CPU pixel transfer or synchronization fallback has been introduced.

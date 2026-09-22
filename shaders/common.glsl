@@ -47,6 +47,7 @@ const int color_operation_encode_rec709_straight_alpha = 5;
 const int color_operation_decode_rec709_premultiplied  = 6;
 const int color_operation_decode_rec709_ignore_alpha   = 7;
 const int color_operation_encode_rec709_ignore_alpha   = 8;
+const int color_operation_decode_srgb_premultiplied     = 9;
 
 vec4 map_input_channels(vec4 color, uint channel_order)
 {
@@ -92,6 +93,21 @@ vec4 to_linear_premultiplied(vec4 color)
     }
 
     return vec4(to_linear(color.rgb / color.a) * color.a, color.a);
+}
+
+vec4 srgb_to_linear_premultiplied(vec4 color)
+{
+    if (!(color.a > 0.0)) {
+        return vec4(0.0);
+    }
+
+    // Decode straight sRGB, then premultiply in the working linear space.
+    // Alpha is coverage and must not undergo the RGB transfer function.
+    vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
+    vec3 linear_rgb = mix(pow((straight_rgb + 0.055) / 1.055, vec3(2.4)),
+                          straight_rgb / 12.92,
+                          lessThanEqual(straight_rgb, vec3(0.04045)));
+    return vec4(linear_rgb * color.a, color.a);
 }
 
 vec4 to_video_straight(vec4 color)

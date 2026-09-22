@@ -123,6 +123,7 @@ class client_s final
                 throw gpu::recording_unavailable_s{};
             gpu::draw_s conversion;
             conversion.compositing = gpu::compositing_e::replace;
+            conversion.transfer    = gpu::color_operation_e::decode_srgb_premultiplied;
             const auto complete =
                 gpu::detail::dma_buf_copy_s::submit(*recording, source, destination_, conversion, 100ms);
             // The probe process has an external timeout. Never return this borrow

@@ -61,6 +61,10 @@ void main()
         case color_operation_encode_rec709_ignore_alpha:
             color = encode_rec709_ignore_alpha(color);
             break;
+
+        case color_operation_decode_srgb_premultiplied:
+            color = srgb_to_linear_premultiplied(color);
+            break;
     }
 
     color = map_output_channels(color, parameters.output_order);

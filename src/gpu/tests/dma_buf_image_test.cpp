@@ -201,8 +201,12 @@ class dma_buf_image_test : public testing::Test
         dependency.pImageMemoryBarriers    = &barrier;
         device->vk.vkCmdPipelineBarrier2(commands, &dependency);
         VkClearColorValue color{};
-        color.float32[1] = 1;
-        color.float32[3] = 1;
+        // Premultiplied SDR values exercise both sRGB transfer branches and
+        // non-opaque alpha without introducing a host pixel-transfer path.
+        color.float32[0] = 0.015F;
+        color.float32[1] = 0.25F;
+        color.float32[2] = 0.375F;
+        color.float32[3] = 0.5F;
         device->vk.vkCmdClearColorImage(
             commands, exported->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
         barrier.srcStageMask        = VK_PIPELINE_STAGE_2_CLEAR_BIT;
@@ -318,13 +322,16 @@ TEST_F(dma_buf_image_test, GpuCopyUsesPublishedProducerFenceAndRetires)
     auto     destination = consumer.create_texture(descriptor.extent);
     auto     context     = consumer.create_recording_context(1);
     start_producer();
-    auto recording = context.try_record();
-    ASSERT_TRUE(recording);
-    draw_s conversion;
-    conversion.compositing = compositing_e::replace;
-    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion, 500ms);
-    EXPECT_EQ(completion.wait(5s), wait_result_e::ready);
-    EXPECT_TRUE(destination.idle());
+    for (auto operation : {color_operation_e::none, color_operation_e::decode_srgb_premultiplied}) {
+        auto recording = context.try_record();
+        ASSERT_TRUE(recording);
+        draw_s conversion;
+        conversion.compositing = compositing_e::replace;
+        conversion.transfer    = operation;
+        auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion, 500ms);
+        EXPECT_EQ(completion.wait(5s), wait_result_e::ready);
+        EXPECT_TRUE(destination.idle());
+    }
     EXPECT_NE(fcntl(descriptor.fd, F_GETFD), -1);
     EXPECT_TRUE(context.try_record());
     EXPECT_EQ(consumer.validation_errors(), 0U);
