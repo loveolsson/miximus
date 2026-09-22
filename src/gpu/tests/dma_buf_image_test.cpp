@@ -322,7 +322,7 @@ TEST_F(dma_buf_image_test, GpuCopyUsesPublishedProducerFenceAndRetires)
     ASSERT_TRUE(recording);
     draw_s conversion;
     conversion.compositing = compositing_e::replace;
-    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion);
+    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion, 500ms);
     EXPECT_EQ(completion.wait(5s), wait_result_e::ready);
     EXPECT_TRUE(destination.idle());
     EXPECT_NE(fcntl(descriptor.fd, F_GETFD), -1);
@@ -344,14 +344,14 @@ TEST_F(dma_buf_image_test, AbandonedCopyRetiresImportedResources)
     ASSERT_TRUE(recording);
     draw_s invalid;
     invalid.clip = {0, 0, -1, 32};
-    EXPECT_THROW(dma_buf_copy_s::submit(*recording, descriptor, destination, invalid), std::invalid_argument);
+    EXPECT_THROW(dma_buf_copy_s::submit(*recording, descriptor, destination, invalid, 500ms), std::invalid_argument);
     recording.reset();
     consumer.collect();
     recording = context.try_record();
     ASSERT_TRUE(recording);
     draw_s conversion;
     conversion.compositing = compositing_e::replace;
-    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion);
+    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion, 500ms);
     EXPECT_EQ(completion.wait(5s), wait_result_e::ready);
     EXPECT_NE(fcntl(descriptor.fd, F_GETFD), -1);
     EXPECT_EQ(consumer.validation_errors(), 0U);

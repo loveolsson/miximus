@@ -109,7 +109,9 @@ The importer exposes only private GPU state. Importing an FD does not make it a 
 Added [`dma_buf_copy_s`](../src/gpu/detail/dma_buf_copy.hpp), a private ingress helper that:
 
 1. Imports the image and exports its currently published write fences with `DMA_BUF_IOCTL_EXPORT_SYNC_FILE`.
-2. Imports that sync-file payload into a temporary binary Vulkan semaphore, after checking SYNC_FD import support.
+2. Waits for that exact fence snapshot within an explicit caller-provided readiness budget, off the render thread.
+   Timeout fails before enqueueing GPU work. Imports the signalled payload into a temporary binary Vulkan semaphore,
+   after checking SYNC_FD import support.
 3. Records foreign-queue ownership acquire, an existing typed GPU draw into an owned destination, and ownership
    release back to the foreign producer in GENERAL layout.
 4. Enqueues through the existing private submission entry point with the native semaphore wait, returning the
@@ -123,10 +125,10 @@ conversion parameters; CEF-specific sRGB/premultiplied-alpha conversion remains 
 
 The borrow must remain exclusive until the returned completion is ready. An error requires abandoning the recording.
 A completion-wait timeout does not cancel GPU work and never permits returning the producer's borrowed image early.
-Likewise, a stalled producer semaphore can hold up subsequent work on the shared graphics queue. Before live CEF
-integration, qualify source readiness and implement a contained pre-submission readiness gate/budget outside the
-render thread; this must not become an unbounded external wait in the existing render path. No queue restructuring
-is authorized or needed to investigate that gate.
+The helper polls the exported fence before queue submission, within the supplied budget, so it does not submit an
+unresolved producer wait onto the shared graphics queue. Fence errors fail the import. This is off-render-thread
+control waiting, not a CPU pixel copy. CEF still needs qualification of the producer fence-publication contract.
+No existing queue or submission behavior is changed.
 
 The hardware suite now has five tests. Two additions use a separate logical Vulkan device on the same physical GPU
 as a controlled external producer. It GPU-clears the source, releases ownership and publishes a write fence to the

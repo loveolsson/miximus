@@ -2,8 +2,11 @@
 
 #include "device.hpp"
 
+#include <algorithm>
 #include <cerrno>
+#include <climits>
 #include <linux/dma-buf.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <system_error>
 #include <unistd.h>
@@ -26,7 +29,8 @@ struct read_fence_s : resource_state_s
     }
 };
 
-std::shared_ptr<read_fence_s> import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf)
+std::shared_ptr<read_fence_s>
+import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, std::chrono::milliseconds timeout)
 {
     VkPhysicalDeviceExternalSemaphoreInfo query{};
     query.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO;
@@ -52,6 +56,35 @@ std::shared_ptr<read_fence_s> import_read_fence(const std::shared_ptr<device_sta
     if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &export_fence) < 0) {
         throw std::system_error(errno, std::generic_category(), "export DMA-BUF write fence");
     }
+    // Snapshot the fence once and wait only on this private callback/worker.
+    // Do not enqueue an unresolved foreign dependency that could stall the graph.
+    struct owned_fd_s
+    {
+        int value;
+        ~owned_fd_s()
+        {
+            if (value >= 0)
+                close(value);
+        }
+    } sync_file{export_fence.fd};
+    const auto start = std::chrono::steady_clock::now();
+    for (;;) {
+        const auto elapsed   = std::chrono::steady_clock::now() - start;
+        const auto remaining = std::max(std::chrono::milliseconds::zero(),
+                                        timeout - std::chrono::duration_cast<std::chrono::milliseconds>(elapsed));
+        pollfd     descriptor{sync_file.value, POLLIN, 0};
+        const int  result = poll(&descriptor, 1, static_cast<int>(std::min<int64_t>(remaining.count(), INT_MAX)));
+        if (result < 0 && errno == EINTR)
+            continue;
+        if (result < 0)
+            throw std::system_error(errno, std::generic_category(), "wait for DMA-BUF write fence");
+        if (result == 0)
+            throw recording_unavailable_s("DMA-BUF producer readiness budget exhausted");
+        if ((descriptor.revents & (POLLERR | POLLNVAL | POLLHUP)) != 0 || (descriptor.revents & POLLIN) == 0) {
+            throw std::runtime_error("DMA-BUF producer fence failed");
+        }
+        break;
+    }
     VkImportSemaphoreFdInfoKHR import{};
     import.sType      = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
     import.semaphore  = fence->semaphore;
@@ -60,19 +93,23 @@ std::shared_ptr<read_fence_s> import_read_fence(const std::shared_ptr<device_sta
     import.fd         = export_fence.fd;
     const auto result = device->vk.vkImportSemaphoreFdKHR(device->device, &import);
     if (result != VK_SUCCESS) {
-        close(export_fence.fd);
         check(result, "import DMA-BUF write fence");
     }
+    sync_file.value = -1; // Ownership transferred to Vulkan.
     return fence;
 }
 
 } // namespace
 
-completion_s dma_buf_copy_s::submit(recording_s&           record,
-                                    const dma_buf_image_s& source,
-                                    const texture_s&       destination,
-                                    const draw_s&          conversion)
+completion_s dma_buf_copy_s::submit(recording_s&              record,
+                                    const dma_buf_image_s&    source,
+                                    const texture_s&          destination,
+                                    const draw_s&             conversion,
+                                    std::chrono::milliseconds readiness_timeout)
 {
+    if (readiness_timeout < std::chrono::milliseconds::zero()) {
+        throw std::invalid_argument("Negative DMA-BUF readiness timeout");
+    }
     if (!record.state_ || record.state_->submission_attempted) {
         throw std::invalid_argument("DMA-BUF copy requires an active recording");
     }
@@ -81,7 +118,7 @@ completion_s dma_buf_copy_s::submit(recording_s&           record,
         throw std::invalid_argument("DMA-BUF destination must belong to the recording device");
     }
     auto image = import_dma_buf_image(state.owner, source);
-    auto fence = import_read_fence(state.owner, source.fd);
+    auto fence = import_read_fence(state.owner, source.fd, readiness_timeout);
     state.retain(fence);
     state.retain(image);
     VkSemaphoreSubmitInfo wait{};
