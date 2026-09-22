@@ -158,6 +158,75 @@ SHA-1: add0a51f7333bc660e8e3bafd998e0122568f7d8
 SHA-256: 4967293a608424b98f2ff4ab15f4119064de966018df6458a80f2a7073dd1dc0
 ```
 
-Source: [CEF build index](https://cef-builds.spotifycdn.com/index.json). No CEF SDK/runtime code has been built or
-installed into the app, and no claims about end-to-end accelerated browser support follow from this download.
+Source: [CEF build index](https://cef-builds.spotifycdn.com/index.json).
 Windows GPU qualification and macOS event-loop placement remain open platform gates.
+
+## Optional SDK wrapper and runtime qualification
+
+The pinned Linux x64 SDK now builds through `src/wrapper/cef/`, behind `MIXIMUS_ENABLE_CEF` (default off).
+`sdk.json` records the exact version, API version and archive digest; `acquire.cmake` explicitly downloads/verifies
+and extracts it. Configure never downloads the SDK implicitly. Other platforms remain unavailable until their
+artifacts and integration are qualified. The wrapper stages the SDK runtime, resources, licenses and a minimal
+`CefExecuteProcess` helper. It builds the matching upstream C++ wrapper with upstream warning settings.
+
+The contained `cef_runtime` uses CEF's supported threaded message loop with sandboxing enabled. Chromium alone
+receives `ozone-platform=x11`, matching the application's existing X11/XWayland environment, and `use-angle=gl-egl`,
+the [documented Linux shared-texture requirement](https://github.com/chromiumembedded/cef/issues/3953). Chromium first-run
+onboarding and default-browser checks are disabled: fresh profiles previously displayed an agreement dialog and
+blocked initialization. A fresh-profile runtime probe now initializes and shuts down successfully without that
+dialog, with Vulkan validation enabled. No GLFW, graph or render-loop changes are involved.
+
+CEF must be a direct executable dependency for its Linux `close` interceptor. The executable's loader path exposes
+only `libcef.so` and resource symlinks in `cef-link/`; it does not expose CEF's bundled Vulkan/ANGLE libraries.
+CEF children use the full `cef/` runtime directory. The runtime probe verified that Miximus retained the system
+Vulkan loader before and after CEF initialization. Resource symlinks are necessary because Chromium locates ICU
+relative to the loaded library even when `resources_dir_path` is supplied.
+
+Two explicit probes are available when CEF and testing are enabled:
+
+```sh
+cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON -DMIXIMUS_CEF_ROOT=/path/to/pinned/sdk
+cmake --build build -j
+build/src/nodes/cef/cef_runtime_probe "$PWD/build/cef" /tmp/miximus-cef-runtime-profile
+build/src/nodes/cef/cef_accelerated_probe "$PWD/build/cef" /tmp/miximus-cef-capture-profile
+```
+
+These are manual hardware probes, not ordinary CTest cases. The accelerated probe requests shared textures,
+rejects software paint without ingesting pixels, and attempts the private GPU copy helper on accelerated delivery.
+**End-to-end capture is not yet qualified:** on the local P2000, Chromium creates the browser but cannot initialize
+the capture SkSurface. Adapter identity, producer fence
+publication and color conversion also remain qualification gates. No CEF node or app subsystem has been wired up
+yet. SDK/runtime build success must not be interpreted as completion of browser-source support.
+
+### NVIDIA capture gate: upstream native-handle allocation
+
+Initially, without `use-angle=gl-egl`, the probe reported a denied GBM driver load. A diagnostic run preloading driver
+libraries passed that point but failed to produce a compatible GL representation. No preload workaround was retained.
+Using the documented EGL setting, with no preload and the sandbox still enabled, instead reaches
+`SharedImageRepresentation: Unable to initialize SkSurface`; no accelerated paint arrives within 15 seconds.
+
+The failure is consistent with [CEF issue 4237](https://github.com/chromiumembedded/cef/issues/4237). The pinned
+`libcef/browser/osr/video_consumer_osr.cc::SetActive` explicitly selects `kPreferMappableSharedImage`. On Linux this
+requests CPU-mappable, linear GBM allocations, which the upstream report identifies as incompatible with this NVIDIA
+rendering path. This does not mean Miximus copies pixels through the CPU; allocation policy inside Chromium prevents
+the accelerated callback from arriving in the first place.
+
+[CEF PR 4238](https://github.com/chromiumembedded/cef/pull/4238) proposes selecting
+`kPreferSharedImageWithNativeHandle` on Linux, retaining the existing preference on other platforms. It also requires
+Chromium's frame-sink capturer to permit its GPU blit for that preference, addressed by
+[Chromium change 8220427](https://chromium-review.googlesource.com/c/chromium/src/+/8220427).
+As checked on 2026-09-22, the CEF PR remains open; its September 15 discussion reports the Chromium change merged
+and the CEF maintainer plans to wait for a subsequent Chromium roll, probably M156. That is not a fix in our pinned
+152 SDK. Matching the report is evidence of a likely cause, not hardware validation of the proposed fix.
+
+The concrete next SDK decision is whether to maintain a Linux-only build of the pinned stable CEF with both changes
+backported, or retain the stock distribution and leave NVIDIA/Linux capture unavailable until a qualified stable
+artifact includes them. The custom-build route needs recorded upstream revisions, reviewed backport diffs, new
+artifact hashes and a reproducible Chromium/CEF build, followed by actual GPU capture and lifetime qualification.
+It would change the dependency artifact, not Miximus's graph, render loop, existing services or GPU queues. No binary
+patching, sandbox disabling, CPU fallback or custom SDK has been introduced. This decision needs explicit agreement
+before replacing the approved stock SDK baseline.
+
+Checkpoint validation: native build and all 135 non-hardware tests pass. Fresh-profile CEF initialization/shutdown
+passes with the system Vulkan loader retained and no validation errors. The real accelerated probe fails at the
+documented capture gate; it must not be counted as passing or used to enable a browser node.

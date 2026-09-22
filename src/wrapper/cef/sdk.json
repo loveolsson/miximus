@@ -1,0 +1,13 @@
+{
+  "version": "152.0.8+g1ce985c+chromium-152.0.7977.134",
+  "chromium_version": "152.0.7977.134",
+  "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
+  "api_version": 15200,
+  "platform": "linux64",
+  "flavor": "standard",
+  "url": "https://cef-builds.spotifycdn.com/cef_binary_152.0.8%2Bg1ce985c%2Bchromium-152.0.7977.134_linux64.tar.bz2",
+  "sha256": "4967293a608424b98f2ff4ab15f4119064de966018df6458a80f2a7073dd1dc0",
+  "patches": [],
+  "minimum_os": "Debian 12 or Ubuntu 22.04",
+  "language_standard": "C++20"
+}

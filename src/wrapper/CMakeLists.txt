@@ -9,6 +9,7 @@ add_subdirectory(stb)
 
 add_subdirectory(vulkan)
 add_subdirectory(cuda)
+add_subdirectory(cef)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(x11)
