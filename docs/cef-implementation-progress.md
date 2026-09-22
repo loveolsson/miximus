@@ -205,6 +205,8 @@ rejects software paint without ingesting pixels, and attempts the private GPU co
 It now requires 120 completed GPU copies from an animated, partially transparent page with nondecreasing capture
 timestamps, rather than accepting a single callback. This strengthened probe builds successfully; its passing
 hardware result remains pending the patched SDK. It does not infer pixel correctness from callback count.
+Errors arriving after the frame-count target but before browser closure still fail the probe. CEF shutdown completes
+before the final Vulkan validation-count check, while the device and its validation callback remain alive.
 **End-to-end capture is not yet qualified:** on the local P2000, Chromium creates the browser but cannot initialize
 the capture SkSurface. Adapter identity, producer fence
 publication and color conversion also remain qualification gates. No CEF node or app subsystem has been wired up

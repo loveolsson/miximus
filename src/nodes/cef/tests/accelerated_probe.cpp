@@ -195,51 +195,60 @@ int main(int argc, char* argv[])
         options.external_image_import = true;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
-        gpu::device_s                 device(options);
-        nodes::cef::detail::runtime_s runtime(argv[1], argv[2]);
-        std::cout << "CEF runtime initialized; creating accelerated browser\n";
-        CefRefPtr<client_s> client = new client_s(device);
-        if (!CefPostTask(TID_UI, new task_s([client] {
-                             CefWindowInfo window;
-                             window.SetAsWindowless(0);
-                             window.shared_texture_enabled = true;
-                             CefBrowserSettings settings;
-                             settings.windowless_frame_rate = 60;
-                             const char* url =
-                                 "data:text/html,<html><style>"
-                                 "@keyframes move{from{transform:translateX(0px)}to{transform:translateX(220px)}}"
-                                 "</style><body style='background:transparent'><div "
-                                 "style='background:rgba(128,64,32,0.5);width:200px;height:200px;"
-                                 "animation:move 1s linear infinite alternate'></div></body></html>";
-                             if (!CefBrowserHost::CreateBrowser(window, client, url, settings, nullptr, nullptr)) {
-                                 {
-                                     std::lock_guard lock(client->mutex);
-                                     client->closed = true;
+        gpu::device_s device(options);
+        bool          success{};
+        {
+            nodes::cef::detail::runtime_s runtime(argv[1], argv[2]);
+            std::cout << "CEF runtime initialized; creating accelerated browser\n";
+            CefRefPtr<client_s> client = new client_s(device);
+            if (!CefPostTask(TID_UI, new task_s([client] {
+                                 CefWindowInfo window;
+                                 window.SetAsWindowless(0);
+                                 window.shared_texture_enabled = true;
+                                 CefBrowserSettings settings;
+                                 settings.windowless_frame_rate = 60;
+                                 const char* url =
+                                     "data:text/html,<html><style>"
+                                     "@keyframes move{from{transform:translateX(0px)}to{transform:translateX(220px)}}"
+                                     "</style><body style='background:transparent'><div "
+                                     "style='background:rgba(128,64,32,0.5);width:200px;height:200px;"
+                                     "animation:move 1s linear infinite alternate'></div></body></html>";
+                                 if (!CefBrowserHost::CreateBrowser(window, client, url, settings, nullptr, nullptr)) {
+                                     {
+                                         std::lock_guard lock(client->mutex);
+                                         client->closed = true;
+                                     }
+                                     client->fail("CEF browser creation rejected");
                                  }
-                                 client->fail("CEF browser creation rejected");
-                             }
-                         })))
-            throw std::runtime_error("Cannot dispatch browser creation");
-        std::unique_lock lock(client->mutex);
-        const bool       signalled =
-            client->changed.wait_for(lock, 15s, [&] { return client->received || !client->error.empty(); });
-        const bool success = signalled && client->received && client->error.empty();
-        if (!success)
-            std::cerr << "Accelerated probe failed: "
-                      << (client->error.empty() ? "insufficient accelerated frames" : client->error) << " (completed "
-                      << client->copied_frames << '/' << client_s::required_frames << ")\n";
-        else
-            std::cout << "Completed " << client->copied_frames << " accelerated GPU copies\n";
-        lock.unlock();
-        // Creation may still be pending when capture times out. Keep the client
-        // alive and close even a browser that arrives after this request.
-        if (!CefPostTask(TID_UI, new task_s([client] { client->request_close(); })))
-            std::terminate();
-        lock.lock();
-        if (!client->changed.wait_for(lock, 10s, [&] { return client->closed; }))
-            std::terminate();
-        lock.unlock();
-        client = nullptr;
+                             })))
+                throw std::runtime_error("Cannot dispatch browser creation");
+            std::unique_lock lock(client->mutex);
+            const bool       signalled =
+                client->changed.wait_for(lock, 15s, [&] { return client->received || !client->error.empty(); });
+            success = signalled && client->received && client->error.empty();
+            if (!success)
+                std::cerr << "Accelerated probe failed: "
+                          << (client->error.empty() ? "insufficient accelerated frames" : client->error)
+                          << " (completed " << client->copied_frames << '/' << client_s::required_frames << ")\n";
+            else
+                std::cout << "Completed " << client->copied_frames << " accelerated GPU copies\n";
+            lock.unlock();
+            // Creation may still be pending when capture times out. Keep the client
+            // alive and close even a browser that arrives after this request.
+            if (!CefPostTask(TID_UI, new task_s([client] { client->request_close(); })))
+                std::terminate();
+            lock.lock();
+            if (!client->changed.wait_for(lock, 10s, [&] { return client->closed; }))
+                std::terminate();
+            if (success && !client->error.empty()) {
+                std::cerr << "Accelerated probe failed during closure: " << client->error << '\n';
+                success = false;
+            }
+            lock.unlock();
+            client = nullptr;
+        }
+        // Include errors emitted while CEF shuts down, with the Vulkan device
+        // still alive and its validation callback installed.
         return success && device.validation_errors() == 0 ? 0 : 1;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
