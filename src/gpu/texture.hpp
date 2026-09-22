@@ -18,6 +18,7 @@ class texture_s
     friend class device_s;
     friend class recording_s;
     friend class transfer::detail::cuda_transfer_s;
+    friend class detail::dma_buf_copy_s;
     friend struct detail::presenter_state_s;
 
     channel_order_e channel_order_{channel_order_e::rgba};

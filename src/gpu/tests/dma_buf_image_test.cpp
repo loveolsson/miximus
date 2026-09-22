@@ -1,11 +1,15 @@
 #include "gpu/detail/device.hpp"
+#include "gpu/detail/dma_buf_copy.hpp"
 #include "gpu/detail/dma_buf_image.hpp"
 #include "logger/logger.hpp"
 
 #include <bit>
+#include <chrono>
 #include <cstdlib>
 #include <fcntl.h>
 #include <gtest/gtest.h>
+#include <linux/dma-buf.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 namespace miximus::gpu::detail { namespace {
@@ -16,8 +20,9 @@ class dma_buf_image_test : public testing::Test
     std::shared_ptr<device_state_s>  device;
     std::shared_ptr<texture_state_s> exported;
     dma_buf_image_s                  descriptor;
-
-    void SetUp() override
+    VkCommandPool                    producer_pool{};
+    VkSemaphore                      producer_signal{};
+    void                             SetUp() override
     {
         if (!spdlog::get("gpu")) {
             logger::init_loggers(spdlog::level::warn);
@@ -39,6 +44,12 @@ class dma_buf_image_test : public testing::Test
 
     void TearDown() override
     {
+        if (producer_pool) {
+            device->vk.vkQueueWaitIdle(device->queue);
+            device->vk.vkDestroyCommandPool(device->device, producer_pool, nullptr);
+        }
+        if (producer_signal)
+            device->vk.vkDestroySemaphore(device->device, producer_signal, nullptr);
         if (descriptor.fd >= 0) {
             close(descriptor.fd);
         }
@@ -49,7 +60,7 @@ class dma_buf_image_test : public testing::Test
         }
     }
 
-    bool export_image(VkFormat format)
+    bool export_image(VkFormat format, bool writable = false)
     {
         VkDrmFormatModifierPropertiesListEXT modifiers{};
         modifiers.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT;
@@ -82,7 +93,7 @@ class dma_buf_image_test : public testing::Test
             query.format = format;
             query.type   = VK_IMAGE_TYPE_2D;
             query.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-            query.usage  = VK_IMAGE_USAGE_SAMPLED_BIT;
+            query.usage  = VK_IMAGE_USAGE_SAMPLED_BIT | (writable ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0);
             VkExternalImageFormatProperties external_properties{};
             external_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES;
             VkImageFormatProperties2 properties{};
@@ -155,6 +166,97 @@ class dma_buf_image_test : public testing::Test
         }
         return false;
     }
+
+    void start_producer()
+    {
+        VkCommandPoolCreateInfo pool{};
+        pool.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        pool.queueFamilyIndex = device->queue_family;
+        check(device->vk.vkCreateCommandPool(device->device, &pool, nullptr, &producer_pool),
+              "create test producer pool");
+        VkCommandBufferAllocateInfo allocate{};
+        allocate.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocate.commandPool        = producer_pool;
+        allocate.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocate.commandBufferCount = 1;
+        VkCommandBuffer commands{};
+        check(device->vk.vkAllocateCommandBuffers(device->device, &allocate, &commands),
+              "allocate test producer commands");
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        check(device->vk.vkBeginCommandBuffer(commands, &begin), "begin test producer commands");
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.dstStageMask        = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        barrier.dstAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image               = exported->image;
+        barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkDependencyInfo dependency{};
+        dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.imageMemoryBarrierCount = 1;
+        dependency.pImageMemoryBarriers    = &barrier;
+        device->vk.vkCmdPipelineBarrier2(commands, &dependency);
+        VkClearColorValue color{};
+        color.float32[1] = 1;
+        color.float32[3] = 1;
+        device->vk.vkCmdClearColorImage(
+            commands, exported->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &barrier.subresourceRange);
+        barrier.srcStageMask        = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        barrier.srcAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask        = VK_PIPELINE_STAGE_2_NONE;
+        barrier.dstAccessMask       = VK_ACCESS_2_NONE;
+        barrier.oldLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.srcQueueFamilyIndex = device->queue_family;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
+        device->vk.vkCmdPipelineBarrier2(commands, &dependency);
+        check(device->vk.vkEndCommandBuffer(commands), "end test producer commands");
+        VkExportSemaphoreCreateInfo export_info{};
+        export_info.sType       = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+        export_info.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+        VkSemaphoreCreateInfo semaphore{};
+        semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphore.pNext = &export_info;
+        check(device->vk.vkCreateSemaphore(device->device, &semaphore, nullptr, &producer_signal),
+              "create test producer signal");
+        VkSemaphoreSubmitInfo signal{};
+        signal.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signal.semaphore = producer_signal;
+        signal.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        VkCommandBufferSubmitInfo command{};
+        command.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        command.commandBuffer = commands;
+        VkSubmitInfo2 submit{};
+        submit.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+        submit.commandBufferInfoCount   = 1;
+        submit.pCommandBufferInfos      = &command;
+        submit.signalSemaphoreInfoCount = 1;
+        submit.pSignalSemaphoreInfos    = &signal;
+        check(device->vk.vkQueueSubmit2(device->queue, 1, &submit, VK_NULL_HANDLE), "submit test producer");
+        VkSemaphoreGetFdInfoKHR get{};
+        get.sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+        get.semaphore  = producer_signal;
+        get.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+        int fd         = -1;
+        check(device->vk.vkGetSemaphoreFdKHR(device->device, &get, &fd), "export test producer fence");
+        // SYNC_FD may use -1 for an already-signalled payload. In that case
+        // the producer has completed; there is no outstanding fence to attach.
+        if (fd == -1)
+            return;
+        dma_buf_import_sync_file fence{};
+        fence.flags      = DMA_BUF_SYNC_WRITE;
+        fence.fd         = fd;
+        const int result = ioctl(descriptor.fd, DMA_BUF_IOCTL_IMPORT_SYNC_FILE, &fence);
+        const int error  = errno;
+        if (fd >= 0)
+            close(fd);
+        if (result < 0)
+            throw std::system_error(error, std::generic_category(), "attach test producer fence");
+    }
 };
 
 TEST_F(dma_buf_image_test, ImportsRgbaWithoutConsumingBorrowedFd)
@@ -202,6 +304,57 @@ TEST_F(dma_buf_image_test, RejectsUnsupportedLayoutWithoutClosingBorrowedFd)
     EXPECT_THROW(import_dma_buf_image(device, invalid), std::invalid_argument);
     EXPECT_NE(fcntl(descriptor.fd, F_GETFD), -1);
     EXPECT_NO_THROW(import_dma_buf_image(device, descriptor));
+}
+
+TEST_F(dma_buf_image_test, GpuCopyUsesPublishedProducerFenceAndRetires)
+{
+    using namespace std::chrono_literals;
+    if (!export_image(VK_FORMAT_B8G8R8A8_UNORM, true)) {
+        GTEST_SKIP() << "No exportable single-plane writable BGRA modifier";
+    }
+    // Separate logical device on the identical physical GPU models the external
+    // producer, without modifying the application's submission worker.
+    device_s consumer(device->options);
+    auto     destination = consumer.create_texture(descriptor.extent);
+    auto     context     = consumer.create_recording_context(1);
+    start_producer();
+    auto recording = context.try_record();
+    ASSERT_TRUE(recording);
+    draw_s conversion;
+    conversion.compositing = compositing_e::replace;
+    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion);
+    EXPECT_EQ(completion.wait(5s), wait_result_e::ready);
+    EXPECT_TRUE(destination.idle());
+    EXPECT_NE(fcntl(descriptor.fd, F_GETFD), -1);
+    EXPECT_TRUE(context.try_record());
+    EXPECT_EQ(consumer.validation_errors(), 0U);
+}
+
+TEST_F(dma_buf_image_test, AbandonedCopyRetiresImportedResources)
+{
+    using namespace std::chrono_literals;
+    if (!export_image(VK_FORMAT_R8G8B8A8_UNORM, true)) {
+        GTEST_SKIP() << "No exportable single-plane writable RGBA modifier";
+    }
+    device_s consumer(device->options);
+    auto     destination = consumer.create_texture(descriptor.extent);
+    auto     context     = consumer.create_recording_context(1);
+    start_producer();
+    auto recording = context.try_record();
+    ASSERT_TRUE(recording);
+    draw_s invalid;
+    invalid.clip = {0, 0, -1, 32};
+    EXPECT_THROW(dma_buf_copy_s::submit(*recording, descriptor, destination, invalid), std::invalid_argument);
+    recording.reset();
+    consumer.collect();
+    recording = context.try_record();
+    ASSERT_TRUE(recording);
+    draw_s conversion;
+    conversion.compositing = compositing_e::replace;
+    auto completion        = dma_buf_copy_s::submit(*recording, descriptor, destination, conversion);
+    EXPECT_EQ(completion.wait(5s), wait_result_e::ready);
+    EXPECT_NE(fcntl(descriptor.fd, F_GETFD), -1);
+    EXPECT_EQ(consumer.validation_errors(), 0U);
 }
 
 }} // namespace miximus::gpu::detail

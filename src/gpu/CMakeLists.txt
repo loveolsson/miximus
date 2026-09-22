@@ -25,7 +25,10 @@ add_library(gpu
     detail/conversion.cpp
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_sources(gpu PRIVATE detail/dma_buf_image.hpp detail/dma_buf_image.cpp)
+    target_sources(gpu PRIVATE
+        detail/dma_buf_image.hpp detail/dma_buf_image.cpp
+        detail/dma_buf_copy.hpp detail/dma_buf_copy.cpp
+    )
 endif()
 target_link_libraries(gpu PUBLIC glm::glm)
 target_include_directories(gpu PUBLIC ${PROJECT_SOURCE_DIR}/src)

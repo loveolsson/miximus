@@ -96,21 +96,52 @@ this step does not implement browser color-space or alpha conversion.
 
 - RGBA import twice, then destruction of both imports while the original borrowed FD remains valid.
 - BGRA import followed by closing the source FD and releasing the exporting allocation.
-- Rejection of unsupported modifier/channel order and invalid stride/overflow, followed by a valid import.
+- Rejection of unsupported modifier/channel order and invalid stride, followed by a valid import.
 
 All three tests passed on the P2000 with Vulkan synchronization validation. These tests establish allocation/handle
 lifetime only: they submit no GPU reads of the imported image, and do not establish pixel correctness, foreign
 ownership transfer, CEF readiness, cross-process operation, other GPUs, or multi-plane modifier support.
 
-The helper deliberately exposes only private GPU state until the acquire/copy/release helper is qualified. Merely
-importing the FD must never make it a graph-consumable texture. The next step must establish producer readiness,
-acquire foreign ownership, record GPU-only conversion/copy through an independent existing recording context,
-release foreign ownership, and wait for that borrowed read to finish before returning from the callback.
+The importer exposes only private GPU state. Importing an FD does not make it a graph-consumable texture.
 
-Linux provides [DMA-BUF fence export](https://docs.kernel.org/driver-api/dma-buf.html) to bridge implicit producer
-synchronization to explicit consumers. This is a candidate for qualification, not yet an implemented or proven CEF
-contract: the producer must actually publish the relevant write fence before it is exported, and the callback's
-borrow interval must prevent concurrent reuse. Unsupported synchronization must leave this path unavailable.
+## Linux fence and GPU copy helper
+
+Added [`dma_buf_copy_s`](../src/gpu/detail/dma_buf_copy.hpp), a private ingress helper that:
+
+1. Imports the image and exports its currently published write fences with `DMA_BUF_IOCTL_EXPORT_SYNC_FILE`.
+2. Imports that sync-file payload into a temporary binary Vulkan semaphore, after checking SYNC_FD import support.
+3. Records foreign-queue ownership acquire, an existing typed GPU draw into an owned destination, and ownership
+   release back to the foreign producer in GENERAL layout.
+4. Enqueues through the existing private submission entry point with the native semaphore wait, returning the
+   ordinary `completion_s`. Imported image and semaphore lifetimes use existing recording/timeline retirement.
+
+The helper adds friendship to the existing recording/texture classes, following the private CUDA bridge pattern.
+It does not alter recording, submission, queue selection, shaders, rendering, graph evaluation, or existing nodes.
+The graph never receives the borrowed imported image. This helper is not yet called by a browser or application node.
+All pixels remain on the GPU; there is no image mapping, host staging or readback. The caller supplies existing draw
+conversion parameters; CEF-specific sRGB/premultiplied-alpha conversion remains to be implemented and verified.
+
+The borrow must remain exclusive until the returned completion is ready. An error requires abandoning the recording.
+A completion-wait timeout does not cancel GPU work and never permits returning the producer's borrowed image early.
+Likewise, a stalled producer semaphore can hold up subsequent work on the shared graphics queue. Before live CEF
+integration, qualify source readiness and implement a contained pre-submission readiness gate/budget outside the
+render thread; this must not become an unbounded external wait in the existing render path. No queue restructuring
+is authorized or needed to investigate that gate.
+
+The hardware suite now has five tests. Two additions use a separate logical Vulkan device on the same physical GPU
+as a controlled external producer. It GPU-clears the source, releases ownership and publishes a write fence to the
+DMA-BUF reservation object; the consumer uses its own ordinary recording context and existing submission worker.
+They exercise GPU-copy completion/resource retirement and failure after importing resources followed by abandonment
+and successful reuse of the recording capacity. All five pass with synchronization validation on the P2000.
+The test may observe an already-signalled producer fence; it does not prove delayed-producer behavior. No pixel
+readback comparison is performed, so this establishes execution/lifetime validity, not color correctness.
+
+The implementation uses the documented [DMA-BUF fence interface](https://docs.kernel.org/driver-api/dma-buf.html)
+and [temporary SYNC_FD import](https://docs.vulkan.org/refpages/latest/refpages/source/VkImportSemaphoreFdInfoKHR.html).
+**CEF producer readiness remains unqualified:** exporting a reservation fence is sufficient only if the actual
+Chromium/driver path publishes the relevant write fence before callback delivery. These controlled tests do not
+establish that fact, CEF adapter identity, cross-process behavior or support on Mesa/other hardware. Unsupported
+synchronization must leave this path unavailable; it must never trigger unsynchronized reads or CPU transport.
 
 ## SDK preparation
 
