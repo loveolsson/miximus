@@ -149,6 +149,12 @@ def main():
         is_cef = patch["repository"] == "cef"
         run(["git", "apply", "-p1" if is_cef else "-p0", "--reverse", "--check",
              ROOT / patch["file"]], cef if is_cef else chromium)
+    if args.stage in ("build", "test"):
+        # Ninja's job limit does not bound LLVM's internal ThinLTO pool.
+        # LLVM counts Linux affinity CPUs when Chromium requests "all".
+        cpus = sorted(os.sched_getaffinity(0))[:args.jobs]
+        os.sched_setaffinity(0, cpus)
+        print(f"Build CPU affinity: {cpus} (also bounds LLVM worker pools)", flush=True)
     if args.stage == "build":
         run([depot / "autoninja", "-C", "out/Release_GN_x64", f"-j{args.jobs}",
              "cefclient", "chrome_sandbox"], chromium, env)

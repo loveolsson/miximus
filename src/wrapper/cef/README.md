@@ -50,6 +50,10 @@ The package stage emits a standard-layout release SDK, a `miximus-source-build.j
 `libcef.so` digest, and an archive digest. Builds use Chromium's pinned sysroot/toolchain and Ninja, omit debug symbols,
 and retain official-build ThinLTO, PGO, control-flow integrity and sandbox support. The sync stage restores the
 DEPS-pinned siso revision that upstream automation otherwise overrides with `latest`, and fetches the PGO profile.
+The build and test stages also limit their own CPU affinity to at most `--jobs` available CPUs. Ninja's job count
+alone does not constrain LLVM's internal ThinLTO workers; LLVM respects this Linux affinity limit when Chromium
+requests all available threads. This bounds worker concurrency, not total memory consumption, and does not disable
+any optimization or change other processes' affinity. Choose the job count with memory headroom for the final link.
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
