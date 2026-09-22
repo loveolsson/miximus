@@ -202,6 +202,9 @@ build/src/nodes/cef/cef_accelerated_probe "$PWD/build/cef" /tmp/miximus-cef-capt
 
 These are manual hardware probes, not ordinary CTest cases. The accelerated probe requests shared textures,
 rejects software paint without ingesting pixels, and attempts the private GPU copy helper on accelerated delivery.
+It now requires 120 completed GPU copies from an animated, partially transparent page with nondecreasing capture
+timestamps, rather than accepting a single callback. This strengthened probe builds successfully; its passing
+hardware result remains pending the patched SDK. It does not infer pixel correctness from callback count.
 **End-to-end capture is not yet qualified:** on the local P2000, Chromium creates the browser but cannot initialize
 the capture SkSurface. Adapter identity, producer fence
 publication and color conversion also remain qualification gates. No CEF node or app subsystem has been wired up

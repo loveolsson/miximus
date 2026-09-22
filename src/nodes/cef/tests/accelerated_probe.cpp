@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -46,7 +47,11 @@ class client_s final
     bool                    received{};
     bool                    closed{};
     bool                    close_requested{};
+    size_t                  copied_frames{};
+    uint64_t                last_timestamp{};
     std::string             error;
+
+    static constexpr size_t required_frames = 120;
 
     explicit client_s(gpu::device_s& device)
         : destination_(device.create_texture({640, 360}))
@@ -131,11 +136,15 @@ class client_s final
             while (complete.wait(1s) != gpu::wait_result_e::ready) {
             }
             std::lock_guard lock(mutex);
-            if (!received) {
+            if (copied_frames == 0) {
                 std::cout << "Accelerated GPU copy: " << source.extent.width << 'x' << source.extent.height
                           << " modifier=" << source.modifier << " timestamp=" << info.extra.timestamp << '\n';
             }
-            received = true;
+            if (copied_frames != 0 && info.extra.timestamp < last_timestamp) {
+                error = "Accelerated capture timestamps moved backwards";
+            }
+            last_timestamp = info.extra.timestamp;
+            received       = ++copied_frames >= required_frames;
             changed.notify_all();
         } catch (const std::exception& failure) {
             fail(failure.what());
@@ -165,8 +174,12 @@ int main(int argc, char* argv[])
                              window.shared_texture_enabled = true;
                              CefBrowserSettings settings;
                              settings.windowless_frame_rate = 60;
-                             const char* url = "data:text/html,<html><body style='background:transparent'><div "
-                                               "style='background:lime;width:200px;height:200px'></div></body></html>";
+                             const char* url =
+                                 "data:text/html,<html><style>"
+                                 "@keyframes move{from{transform:translateX(0px)}to{transform:translateX(220px)}}"
+                                 "</style><body style='background:transparent'><div "
+                                 "style='background:rgba(128,64,32,0.5);width:200px;height:200px;"
+                                 "animation:move 1s linear infinite alternate'></div></body></html>";
                              if (!CefBrowserHost::CreateBrowser(window, client, url, settings, nullptr, nullptr)) {
                                  {
                                      std::lock_guard lock(client->mutex);
@@ -182,7 +195,10 @@ int main(int argc, char* argv[])
         const bool success = signalled && client->received && client->error.empty();
         if (!success)
             std::cerr << "Accelerated probe failed: "
-                      << (client->error.empty() ? "no accelerated paint" : client->error) << '\n';
+                      << (client->error.empty() ? "insufficient accelerated frames" : client->error) << " (completed "
+                      << client->copied_frames << '/' << client_s::required_frames << ")\n";
+        else
+            std::cout << "Completed " << client->copied_frames << " accelerated GPU copies\n";
         lock.unlock();
         // Creation may still be pending when capture times out. Keep the client
         // alive and close even a browser that arrives after this request.
