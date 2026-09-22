@@ -17,6 +17,8 @@ add_library(gpu
     presenter.hpp
     presenter.cpp
     detail/device.hpp
+    detail/external_image_support.hpp
+    detail/external_image_support.cpp
     detail/submission.cpp
     detail/drawing.cpp
     detail/pipeline.cpp
@@ -39,8 +41,8 @@ include(${PROJECT_SOURCE_DIR}/cmake/gpu_sanitizer_defaults.cmake)
 add_sanitizers(gpu)
 
 if(BUILD_TESTING)
-    add_executable(gpu_vulkan_test tests/device_test.cpp)
-    target_link_libraries(gpu_vulkan_test PRIVATE gpu logger GTest::gtest_main)
+    add_executable(gpu_vulkan_test tests/device_test.cpp tests/external_image_device_test.cpp)
+    target_link_libraries(gpu_vulkan_test PRIVATE gpu logger GTest::gtest_main nlohmann_json::nlohmann_json)
     add_sanitizers(gpu_vulkan_test)
     # Hardware tests are explicit: ordinary CTest remains usable without a GPU.
     option(MIXIMUS_TEST_VULKAN "Register Vulkan hardware tests with CTest" OFF)
@@ -103,6 +105,7 @@ if(BUILD_TESTING)
         tests/geometry_test.cpp
         tests/texture_test.cpp
         tests/transfer_layout_test.cpp
+        tests/external_image_support_test.cpp
     )
     target_link_libraries(gpu_test PRIVATE gpu GTest::gtest_main)
     add_sanitizers(gpu_test)

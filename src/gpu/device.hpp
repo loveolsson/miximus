@@ -4,6 +4,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace miximus::gpu {
 
@@ -24,6 +25,16 @@ struct device_options_s
     bool        use_cuda{};
     uint32_t    max_recordings{8};
     uint32_t    descriptor_page_size{512};
+    // Optional import capability; never changes device/queue selection.
+    bool external_image_import{};
+};
+
+struct external_image_import_support_s
+{
+    bool                     requested{};
+    bool                     enabled{};
+    std::vector<std::string> enabled_extensions;
+    std::vector<std::string> missing_support;
 };
 
 class device_s
@@ -51,11 +62,12 @@ class device_s
 
     // The device's default context is reserved for its owning render thread.
     // An exhausted context returns immediately; workers have independent contexts.
-    std::unique_ptr<recording_s> try_record();
-    void                         collect();
-    std::string                  diagnostics_json() const;
-    uint64_t                     validation_errors() const noexcept;
-    bool                         uses_cuda_transfers() const noexcept;
+    std::unique_ptr<recording_s>    try_record();
+    void                            collect();
+    std::string                     diagnostics_json() const;
+    uint64_t                        validation_errors() const noexcept;
+    bool                            uses_cuda_transfers() const noexcept;
+    external_image_import_support_s external_image_import_support() const;
 };
 
 } // namespace miximus::gpu

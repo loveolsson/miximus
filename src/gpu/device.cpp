@@ -1,5 +1,6 @@
 #include "detail/device.hpp"
 
+#include "detail/external_image_support.hpp"
 #include "logger/logger.hpp"
 #ifdef MIXIMUS_HAS_CUDA
 #include "transfer/detail/cuda_transfer.hpp"
@@ -339,9 +340,10 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
 
     // Collect every candidate's diagnostics, but commit capabilities only for
     // the best eligible device. An explicit UUID still goes through the same checks.
-    int                      best_score = -1;
-    std::vector<const char*> device_extensions;
-    std::string              requested_device_uuid = options.device_uuid;
+    int                                best_score = -1;
+    std::vector<const char*>           device_extensions;
+    std::string                        requested_device_uuid = options.device_uuid;
+    std::vector<VkExtensionProperties> selected_extensions;
     std::erase(requested_device_uuid, '-');
     for (const auto candidate : devices) {
         VkPhysicalDeviceIDProperties identity{};
@@ -485,8 +487,32 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         }
 
         report["selected_uuid"] = uuid_string(identity.deviceUUID);
+        if (options.external_image_import) {
+            selected_extensions = std::move(extensions);
+        }
     }
 
+    // Import capability never participates in device eligibility or scoring.
+    // Keep its owned extension strings alive through vkCreateDevice, and avoid
+    // duplicates with the independently requested CUDA extension set.
+    std::vector<std::string_view> import_extensions;
+    import_extensions.reserve(selected_extensions.size());
+    for (const auto& extension : selected_extensions) {
+        import_extensions.emplace_back(extension.extensionName);
+    }
+    external_image_import = probe_external_image_import(options.external_image_import, import_extensions);
+    for (const auto& extension : external_image_import.enabled_extensions) {
+        if (!std::ranges::any_of(device_extensions,
+                                 [&extension](const char* existing) { return extension == existing; })) {
+            device_extensions.push_back(extension.c_str());
+        }
+    }
+    report["external_image_import"] = {
+        {"requested",          external_image_import.requested         },
+        {"enabled",            external_image_import.enabled           },
+        {"enabled_extensions", external_image_import.enabled_extensions},
+        {"missing_support",    external_image_import.missing_support   },
+    };
     report["buffer_conversion"]      = buffer_conversion;
     report["separate_present_queue"] = separate_present_queue;
     report["swapchain_maintenance"]  = swapchain_maintenance;
@@ -793,9 +819,13 @@ std::string device_s::diagnostics_json() const
     return report.dump(2);
 }
 
-uint64_t device_s::validation_errors() const noexcept { return state_->errors.load(); }
-bool     device_s::uses_cuda_transfers() const noexcept { return state_->cuda_external_memory; }
-void     device_s::collect() { state_->collect(); }
+uint64_t                        device_s::validation_errors() const noexcept { return state_->errors.load(); }
+bool                            device_s::uses_cuda_transfers() const noexcept { return state_->cuda_external_memory; }
+external_image_import_support_s device_s::external_image_import_support() const
+{
+    return state_->external_image_import;
+}
+void device_s::collect() { state_->collect(); }
 
 texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e sampling, resource_sharing_e sharing)
 {

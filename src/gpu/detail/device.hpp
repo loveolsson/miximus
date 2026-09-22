@@ -92,6 +92,7 @@ struct device_state_s : std::enable_shared_from_this<device_state_s>
     int                              cuda_device_index{-1};
     std::vector<std::string>         cuda_missing_support;
     bool                             buffer_conversion{};
+    external_image_import_support_s  external_image_import;
 
     // Only the submission worker calls vkQueueSubmit. Present shares its queue
     // mutex solely on devices without a second queue; recorders never take it.

@@ -5,6 +5,9 @@ Public source was inspected at the revisions below. Upstream development branche
 interfaces, not a recommendation to ship unreleased binaries. All proposed names and configuration switches in this
 document are illustrative.
 
+Implementation evidence and pending explicit approvals are tracked in
+[CEF implementation progress](cef-implementation-progress.md). That report does not supersede the constraints below.
+
 ## Recommended direction
 
 Implement browser support as **an ordinary source node type and a contained CEF subsystem**, following the NDI and
