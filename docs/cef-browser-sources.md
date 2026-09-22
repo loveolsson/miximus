@@ -13,21 +13,37 @@ node's details and subsystem. Its graph output is the existing sampled texture i
 should know or care that its texture came from CEF**. App state owns the shared runtime, not browser behavior.
 
 Use **stock CEF 152.0.8 binary distributions, pinned per operating system and architecture**, behind a wrapper in
-`src/wrapper/cef/`. Keep binaries out of Git and ship the complete tested runtime alongside the application. Start
-with off-screen CPU frames through Miximus's bounded upload service, while developing GPU import experiments against
-the same frame-ownership contract. A submodule can pin integration source, but cannot replace the binary SDK.
+`src/wrapper/cef/`. Keep binaries out of Git and ship the complete tested runtime alongside the application. A
+submodule can pin integration source, but cannot replace the binary SDK.
 
-Follow **OBS's embedded CEF browser-process model**: initialize one CEF runtime inside Miximus, create multiple browser
-instances, and package helpers for Chromium's ordinary renderer/GPU subprocesses. Do not add a separate
-application-owned browser-host process or a second frame-transport IPC layer. Separate the main-thread event/window
-service from a dedicated graph-render thread, preserving render-thread node ownership and frame ordering. This is
-an explicit planned change to today's main-thread render loop, not existing behavior; see the process model below.
+**Accelerated paint only. All frame copies, blits, conversions and popup composition must execute on the GPU.**
+Implement `OnAcceleratedPaint`; do not implement a CPU pixel ingestion path, CPU staging/readback/upload transport,
+or automatic unaccelerated fallback. If the CEF interface requires an `OnPaint` override, provide only the mandatory
+stub that rejects unexpected delivery and reports unsupported operation; never copy or consume its pixels. CPU-side
+metadata, handles, commands and synchronization bookkeeping are allowed. Unaccelerated support is deferred until the
+accelerated implementation is confirmed and the user separately authorizes that work.
 
-Borrow OBS's platform-specific GPU import and capability probing. Use CasparCG as evidence of useful interaction
-capabilities, without choosing its control model. Provide infrastructure for custom commands and JSON responses;
-defer public APIs, WebSocket exposure and compatibility decisions. Target **no CPU pixel round trip** for accelerated
-rendering, with a GPU copy into an owned bounded frame pool. The selected CEF release does not offer a general asynchronous lease
-on its paint texture.
+**Retain the established Miximus structure.** The main/render thread, GLFW event polling and window lifecycle,
+scheduler, graph traversal, submission/presentation workers, existing nodes and texture interface keep their current
+behavior. CEF adapts to these structures. Every deviation requires the user's specific, explicit approval **before
+implementation**; a recommendation, experiment, performance result or general instruction to work through this plan
+is not that approval.
+
+Use Miximus's existing same-device, independent recording-context model for browser transfers. The CEF module owns
+a bounded destination texture pool and a private transfer recording context; import the native CEF image, perform
+GPU work into a free destination, finish borrowed-source reads before returning from the callback, and publish the
+owned frame through the node's queue. Reuse existing submission, completion and lifetime tracking. New well-contained
+resource-sharing/import/blit-completion helpers are authorized; rewriting existing rendering machinery is not.
+
+Start by qualifying an embedded Windows/Linux runtime using CEF's supported threaded UI loop, with initialization
+and teardown through the app-owned subsystem. macOS event-loop placement is a separate unresolved platform gate.
+The previously proposed universal browser-host process and private frame IPC are **not selected or authorized**.
+Any alternative topology must be presented to the user for specific approval; it is not a prerequisite for the GPU
+pool design. Chromium's ordinary renderer/GPU subprocess helpers remain part of normal CEF packaging.
+
+Borrow OBS's platform import/capability probing and CasparCG's owned-copy and queued-frame approach. Provide internal
+custom-command/JSON-response infrastructure without choosing a public control model, WebSocket API or CasparCG
+compatibility. Neither reference project authorizes changing Miximus's structure.
 
 Expose explicit Miximus program time to cooperating templates. Treat exact identification of the pixels generated
 for a particular PTS as a separate problem from injecting that PTS into JavaScript. Stock CEF does not establish
@@ -177,8 +193,9 @@ See [the Metal OSR implementation](https://github.com/chromiumembedded/cef/blob/
 Recommendation: complete every GPU read of CEF-owned storage before returning, unless the selected SDK supplies a
 documented alternative synchronization/lifetime guarantee. Merely enqueueing a copy on Miximus's submission worker
 is insufficient. A timeout after submission cannot make returning a still-in-use borrowed texture safe: recovery
-must drain the use or enter a safe device-failure path, not just abandon the wait. In the embedded model, this makes
-callback scheduling and bounded GPU work an explicit qualification requirement.
+must drain the use or enter a safe device-failure path, not just abandon the wait. Perform this work on the qualified
+CEF callback/transfer side, not by waiting for Miximus's graph to execute. Qualify callback scheduling and bounded
+GPU work independently of graph cadence.
 
 ## Acquiring and bundling CEF
 
@@ -229,6 +246,10 @@ to these targets. In particular, reconcile MSVC CRT/sandbox settings per target;
 flags. Keep the SDK's headers, wrapper, API version and runtime together even where CEF provides versioned ABI
 compatibility.
 
+Link the CEF SDK through the private wrapper into the contained CEF runtime implementation and ordinary Chromium
+helper targets. Keep CEF headers out of app-state and ordinary node-facing interfaces. Subprocess entry points must
+not initialize the Miximus graph or media services. Do not globally change compiler, loader or GPU configuration.
+
 Use the standard SDK for the first prototype because its samples help reproduce upstream behavior. Switch CI to a
 minimal archive only after testing the same packaged output. Never put binary archives or extracted runtimes in a
 submodule, Git LFS, or the static-resource C++ bundler. The browser runtime needs a real filesystem layout.
@@ -255,11 +276,11 @@ result. Ship required notices from the distribution, including Chromium third-pa
 codec configuration. Do not assume H.264/AAC, DRM or licensed codec support from the CEF name alone.
 See [CEF's license](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/LICENSE.txt).
 
-Use a dedicated CEF runtime directory where supported on Windows/Linux, and explicitly qualify loader resolution in
-the embedded process. Keep CEF's bundled Vulkan loader and SwiftShader discovery from unexpectedly changing Miximus's
-Vulkan loader/ICD selection; directory separation alone does not prove isolation within one process. macOS should
-follow CEF's application/framework/helper structure within the Miximus bundle. Resolve paths from the installed
-executable/bundle, never the working directory.
+Use a dedicated CEF runtime directory where supported on Windows/Linux and qualify library coexistence in the
+embedded process. CEF's bundled Vulkan loader/SwiftShader must not change Miximus's existing loader/ICD selection.
+Do not alter the parent process's global loader environment as a workaround. macOS packaging and event-loop
+integration remain subject to the platform gate below; runtime bundling is not permission to alter the app's loop.
+Resolve paths from the installed executable/bundle, never the working directory.
 CEF documents platform layouts and process initialization in its
 [usage guide](https://chromiumembedded.github.io/cef/general_usage).
 
@@ -270,7 +291,8 @@ first-launch browser download would complicate deterministic deployment.
 Packaging acceptance must include clean machines without a CEF SDK, launch from another working directory,
 non-ASCII/space-containing paths, offline operation, signed macOS artifacts, and Linux sandbox support under the
 chosen packaging format. Use the selected CEF sandbox instructions; disabling the sandbox is not the deployment
-strategy. CEF subprocesses must enter `CefExecuteProcess` before initializing Miximus media/GPU services.
+strategy. Chromium subprocess helpers must enter `CefExecuteProcess` without initializing Miximus's graph, GLFW
+windows, media registries or application GPU services.
 
 ## Miximus node and subsystem boundaries
 
@@ -289,20 +311,21 @@ Use the following ownership and file layout (new filenames/type names are illust
 | Location | Responsibility |
 | --- | --- |
 | `src/nodes/cef/input.cpp` | Browser source `node_i`: options, lifecycle hooks, frame selection, normal texture output and node status |
-| `src/nodes/cef/detail/` | Per-node browser session, CEF clients/callbacks, request/result bridge, timing, bounded frame pools, CPU/GPU ingress, platform bridge orchestration and recovery |
-| `src/nodes/cef/subsystem.hpp/.cpp` and a forward header | Shared CEF runtime, session ownership during asynchronous close, task dispatch, capability snapshots and coordinated shutdown |
+| `src/nodes/cef/detail/` | Per-node browser session, CEF clients/callbacks, request/result bridge, timing, bounded frame pools, accelerated ingress, platform bridge orchestration and recovery |
+| `src/nodes/cef/subsystem.hpp/.cpp` and a forward header | Embedded CEF runtime, asynchronous session lifecycle, dispatch, capability snapshots and shutdown |
 | `src/nodes/cef/register.hpp/.cpp` and `CMakeLists.txt` | Ordinary node factory registration and module sources, wired through the existing node registration/build lists |
 | `src/wrapper/cef/` | SDK discovery, matching wrapper linkage, runtime packaging and subprocess-helper build integration |
-| `src/gpu/` and its `detail/` | Only reusable external-resource import, recording, synchronization and retirement mechanisms needed by the CEF module |
+| Contained GPU sharing helpers | Native image import, external-resource ownership and blit completion using existing device/recording/submission/lifetime structures; no CEF policy in shared GPU code |
 | `web/src/nodes/` and existing status contracts | Matching editor node definition and normal options/status presentation |
 
 The subsystem is app-owned like the media registries, but need not be called a registry: it manages a runtime and
 sessions rather than discovering devices. Add a forward-declared owning member/accessor to `app_state_s`; construct
-and initialize it through the appropriate main-thread startup hook and explicitly close/drain it before transfer/GPU
-services disappear. Preserve the lightweight test-state constructor so graph lifecycle tests do not start Chromium.
-App state and the main loop only wire ownership, startup, event servicing and shutdown. They must not accumulate
-per-browser state machines, JS dispatch, frame queues or transport-selection logic. CEF event-pump implementation
-belongs behind the subsystem boundary, even when the main thread must service it.
+it through the normal app-owned service lifecycle and explicitly close/drain it before transfer/GPU services
+disappear. Preserve the lightweight test-state constructor so graph lifecycle tests do not start Chromium.
+App state only wires ownership, construction and teardown. No CEF event servicing is added to the main loop, frame
+scheduler or window service. Per-browser state machines, JS dispatch, frame queues and transport selection stay in
+the module. On Windows/Linux, CEF runs its supported threaded UI loop. Browser creation and control dispatch are
+asynchronous; macOS implementation must wait for an explicitly approved solution to its event-loop gate.
 
 ### Node lifecycle and texture contract
 
@@ -313,8 +336,9 @@ belongs behind the subsystem boundary, even when the main thread must service it
 - `submit()` selects/retains the appropriate source frame through the node details using the existing frame context.
   It must tolerate submission without execution; it does not add a CEF branch to the node manager or scheduler.
 - `execute()` resolves that selected frame, records its typed producer dependency and any pixel conversion through
-  `app->commands()`, and sets the ordinary `tex` output. CPU upload IDs and GPU import leases stay internal. A late or
-  unavailable frame is handled by the source's repeat/fallback policy, without making consumers handle browser state.
+  `app->commands()`, and sets the ordinary `tex` output. GPU import and destination-pool leases stay internal. A late or
+  unavailable frame is handled by retaining the last valid image or an ordinary GPU-created empty texture, without
+  making consumers handle browser state.
 - `complete()` releases frame-local CPU references; submitted GPU uses retain the actual storage until completion.
   Node destruction requests asynchronous session closure; the subsystem retains callbacks and resources until safe.
 
@@ -331,237 +355,192 @@ Publish described status contracts through the existing status registry/generato
 capability snapshots. The internal custom-command/JSON-response facility belongs to the session/subsystem; it does
 not require a new graph interface type or decide a WebSocket protocol now.
 
-### Permitted shared infrastructure changes
+### Hard scope boundary
 
-Containment does not eliminate the native event-loop and external-memory requirements. The event/render thread split
-below is a separately reviewable, application-wide prerequisite, not a reason to spread CEF behavior across nodes.
-Any screen-node changes concern the generic main-thread window service only. Likewise, GPU import APIs must describe
-resources, readiness and lifetime without depending on CEF headers, browser sessions or page state. Browser-specific
-callback rules and D3D11/Metal/DMA-BUF bridge policy stay in the CEF details and call those generic mechanisms.
+Permitted integration wiring is the app-owned subsystem member/construction/teardown, ordinary native/web node and
+status registration, and wrapper/build/install rules. Browser implementation belongs to its node, details, subsystem
+and ordinary Chromium helpers. Do not edit existing nodes to accommodate the browser.
+
+In particular, do not move the graph off the main thread, restructure `main.cpp`, change GLFW polling/window ownership,
+alter `tick_one_frame()`, scheduler recovery, node lifecycle ordering, texture interfaces, or existing GPU submission,
+transfer and presentation paths. Do not add a global browser tick or a new graph execution phase. Read the existing
+frame context in the CEF node's normal `prepare()` hook and dispatch asynchronously from its details.
+
+New well-contained resource-sharing, native-import, ownership-transition and blit-completion helpers are permitted.
+They must fit the existing Vulkan device, independent recording contexts, submission worker and resource retirement
+contracts. Small additive API plumbing for those helpers is not permission to replace or change existing paths.
+If required device-extension enablement or resource support changes an established initialization/selection policy,
+identify the exact change and obtain the user's specific, explicit approval first. Do not silently broaden global
+GPU configuration or repurpose the upload/readback backend for CEF.
+
+**Every structural deviation requires explicit user approval.** Name the affected existing mechanism, exact proposed
+change, necessity and alternatives; wait for approval of that change before implementing it. This applies to all
+stages, prototypes and platforms. A failed capability gate leaves that CEF path unsupported; it never authorizes CPU
+pixel copies, an automatic process-topology switch, or a renderer refactor.
 
 Acceptance requires running the same downstream graph with browser, NDI and DeckLink sources without changing any
-consumer implementation. Verify CPU/GPU browser delivery, fan-out, repeated frames, resize and source removal against
+consumer implementation. Verify accelerated browser delivery, fan-out, repeated frames, resize and source removal against
 the same texture/lifetime contract. The node manager, interface traversal and compositor must gain no CEF special cases.
 
 ## Process and thread model
 
-CEF already has multiple subprocesses, but embedding its **browser process** in Miximus still leaves CEF UI callbacks
-inside our native process. Its threaded message loop is supported on Windows/Linux; macOS needs native main-thread
-event-loop integration. Polling `CefDoMessageLoopWork` once per video frame is not equivalent to servicing CEF's
-scheduled work. See [CEF settings](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/internal/cef_types.h#L245).
+### Keep GPU sharing separate from CEF event-loop placement
 
-**OBS embeds CEF's browser process.** Its plugin calls `CefInitialize` inside OBS and configures a subprocess helper.
-The non-Qt path runs initialization, `CefRunMessageLoop` and shutdown on `BrowserManagerThread`. The Qt path uses an
-external message pump; the macOS build enables that path. The helper calls `CefExecuteProcess` for Chromium process
-roles. These helpers are not an additional application-owned browser server.
-See [OBS initialization and manager thread](https://github.com/obsproject/obs-browser/blob/a1624431ae60cd89560d3d12c8143b1b926b410a/obs-browser-plugin.cpp#L271)
-and [helper entry point](https://github.com/obsproject/obs-browser/blob/a1624431ae60cd89560d3d12c8143b1b926b410a/obs-browser-page/obs-browser-page-main.cpp).
+The original render-thread relocation and the subsequent universal browser-host recommendation are superseded.
+Miximus already has the appropriate cross-thread GPU structure: one device, independent recording contexts, a
+submission worker, completion tickets and tracked resource lifetimes. CEF transfers should use that structure.
+Neither native-handle import nor a separate recording context inherently requires another application process.
 
-Use that topology with **separate main/event and graph-render threads on all platforms**. A common thread-ownership
-model avoids two node/window lifecycle designs and addresses the macOS main-thread requirement directly. CEF handles
-its internal process transport; Miximus needs bounded in-process handoffs and CEF browser/renderer messages for custom
-requests and responses. A separate browser host is not planned.
+For Windows/Linux, qualify embedded CEF initialized/shut down through the app-owned subsystem on the application
+main thread, using `multi_threaded_message_loop = true` for CEF UI work. Browser callbacks execute on that UI thread;
+use a context owned by the callback/transfer implementation, never the graph's default recording context.
+Do not insert `CefDoMessageLoopWork` into Miximus's frame loop. Ordinary Chromium renderer/GPU subprocesses and CEF's
+internal process messages are expected; no additional browser-host process or frame IPC is selected.
+See [CEF settings](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/internal/cef_types.h#L245)
+and [initialization API](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/cef_app.h).
 
-This is a deliberate tradeoff: an additional host would preserve today's main-thread graph loop but require a new
-process lifecycle, frame-memory/texture transport and completion protocol. Separating window/event work has broader
-application impact, but retains one device/resource ownership model and removes event-loop interference from graph
-evaluation. For this Vulkan application, choose the thread separation and validate it as a prerequisite milestone.
-Reconsider a separate host only if that milestone exposes an unresolvable platform constraint or process isolation
-becomes an explicit product requirement. It is not an automatic fallback on a slow browser frame.
+**macOS remains an explicit gate.** The supported threaded UI-loop setting is unavailable there. Determine whether a
+supported, contained integration can meet CEF's native main-thread requirements without changing Miximus's event or
+render loop. Do not assume an arbitrary worker can host the macOS UI loop. If this cannot be established, report the
+constraint and alternatives, including a platform-specific browser host, for the user's explicit approval. Keep that
+platform unsupported until resolved; do not move the graph, alter GLFW polling or impose a universal host to solve it.
+
+OBS's embedded model and existing UI/graphics separation are reference evidence, not an architectural dependency.
+Its worker-thread and Qt loop arrangements must be checked against the selected SDK rather than copied blindly.
+See [OBS initialization](https://github.com/obsproject/obs-browser/blob/a1624431ae60cd89560d3d12c8143b1b926b410a/obs-browser-plugin.cpp#L271).
+
+### Thread ownership and teardown
+
+The existing main/render thread owns the ordinary CEF node lifecycle and frame selection, exactly as for other
+nodes. CEF UI work owns browser creation, navigation and paint callbacks; renderer subprocess threads own V8.
+Private workers may manage allocation/import preparation and asynchronous commands. Every recording context has a
+single explicit host-side owner or serialized access; never record concurrently into the same context.
+
+Publish owned frame descriptors through a bounded queue. Sharing a texture lease between threads does not copy
+pixels. Pool slots remain retained until all selected/recorded/submitted uses retire. Node removal requests close
+without waiting for browser completion during a frame; the subsystem retains callbacks and retiring resources.
+
+During app shutdown, preserve the existing graph teardown and service order. Add the CEF subsystem's close/drain
+before the GPU device disappears; its threaded CEF loop must be able to finish without Miximus pumping browser work.
+Wait for `OnBeforeClose` and retire transfer/consumer uses before `CefShutdown` on its required thread. This is normal
+subsystem ownership wiring, not permission to redesign shutdown, watchdog behavior or other services' lifetimes.
+If the SDK cannot meet that contract, stop at the gate and obtain explicit approval for any necessary deviation.
+
+## Accelerated rendering and texture sharing with Vulkan
+
+### Existing structures are the starting point
+
+[`device_s::create_recording_context()`](../src/gpu/device.hpp) already provides independent command/descriptor pools.
+[`transfer_worker_s`](../src/gpu/transfer/detail/transfer_worker.hpp) uses one, while
+[`recording_s`](../src/gpu/recording.hpp) supplies typed operations, dependencies and submission and
+[`completion_s`](../src/gpu/completion.hpp) distinguishes accepted submission from GPU completion.
+Use those mechanisms; do not introduce a second graph scheduler, a competing submitter on its queue, or a replacement
+resource-lifetime system. A separate recording context does not imply a separate Vulkan device or GPU queue.
+
+The missing functionality to qualify is native image import and its external synchronization, not ordinary
+cross-thread texture sharing. The CUDA backend already demonstrates external allocation sharing and explicit
+ownership, but its Vulkan-export-to-CUDA path is not automatically a D3D/DMA-BUF/IOSurface importer.
+New contained helpers may supply those platform capabilities within the existing structures.
+
+### Owned GPU frame pool and callback contract
+
+1. Create a bounded pool of Miximus-owned GPU destination textures during session setup using the existing allocation
+   conventions. Pool creation/import preparation may use a private resource worker, as other media services do;
+   publish a complete generation before use. Do not synchronously allocate an entire pool on each paint or graph tick.
+2. Own a separate recording context for CEF ingress on the same Vulkan device as the graph. The source's main-thread
+   setup may establish the pool/context and hand ownership to its producer side; texture storage is device-owned,
+   not tied to the thread that allocated it.
+3. `OnAcceleratedPaint` acquires a genuinely free destination slot, opens the current native source handle and
+   establishes the producer-read dependency. If no slot/context is available, drop the incoming paint before issuing
+   GPU work; do not block graph execution or overwrite a retained frame.
+4. Record a GPU copy or conversion from the imported source into that destination through the contained helper and
+   existing recording/submission machinery. Channel order, color/alpha conversion and popup composition stay on GPU.
+5. Submit and **finish every GPU read of CEF's borrowed source before returning from the callback**. A submission
+   ticket or retained native handle alone does not authorize deferred reads. Use a contained blit-completion helper
+   backed by existing completion primitives. The callback may wait for its GPU work; it must not wait for the graph
+   to run, for a render-thread task, or for a destination slot held by consumers.
+6. Publish the owned image and its metadata/completion through the source's bounded timed queue. Graph selection and
+   downstream sampling use the ordinary texture interface and existing dependency/lifetime conventions.
+7. Recycle the destination only after queued/selected references and all recorded/submitted GPU uses release it.
+   `complete()` and `on_submitted()` are not evidence that GPU use has finished.
+
+If later conversion reads only owned storage, it may remain asynchronous after the borrowed-source read completes.
+Do not hold CEF's resource until that unrelated work finishes unnecessarily. A callback timeout after submission
+cannot safely abandon a still-running read of borrowed storage; drain it or use a valid device-failure path. Measure
+callback wait and queue contention; the existing queue architecture remains unchanged.
 
 ```mermaid
 flowchart LR
-    subgraph M[Miximus process]
-    E[Main thread: native events and windows]
-    G[Dedicated graph-render thread] -->|bounded commands and ticks| H[Embedded CEF / UI loop]
-    E --- H
-    H --> C[Paint callback: copy borrowed pixels]
-    C --> P[Owned bounded frame pool]
-    P -->|frame descriptor and completion| I[Miximus browser ingress service]
-    I -->|owned texture lease| V[Vulkan graph]
-    V -->|release after last GPU use| P
-    end
-    H <-->|CEF internal transport| R[Chromium renderer and GPU subprocesses]
+    C[CEF accelerated callback] --> I[Contained native import and synchronization]
+    I --> R[Independent recording context on existing device]
+    R --> S[Existing submission worker]
+    S --> P[Owned GPU destination pool]
+    S --> W[Borrowed-source read complete before callback returns]
+    P --> Q[CEF node timed frame queue]
+    Q --> G[Existing graph consumes ordinary texture]
+    G --> F[Existing lifetime tracking retires GPU uses]
+    F --> P
 ```
 
-The CEF UI thread owns browser creation, resize, navigation, JS dispatch and closing. The renderer subprocess owns
-V8 contexts and request handlers. Miximus control/ingress workers own bounded handoffs and pool management. Never
-wait for page load, JS completion or browser close during graph evaluation.
+Use full-frame GPU copies initially; dropped paints and rotating slots make dirty-rectangle-only updates unsafe
+without image-history tracking. Handle accelerated `PET_POPUP` frames and composition in the CEF module. Include
+session/navigation/size generations, sequence, dimensions, format, visible rectangle, timestamp domain and ownership
+in descriptors. No CPU pixel mapping or staging is permitted for these operations.
 
-Use the selected release's supported loop configuration:
+### Platform import qualification
 
-- **Windows/Linux:** initialize and shut down CEF on the application main thread, with
-  `multi_threaded_message_loop = true` for CEF UI work. Keep GLFW/native window events on the main thread. Do not
-  reproduce OBS's worker-thread initialization merely because it works in its builds; follow the release API's
-  documented initialization contract.
-- **macOS:** initialize/shut down on the main thread and integrate the CEF external message pump with the native
-  application event loop, driven by `OnScheduleMessagePumpWork`. GLFW and AppKit event ownership must be integrated
-  there; no Qt dependency is required by the design. A once-per-frame CEF poll is insufficient. CEF callbacks may
-  perform their required copy wait on this thread, while graph evaluation continues on its own thread.
-- **All platforms:** one dedicated render thread owns the scheduler, `nodes_copy_`, graph evaluation, normal node
-  lifecycle and node destruction. Preserve `tick_one_frame()` ordering and the existing submission/presentation
-  workers; this is not a parallel graph executor.
-
-The CEF initialization requirement is documented in the selected release's
-[application API](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/cef_app.h).
-
-The prerequisite refactor must separate responsibilities currently combined by the main loop:
-
-1. Keep GLFW initialization/termination, window creation/destruction, monitor queries, event polling and native
-   callbacks on the main thread. Move node-held native-window actions behind a main-thread service.
-2. Exchange owned window handles/leases and cached size/monitor state. Start/recreate windows asynchronously; a
-   render-thread node must not synchronously request a main-thread action and wait for it. Retain native windows
-   until presentation/surface users have retired, then acknowledge destruction on the main thread.
-3. Keep node creation/initialization behavior consistent with existing graph admission, and preserve render-snapshot
-   destruction on the render thread. Main-thread callbacks publish state; they never mutate the render snapshot.
-4. Preserve scheduler anchoring, immutable frame contexts, status-delta publication and exact media upload selection.
-   Rendering never waits for a CEF request/result or a window-service acknowledgement during a frame.
-5. Stage shutdown while the main event loop still runs: stop graph production and release nodes on the render thread,
-   process asynchronous browser/window closure, drain GPU/media uses, then complete CEF/device/window-service teardown.
-   Do not block the main thread joining a worker that still needs its event loop to release resources.
-
-This changes the current main-thread placement described in `architecture.md`; it does not weaken the invariant
-that one designated render thread owns graph execution and render-snapshot destruction. Update the runtime guides
-when implementing the refactor, not in this investigation. Verify screen, DeckLink/NDI, shutdown and timing behavior
-before layering browser sources onto the new arrangement. Callback waits still share GPU capacity with the mixer;
-thread separation is CPU scheduling isolation, not a guarantee against GPU contention.
-
-Package CEF subprocess helpers and test that renderer/GPU roles do not initialize the full mixer. Browser-process
-failures are not isolated from Miximus in this model; ordinary renderer-subprocess recovery remains possible.
-
-## Rendering and texture sharing with Vulkan
-
-### Common frame contract
-
-Use two transport implementations behind one owned-frame interface:
-
-1. **CPU:** `OnPaint` copies its borrowed full BGRA frame into a free bounded upload lease before return, then queues
-   that exact upload ID. Drop the incoming paint if no lease is available; do not allocate an unbounded side queue.
-   No extra application-level shared-memory transport or second host-memory copy is required by this topology.
-2. **GPU:** open the callback resource, copy into a free application-owned slot, finish borrowed-source
-   reads before return, then publish the owned slot and its readiness information in-process. Cross-API sharing is
-   needed only where the platform bridge requires it; ordinary Vulkan-only destinations need not be exportable.
-   Recycle after the final recorded/submitted GPU use retires.
-
-Full-frame copies are the safe initial policy: paint callbacks may be dropped, and pooled surfaces/rotating
-destination slots do not necessarily have the previous image required by dirty rectangles. Optimize incremental
-updates only with explicit image-history tracking. Handle `PET_POPUP` separately and compose it at the popup
-rectangle; ignoring it loses dropdowns and other widgets.
-
-Include browser generation, size generation, sequence, dimensions/stride or plane layout, pixel format, visible
-rectangle, timestamp domain, optional request identity, and readiness in each frame descriptor. Never accept an old
-size/navigation generation as a new frame. Bounds-check frame descriptors as well as control requests.
-
-### Platform feasibility
-
-| Platform | CEF accelerated resource | Candidate Vulkan route | Principal qualification risk |
+| Platform | Native source | GPU-only candidate | What must be established |
 | --- | --- | --- | --- |
-| Windows | NT shared D3D texture handle | D3D11 import through `VK_KHR_external_memory_win32`, or D3D11 copy into an owned shared ring imported by Vulkan | Matching GPU/driver, resource flags, producer completion and cross-API synchronization |
-| Linux | DMA-BUF plane FDs, strides, offsets, modifier and format | `VK_EXT_external_memory_dma_buf`, `VK_KHR_external_memory_fd`, `VK_EXT_image_drm_format_modifier` | Actual modifier/usage support and explicit synchronization across Chromium and Vulkan |
-| macOS | IOSurface | Metal copy into an owned IOSurface ring; import via MoltenVK `VK_EXT_metal_objects` | CEF event loop/bundling, resource compatibility and Metal/Vulkan completion |
-| All | BGRA host buffer | Existing bounded Vulkan upload service | Bandwidth/CPU cost, but lowest interop complexity |
+| Windows | Shared D3D texture handle | Import compatible D3D memory into the existing Vulkan device and copy/convert into local owned textures; contained D3D11 GPU bridge if direct import cannot meet the contract | Adapter identity, handle type, allocation flags, supported format/usage and producer synchronization |
+| Linux | DMA-BUF plane FDs and modifier/layout metadata | Import with matching external-memory/modifier support, then copy/convert into local owned textures | Format/modifier/plane compatibility, source readiness and external ownership/layout transitions |
+| macOS | IOSurface | Compatible MoltenVK import or contained Metal copy into an owned shared surface consumed by Vulkan | Resource compatibility and Metal/Vulkan completion, plus the separate unresolved CEF UI-loop gate |
 
-The platform descriptors are defined in CEF's
-[Windows](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/internal/cef_types_win.h),
-[Linux](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/internal/cef_types_linux.h), and
-[macOS headers](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/internal/cef_types_mac.h).
-Some window-info comments still say sharing is Windows-only; the platform structures and current OSR implementations
-provide better evidence of the intended cross-platform APIs. Validate the actual binary SDK on each platform.
+These are candidate paths, not validated interoperability claims. Qualify against the pinned binary and actual
+adapters/drivers. Same-device sharing within Miximus avoids re-exporting ordinary Vulkan destination textures unless
+a particular cross-API bridge needs it. Importing a handle does not itself imply a pixel copy; the owned destination
+copy is required by CEF's borrowed-resource contract.
 
-#### Windows
+**Windows:** distinguish NT D3D texture handles (`D3D11_TEXTURE_BIT`) from legacy KMT and generic opaque handles.
+Match CEF/DXGI and Vulkan adapters using device identity, not enumeration order. Establish actual resource usage and
+synchronization; do not assume a keyed mutex or invent its key protocol. `Flush` alone does not establish GPU
+completion. A D3D bridge, if necessary, belongs in contained sharing details and must hand off to the existing Vulkan
+resource/lifetime model. No CPU readback is allowed.
+See [external-memory handle types](https://docs.vulkan.org/refpages/latest/refpages/source/VkExternalMemoryHandleTypeFlagBits.html)
+and [keyed-mutex extension](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_win32_keyed_mutex.html).
 
-Prototype an in-process D3D11 bridge on the same adapter as Miximus's Vulkan physical device. Open CEF's NT resource with
-`OpenSharedResource1`, inspect its actual description, and copy to a preallocated owned D3D11 shared texture.
-Use GPU completion before callback return; `Flush` alone is not completion. Query Vulkan importability for the exact
-format, usage, handle type and dedicated-allocation requirements.
+**Linux:** honor DMA-BUF plane FDs, offsets, pitches, format and DRM modifier; do not treat a DMA-BUF as an opaque
+Vulkan FD. Validate importability and descriptor ownership/cleanup. The inspected CEF paint structure does not supply
+an explicit acquire sync FD: establish source readiness from the actual CEF/Chromium path and driver contract before
+reading. Where applicable, investigate reservation-fence export and explicit Vulkan waits; `DMA_BUF_IOCTL_SYNC` is
+CPU coherency, not GPU synchronization. Test NVIDIA and Mesa configurations separately. Failure leaves accelerated
+support unavailable for that configuration; it does not enable CPU fallback. An additional EGL backend is not selected;
+propose and obtain explicit user approval before adding another graphics backend as a workaround.
+See [modifier import](https://docs.vulkan.org/refpages/latest/refpages/source/VkImageDrmFormatModifierExplicitCreateInfoEXT.html)
+and [DMA-BUF synchronization](https://docs.kernel.org/driver-api/dma-buf.html).
 
-For D3D11 NT texture handles the Vulkan type is `D3D11_TEXTURE_BIT`; legacy KMT handles and generic opaque handles
-are different contracts. Match adapters using Vulkan device-ID/LUID properties and DXGI, not adapter enumeration
-order. See [Vulkan external-memory handle definitions](https://docs.vulkan.org/refpages/latest/refpages/source/VkExternalMemoryHandleTypeFlagBits.html).
+**macOS:** qualify IOSurface-compatible image configuration and import through MoltenVK, with a private Metal bridge
+if needed. Finishing the borrowed-source read and retaining the owned destination are separate obligations. Keep
+Objective-C++ and native types private. Do not change existing GLFW/window/presentation behavior to qualify this path.
+See [IOSurface import](https://docs.vulkan.org/refpages/latest/refpages/source/VkImportMetalIOSurfaceInfoEXT.html),
+[MoltenVK extensions](https://github.com/KhronosGroup/MoltenVK/blob/v1.4.1/MoltenVK/Layers/MVKExtensions.def) and
+[existing platform validation](macos-moltenvk-validation.md).
 
-Owned slots may use a negotiated keyed mutex or shared-fence protocol. Do not assume CEF supplies a keyed mutex or
-invent acquire/release key values for its texture. Vulkan's keyed-mutex extension only helps when the shared object
-actually has the matching mutex protocol. See
-[the keyed-mutex extension](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_win32_keyed_mutex.html).
+### Color, bandwidth and failure behavior
 
-The owned ring is shared between D3D11 and Vulkan within Miximus, so it needs cross-API synchronization but no new
-application-level process transport. A conservative first ring can use completed producer copies and tracked Vulkan
-consumer completion. Direct import of CEF's texture into Vulkan is another experiment, but its external
-layout/synchronization contract must still be established and it does not remove the required owned copy.
+Use tested SDR sRGB with premultiplied alpha at the browser boundary and convert on GPU into Miximus's existing
+linear premultiplied UNORM16 working representation. For premultiplied encoded input, unpremultiply where alpha is
+nonzero, decode sRGB, then premultiply in linear light; do not gamma-correct alpha. Test transparent black, low alpha,
+antialiased text, popups, channel order and orientation without adding a CPU pixel-conversion path.
 
-#### Linux
+Measure GPU copy/conversion time, callback waits, queue contention and memory. A tightly packed BGRA source contains
+about 8.29 MB at 1080p or 33.18 MB at UHD; 60 full-frame copies/s represent about 0.50 or 1.99 GB/s of source payload,
+respectively, before destination writes/conversion and other GPU work. These are arithmetic, not timings or guaranteed
+physical memory traffic. Include destination pools, imported views, working textures and Chromium allocations in budgets.
 
-Import CEF DMA-BUFs with the actual format, modifier, plane offsets and row pitches. Query supported modifiers and
-external image usage; construct the image with the matching DRM-modifier information. Handle memory-plane count
-and repeated FDs correctly. Duplicate FDs before giving Vulkan ownership; close every failed import path. Never
-reinterpret a DMA-BUF as an opaque Vulkan FD. See
-[DRM-modifier import](https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_image_drm_format_modifier.html).
-
-**Synchronization is the largest unresolved Linux risk.** The inspected CEF paint struct exposes no explicit acquire
-sync FD. Vulkan import alone does not prove producer writes have completed or arrange release to CEF. Inspect the
-chosen CEF/Chromium capture implementation and driver behavior; establish whether callback delivery completes the
-producer work. If relying on DMA-BUF reservation fences, explicitly bridge that contract to Vulkan, potentially with
-`DMA_BUF_IOCTL_EXPORT_SYNC_FILE` and `SYNC_FD` semaphore import where supported. `DMA_BUF_IOCTL_SYNC` is about CPU
-access/coherency, not a substitute for GPU acquire/release. See
-[kernel DMA-BUF synchronization](https://docs.kernel.org/driver-api/dma-buf.html).
-
-Import and copy into Miximus-owned Vulkan slots, finishing borrowed reads before returning. The destination ring
-can remain ordinary local Vulkan storage; it does not need re-exporting to another application process. External
-queue-family ownership/layout transitions for the imported source belong in the GPU implementation.
-
-Do not transplant OBS's invalid-modifier-to-linear workaround as a universal Vulkan rule. Test NVIDIA proprietary
-drivers and Mesa AMD/Intel, X11/XWayland and intended headless configurations. Chromium using Vulkan internally does
-not mean CEF returns a usable `VkImage`. An EGL bridge would add another graphics API to Miximus; prefer CPU fallback
-unless it resolves a measured compatibility gap worth that cost.
-
-#### macOS
-
-Use a Metal texture view of the callback IOSurface, then blit into an application-owned IOSurface-backed ring.
-CEF's Metal example is a useful starting point for visible-rectangle handling and completion. Import the owned
-IOSurface into a Vulkan image with `VkImportMetalIOSurfaceInfoEXT`; image configuration must match the surface.
-See [IOSurface import](https://docs.vulkan.org/refpages/latest/refpages/source/VkImportMetalIOSurfaceInfoEXT.html).
-
-MoltenVK 1.4.1 lists both `VK_EXT_metal_objects` and `VK_EXT_external_memory_metal`; the latter provides another route
-through Metal resource handles. Compare these routes for the in-process Metal/Vulkan bridge. Query the actual
-runtime extension/features and test the pinned SDK; presence in headers is not qualification. See
-[MoltenVK's extension list](https://github.com/KhronosGroup/MoltenVK/blob/v1.4.1/MoltenVK/MoltenVK/Layers/MVKExtensions.def)
-and [Metal external memory](https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_external_memory_metal.html).
-
-The Metal/Vulkan bridge lives within Miximus, so no additional IOSurface Mach-port transport is required for its
-owned ring. Keep Objective-C++ and Metal details private to the bridge. Start with producer-copy completion and
-tracked consumer GPU completion; shared-event optimization can follow. Existing Miximus macOS graphics behavior itself
-still needs the hardware checks in [the MoltenVK validation document](macos-moltenvk-validation.md).
-
-### Integration with existing GPU services
-
-Miximus currently exports selected resources for CUDA; that is not a general foreign-image importer. Keep the bounded
-browser-ingress service inside the CEF subsystem/details. Extend the GPU layer only with reusable external-image
-allocation/import, producer readiness, ownership transitions, completion and teardown primitives. Keep CEF types out
-of GPU headers and platform handles out of ordinary node-facing headers. Reuse resource retirement and submission
-tickets, but do not force GPU-to-GPU imports through a host-upload abstraction.
-
-The ingress service must not submit directly on the graph's Vulkan queue from a CEF callback. GPU work in Miximus
-uses owned recording contexts and the submission worker. A platform D3D11/Metal bridge may own a separate API context
-inside Miximus, with explicit handoff to Vulkan. Callback-lifetime waits must not create a cycle with the render or
-submission thread. Native handle values can be recycled, so cache imports only for our own slots identified by pool
-generation and slot ID.
-
-For CPU delivery, preserve exact upload IDs and the existing bounded transfer contract. For both paths, retain
-storage through actual GPU completion, and publish graph outputs only after successful native submission.
-See [GPU ownership and transfer services](gpu-and-media.md) and [current device allocation code](../src/gpu/device.cpp).
-
-### Color and bandwidth
-
-Define the initial browser contract as tested SDR sRGB with premultiplied alpha. Validate actual accelerated formats
-and alpha with reference pixels; do not assume all platform surfaces are BGRA or that HDR metadata is carried.
-Convert to Miximus's linear premultiplied UNORM16 working representation: unpremultiply encoded RGB where alpha is
-nonzero, decode sRGB, then premultiply in linear light. Alpha is not gamma-corrected. Cover transparent black, low
-alpha, antialiased text, scaling and popup composition; avoid double sRGB decoding and BGRA/RGBA swaps.
-
-Calculated full-frame BGRA payloads at 60 fps are about **0.50 GB/s for 1920×1080** and **1.99 GB/s for 3840×2160**,
-before additional copies, GPU readback/upload, conversion, or multiple sources. These are bandwidth arithmetic, not
-benchmarks. A three-slot UHD BGRA ring is about 95 MiB; UNORM16 working images cost twice as much per pixel. Pool
-budgets must include the owned ring, imported views, working targets and Chromium's own allocations.
+If accelerated delivery, import, synchronization or adapter matching is unavailable, expose an explicit unsupported/
+error state. Retain the last valid owned frame only while safe, or expose the node's ordinary empty GPU texture.
+Do not recreate in CPU mode, enable software rendering to evade the restriction, or transfer pixels via shared host
+memory. A GPU-only path may be unsupported on some platforms until qualified. CPU support is separate later work.
 
 ## JavaScript control and program-time rendering
 
@@ -571,7 +550,8 @@ The scope here is capability, not a control model. Ensure native code can send a
 browser-side JavaScript and asynchronously receive a correlated JSON result or an explicit error. No CasparCG command
 set, public JavaScript namespace, WebSocket action, editor control or compatibility adapter is selected by this plan.
 
-Use CEF browser/renderer process messages to carry owning request data and results. Execute JavaScript on the
+Use the subsystem's local dispatch and CEF browser/renderer process messages to carry owning request data and
+results. Preserve request IDs and session generations across dispatch. Execute JavaScript on the
 renderer/V8 thread in the intended context. `ExecuteJavaScript` alone is fire-and-forget and does not supply the
 required result channel; provide an explicit renderer-side result bridge. Preserve the ability to handle asynchronous
 JavaScript results, including Promise resolution/rejection, without blocking CEF or the graph.
@@ -602,8 +582,7 @@ and validate the native and generated TypeScript contracts together at that stag
 
 CEF's stock `SendExternalBeginFrame()` has no timestamp or user frame-ID argument. It can request work but cannot
 directly inject our rational program PTS. CEF's accelerated metadata includes a capture-relative timestamp in
-microseconds and an optional capture counter; neither is a Miximus request token. CPU `OnPaint` lacks equivalent
-capture metadata. See [begin-frame API](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/cef_browser.h#L737)
+microseconds and an optional capture counter; neither is a Miximus request token. See [begin-frame API](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/cef_browser.h#L737)
 and [paint metadata](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/internal/cef_types_osr.h).
 
 A future cooperative timing callback needs epoch, frame number, PTS, timebase, duration and discontinuity metadata;
@@ -612,8 +591,9 @@ Keep exact native values as `utils::flicks`; transport large integer values as d
 encoding, with a convenient relative-millisecond value for JS animation libraries. Do not equate program PTS with
 `Date.now()` or Chromium's time origin.
 
-Use the immutable [current frame context](../src/core/frame_context.hpp). Send ticks from an all-source timing/control
-path, not only when the graph executes a demanded source. Do not coalesce away program frames still eligible for
+Use the immutable [current frame context](../src/core/frame_context.hpp). The CEF node's existing `prepare()` hook
+hands time to its private session queue, including when the source is not demanded; no global timing/control path
+or scheduler hook is added. Dispatch from subsystem workers. Do not coalesce away program frames still eligible for
 Miximus's late-frame recovery; discard obsolete requests only when their program frames have been abandoned.
 Preserve epoch changes and PTS gaps. Templates should derive state from absolute supplied time rather than increment an
 animation counter once per callback. Source-local `play` origins should explicitly map onto program time.
@@ -647,7 +627,7 @@ appropriate. **Do not label the next paint with that request's PTS just because 
 damage, compositor latency, coalescing and unchanged pages break a one-request/one-paint assumption.
 
 For ordinary pages, keep capture timestamps in their own domain, record arrival separately, and use an explicitly
-estimated mapping into program time. CPU callbacks have weaker timing evidence. Retain static frames across missing
+estimated mapping into program time. Retain static frames across missing
 paints instead of treating every missing paint as failure. Use liveness/load/renderer signals to distinguish a static
 page from a hung renderer.
 
@@ -662,9 +642,11 @@ does not.
 
 Plan a small configurable browser lead/buffer, with a measurable latency target and a bounded queue. Requesting a
 page update during `execute()` cannot make it available synchronously for that evaluation. Define what happens to
-commands at a graph frame boundary when browser pixels appear later; exact same-frame graph/template changes need
-additional scheduling work. Reuse the existing timed-source mechanisms for independently clocked browser frames;
-program-controlled, genuinely correlated frames should use their known program mapping without adaptive clock drift.
+commands issued from the CEF node when browser pixels appear later. Exact same-frame graph/template transactions
+are not promised and do not authorize scheduler, graph-transaction or shared timing changes. Any such deviation
+requires the user's specific, explicit approval before implementation. Reuse the existing timed-source mechanisms
+for independently clocked browser frames; program-controlled, genuinely correlated frames should use their known
+program mapping without adaptive clock drift.
 
 Preserve the current frame lifecycle and `nodes_copy_` snapshot. The broader
 [timing plan](frame-timing-and-synchronization.md) contains future work; browser support must not assume all of it is
@@ -672,62 +654,66 @@ already implemented.
 
 ## Lifecycle, recovery and initial node scope
 
-Suggested first node: URL/local template, explicit viewport width/height, transparency, enabled state, timing mode,
-transport preference (`auto`, `cpu`, qualified `gpu`), and one texture output. Default source behavior should remain
-hot even when disconnected, matching the media architecture. An explicit stop/suspend policy can come later.
+Suggested first node: URL/local template, explicit viewport width/height, transparency, enabled state and one texture
+output. Expose only qualified accelerated delivery; no CPU transport selector or automatic fallback. Default source
+behavior should remain hot even when disconnected, matching the media architecture. An explicit stop/suspend policy
+can come later.
 Initially mute browser audio: audio playout is a separate timing/integration project, not an implicit OS output.
 
 Browser service state should progress through starting, loading, ready, closing and closed, with failure/restart states.
 Navigation and resize increment generations. Renderer termination fails pending commands and starts bounded recovery
-with backoff. Repeated interop failure can recreate the browser in CPU delivery mode and report the reason;
-`OnPaint` is not an automatic rescue path while shared-texture delivery remains enabled. Distinguish disabling texture
-sharing from disabling Chromium GPU acceleration.
+with backoff. Repeated interop failure reports an accelerated-path error and stops unsafe ingress. Recreating a
+browser must preserve accelerated-only operation. Never disable shared-texture delivery or enable CPU/software
+rendering as recovery.
 
 Expose transport/backend, CEF/Chromium versions, selected adapter, load/error status, viewport, paint sequence,
-timing quality, queue depth, copy duration, stale-frame age, drops, restarts and fallback reason. Rate-limit counters
-and send status deltas. Discrete capabilities should update only when their version/selection changes.
+timing quality, queue depth, copy duration, stale-frame age, drops, restarts and accelerated-path failure reason.
+Rate-limit counters and send status deltas. Discrete capabilities should update only when their version/selection changes.
 
 On node removal, detach render references and request asynchronous browser close. Keep callbacks and pools alive
 until close is acknowledged and all submitted GPU uses retire. On application exit, stop commands/ticks, close
-browsers and observe `OnBeforeClose`, drain imported frames, then shut down CEF on the application main thread.
-Keep Miximus's GPU device alive while imported resources drain. Renderer
-recovery must invalidate generations without reusing slots still referenced by the graph. Do not promise independent
-recovery from a crash of the embedded browser process itself.
+browsers and observe `OnBeforeClose` on CEF's UI thread, drain imported frames, then call `CefShutdown` on the required
+initialization thread. Keep Miximus's GPU device alive while imported resources drain. Renderer recovery invalidates
+generations without reusing slots still referenced by the graph. Keep teardown within the existing service-lifetime
+boundary; do not add CEF event pumping to Miximus's loop. Embedded browser-process crashes are not isolated from Miximus.
 
 Serve local templates through a controlled asset origin/custom scheme with well-defined relative URLs and MIME
 types. Use the native permission defaults deliberately: navigation, popup windows, downloads, camera/microphone,
 file access and developer tools need policy. Do not inherit CasparCG's global web-security bypass or automatic media
 permission switches merely for compatibility. Keep template content separate from the editor's privileged origin.
 
-## Implementation order and decision gates
+## Implementation order and explicit approval gates
 
 | Stage | Deliverable | Evidence required before proceeding |
 | --- | --- | --- |
-| 0. Event/render separation | Main-thread window/event service and one dedicated graph-render thread | Existing screen/media output and frame timing preserved; asynchronous window lifecycle; no shutdown wait cycles |
-| 1. SDK and embedded runtime | CEF 152.0.8 manifest, wrapper, subprocess helpers, app-owned contained subsystem, off-screen sample | Clean-machine startup/shutdown; supported CEF loop configuration on each platform; correct sandbox/profile/resource paths; no browser logic in app state |
-| 2. CPU source | Registered native/web source node, private session/ingress details, bounded uploads and recovery | Ordinary `tex` output works with unchanged consumers; transparent test page, popup/resize/navigation correctness; qualified callback scheduling; bounded memory |
-| 3. Interaction and timing infrastructure | Internal custom-request/JSON-result bridge, lifecycle hooks, program-time delivery and diagnostics | Correlated success/error/async replies; invalidation on navigation; cadence and pixel-PTS diagnostics; no public control model required |
-| 4. GPU experiments | Independent Windows, Linux and macOS owned-ring bridges | Borrowed-source completion, producer/consumer synchronization, adapter checks and stress tests |
-| 5. Production transport | Qualified auto selection, CPU recreation fallback, deployment artifacts | Multi-source soak, crashes, GPU pressure and signed/offline installation tests |
-| 6. Strict timing, if needed | Proven request-to-pixel mapping, potentially custom CEF build | No mislabeled frames under delayed JS, coalesced paints, static content or skipped program evaluations |
+| 0. Existing-structure fit | Map accelerated import, owned pool, independent recording context and callback completion onto current APIs; identify exact missing helpers and platform constraints | No render/window/scheduler changes; every proposed structural deviation explicitly approved by the user before implementation |
+| 1. SDK and embedded runtime | Pinned SDK/wrapper, ordinary Chromium helpers and app-owned contained subsystem; qualify Windows/Linux threaded UI loop | Supported initialization/close/shutdown without main-loop servicing; packaging and loader coexistence; macOS remains gated, not silently redesigned |
+| 2. Accelerated source | Native/web source node, contained native import/sharing helpers, GPU pool, blit completion, timed queue and ordinary `tex` output | All pixel copies/conversions on GPU; source reads complete before callback return; existing consumers unchanged; transparency/popup/resize tests and bounded memory |
+| 3. Interaction and timing infrastructure | Internal custom-request/JSON-result bridge, lifecycle hooks and node-local program-time delivery | Correlated replies and navigation invalidation; no global timing hooks or new public control model |
+| 4. Platform qualification | Windows/Linux GPU import paths; macOS only after its event-loop gate is explicitly resolved | Adapter/format/synchronization and driver stress tests; no CPU fallback; deviations require specific explicit user approval |
+| 5. Production hardening | Accelerated-path recovery, deployment artifacts and diagnostics | Multi-source soak, crashes, GPU pressure, lifecycle and offline installation tests; no changes to existing render behavior |
+| 6. Strict timing, if separately required | Proven request-to-pixel mapping, potentially a custom CEF build | Separate user approval before expanding scope; no scheduler or graph changes inferred from timing goals |
 
-Run GPU transport experiments early alongside the CPU architecture work; do not build a large template API before
-discovering that the selected Linux/Windows hardware cannot satisfy the import contract. A platform can ship CPU
-delivery while another has qualified GPU delivery. Avoid blocking all browser support on universal zero-copy claims.
+The implementation priority is the accelerated path. There is no CPU-first milestone, shared-memory pixel transport,
+unaccelerated rescue path or CPU/GPU transport abstraction to implement now. Confirm the fast path first; any later
+unaccelerated implementation requires separate authorization. A small mandatory `OnPaint` interface stub is not a
+pixel ingestion implementation and must never silently accept software delivery.
 
-Benchmark CPU and accelerated paths with identical pages at HD/UHD, one/four/eight sources, transparent text,
-Canvas/WebGL, CSS animation, static graphics and moving full-frame content. Measure CPU time, GPU copy/conversion
-time, callback p50/p95/p99/max, graph deadline misses, pixel-observed latency, stale/repeated/dropped frames, and
-Miximus/Chromium-process memory. Include GPU saturation and hybrid-GPU selection. Record CEF build, driver and machine;
-do not carry OBS's performance reputation over as a Miximus result.
+Benchmark accelerated delivery at HD/UHD, one/four/eight sources, transparency, Canvas/WebGL, CSS animation, static
+and moving content. Measure GPU copy/conversion and completion waits, callback p50/p95/p99/max, graph deadline misses,
+pixel-observed latency, repeated/dropped frames, pool occupancy and process/GPU memory. CPU time measurements concern
+control/driver overhead, not permission for CPU pixel copies. Record CEF build, adapter and driver; do not assume OBS's
+performance transfers to Miximus.
 
-Use targeted deterministic tests for bounded queues, command ordering, generations and ownership. Integration tests
-must cover renderer/GPU-subprocess crashes, resize during in-flight work, static-page retention, source removal,
-request cancellation and shutdown with occupied slots. Test alpha against CPU reference pixels and visible frame IDs against PTS.
-Follow the repository's native/web build and formatting checks when implementation starts; GPU and platform runtime
-testing remains necessary beyond successful compilation.
+Use focused tests for pool/lease generations, command ordering and completion. GPU/platform tests must cover delayed
+blits, slot exhaustion, source removal with in-flight work, navigation/resize, popups, static retention, renderer/GPU
+subprocess failure and shutdown. Validate rendered color/alpha and visible frame IDs against reference fixtures.
+Do not use test instrumentation as permission to implement a CPU paint, pixel-copy or fallback path.
 
-The architecture and initial CEF release are selected. Qualification must now establish that event/render separation
-preserves existing outputs, the packaged release works on each platform, and GPU import/completion remains correct
-under load. Linux producer synchronization and strict frame-PTS correlation remain explicit technical questions;
-neither is solved by the process model. Public interaction APIs and the shape of reload/CSS controls remain deferred.
+Compare the existing screen/NDI/DeckLink graph with CEF disabled, idle and under load, including its recoverable late
+frame case. Verify unchanged scheduling/ownership implementations as well as measured contention. Follow native/web
+formatting and build checks; successful compilation does not qualify hardware synchronization.
+
+If a stage cannot fit the established structures, report the exact dependency and alternatives to the user. Do not
+change the main structure, switch to a separate host, alter existing services or introduce CPU copies to pass a gate.
+Only the user's specific, explicit approval authorizes a deviation; the plan itself cannot grant that approval.
