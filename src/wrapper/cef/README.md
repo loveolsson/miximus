@@ -46,8 +46,10 @@ capture tests, including the backported native-handle case. These tests compleme
 GPU capture qualification.
 
 The package stage emits a standard-layout release SDK, a `miximus-source-build.json` provenance file with the
-`libcef.so` digest, and an archive digest. Builds use Chromium's pinned sysroot/toolchain, disable debug symbols and
-ThinLTO to bound local build resources, and retain sandbox support. Pinned inputs support reproducibility; byte-for-byte
+`libcef.so` digest, and an archive digest. Builds use Chromium's pinned sysroot/toolchain and Ninja, omit debug symbols,
+and retain official-build ThinLTO, PGO, control-flow integrity and sandbox support. The sync stage restores the
+DEPS-pinned siso revision that upstream automation otherwise overrides with `latest`, and fetches the PGO profile.
+Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
 Before promoting the artifact, verify the provenance and package digest, configure the application against that SDK,

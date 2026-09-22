@@ -2,6 +2,7 @@
 """Explicit, resumable Linux CEF SDK build. Never called by application CMake."""
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -74,7 +75,7 @@ def main():
 
     if args.stage == "sync":
         # A source sync may revert Chromium changes. Never run it on our prepared tree.
-        if (work / "prepared.json").exists():
+        if (work / "prepared.json").exists() or (work / "preparing.json").exists():
             raise RuntimeError("Already prepared; resume build instead of syncing patched sources")
         if not depot.exists():
             run(["git", "clone", "https://chromium.googlesource.com/chromium/tools/depot_tools.git", depot], work)
@@ -91,12 +92,25 @@ def main():
              f"--depot-tools-dir={depot}", f"--branch={MANIFEST['chromium_branch']}",
              f"--checkout={MANIFEST['cef_revision']}", "--no-chromium-history",
              "--no-depot-tools-update", "--no-build", "--no-distrib", "--x64-build"], work, env)
+        # Upstream automation overrides the DEPS-pinned siso with 'latest' and
+        # omits the PGO profile by default. Restore pinned tools and fetch the
+        # profile needed by an official optimized build before applying patches.
+        config = download / "chromium/.gclient"
+        solutions = ast.literal_eval(config.read_text().split("=", 1)[1].strip())
+        solutions[0]["custom_vars"].update(
+            siso_version=MANIFEST["siso_version"], checkout_pgo_profiles=True
+        )
+        config.write_text("solutions = " + repr(solutions) + "\n")
+        run([depot / "gclient", "sync", "--nohooks", "--no-history"], download / "chromium", env)
+        run([depot / "gclient", "runhooks"], download / "chromium", env)
         return
 
     verify_revision(depot, MANIFEST["depot_tools_revision"])
     verify_revision(chromium, MANIFEST["chromium_revision"])
     verify_revision(cef, MANIFEST["cef_revision"])
     if args.stage == "prepare":
+        # Protect even a partially prepared tree from a destructive upstream resync.
+        (work / "preparing.json").write_text(json.dumps(MANIFEST, indent=2) + "\n")
         for patch in MANIFEST["patches"]:
             if patch["repository"] == "cef":
                 apply_once(cef, ROOT / patch["file"])
@@ -115,10 +129,15 @@ def main():
         patch = ROOT / MANIFEST["patches"][1]["file"]
         run(["git", "apply", "-p0", "--reverse", "--check", patch], chromium)
         (work / "prepared.json").write_text(json.dumps(MANIFEST, indent=2) + "\n")
+        (work / "preparing.json").unlink()
         return
 
     if json.loads((work / "prepared.json").read_text()) != MANIFEST:
         raise RuntimeError("Build manifest changed; prepare this source tree again")
+    for patch in MANIFEST["patches"]:
+        is_cef = patch["repository"] == "cef"
+        run(["git", "apply", "-p1" if is_cef else "-p0", "--reverse", "--check",
+             ROOT / patch["file"]], cef if is_cef else chromium)
     if args.stage == "build":
         run([depot / "autoninja", "-C", "out/Release_GN_x64", f"-j{args.jobs}",
              "cefclient", "chrome_sandbox"], chromium, env)

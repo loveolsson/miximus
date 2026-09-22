@@ -5,7 +5,7 @@
   "chromium_branch": "7977",
   "depot_tools_revision": "66b98b2b6d9d4e4611adb791f42cdc3b4984fa13",
   "automate_sha256": "fe0c880fd2a91ac3ab4c82301f596295cecc1901e503507e36300a5b58578dcd",
-  "gn_defines": "is_official_build=true is_component_build=false symbol_level=0 use_thin_lto=false use_sysroot=true use_remoteexec=false",
+  "gn_defines": "is_official_build=true is_component_build=false symbol_level=0 use_sysroot=true use_remoteexec=false use_siso=false",
   "patches": [
     {
       "file": "patches/cef-linux-native-handle.patch",
@@ -19,5 +19,6 @@
       "upstream": "https://github.com/chromium/chromium/commit/9522ea8ad0bed3c3fd1b4f570ed9792dec8176d5",
       "sha256": "258a0b30abd8af881dbfaf9f1f968fc27b00b5fd05b06efeeed511063e739d54"
     }
-  ]
+  ],
+  "siso_version": "git_revision:7bc9a0bfe050ef97e1712ff61c6f11952799e951"
 }
