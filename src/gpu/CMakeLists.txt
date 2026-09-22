@@ -24,6 +24,9 @@ add_library(gpu
     detail/pipeline.cpp
     detail/conversion.cpp
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(gpu PRIVATE detail/dma_buf_image.hpp detail/dma_buf_image.cpp)
+endif()
 target_link_libraries(gpu PUBLIC glm::glm)
 target_include_directories(gpu PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(gpu PRIVATE
@@ -41,12 +44,20 @@ include(${PROJECT_SOURCE_DIR}/cmake/gpu_sanitizer_defaults.cmake)
 add_sanitizers(gpu)
 
 if(BUILD_TESTING)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(gpu_dma_buf_vulkan_test tests/dma_buf_image_test.cpp)
+        target_link_libraries(gpu_dma_buf_vulkan_test PRIVATE gpu vulkan_dependencies magic_enum::magic_enum logger GTest::gtest_main)
+        add_sanitizers(gpu_dma_buf_vulkan_test)
+    endif()
     add_executable(gpu_vulkan_test tests/device_test.cpp tests/external_image_device_test.cpp)
     target_link_libraries(gpu_vulkan_test PRIVATE gpu logger GTest::gtest_main nlohmann_json::nlohmann_json)
     add_sanitizers(gpu_vulkan_test)
     # Hardware tests are explicit: ordinary CTest remains usable without a GPU.
     option(MIXIMUS_TEST_VULKAN "Register Vulkan hardware tests with CTest" OFF)
     if(MIXIMUS_TEST_VULKAN)
+        if(TARGET gpu_dma_buf_vulkan_test)
+            gtest_discover_tests(gpu_dma_buf_vulkan_test PROPERTIES LABELS "vulkan;hardware")
+        endif()
         gtest_discover_tests(gpu_vulkan_test PROPERTIES LABELS "vulkan;hardware")
     endif()
 endif()

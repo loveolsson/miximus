@@ -17,7 +17,8 @@ graph consumption use the existing independently owned recording contexts and ex
 The producer publishes a const frame lease only after its required GPU work finishes. No CPU pixels are copied.
 
 The module is built as an isolated library and hardware-test executable. It is not linked into the application yet;
-no browser source is registered, no CEF runtime is initialized, and no native-image import has been implemented.
+no browser source is registered and no CEF runtime is initialized. The private native-image import qualification
+helper described below is not connected to browser callbacks.
 This stage adds the CEF module to the node CMake subdirectory list. The separately approved device capability
 change is described below. Shader operations, transfer backends, renderer, scheduler, main loop, app-state and
 existing nodes remain unchanged. The eventual source uses `media::timed_source_queue_s<T>`; this texture pool
@@ -73,6 +74,43 @@ to the existing pool/recording/completion pattern. Source readiness is still unr
 an explicit acquire sync FD, so determine the applicable capture/driver contract before submitting any borrowed read.
 Do not infer readiness from handle delivery or import success. A callback may not return while its borrowed GPU read
 is still in flight. Any additional structural dependency gets its own explicit approval request.
+
+## Linux DMA-BUF image import qualification
+
+Added a private GPU helper in [`dma_buf_image.hpp`](../src/gpu/detail/dma_buf_image.hpp) and its implementation.
+It creates a sampled-only, one-mip image from a borrowed DMA-BUF descriptor. The initial supported subset is
+single-memory-plane RGBA8/BGRA8 with an explicitly supported DRM modifier and filtered sampling. Unsupported
+modifiers, layouts and channel orders fail; there is no CPU path. The helper checks the selected device's exact
+format/modifier import properties, intersects image and FD memory-type requirements, duplicates the borrowed FD,
+and transfers only that duplicate to Vulkan on successful allocation. Allocation and image-view cleanup use the
+existing `texture_state_s` retirement mechanism. No existing public GPU API, recording/submission logic or node
+behavior changed. Linux-only sources and a separate hardware-test target are added in the GPU CMake file.
+
+The implementation follows Vulkan's [explicit modifier layout contract](https://docs.vulkan.org/refpages/latest/refpages/source/VkImageDrmFormatModifierExplicitCreateInfoEXT.html)
+and [FD ownership contract](https://docs.vulkan.org/refpages/latest/refpages/source/VkImportMemoryFdInfoKHR.html).
+The caller must establish that the descriptor belongs to a compatible producer on the same physical GPU; the FD
+alone does not establish CEF adapter identity. A sampled BGRA view performs the native component interpretation;
+this step does not implement browser color-space or alpha conversion.
+
+`gpu_dma_buf_vulkan_test` exercises actual Vulkan-exported DMA-BUF allocations, without pixel readback:
+
+- RGBA import twice, then destruction of both imports while the original borrowed FD remains valid.
+- BGRA import followed by closing the source FD and releasing the exporting allocation.
+- Rejection of unsupported modifier/channel order and invalid stride/overflow, followed by a valid import.
+
+All three tests passed on the P2000 with Vulkan synchronization validation. These tests establish allocation/handle
+lifetime only: they submit no GPU reads of the imported image, and do not establish pixel correctness, foreign
+ownership transfer, CEF readiness, cross-process operation, other GPUs, or multi-plane modifier support.
+
+The helper deliberately exposes only private GPU state until the acquire/copy/release helper is qualified. Merely
+importing the FD must never make it a graph-consumable texture. The next step must establish producer readiness,
+acquire foreign ownership, record GPU-only conversion/copy through an independent existing recording context,
+release foreign ownership, and wait for that borrowed read to finish before returning from the callback.
+
+Linux provides [DMA-BUF fence export](https://docs.kernel.org/driver-api/dma-buf.html) to bridge implicit producer
+synchronization to explicit consumers. This is a candidate for qualification, not yet an implemented or proven CEF
+contract: the producer must actually publish the relevant write fence before it is exported, and the callback's
+borrow interval must prevent concurrent reuse. Unsupported synchronization must leave this path unavailable.
 
 ## SDK preparation
 
