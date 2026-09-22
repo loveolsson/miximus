@@ -223,9 +223,13 @@ The concrete next SDK decision is whether to maintain a Linux-only build of the 
 backported, or retain the stock distribution and leave NVIDIA/Linux capture unavailable until a qualified stable
 artifact includes them. The custom-build route needs recorded upstream revisions, reviewed backport diffs, new
 artifact hashes and a reproducible Chromium/CEF build, followed by actual GPU capture and lifetime qualification.
-It would change the dependency artifact, not Miximus's graph, render loop, existing services or GPU queues. No binary
-patching, sandbox disabling, CPU fallback or custom SDK has been introduced. This decision needs explicit agreement
-before replacing the approved stock SDK baseline.
+It would change the dependency artifact, not Miximus's graph, render loop, existing services or GPU queues.
+
+The user explicitly approved the patched-version route on 2026-09-22. Working accelerated capture remains mandatory;
+deferring NVIDIA/Linux support is not an accepted completion outcome. The wrapper now contains both upstream patches,
+their exact provenance/digests, and an explicit staged source-build tool. Both patches, including Chromium regression
+tests, apply to the pinned 152 source. Source acquisition/build is in progress; no patched binary has yet been qualified
+or substituted for the stock SDK. See the [source-build instructions](../src/wrapper/cef/README.md).
 
 Checkpoint validation: native build and all 135 non-hardware tests pass. Fresh-profile CEF initialization/shutdown
 passes with the system Vulkan loader retained and no validation errors. The real accelerated probe fails at the

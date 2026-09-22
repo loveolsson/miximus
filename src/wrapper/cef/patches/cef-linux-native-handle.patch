@@ -1,0 +1,38 @@
+From cafbf7f24971aa2526381e8e1978e11d1838ae64 Mon Sep 17 00:00:00 2001
+From: Kristof Imeri <kristof@lanth.me>
+Date: Tue, 15 Sep 2026 18:36:34 +0200
+Subject: [PATCH] Prefer native-handle SharedImages for Linux shared-texture
+ OSR
+
+Avoid linear CPU-mappable GBM allocations for Linux shared-texture OSR, allowing GPU rendering on NVIDIA. Retain the mappable SharedImage preference on other platforms.
+
+Requires a Chromium version containing https://crrev.com/c/8220427.
+---
+ libcef/browser/osr/video_consumer_osr.cc | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/libcef/browser/osr/video_consumer_osr.cc b/libcef/browser/osr/video_consumer_osr.cc
+index 321bf9e51b..1ed745d57d 100644
+--- a/libcef/browser/osr/video_consumer_osr.cc
++++ b/libcef/browser/osr/video_consumer_osr.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "cef/libcef/browser/osr/video_consumer_osr.h"
+ 
++#include "build/build_config.h"
+ #include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
+ #include "media/base/video_frame_metadata.h"
+ #include "media/capture/mojom/video_capture_buffer.mojom.h"
+@@ -51,7 +52,12 @@ void CefVideoConsumerOSR::SetActive(bool active) {
+     video_capturer_->Start(
+         this,
+         use_shared_texture_
++#if BUILDFLAG(IS_LINUX)
++            ? viz::mojom::BufferFormatPreference::
++                  kPreferSharedImageWithNativeHandle
++#else
+             ? viz::mojom::BufferFormatPreference::kPreferMappableSharedImage
++#endif
+             : viz::mojom::BufferFormatPreference::kDefault);
+   } else {
+     video_capturer_->Stop();
