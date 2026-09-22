@@ -2,7 +2,6 @@
 """Explicit, resumable Linux CEF SDK build. Never called by application CMake."""
 
 import argparse
-import ast
 import hashlib
 import json
 import os
@@ -81,6 +80,7 @@ def main():
             run(["git", "clone", "https://chromium.googlesource.com/chromium/tools/depot_tools.git", depot], work)
             run(["git", "checkout", "--detach", MANIFEST["depot_tools_revision"]], depot)
         verify_revision(depot, MANIFEST["depot_tools_revision"])
+        run([depot / "ensure_bootstrap"], work, env)
         automate = work / "automate-git.py"
         if not automate.exists():
             url = ("https://raw.githubusercontent.com/chromiumembedded/cef/"
@@ -88,24 +88,35 @@ def main():
             automate.write_bytes(urllib.request.urlopen(url, timeout=60).read())
         if digest(automate) != MANIFEST["automate_sha256"]:
             raise RuntimeError("CEF automation script digest mismatch")
-        run([sys.executable, automate, f"--download-dir={download}",
+        # Create the configuration before automation can substitute 'latest'
+        # for siso or omit the PGO profile required by an official build.
+        chromium_dir = download / "chromium"
+        chromium_dir.mkdir(parents=True, exist_ok=True)
+        version = json.loads((ROOT / "sdk.json").read_text())["chromium_version"]
+        solutions = [{
+            "managed": False, "name": "src",
+            "url": "https://chromium.googlesource.com/chromium/src.git@" + version,
+            "custom_vars": {"siso_version": MANIFEST["siso_version"],
+                            "checkout_pgo_profiles": True, "source_tarball": False},
+            "custom_deps": {}, "deps_file": "DEPS", "safesync_url": "",
+        }]
+        (chromium_dir / ".gclient").write_text("solutions = " + repr(solutions) + "\n")
+        existing_checkout = chromium.exists()
+        run([depot / "python-bin/python3", automate, f"--download-dir={download}",
              f"--depot-tools-dir={depot}", f"--branch={MANIFEST['chromium_branch']}",
              f"--checkout={MANIFEST['cef_revision']}", "--no-chromium-history",
-             "--no-depot-tools-update", "--no-build", "--no-distrib", "--x64-build"], work, env)
-        # Upstream automation overrides the DEPS-pinned siso with 'latest' and
-        # omits the PGO profile by default. Restore pinned tools and fetch the
-        # profile needed by an official optimized build before applying patches.
-        config = download / "chromium/.gclient"
-        solutions = ast.literal_eval(config.read_text().split("=", 1)[1].strip())
-        solutions[0]["custom_vars"].update(
-            siso_version=MANIFEST["siso_version"], checkout_pgo_profiles=True
-        )
-        config.write_text("solutions = " + repr(solutions) + "\n")
-        run([depot / "gclient", "sync", "--nohooks", "--no-history"], download / "chromium", env)
-        run([depot / "gclient", "runhooks"], download / "chromium", env)
+             "--no-depot-tools-update", "--with-pgo-profiles", "--no-build", "--no-distrib",
+             "--x64-build"], work, env)
+        if existing_checkout:
+            # Automation skips dependency sync when the shallow source revision
+            # is unchanged. Explicitly resume any interrupted dependency fetch.
+            run([depot / "gclient", "sync", "--nohooks", "--no-history"], chromium_dir, env)
+            run([depot / "gclient", "runhooks"], chromium_dir, env)
         return
 
     verify_revision(depot, MANIFEST["depot_tools_revision"])
+    if not (depot / "python3_bin_reldir.txt").exists():
+        run([depot / "ensure_bootstrap"], work, env)
     verify_revision(chromium, MANIFEST["chromium_revision"])
     verify_revision(cef, MANIFEST["cef_revision"])
     if args.stage == "prepare":
@@ -124,7 +135,7 @@ def main():
                 text = config.read_text()
                 if registration not in text:
                     config.write_text(text + registration)
-        run([sys.executable, cef / "tools/gclient_hook.py"], cef, env)
+        run([depot / "python-bin/python3", cef / "tools/gclient_hook.py"], cef, env)
         # Require our Chromium patch to have been applied, not skipped or rejected.
         patch = ROOT / MANIFEST["patches"][1]["file"]
         run(["git", "apply", "-p0", "--reverse", "--check", patch], chromium)
@@ -154,7 +165,7 @@ def main():
     name = "miximus_cef_linux64_native_handle_r1"
     if (output / name).exists():
         raise RuntimeError("Distribution already exists; use a fresh output directory")
-    run([sys.executable, cef / "tools/make_distrib.py", f"--output-dir={output}",
+    run([depot / "python-bin/python3", cef / "tools/make_distrib.py", f"--output-dir={output}",
          f"--distrib-subdir={name}", "--ninja-build", "--x64-build", "--allow-partial",
          "--no-symbols", "--no-docs", "--no-archive"], cef, env)
     sdk = output / name

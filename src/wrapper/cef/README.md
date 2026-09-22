@@ -39,7 +39,8 @@ python3 src/wrapper/cef/source_build.py test --work-dir "$PWD/build-cef-source" 
 python3 src/wrapper/cef/source_build.py package --work-dir "$PWD/build-cef-source"
 ```
 
-Stages stop on failure. `sync` uses CEF's pinned automation and shallow Chromium history; do not resync a prepared
+Stages stop on failure. `sync` explicitly bootstraps the pinned depot_tools Python and uses CEF's pinned automation
+and shallow Chromium history; do not resync a prepared
 tree because upstream sync can revert Chromium modifications. `prepare` registers the Chromium patch with CEF's
 own patch manager and generates release projects. `build` is resumable. `test` builds and runs Chromium's frame-sink
 capture tests, including the backported native-handle case. These tests complement, rather than replace, real CEF

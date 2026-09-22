@@ -231,6 +231,13 @@ their exact provenance/digests, and an explicit staged source-build tool. Both p
 tests, apply to the pinned 152 source. Source acquisition/build is in progress; no patched binary has yet been qualified
 or substituted for the stock SDK. See the [source-build instructions](../src/wrapper/cef/README.md).
 
+The full pinned source/dependency sync has now completed. CEF's patch manager applied the Chromium backport,
+and repeat generation reported all 116 patches already applied with no failures. Both x64 project configurations
+generated successfully. The release SDK compilation has started with official-build optimization/protection defaults,
+the pinned PGO profile, and six compilation jobs. The build recipe explicitly bootstraps depot_tools' pinned Python
+and prevents its automation from substituting an unpinned `latest` siso package. No application render code changes
+are involved. A completed binary, upstream regression-test results and accelerated hardware results are still pending.
+
 Checkpoint validation: native build and all 135 non-hardware tests pass. Fresh-profile CEF initialization/shutdown
 passes with the system Vulkan loader retained and no validation errors. The real accelerated probe fails at the
 documented capture gate; it must not be counted as passing or used to enable a browser node.
