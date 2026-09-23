@@ -1,11 +1,12 @@
 # CEF media inputs and virtual webcams: exploration
 
-Research date: **2026-09-22**.
+Initial research: **2026-09-22**. Custom-build reassessment: **2026-09-23**.
 
 This document records a separate exploration of feeding Miximus video **into** a web page hosted by CEF. It is not
 part of the [main CEF browser-source plan](cef-browser-sources.md), an implementation commitment, or an additional
-prerequisite for browser-source support. No media-input prototype, custom CEF build, runtime injection, or platform
-benchmark was performed. The main plan remains unchanged.
+prerequisite for browser-source support. Miximus now patches and builds CEF/Chromium for accelerated browser output.
+No media-input prototype, runtime injection, or media-input platform benchmark has been performed. The reassessment
+below uses the pinned local source checkout; it does not authorize media-input implementation or change the main plan.
 
 ## Purpose and constraints
 
@@ -16,7 +17,9 @@ inputs on the CEF node and expose those inputs to its page as real browser `Medi
 The constraints established during discussion are:
 
 - Do not require OS-enumerated virtual webcams or drivers.
-- Accept GPU readback and CPU pixel copies as a reasonable initial transport budget.
+- The initial exploration accepted GPU readback and CPU pixel copies as a possible media-input transport budget.
+  With a custom runtime now available, the revised recommendation is to prototype GPU-only delivery; the stock CPU
+  path below is retained as prior research, not a prerequisite or automatic fallback.
 - Do not use video encoding/decoding or compressed transport; pixel-format and color conversion are allowed.
 - Keep streams associated with node input slots through disconnection, reconnection and source-format changes.
 - Defer buffering depth, frame-selection policy and exact timing behavior.
@@ -41,7 +44,9 @@ These are the baseline selected for the main investigation, not a floating depen
 | No public CEF API was found for custom capture-device registration or external GPU-backed video-frame creation | Public SDK/header inventory and relevant implementation inspected |
 | Chromium can import native GPU resources and wrap them as media frames | Platform importers and native frame APIs inspected |
 | Chromium has an internal texture-fed virtual camera | Service definitions, adapter, renderer path and browser test inspected |
-| A native bridge could feed a GPU-backed frame into a page track | Engineering inference from existing import, frame and Blink source APIs |
+| A native bridge could feed a GPU-backed frame into a page track | Engineering inference from existing import, frame and Blink source APIs, revisited in the local checkout |
+| Miximus can build and distribute a patched runtime | Existing accelerated-output implementation; not evidence that media input works |
+| Patch-size estimates for media input | Source-based engineering estimates; no prototype or measured implementation effort |
 | An exact-binary shim might reach those internals without rebuilding CEF | Plausible private object layout and entry points identified; not demonstrated |
 | Any proposed path meets Miximus performance and portability requirements | Not established; runtime qualification required |
 
@@ -260,6 +265,119 @@ The shared-image interface includes external updates with an acquire fence, show
 anticipated use case. Platform/backend applicability still requires validation. See
 [updates and fences](https://github.com/chromium/chromium/blob/152.0.7977.134/gpu/command_buffer/client/shared_image_interface.h#L180).
 
+## Reassessment with the existing custom CEF build
+
+The build and packaging obstacle has changed: Miximus already maintains a pinned, patched CEF/Chromium runtime for
+accelerated browser output. A source-level media-input bridge is therefore a reasonable candidate for a focused
+prototype. It would be larger than the existing capture fixes, but should primarily connect existing implementations
+rather than introduce a new media pipeline. Existing output qualification does not establish input-path correctness.
+
+### Preferred integration boundary
+
+Prefer the explicit per-page `getInputMediaStream({ inputIndex })` model over internal camera enumeration. Preserve
+stream/track identity through source changes, and create the stream independently of whether the slot is connected.
+Placeholder appearance, buffering and cadence remain undecided. The page-facing Miximus hook belongs in our renderer
+integration; the runtime extension can expose narrower native frame/stream operations without globally changing the
+browser's JavaScript APIs.
+
+The custom runtime would need three parts:
+
+| Part | Required work |
+| --- | --- |
+| CEF-facing interface | Register external texture buffers, submit frame metadata, receive release/error notifications, and associate subscriptions with an authorized browser context |
+| Native transport and GPU ownership | Transfer actual platform handles, import images, establish producer readiness, bound outstanding resources, and retire buffers safely |
+| Renderer/Blink adapter | Connect imported `media::VideoFrame`s to a persistent track and expose the resulting object to JavaScript |
+
+CEF's existing frame IPC carries ordinary values and shared-memory regions. Extend it or add a dedicated Mojo
+interface for native descriptors and lifecycle messages. IPC carries handles, identifiers, timestamps and
+acknowledgements; it does not serialize texture pixels. Resource registration can be separate from per-frame
+submission so a pool slot need not be imported anew for every frame. See
+[CEF frame transport](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/libcef/common/mojom/cef.mojom#L53).
+
+Two renderer adapters are credible:
+
+- Feed native frames directly into a pushable video source. This gives native code more direct control over delivery
+  and ownership and avoids routing every frame through page JavaScript.
+- Expose a GPU-backed JavaScript `VideoFrame` and feed the existing JavaScript track generator. This may yield the
+  smallest initial demonstration; constructing this raw-frame object does not encode or decode video.
+
+The exact adapter remains a prototype decision. Budget for a small Blink-facing adapter rather than asserting that
+all code can live solely in CEF: native stream/source interfaces exist, but JavaScript wrapping, execution-context
+lifetime and build dependencies still cross Blink's boundary. Existing `MediaStreamTrackGenerator` constructs the
+pushable source, and Blink's native `VideoFrame` constructor accepts a `media::VideoFrame`. Neither approach should
+require rewriting the compositor, implementing codecs, or modifying OS camera drivers. See
+[generator construction](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/modules/breakout_box/media_stream_track_generator.cc),
+[embedder source interface](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/public/web/modules/mediastream/media_stream_video_source.h),
+and [native JavaScript-frame wrapper](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/modules/webcodecs/video_frame.h#L60).
+
+### Safe reuse is the main engineering boundary
+
+The internal virtual-camera browser test alternates between two textures whose contents do not change after creation.
+In this revision, the renderer's `kSharedImageHandle` branch wraps the image with an empty `ReleaseMailboxCB`. These
+facts establish a GPU transport/playback route, but not a complete synchronization contract for external Vulkan
+textures rewritten each frame. They are not evidence that the upstream camera implementation is generally broken.
+See [the static-texture fixture](https://github.com/chromium/chromium/blob/152.0.7977.134/content/browser/webrtc/webrtc_video_capture_service_browsertest.cc#L96)
+and [the renderer branch](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/platform/video_capture/video_capture_impl.cc#L373).
+
+For the first prototype, consider a GPU copy into Chromium-owned frame storage:
+
+```mermaid
+flowchart LR
+    T[Ordinary Miximus input texture] --> E[GPU conversion/copy into bounded export pool]
+    E --> I[Chromium imports native handle]
+    I --> C[GPU copy into Chromium-owned frame storage]
+    C --> F[Native VideoFrame]
+    F --> S[Persistent MediaStreamTrack]
+```
+
+This adds a GPU copy, but creates a simpler ownership boundary: Miximus can reuse its transfer slot after Chromium's
+copy has completed on the GPU, independently of how long the page retains the resulting frame. The bridge must also
+bound its Chromium-owned frame storage; allocating a new destination indefinitely would merely move the pressure to
+another process. A stalled or retaining consumer must exhaust bounded admission rather than stall graph rendering or
+cause unbounded allocation.
+
+Chromium already provides `RasterInterface::CopySharedImage()`. `SharedImageInterface::UpdateSharedImage()` accepts
+an acquire fence, and the Ozone backing stores an external-write fence. Those are useful building blocks, not proof
+that every chosen driver, format and backend combination works. Completion must be established for the actual GPU
+copy: a message acknowledgement, frame destructor or signalled command-stream token must not automatically be treated
+as an external Vulkan completion fence. Host-side notification or waiting can coordinate completion without moving
+pixel data through CPU memory. See
+[GPU image copying](https://github.com/chromium/chromium/blob/152.0.7977.134/gpu/command_buffer/client/raster_interface.h#L60),
+[external acquire fences](https://github.com/chromium/chromium/blob/152.0.7977.134/gpu/command_buffer/client/shared_image_interface.h#L180),
+and [Ozone external updates](https://github.com/chromium/chromium/blob/152.0.7977.134/gpu/command_buffer/service/shared_image/ozone_image_backing.cc#L119).
+
+A direct shared-allocation path could avoid the additional Chromium-side copy, but would couple external storage reuse
+to browser-consumer lifetimes and their GPU release synchronization. Investigate that optimization after establishing
+the copy-based contract; it is not a prerequisite. Browser consumers that explicitly request CPU-readable pixels are
+a separate concern from keeping the native ingress and ordinary video-compositing path on the GPU.
+
+### Patch size and maintenance estimate
+
+These are rough engineering estimates from source inspection, not prototype measurements or delivery commitments.
+
+| Scope | Estimated magnitude |
+| --- | --- |
+| Linux proof of concept: one input, one format, basic frame delivery | Hundreds to low thousands of handwritten lines |
+| Maintainable runtime bridge: bounded resources, context lifecycle, resize, cancellation and GPU-process recovery | Approximately **2,000–5,000 handwritten lines**, excluding generated CEF bindings and tests |
+| Blink-specific portion of that bridge | Likely hundreds of lines for an adapter, rather than changes throughout the media implementation |
+| Miximus node/subsystem integration and tests | Additional work, outside the runtime estimate |
+| Windows/macOS qualification | Additional platform-specific allocation, handle-transfer and synchronization work; Linux success does not establish portability |
+
+Initially expect to reuse Chromium's existing GPU importers. Compatibility of exported allocations, formats and
+synchronization is the largest uncertainty and could require further targeted backend patches beyond the bridge
+estimate. The proposed Vulkan-to-CEF direction has not been qualified by the opposite-direction output work.
+
+Keep handwritten changes additive and concentrated in a CEF API/implementation, a dedicated transport interface and a
+small renderer/Blink adapter. CEF API changes also require the corresponding generated C/C++ wrappers and versioning
+work; generated line counts should not be confused with handwritten complexity. Chromium upgrades may change shared
+image ownership, synchronization APIs or Blink lifetime rules, so rebasing must include runtime tests, not just a clean
+compile. The direct approach avoids tying the feature to camera enumeration and permission internals, but does not
+eliminate Chromium maintenance.
+
+The revised recommendation is to investigate this source-level bridge rather than binary injection. The existing
+build pipeline removes a major practical obstacle. Import, synchronization, bounds and crash recovery remain the
+qualification work; GPU-backed media representation itself already exists.
+
 ## DLLs, private objects and binary-specific injection
 
 This section intentionally goes beyond public CEF APIs to record what may be technically possible. It is not an
@@ -375,7 +493,10 @@ Other references: [canvas capture](https://www.w3.org/TR/mediacapture-fromelemen
 Use ordinary sampled-texture input interfaces on the CEF node and keep its ordinary texture output. Input names must
 respect the existing prohibition on duplicate interface names; the page's numerical input index is an adapter over
 those native ports, not a new graph data type. Source conversion, readback, stream subscription, browser generations
-and native GPU bridge details belong inside the CEF module. App state wires subsystem ownership and lifecycle.
+and native GPU bridge details belong inside the CEF module. App state wires subsystem ownership and lifecycle. New
+resource-sharing helpers must remain contained. This exploration grants no permission to change graph traversal,
+`tick_one_frame()` ordering, the render snapshot, existing submission behavior or other nodes; any deviation requires
+explicit user approval.
 
 The node would act both as a browser-output source and as a consumer feeding the page. A subscribed input may need
 evaluation even when the browser output is disconnected. The existing `prepare()` execution-demand mechanism is a
@@ -390,8 +511,11 @@ CPU lifecycle and GPU readiness. Current NDI/DeckLink outputs record conversion 
 output through `app->defer_output()`, and publish the readback target after successful native submission. Workers obtain
 readable pixels only after readback completion and any required noncoherent-memory invalidation.
 
-Follow that existing path for CPU browser delivery. `complete()` is a CPU lifecycle hook, not a GPU-completion signal;
-it must not expose unfinished transfer memory or recycle resources still in use. See
+Follow that existing path if CPU browser delivery is ever selected. `complete()` is a CPU lifecycle hook, not a
+GPU-completion signal; it must not expose unfinished transfer memory or recycle resources still in use. GPU delivery
+similarly needs a bounded export lease published after successful submission,
+producer completion before Chromium reads, and consumer completion before slot reuse. Neither the GPU proposal nor
+the historical CPU route calls for changing the existing graph/render lifecycle. See
 [NDI output](../src/nodes/ndi/output.cpp), [DeckLink output](../src/nodes/decklink/output.cpp),
 [bounded readback](../src/gpu/transfer/texture_readback.hpp), and [GPU/media ownership](gpu-and-media.md).
 
@@ -412,19 +536,20 @@ iframe should gain access to every source. Browser audio is a separate scope; no
 
 ## Open questions and possible future experiments
 
-No experiments below are scheduled by this document.
+No experiments below are scheduled by this document. Updating the exploration is not implementation approval.
 
-1. Qualify the stock uncompressed path: persistent stream before connection, source changes, dimensions, alpha/color,
-   raw buffer transfer, page stalls, bounded queues and navigation/teardown.
-2. Measure HD/UHD and multiple inputs on Windows, Linux and macOS: payload/copy costs, frame age, browser responsiveness,
-   graph deadline misses, memory and resource retention. No performance claims follow from the source alone.
-3. If investigating native GPU delivery, first prove compatible import plus producer/consumer synchronization with a
-   small owned pool. Then compare internal-camera delivery against a direct per-page track bridge.
-4. If investigating binary injection, inspect the exact artifact's exports/debug symbols and private wrapper layouts,
-   then prove one controlled internal entry point. Do not infer a portable shim from source-level plausibility.
-5. Decide whether the maintenance cost of a custom runtime or binary-specific shim is justified by measured gains.
-   Both remain separate from the stock-CEF browser-source implementation plan.
+1. Prove Linux GPU import and a completed GPU copy into Chromium-owned storage using a small bounded pool. Verify
+   producer readiness and safe export-slot reuse without CPU pixel readback or encoding/decoding.
+2. Connect that frame to a per-page track. Compare the smallest JavaScript `VideoFrame` adapter with direct native
+   pushable-source delivery before choosing the maintained API boundary.
+3. Exercise stream creation before connection, source replacement, resize, alpha/color, stopped or retaining consumers,
+   navigation, teardown and GPU-process loss. Keep the stream identity stable where its context remains valid.
+4. Measure HD/UHD and multiple inputs: payload/copy costs, frame age, graph deadline misses and retained memory. Then
+   qualify Windows/macOS independently. No performance or portability guarantee follows from source inspection.
+5. Review the actual patch footprint and upgrade burden after the prototype. Consider removing the extra GPU copy only
+   if the measured benefit justifies coupling export-pool reuse to browser-consumer release synchronization.
 
-The current supported direction remains a persistent input-slot `MediaStream` fed with uncompressed frames. GPU
-delivery is possible inside Chromium, but exposing it through CEF is additional integration work. This exploration
-preserves that distinction without making either custom-runtime work or binary injection a dependency of browser sources.
+The stock CPU route and binary-injection analysis remain historical alternatives, not prerequisites for this proposed
+prototype. The revised direction is a persistent input-slot `MediaStream` fed through a contained, source-level GPU
+bridge. It remains separate from the main CEF browser-source plan and does not authorize changes to Miximus's
+established rendering structure.
