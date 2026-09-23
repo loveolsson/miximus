@@ -350,3 +350,32 @@ Skia GPU-finished callback, not that snapshot. Consumer reads still finish befor
 This qualifies the initial GPU-transfer execution path on the local P2000/580.178.04 combination. It does not establish
 pixel color accuracy, other adapters/drivers, multi-browser performance, lifecycle stress or completion of the browser
 node. Those remain subsequent implementation and hardware-validation work.
+
+## Contained browser session and timed-source queue
+
+Added `detail/browser_session.hpp/.cpp`, still isolated from app-state and node registration. Its construction allocates
+one immutable viewport generation and is intended for the subsystem control worker. CEF's UI thread owns browser
+callbacks and its independent GPU recording context. The render-thread methods mirror the existing media inputs:
+advance, select, resolve, release prepared references and reset. Completed copies enter the existing
+`media::timed_source_queue_s` with capture-relative timestamps and separately recorded arrival times, four queued
+frames and one nominal frame of playout delay. This is an estimated clock mapping, not request-to-pixel PTS correlation.
+
+An eight-slot ordinary texture pool bounds storage for this session generation, with a 1 GiB texture-payload ceiling.
+Pool exhaustion drops the incoming paint before importing it. The eventual subsystem must also bound simultaneous
+sessions and retiring generations; the per-generation limit is not a process-wide GPU-memory guarantee. Capture stays
+hot independently of demand, and the queue retains static frames. Browser closure is asynchronous; shutdown workers
+can explicitly await `OnBeforeClose`. Node removal must not wait in the render path. Audio is muted, new browser
+windows/downloads and media/permission prompts are denied. Rendered popup composition is not implemented in this
+checkpoint and reports an explicit failure rather than publishing an incomplete image.
+
+The wrapper now checks the SDK's source revision, runtime patch list, build arguments and recorded library hash before
+allowing real sessions. A same-version stock or revision-1 SDK cannot satisfy that gate. Those SDKs remain available
+to the independent diagnostic probes. Configuration tracks binary/provenance changes so replacing an SDK retriggers
+verification. An explicit configure check produced capability `0` for revision 1 and `1` for revision 2.
+
+The full native build and all 135 ordinary tests pass. The new manual `cef_session_probe` passed with Vulkan validation
+on the P2000: close during pending creation; animated capture and downstream ordinary GPU draws; static retention
+(one capture, 60 draws, 59 repeats); exhaustion of all eight leased slots with dropped paints and recovery after
+release; a subsequent different viewport; and consumption of an old owned frame after its browser closed. Browser
+and runtime shutdown completed without validation errors. This does not yet test in-place resize/navigation, popup
+composition, recovery, the app-owned subsystem, native/web node wiring or the command/result bridge.

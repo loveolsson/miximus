@@ -18,6 +18,31 @@ file(STRINGS "${CEF_ROOT}/include/cef_version.h" CEF_VERSION_LINE REGEX "^#defin
 if(NOT CEF_VERSION_LINE STREQUAL "#define CEF_VERSION \"${MIXIMUS_CEF_VERSION}\"")
     message(FATAL_ERROR "CEF SDK does not match the pinned version: ${CEF_VERSION_LINE}")
 endif()
+# Stock SDKs remain usable for diagnostic probes, but real sessions require the
+# recorded native allocation and producer-completion patches and matching binary.
+set(CEF_NATIVE_CAPTURE_READY 0)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/source-build.json" "${CEF_ROOT}/Release/libcef.so")
+if(EXISTS "${CEF_ROOT}/miximus-source-build.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CEF_ROOT}/miximus-source-build.json")
+    file(READ "${CEF_ROOT}/miximus-source-build.json" CEF_SOURCE_PROVENANCE)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/source-build.json" CEF_REQUIRED_SOURCE)
+    set(CEF_SOURCE_MATCH TRUE)
+    foreach(KEY revision cef_revision chromium_revision gn_defines patches)
+        string(JSON CEF_ACTUAL ERROR_VARIABLE CEF_JSON_ERROR GET "${CEF_SOURCE_PROVENANCE}" ${KEY})
+        string(JSON CEF_EXPECTED GET "${CEF_REQUIRED_SOURCE}" ${KEY})
+        if(CEF_JSON_ERROR OR NOT CEF_ACTUAL STREQUAL CEF_EXPECTED)
+            set(CEF_SOURCE_MATCH FALSE)
+        endif()
+    endforeach()
+    string(JSON CEF_RECORDED_HASH ERROR_VARIABLE CEF_JSON_ERROR GET "${CEF_SOURCE_PROVENANCE}" libcef_sha256)
+    if(CEF_SOURCE_MATCH AND NOT CEF_JSON_ERROR)
+        file(SHA256 "${CEF_ROOT}/Release/libcef.so" CEF_ACTUAL_HASH)
+        if(CEF_ACTUAL_HASH STREQUAL CEF_RECORDED_HASH)
+            set(CEF_NATIVE_CAPTURE_READY 1)
+        endif()
+    endif()
+endif()
 # Scope all upstream settings to this directory and its wrapper child.
 set(USE_SANDBOX ON)
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
@@ -97,7 +122,8 @@ set_target_properties(cef_binary PROPERTIES IMPORTED_LOCATION "${CMAKE_BINARY_DI
 add_dependencies(cef_binary cef_runtime_files)
 add_library(cef_sdk INTERFACE)
 target_include_directories(cef_sdk SYSTEM INTERFACE "${CEF_ROOT}")
-target_compile_definitions(cef_sdk INTERFACE CEF_API_VERSION=${api_version})
+target_compile_definitions(cef_sdk INTERFACE CEF_API_VERSION=${api_version}
+    MIXIMUS_CEF_NATIVE_CAPTURE_READY=${CEF_NATIVE_CAPTURE_READY})
 target_link_libraries(cef_sdk INTERFACE libcef_dll_wrapper cef_binary ${CEF_STANDARD_LIBS})
 
 add_executable(miximus_cef_helper helper.cpp)

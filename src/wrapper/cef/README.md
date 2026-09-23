@@ -93,3 +93,7 @@ Before promoting the artifact, verify the provenance and package digest, configu
 and run the fresh-profile runtime and accelerated probes under Vulkan validation. Require actual accelerated delivery
 and completed GPU copies; no software paint, CPU pixel fallback or sandbox disabling is acceptable. Adapter identity,
 producer-fence publication, color conversion and lifecycle qualification remain separate requirements.
+
+The private browser session is enabled only when the SDK's recorded source revision, patches and build arguments
+match `source-build.json`, and its `libcef.so` matches the provenance digest. The independent diagnostic probes can
+still run against a stock SDK. Library and provenance changes trigger CMake reconfiguration and verification.
