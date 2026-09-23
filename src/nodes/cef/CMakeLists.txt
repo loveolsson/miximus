@@ -17,6 +17,7 @@ if(BUILD_TESTING)
 endif()
 
 if(MIXIMUS_ENABLE_CEF)
+    target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/command_protocol.hpp)
     add_library(cef_runtime STATIC detail/runtime.hpp detail/runtime.cpp)
     target_sources(cef_runtime PRIVATE detail/browser_session.hpp detail/browser_session.cpp)
     target_sources(cef_runtime PRIVATE subsystem.hpp subsystem.cpp)

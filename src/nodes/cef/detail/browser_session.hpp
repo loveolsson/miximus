@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <string>
 
@@ -47,6 +48,13 @@ class browser_session_s
 
     using frame_ptr_t = std::shared_ptr<const frame_pool_s::frame_s>;
 
+    struct command_result_s
+    {
+        // A serialized JSON value on success; empty on failure.
+        std::string json;
+        std::string error;
+    };
+
   private:
     struct impl_s;
     std::unique_ptr<impl_s> impl_;
@@ -65,6 +73,13 @@ class browser_session_s
     static size_t texture_budget(const options_s& options);
     // Control worker, after closure and exclusive consumer ownership.
     bool resources_idle() const;
+
+    // Internal trusted-native capability, not a public page/control protocol.
+    // The function receives parsed JSON and may return a value or Promise.
+    // Futures must never be waited on from prepare/execute/complete.
+    std::future<command_result_s>
+    request(std::string function_source, std::string json, std::chrono::milliseconds timeout = std::chrono::seconds(5));
+    bool context_ready() const noexcept;
 
     // Render-thread methods, matching the existing media input lifecycle.
     void        advance_frames(utils::flicks pts, utils::flicks target_time, bool discontinuity);

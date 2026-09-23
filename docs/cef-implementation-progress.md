@@ -423,5 +423,30 @@ Validation on the P2000 with Vulkan validation:
   capture, URL/vec2 viewport replacement, static repetition, disable/enable and normal SIGINT shutdown passed with
   no validation errors. The user's settings were not modified.
 
-A CEF-disabled build is being validated separately. Popup composition, the internal JSON command/result bridge,
-cooperative program-time delivery, additional platform qualification and production stress/deployment work remain.
+A separate CEF-disabled native build and all 136 ordinary tests also passed. Popup composition, the internal JSON
+command/result bridge, cooperative program-time delivery, additional platform qualification and production
+stress/deployment work remain at this checkpoint.
+
+## Internal JavaScript request and JSON-response bridge
+
+Sessions now provide a trusted-native request method accepting a JavaScript function expression and serialized JSON.
+It returns a future with serialized JSON or an explicit error. The function executes in the main frame's V8 context
+and may return a Promise. No callback or mixer-control object is installed on `window`, and no WebSocket command or
+public template API was added. Execution acknowledgement still says nothing about which paint contains its effects.
+
+The ordinary Chromium helper now includes the contained renderer-side handler. Requests carry monotonically
+increasing IDs, navigation generations and context tokens based on CEF's globally unique frame identifier. Context
+creation/release is announced privately. Navigation, renderer termination and closure cancel pending requests; stale
+replies cannot settle a request in a replacement context.
+
+Both sides bound pending requests to 64; function source is limited to 64 KiB and JSON payload/results to 1 MiB.
+Timeouts are positive and at most 30 seconds, checked by one weakly owned timer per session. A timed-out command's
+future settles when the UI-thread timer observes its deadline, but its in-flight capacity remains reserved until the renderer acknowledges cancellation
+or returns a result. This prevents repeated timeouts from building an unbounded IPC backlog behind a hung renderer.
+Cancellation does not undo JavaScript side effects or forcibly interrupt JavaScript already running.
+
+The accelerated subsystem probe passed correlated/out-of-order JSON and Promise replies, thrown/rejected errors,
+undefined/circular results, invalid request JSON, 64-command saturation, timeout/cancellation acknowledgement and
+capacity recovery, navigation to a new main-frame context, and closure cancellation. Existing GPU retirement and
+subsystem shutdown checks still passed with Vulkan validation enabled. The full native build passed; no CPU pixel
+path or graph/render-loop changes were introduced.
