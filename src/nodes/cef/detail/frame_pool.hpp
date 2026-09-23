@@ -26,8 +26,8 @@ class frame_pool_s
 
       public:
         ~frame_s();
-        frame_s(const frame_s&)            = delete;
-        frame_s& operator=(const frame_s&) = delete;
+        frame_s(const frame_s& other)            = delete;
+        frame_s& operator=(const frame_s& other) = delete;
 
         // Producer writes through its own recording context, then publishes a
         // const lease. The lease alone does not mean the GPU write is complete.
@@ -36,8 +36,8 @@ class frame_pool_s
     };
 
     frame_pool_s(gpu::device_s& device, gpu::vec2i_t dimensions, size_t capacity, size_t memory_budget_bytes);
-    frame_pool_s(const frame_pool_s&)            = delete;
-    frame_pool_s& operator=(const frame_pool_s&) = delete;
+    frame_pool_s(const frame_pool_s& other)            = delete;
+    frame_pool_s& operator=(const frame_pool_s& other) = delete;
 
     // Thread-safe, bounded, no GPU waits or texture allocation. Reuse requires
     // both the final lease release and retirement of all recorded/submitted uses.

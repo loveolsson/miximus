@@ -19,8 +19,8 @@ class session_request_s
 
   public:
     ~session_request_s();
-    session_request_s(const session_request_s&)            = delete;
-    session_request_s& operator=(const session_request_s&) = delete;
+    session_request_s(const session_request_s& other)            = delete;
+    session_request_s& operator=(const session_request_s& other) = delete;
 
     std::shared_ptr<detail::browser_session_s> session() const;
     std::string                                error() const;
@@ -40,8 +40,8 @@ class subsystem_s
                 const std::filesystem::path& profile_directory,
                 const std::filesystem::path& runtime_directory);
     ~subsystem_s();
-    subsystem_s(const subsystem_s&)            = delete;
-    subsystem_s& operator=(const subsystem_s&) = delete;
+    subsystem_s(const subsystem_s& other)            = delete;
+    subsystem_s& operator=(const subsystem_s& other) = delete;
 
     std::unique_ptr<session_request_s> create_session(detail::browser_session_s::options_s options);
 };

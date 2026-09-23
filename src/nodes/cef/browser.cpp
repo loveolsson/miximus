@@ -79,7 +79,7 @@ class node_impl final : public node_i
 #endif
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s*) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
     {
         auto*      status  = app->status_registry();
         const bool enabled = state.get_option<bool>("enabled");
@@ -191,7 +191,7 @@ class node_impl final : public node_i
 #endif
     }
 
-    void submit(core::app_state_s* app, const node_map_t&, const node_state_s&) final
+    void submit(core::app_state_s* app, const node_map_t& /* nodes */, const node_state_s& /* state */) final
     {
 #if MIXIMUS_ENABLE_CEF
         if (session_)
@@ -199,7 +199,7 @@ class node_impl final : public node_i
 #endif
     }
 
-    void execute(core::app_state_s*, const node_map_t&, const node_state_s&) final
+    void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& /* state */) final
     {
 #if MIXIMUS_ENABLE_CEF
         output_ = session_ ? session_->resolve_frame() : nullptr;
@@ -209,7 +209,7 @@ class node_impl final : public node_i
 #endif
     }
 
-    void complete(core::app_state_s*) final
+    void complete(core::app_state_s* /* app */) final
     {
 #if MIXIMUS_ENABLE_CEF
         iface_tex_.set_value(nullptr);

@@ -46,7 +46,8 @@ class browser_app_s final
     std::condition_variable ready;
     bool                    initialized{};
 
-    void OnBeforeCommandLineProcessing(const CefString&, CefRefPtr<CefCommandLine> command_line) override
+    void OnBeforeCommandLineProcessing(const CefString& /* process_type */,
+                                       CefRefPtr<CefCommandLine> command_line) override
     {
         // Match the application's existing X11/XWayland platform. This switch
         // affects Chromium only; no GLFW or process-wide environment changes.

@@ -17,8 +17,8 @@ class runtime_s
     // supported threaded UI loop; the application never pumps browser events.
     runtime_s(const std::filesystem::path& runtime_directory, const std::filesystem::path& profile_directory);
     ~runtime_s();
-    runtime_s(const runtime_s&)            = delete;
-    runtime_s& operator=(const runtime_s&) = delete;
+    runtime_s(const runtime_s& other)            = delete;
+    runtime_s& operator=(const runtime_s& other) = delete;
 };
 
 } // namespace miximus::nodes::cef::detail

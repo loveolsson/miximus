@@ -254,6 +254,8 @@ Strict warnings apply to project targets after submodules are configured. Third-
 - Use C++20 and existing project namespace/layout conventions.
 - Follow the established `_s` suffix for concrete structs/classes and `_i` for interfaces.
 - Prefer RAII and explicit ownership with smart pointers.
+- Name every parameter in declarations. In implementations, retain unused parameter names as `/* name */` rather
+  than omitting them, including SDK callbacks.
 - Use `std::string_view` for non-owning parameters, but do not store it past the owner's lifetime.
 - For templated node families, pass stable protocol type strings, default display names, and any varying interface names
   explicitly from each concrete factory. Do not infer protocol metadata from the C++ value type through template traits;

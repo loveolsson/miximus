@@ -102,7 +102,7 @@ class client_s final
     }
     CefRefPtr<CefRenderHandler>   GetRenderHandler() override { return this; }
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-    void                          GetViewRect(CefRefPtr<CefBrowser>, CefRect& rect) override
+    void                          GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
     {
         rect = {0, 0, static_cast<int>(dimensions_.width), static_cast<int>(dimensions_.height)};
     }
@@ -130,7 +130,7 @@ class client_s final
         if (current)
             current->GetHost()->CloseBrowser(true);
     }
-    void OnBeforeClose(CefRefPtr<CefBrowser>) override
+    void OnBeforeClose(CefRefPtr<CefBrowser> /* browser */) override
     {
         std::lock_guard lock(mutex);
         browser = nullptr;
@@ -143,13 +143,18 @@ class client_s final
         error = std::move(message);
         changed.notify_all();
     }
-    void OnPaint(CefRefPtr<CefBrowser>, PaintElementType, const RectList&, const void*, int, int) override
+    void OnPaint(CefRefPtr<CefBrowser> /* browser */,
+                 PaintElementType /* type */,
+                 const RectList& /* dirty_rects */,
+                 const void* /* buffer */,
+                 int /* width */,
+                 int /* height */) override
     {
         fail("CEF delivered software paint; no pixels were ingested");
     }
-    void OnAcceleratedPaint(CefRefPtr<CefBrowser>,
+    void OnAcceleratedPaint(CefRefPtr<CefBrowser> /* browser */,
                             PaintElementType type,
-                            const RectList&,
+                            const RectList& /* dirty_rects */,
                             const CefAcceleratedPaintInfo& info) override
     {
         if (type != PET_VIEW)

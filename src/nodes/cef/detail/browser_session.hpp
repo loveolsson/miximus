@@ -75,8 +75,8 @@ class browser_session_s
   public:
     browser_session_s(gpu::device_s& device, options_s options);
     ~browser_session_s();
-    browser_session_s(const browser_session_s&)            = delete;
-    browser_session_s& operator=(const browser_session_s&) = delete;
+    browser_session_s(const browser_session_s& other)            = delete;
+    browser_session_s& operator=(const browser_session_s& other) = delete;
 
     void start_async();
     void close_async();

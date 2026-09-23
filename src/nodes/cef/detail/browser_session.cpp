@@ -245,7 +245,7 @@ class client_s final
             state_->mark_closed();
     }
 
-    void GetViewRect(CefRefPtr<CefBrowser>, CefRect& rect) override
+    void GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
     {
         rect = {0, 0, options_.dimensions.x, options_.dimensions.y};
     }
@@ -261,44 +261,44 @@ class client_s final
             state_->phase = phase_e::loading;
     }
 
-    void OnBeforeClose(CefRefPtr<CefBrowser>) override
+    void OnBeforeClose(CefRefPtr<CefBrowser> /* browser */) override
     {
         browser_ = nullptr;
         state_->mark_closed();
     }
 
-    bool OnBeforePopup(CefRefPtr<CefBrowser>,
-                       CefRefPtr<CefFrame>,
-                       int,
-                       const CefString&,
-                       const CefString&,
-                       WindowOpenDisposition,
-                       bool,
-                       const CefPopupFeatures&,
-                       CefWindowInfo&,
-                       CefRefPtr<CefClient>&,
-                       CefBrowserSettings&,
-                       CefRefPtr<CefDictionaryValue>&,
-                       bool*) override
+    bool OnBeforePopup(CefRefPtr<CefBrowser> /* browser */,
+                       CefRefPtr<CefFrame> /* frame */,
+                       int /* popup_id */,
+                       const CefString& /* target_url */,
+                       const CefString& /* target_frame_name */,
+                       WindowOpenDisposition /* target_disposition */,
+                       bool /* user_gesture */,
+                       const CefPopupFeatures& /* popup_features */,
+                       CefWindowInfo& /* window_info */,
+                       CefRefPtr<CefClient>& /* client */,
+                       CefBrowserSettings& /* settings */,
+                       CefRefPtr<CefDictionaryValue>& /* extra_info */,
+                       bool* /* no_javascript_access */) override
     {
         return true;
     }
 
-    bool OnOpenURLFromTab(CefRefPtr<CefBrowser>,
-                          CefRefPtr<CefFrame>,
-                          const CefString&,
+    bool OnOpenURLFromTab(CefRefPtr<CefBrowser> /* browser */,
+                          CefRefPtr<CefFrame> /* frame */,
+                          const CefString& /* target_url */,
                           WindowOpenDisposition disposition,
-                          bool) override
+                          bool /* user_gesture */) override
     {
         return disposition != CEF_WOD_CURRENT_TAB;
     }
 
-    bool OnJSDialog(CefRefPtr<CefBrowser>,
-                    const CefString&,
-                    JSDialogType,
-                    const CefString&,
-                    const CefString&,
-                    CefRefPtr<CefJSDialogCallback>,
+    bool OnJSDialog(CefRefPtr<CefBrowser> /* browser */,
+                    const CefString& /* origin_url */,
+                    JSDialogType /* dialog_type */,
+                    const CefString& /* message_text */,
+                    const CefString& /* default_prompt_text */,
+                    CefRefPtr<CefJSDialogCallback> /* callback */,
                     bool& suppress) override
     {
         // CEF's suppression path continues script execution without a modal UI.
@@ -306,9 +306,9 @@ class client_s final
         return false;
     }
 
-    bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser>,
-                              const CefString&,
-                              bool,
+    bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> /* browser */,
+                              const CefString& /* message_text */,
+                              bool /* is_reload */,
                               CefRefPtr<CefJSDialogCallback> callback) override
     {
         // Page content cannot veto a requested navigation/reload or shutdown.
@@ -316,65 +316,72 @@ class client_s final
         return true;
     }
 
-    bool OnFileDialog(CefRefPtr<CefBrowser>,
-                      FileDialogMode,
-                      const CefString&,
-                      const CefString&,
-                      const std::vector<CefString>&,
-                      const std::vector<CefString>&,
-                      const std::vector<CefString>&,
+    bool OnFileDialog(CefRefPtr<CefBrowser> /* browser */,
+                      FileDialogMode /* mode */,
+                      const CefString& /* title */,
+                      const CefString& /* default_file_path */,
+                      const std::vector<CefString>& /* accept_filters */,
+                      const std::vector<CefString>& /* accept_extensions */,
+                      const std::vector<CefString>& /* accept_descriptions */,
                       CefRefPtr<CefFileDialogCallback> callback) override
     {
         callback->Cancel();
         return true;
     }
 
-    void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
-                             CefRefPtr<CefFrame>,
-                             CefRefPtr<CefContextMenuParams>,
+    void OnBeforeContextMenu(CefRefPtr<CefBrowser> /* browser */,
+                             CefRefPtr<CefFrame> /* frame */,
+                             CefRefPtr<CefContextMenuParams> /* params */,
                              CefRefPtr<CefMenuModel> model) override
     {
         model->Clear();
     }
 
-    bool CanDownload(CefRefPtr<CefBrowser>, const CefString&, const CefString&) override { return false; }
+    bool CanDownload(CefRefPtr<CefBrowser> /* browser */,
+                     const CefString& /* url */,
+                     const CefString& /* request_method */) override
+    {
+        return false;
+    }
 
-    bool OnBeforeDownload(CefRefPtr<CefBrowser>,
-                          CefRefPtr<CefDownloadItem>,
-                          const CefString&,
-                          CefRefPtr<CefBeforeDownloadCallback>) override
+    bool OnBeforeDownload(CefRefPtr<CefBrowser> /* browser */,
+                          CefRefPtr<CefDownloadItem> /* download_item */,
+                          const CefString& /* suggested_name */,
+                          CefRefPtr<CefBeforeDownloadCallback> /* callback */) override
     {
         return true; // Do not continue the download or show Chrome's download UI.
     }
 
-    void OnDownloadUpdated(CefRefPtr<CefBrowser>,
-                           CefRefPtr<CefDownloadItem>,
+    void OnDownloadUpdated(CefRefPtr<CefBrowser> /* browser */,
+                           CefRefPtr<CefDownloadItem> /* download_item */,
                            CefRefPtr<CefDownloadItemCallback> callback) override
     {
         callback->Cancel();
     }
 
-    bool OnRequestMediaAccessPermission(CefRefPtr<CefBrowser>,
-                                        CefRefPtr<CefFrame>,
-                                        const CefString&,
-                                        uint32_t,
+    bool OnRequestMediaAccessPermission(CefRefPtr<CefBrowser> /* browser */,
+                                        CefRefPtr<CefFrame> /* frame */,
+                                        const CefString& /* requesting_origin */,
+                                        uint32_t /* requested_permissions */,
                                         CefRefPtr<CefMediaAccessCallback> callback) override
     {
         callback->Continue(0);
         return true;
     }
 
-    bool OnShowPermissionPrompt(CefRefPtr<CefBrowser>,
-                                uint64_t,
-                                const CefString&,
-                                uint32_t,
+    bool OnShowPermissionPrompt(CefRefPtr<CefBrowser> /* browser */,
+                                uint64_t /* prompt_id */,
+                                const CefString& /* requesting_origin */,
+                                uint32_t /* requested_permissions */,
                                 CefRefPtr<CefPermissionPromptCallback> callback) override
     {
         callback->Continue(CEF_PERMISSION_RESULT_DENY);
         return true;
     }
 
-    void OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, TransitionType) override
+    void OnLoadStart(CefRefPtr<CefBrowser> /* browser */,
+                     CefRefPtr<CefFrame> frame,
+                     TransitionType /* transition_type */) override
     {
         if (frame->IsMain() && !state_->close_requested) {
             state_->cancel_commands("Browser navigated");
@@ -384,17 +391,20 @@ class client_s final
         }
     }
 
-    void OnLoadError(CefRefPtr<CefBrowser>,
+    void OnLoadError(CefRefPtr<CefBrowser> /* browser */,
                      CefRefPtr<CefFrame> frame,
                      ErrorCode           code,
                      const CefString&    text,
-                     const CefString&) override
+                     const CefString& /* failed_url */) override
     {
         if (frame->IsMain() && code != ERR_ABORTED && !state_->close_requested)
             state_->fail(std::format("CEF load error {}: {}", static_cast<int>(code), text.ToString()));
     }
 
-    void OnRenderProcessTerminated(CefRefPtr<CefBrowser>, TerminationStatus, int code, const CefString& text) override
+    void OnRenderProcessTerminated(CefRefPtr<CefBrowser> /* browser */,
+                                   TerminationStatus /* status */,
+                                   int              code,
+                                   const CefString& text) override
     {
         state_->cancel_commands("Browser renderer terminated");
         state_->fail(std::format("CEF renderer terminated {}: {}", code, text.ToString()));
@@ -441,7 +451,7 @@ class client_s final
         request.frame->SendProcessMessage(PID_RENDERER, message);
     }
 
-    bool OnProcessMessageReceived(CefRefPtr<CefBrowser>,
+    bool OnProcessMessageReceived(CefRefPtr<CefBrowser> /* browser */,
                                   CefRefPtr<CefFrame>          frame,
                                   CefProcessId                 source,
                                   CefRefPtr<CefProcessMessage> message) override
@@ -504,17 +514,22 @@ class client_s final
         return true;
     }
 
-    void OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList&, const void*, int, int) override
+    void OnPaint(CefRefPtr<CefBrowser> /* browser */,
+                 PaintElementType type,
+                 const RectList& /* dirty_rects */,
+                 const void* /* buffer */,
+                 int /* width */,
+                 int /* height */) override
     {
         if (type == PET_POPUP)
             return;
         state_->fail("CEF delivered software paint; accelerated rendering is required");
     }
 
-    void OnAcceleratedPaint(CefRefPtr<CefBrowser>,
+    void OnAcceleratedPaint(CefRefPtr<CefBrowser> /* browser */,
                             PaintElementType type,
                             // Always copy the full frame; damage does not change capture work.
-                            const RectList&,
+                            const RectList& /* dirty_rects */,
                             const CefAcceleratedPaintInfo& info) override
     {
         // Native control popup surfaces are outside this headless graphics source.

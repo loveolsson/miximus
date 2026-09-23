@@ -69,11 +69,11 @@ class result_handler_s final : public CefV8Handler
         context->pending.erase(request_);
     }
 
-    bool Execute(const CefString&,
-                 CefRefPtr<CefV8Value>,
+    bool Execute(const CefString& /* name */,
+                 CefRefPtr<CefV8Value> /* object */,
                  const CefV8ValueList& arguments,
-                 CefRefPtr<CefV8Value>&,
-                 CefString&) override
+                 CefRefPtr<CefV8Value>& /* retval */,
+                 CefString& /* exception */) override
     {
         if (arguments.size() == 2 && arguments[0]->IsBool() && arguments[1]->IsString())
             deliver(arguments[0]->GetBoolValue(), arguments[1]->GetStringValue().ToString());

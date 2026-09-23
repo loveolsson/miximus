@@ -162,7 +162,7 @@ class crash_observer_s final : public CefDevToolsMessageObserver
     IMPLEMENT_REFCOUNTING(crash_observer_s);
 
   public:
-    bool OnDevToolsMessage(CefRefPtr<CefBrowser>, const void* message, size_t size) override
+    bool OnDevToolsMessage(CefRefPtr<CefBrowser> /* browser */, const void* message, size_t size) override
     {
         std::cerr << "Crash probe DevTools: " << std::string_view(static_cast<const char*>(message), size) << '\n';
         return false;
