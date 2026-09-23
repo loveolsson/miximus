@@ -91,6 +91,8 @@ class recording_s
     std::unique_ptr<detail::recording_state_s> state_;
     explicit recording_s(std::unique_ptr<detail::recording_state_s> state);
     friend class device_s;
+    // GPU-only hardware comparison probe; no production recording changes.
+    friend class detail::color_comparison_s;
     friend class recording_context_s;
     friend struct detail::presenter_state_s;
     friend class transfer::detail::cuda_transfer_s;

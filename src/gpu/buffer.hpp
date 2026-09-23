@@ -25,6 +25,8 @@ class buffer_s
 
     explicit buffer_s(std::shared_ptr<detail::buffer_state_s> state);
     friend class device_s;
+    // GPU-only hardware comparison probe; no production recording changes.
+    friend class detail::color_comparison_s;
     friend class recording_s;
     friend class transfer::detail::cuda_transfer_s;
 

@@ -1,10 +1,15 @@
+#include "gpu/tests/color_compare.hpp"
 #include "logger/logger.hpp"
 #include "nodes/cef/subsystem.hpp"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -132,6 +137,74 @@ void exercise_commands(detail::browser_session_s& session)
         << "JSON/Promise replies, exceptions, bounded pending requests, timeouts and navigation cancellation passed\n";
 }
 
+void exercise_color(gpu::device_s& device, detail::browser_session_s& session)
+{
+    await_context(session);
+    auto                            frame = await_frame(session);
+    gpu::detail::color_comparison_s compare(frame->texture(), MIXIMUS_CEF_COMPARE_SHADER);
+    auto                            context  = device.create_recording_context(1);
+    auto                            counters = device.create_buffer(8, gpu::host_access_e::read_write);
+    const auto                      decode   = [](float value) {
+        return value <= 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
+    };
+    struct case_s
+    {
+        const char*          css;
+        std::array<float, 4> reference;
+        float                tolerance;
+    };
+    const std::array cases{
+        case_s{"rgb(255,0,0)",        {1, 0, 0, 1},                                                         0.00004F},
+        case_s{"rgb(0,255,0)",        {0, 1, 0, 1},                                                         0.00004F},
+        case_s{"rgb(0,0,255)",        {0, 0, 1, 1},                                                         0.00004F},
+        case_s{"rgb(128,64,32)",      {decode(128.F / 255), decode(64.F / 255), decode(32.F / 255), 1},     0.00004F},
+        case_s{"rgba(128,64,32,0.5)",
+               {decode(.5F) * 128 / 255, decode(.25F) * 128 / 255, decode(.125F) * 128 / 255, 128.F / 255},
+               0.003F                                                                                               },
+        case_s{"rgba(255,0,0,0.01)",  {3.F / 255, 0, 0, 3.F / 255},                                         0.004F  },
+        case_s{"transparent",         {0, 0, 0, 0},                                                         0.00004F},
+    };
+    for (const auto& test : cases) {
+        const auto result = command_result(session.request(
+            "color => { "
+            "document.documentElement.style.cssText='margin:0;width:100%;height:100%;background:transparent';"
+            "document.body.innerHTML=''; "
+            "document.body.style.cssText='margin:0;width:100%;height:100%;background:'+color; return null; }",
+            nlohmann::json(test.css).dump()));
+        // A reply acknowledges execution, not paint. Compare eventual output.
+        if (!result.error.empty())
+            throw std::runtime_error(result.error);
+        const auto deadline   = std::chrono::steady_clock::now() + 3s;
+        uint32_t   mismatches = UINT32_MAX;
+        float      maximum{};
+        while (std::chrono::steady_clock::now() < deadline) {
+            frame      = await_frame(session);
+            auto bytes = counters.writable_bytes();
+            std::fill(bytes.begin(), bytes.end(), std::byte{});
+            auto recording = context.try_record();
+            if (!recording)
+                throw std::runtime_error("Color comparison recording unavailable");
+            compare.record(*recording, frame->texture(), counters, test.reference, test.tolerance);
+            const auto completed = recording->submit();
+            recording.reset();
+            if (completed.wait(5s) != gpu::wait_result_e::ready)
+                throw std::runtime_error("Color comparison GPU work did not complete");
+            const auto              statistics = counters.readable_bytes();
+            std::array<uint32_t, 2> values{};
+            std::memcpy(values.data(), statistics.data(), sizeof(values));
+            mismatches = values[0];
+            maximum    = std::bit_cast<float>(values[1]);
+            if (mismatches == 0)
+                break;
+            std::this_thread::sleep_for(20ms);
+        }
+        std::cout << "GPU color comparison " << test.css << ": mismatches=" << mismatches << " max_error=" << maximum
+                  << '\n';
+        if (mismatches != 0)
+            throw std::runtime_error("CEF GPU color/alpha comparison failed");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -172,6 +245,7 @@ int main(int argc, char** argv)
             auto session = await_session(*request);
             auto frame   = await_frame(*session);
             exercise_commands(*session);
+            exercise_color(device, *session);
             auto closing_command = session->request("() => new Promise(() => {})", "null");
             std::this_thread::sleep_for(20ms);
             session.reset();

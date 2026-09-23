@@ -469,3 +469,30 @@ The hardware probe installed an internal timing callback and delivered three adj
 frame numbers beyond JavaScript's exact Number range. It verified all three arrivals, exact flick PTS/duration,
 timebase and discontinuity without rejections. Existing JSON, navigation, closure and GPU retirement checks passed
 with Vulkan validation. Native and web builds passed. Strict request-to-pixel correlation remains outside this work.
+
+## GPU color validation and multi-source late-frame recovery
+
+The subsystem probe now compares every output pixel on the GPU with uniform reference colors. A test-only compute
+helper uses the existing recording, resource tracking and completion mechanisms. The host reads only two aggregate
+error counters, never browser pixels. Opaque red/green/blue, sRGB `(128,64,32)`, half-transparent color, very low alpha
+and fully transparent output passed on the P2000 with synchronization validation. Maximum measured component error
+was 0.00000646. These are eventual-output checks: a JSON reply is explicitly not treated as a paint acknowledgement.
+The full native build, all 136 ordinary tests, 30 GPU tests and 14 GPU transfer tests passed.
+
+A private-fixture load campaign connected browser sources through the existing Infinite Multiviewer,
+Framebuffer-to-Texture and Screen Output nodes. Zero/one/four/eight HD sources ran without capture-capacity drops,
+queue overflows or skipped program frames during the measured interval. Short UHD runs showed clock-acquisition
+repeats/overflows while the existing source clock corrected startup callback latency. No clock, queue, scheduler or
+capture-skipping behavior was changed to conceal that settling period.
+
+A longer four-UHD run measured 65.11 seconds after 30 seconds of warm-up. Deliberate 20 ms render stalls every 120
+frames produced 33 deadline misses for 33 injections and zero skipped program frames. All four sources remained
+ready with zero capture-capacity drops and zero queue overflows; one source repeated twice. Approximately 60 captures
+per second per source were observed; one-second status publication makes endpoint-derived rates imprecise. Vulkan
+validation reported no errors and normal shutdown completed. Local artifacts are retained under
+`build/integration-tests/cef-load-20260923-100839` and `cef-load-20260923-101322`. This is short stress evidence on one
+adapter, not an endurance or cross-platform qualification.
+
+Renderer-crash recovery is still unqualified. An attempted `chrome://crash` navigation stayed in initial loading and
+did not demonstrate renderer termination; it must not be reported as a successful crash-injection test. Popup
+composition, controlled local assets, deployment and remaining platform qualification are also still outstanding.
