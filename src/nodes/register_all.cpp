@@ -1,5 +1,6 @@
 #include "register_all.hpp"
 
+#include "nodes/cef/register.hpp"
 #include "nodes/composite/register.hpp"
 #include "nodes/debug/register.hpp"
 #include "nodes/decklink/register.hpp"
@@ -23,6 +24,7 @@ void register_all_nodes(node_definition_map_t* map)
     decklink::register_nodes(map);
     ffmpeg::register_nodes(map);
     ndi::register_nodes(map);
+    cef::register_nodes(map);
     screen::register_nodes(map);
     teleprompter::register_nodes(map);
     text::register_nodes(map);

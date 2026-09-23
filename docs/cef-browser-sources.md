@@ -661,8 +661,8 @@ already implemented.
 
 ## Lifecycle, recovery and initial node scope
 
-Suggested first node: URL/local template, explicit viewport width/height, transparency, enabled state and one texture
-output. Expose only qualified accelerated delivery; no CPU transport selector or automatic fallback. Default source
+The browser node has URL/local template, one `size` vec2 viewport option, enabled state and one texture
+output. Transparency is always enabled; there is no transparency option. Expose only qualified accelerated delivery; no CPU transport selector or automatic fallback. Default source
 behavior should remain hot even when disconnected, matching the media architecture. An explicit stop/suspend policy
 can come later.
 Initially mute browser audio: audio playout is a separate timing/integration project, not an implicit OS output.

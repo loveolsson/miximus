@@ -70,3 +70,23 @@ TEST(NodeOptions, NdiAlphaModesAreValidatedOnBothNodes)
 }
 
 } // namespace
+
+TEST(NodeOptions, CefBrowserUsesOnePixelSizeAndAlwaysSupportsTransparency)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::register_all_nodes(&definitions);
+    const auto node     = definitions.at("cef_browser").constructor();
+    const auto defaults = node->get_default_options();
+    EXPECT_EQ(defaults.at("size"), nlohmann::json::array({1920, 1080}));
+    EXPECT_FALSE(defaults.contains("width"));
+    EXPECT_FALSE(defaults.contains("height"));
+    EXPECT_FALSE(defaults.contains("transparent"));
+
+    auto size = nlohmann::json::array({640.4, 359.6});
+    EXPECT_EQ(node->normalize_option("size", &size), nodes::option_result_e::corrected);
+    EXPECT_EQ(size, nlohmann::json::array({640, 360}));
+    auto malformed = nlohmann::json::array({640});
+    EXPECT_EQ(node->normalize_option("size", &malformed), nodes::option_result_e::invalid);
+    auto transparent = nlohmann::json(false);
+    EXPECT_EQ(node->normalize_option("transparent", &transparent), nodes::option_result_e::invalid);
+}

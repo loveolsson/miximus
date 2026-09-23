@@ -1,4 +1,5 @@
-# GPU-only ingress building blocks. No CEF runtime or browser node is registered yet.
+target_sources(nodes PRIVATE browser.cpp register.hpp register.cpp subsystem_fwd.hpp)
+target_compile_definitions(nodes PUBLIC MIXIMUS_ENABLE_CEF=$<BOOL:${MIXIMUS_ENABLE_CEF}>)
 add_library(cef_ingress STATIC
     detail/frame_pool.hpp
     detail/frame_pool.cpp
@@ -18,12 +19,18 @@ endif()
 if(MIXIMUS_ENABLE_CEF)
     add_library(cef_runtime STATIC detail/runtime.hpp detail/runtime.cpp)
     target_sources(cef_runtime PRIVATE detail/browser_session.hpp detail/browser_session.cpp)
+    target_sources(cef_runtime PRIVATE subsystem.hpp subsystem.cpp)
     target_link_libraries(cef_runtime PUBLIC cef_ingress media)
-    target_link_libraries(cef_runtime PRIVATE cef_sdk Threads::Threads)
+    target_link_libraries(cef_runtime PRIVATE cef_sdk Threads::Threads ${CMAKE_DL_LIBS})
     target_include_directories(cef_runtime PUBLIC ${PROJECT_SOURCE_DIR}/src)
     add_dependencies(cef_runtime miximus_cef_helper)
     add_sanitizers(cef_runtime)
+    target_link_libraries(nodes PRIVATE cef_runtime)
     if(BUILD_TESTING)
+        add_executable(cef_subsystem_probe tests/subsystem_probe.cpp)
+        target_link_libraries(cef_subsystem_probe PRIVATE cef_runtime gpu logger)
+        set_target_properties(cef_subsystem_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
+        add_sanitizers(cef_subsystem_probe)
         add_executable(cef_runtime_probe tests/runtime_probe.cpp)
         target_link_libraries(cef_runtime_probe PRIVATE cef_runtime gpu logger ${CMAKE_DL_LIBS})
         set_target_properties(cef_runtime_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)

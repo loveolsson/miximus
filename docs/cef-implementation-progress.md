@@ -384,3 +384,44 @@ on the P2000: close during pending creation; animated capture and downstream ord
 release; a subsequent different viewport; and consumption of an old owned frame after its browser closed. Browser
 and runtime shutdown completed without validation errors. This does not yet test in-place resize/navigation, popup
 composition, recovery, the app-owned subsystem, native/web node wiring or the command/result bridge.
+
+## App-owned subsystem and Browser node
+
+The app now owns the contained CEF subsystem, with construction and shutdown on the startup thread. Session
+allocation and retirement use the existing `utils::serial_executor_s`; no new control queue implementation was added.
+Admission allows at most 16 live/pending/retiring requests and 2 GiB of owned texture payload, including generations
+still retained by leases or GPU recordings. This excludes Chromium's own memory. A cancelled request withdraws its
+published session immediately; the worker observes browser closure, exclusive consumer ownership and pool idleness
+before releasing resources. Nodes never wait for that retirement.
+
+Native and web `cef_browser` definitions expose `url`, `size` (one vec2, default `[1920,1080]`, integer pixels bounded
+1–4096), `enabled`, and the ordinary `tex` output. CEF's default background is always transparent; there is no
+transparency option and no CSS background override. All definitions remain registered in CEF-disabled builds so
+saved graphs can load and report unavailable status. Initialization failure also produces unavailable status rather
+than breaking unrelated nodes. CEF-enabled startup requests the previously approved optional import capability on
+the selected GPU without changing adapter selection.
+
+Capture stays hot independently of graph demand. The integer CEF rate is the ceiling of the program rate, and the
+existing timed queue selects frames. URL, viewport or rate changes create a replacement session; the node releases
+its old render references before requesting it. Failed sessions retry at most three times with exponential backoff;
+configuration changes reset that retry budget. The current replacement behavior restarts the page rather than
+resizing a live DOM in place. Reload/CSS controls and their public shape remain deferred.
+
+Full-app testing found that Chrome's browser main parts replace SIGINT/SIGTERM/SIGHUP handlers independently of
+`CefSettings::disable_signal_handlers`. The contained runtime saves and restores the host dispositions around
+initialization, in addition to setting that CEF flag. No `main.cpp`, graph, scheduler or event-pumping change was made.
+The app-state header has one layout regardless of CEF compile definitions; CEF-free consumers must not see a different
+object layout.
+
+Validation on the P2000 with Vulkan validation:
+
+- Native build, web build and all 136 ordinary tests passed.
+- The pool tests verify that retirement waits for an abandoned/unsubmitted recording as well as frame leases.
+- `cef_subsystem_probe` passed bounded admission, pending cancellation, asynchronous removal, a GPU use retained
+  after its CPU lease was released, and replacement at a different viewport.
+- `scripts/test_cef_browser.py` runs a private settings fixture through the unmodified screen-output node. Animated
+  capture, URL/vec2 viewport replacement, static repetition, disable/enable and normal SIGINT shutdown passed with
+  no validation errors. The user's settings were not modified.
+
+A CEF-disabled build is being validated separately. Popup composition, the internal JSON command/result bridge,
+cooperative program-time delivery, additional platform qualification and production stress/deployment work remain.

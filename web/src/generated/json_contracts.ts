@@ -252,6 +252,15 @@ export interface connected_status_s {
   readonly connected: boolean;
 }
 
+export interface cef_browser_status_s {
+  readonly cef_state: string;
+  readonly cef_error: string;
+  readonly cef_paints: number;
+  readonly cef_copies: number;
+  readonly cef_capacity_drops: number;
+  readonly cef_restarts: number;
+}
+
 export interface device_names_status_s {
   readonly device_names: ReadonlyArray<settings_option_s>;
 }
@@ -486,6 +495,7 @@ export interface screen_output_metrics_status_s {
 // prettier-ignore
 export type node_status_s = Partial<
   connected_status_s &
+  cef_browser_status_s &
   device_names_status_s &
   display_modes_status_s &
   source_names_status_s &

@@ -108,6 +108,8 @@ class client_s final
     CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
     CefRefPtr<CefDownloadHandler>   GetDownloadHandler() override { return this; }
 
+    bool resources_idle() const { return pool_.idle(); }
+
     void start()
     {
         if (state_->close_requested) {
@@ -119,7 +121,7 @@ class client_s final
         window.shared_texture_enabled = true;
         CefBrowserSettings settings;
         settings.windowless_frame_rate = options_.frame_rate;
-        settings.background_color = options_.transparent ? CefColorSetARGB(0, 0, 0, 0) : CefColorSetARGB(255, 0, 0, 0);
+        settings.background_color      = CefColorSetARGB(0, 0, 0, 0);
         creation_pending_ = CefBrowserHost::CreateBrowser(window, this, options_.url, settings, nullptr, nullptr);
         if (!creation_pending_) {
             state_->fail("CEF rejected browser creation");
@@ -357,6 +359,20 @@ void browser_session_s::close_async()
 }
 
 bool browser_session_s::closed() const noexcept { return impl_->state->closed; }
+
+size_t browser_session_s::texture_budget(const options_s& options)
+{
+    if (options.dimensions.x < 1 || options.dimensions.y < 1 || options.dimensions.x > 8192 ||
+        options.dimensions.y > 8192)
+        throw std::invalid_argument("Invalid CEF viewport dimensions");
+    const auto bytes = gpu::texture_s::estimate_storage_byte_size(
+        options.dimensions, gpu::format_e::rgba_unorm16, gpu::sampling_e::linear);
+    if (bytes == 0 || bytes > FRAME_BUDGET / FRAME_CAPACITY)
+        throw std::invalid_argument("CEF viewport exceeds the session texture budget");
+    return bytes * FRAME_CAPACITY;
+}
+
+bool browser_session_s::resources_idle() const { return impl_->client->resources_idle(); }
 
 bool browser_session_s::wait_closed(std::chrono::milliseconds timeout) const
 {

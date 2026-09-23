@@ -5,6 +5,10 @@
 #include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/window.hpp"
+#if MIXIMUS_ENABLE_CEF
+#include "logger/logger.hpp"
+#include "nodes/cef/subsystem.hpp"
+#endif
 #include "nodes/decklink/registry.hpp"
 #include "nodes/ndi/registry.hpp"
 #include "render/font/font_loader.hpp"
@@ -26,6 +30,9 @@ gpu::device_options_s gpu_options(const command_line_options_s& command_line)
     options.use_cuda       = command_line.use_cuda;
     options.presentation   = true;
     options.max_recordings = 32;
+#if MIXIMUS_ENABLE_CEF
+    options.external_image_import = true;
+#endif
     // Startup reads only: the app does not mutate the process environment.
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     if (const auto* uuid = std::getenv("MIXIMUS_VULKAN_DEVICE_UUID")) {
@@ -118,7 +125,18 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     submit_gpu();
     texture_upload_service_   = std::make_unique<gpu::transfer::texture_upload_service_s>(*gpu_);
     texture_readback_service_ = std::make_unique<gpu::transfer::texture_readback_service_s>(*gpu_);
-    cfg_thread_               = std::thread([this] { cfg_executor_.run(); });
+#if MIXIMUS_ENABLE_CEF
+    try {
+        auto profile = command_line_options_.settings_path;
+        profile += ".cef";
+        cef_subsystem_ = std::make_shared<nodes::cef::subsystem_s>(*gpu_, profile);
+        cef_error_.clear();
+    } catch (const std::exception& failure) {
+        cef_error_ = failure.what();
+        getlog("app")->error("CEF browser subsystem unavailable: {}", cef_error_);
+    }
+#endif
+    cfg_thread_ = std::thread([this] { cfg_executor_.run(); });
 }
 
 app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s command_line_options)
@@ -145,6 +163,11 @@ app_state_s::~app_state_s()
     ndi_registry_.reset();
     utils::report_shutdown_step_completed();
 
+#if MIXIMUS_ENABLE_CEF
+    utils::begin_shutdown_step("CEF subsystem");
+    cef_subsystem_.reset();
+    utils::report_shutdown_step_completed();
+#endif
     utils::begin_shutdown_step("GPU subsystem");
     abort_gpu();
     texture_readback_service_.reset();

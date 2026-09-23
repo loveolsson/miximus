@@ -50,6 +50,10 @@ endif()
 
 add_sanitizers(app)
 
+if(MIXIMUS_ENABLE_CEF)
+    target_link_libraries(app PRIVATE cef_runtime)
+endif()
+
 if(BUILD_TESTING)
     add_executable(core_test
         tests/settings_node_test.cpp

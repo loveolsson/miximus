@@ -62,12 +62,15 @@ TEST_F(frame_pool_test, UnsubmittedConsumerPreventsReuseAfterLeaseRelease)
     auto           context = device->create_recording_context();
     auto           record  = context.try_record();
     ASSERT_TRUE(record);
+    EXPECT_FALSE(pool.idle());
     record->draw(frame->texture(), output);
     frame.reset();
+    EXPECT_FALSE(pool.idle());
     EXPECT_FALSE(pool.try_acquire());
 
     // Abandoning a recording must release its tentative image use as well.
     record.reset();
+    EXPECT_TRUE(pool.idle());
     EXPECT_TRUE(pool.try_acquire());
 }
 

@@ -1,5 +1,6 @@
 #include "frame_pool.hpp"
 
+#include <algorithm>
 #include <mutex>
 #include <stdexcept>
 #include <vector>
@@ -70,6 +71,12 @@ std::shared_ptr<frame_pool_s::frame_s> frame_pool_s::try_acquire()
         }
     }
     return {};
+}
+
+bool frame_pool_s::idle() const
+{
+    const std::scoped_lock lock(state_->mutex);
+    return std::ranges::all_of(state_->slots, [](const auto& slot) { return !slot.leased && slot.texture.idle(); });
 }
 
 } // namespace miximus::nodes::cef::detail

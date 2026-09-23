@@ -15,6 +15,7 @@ export const enum node_type_e {
   screen_output = "screen_output",
   decklink_input = "decklink_input",
   decklink_output = "decklink_output",
+  cef_browser = "cef_browser",
   ndi_input = "ndi_input",
   ndi_output = "ndi_output",
   framebuffer = "framebuffer",

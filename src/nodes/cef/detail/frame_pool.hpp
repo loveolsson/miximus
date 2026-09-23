@@ -42,6 +42,8 @@ class frame_pool_s
     // Thread-safe, bounded, no GPU waits or texture allocation. Reuse requires
     // both the final lease release and retirement of all recorded/submitted uses.
     [[nodiscard]] std::shared_ptr<frame_s> try_acquire();
+    // Retirement requires both released leases and completed GPU uses.
+    bool idle() const;
 };
 
 } // namespace miximus::nodes::cef::detail

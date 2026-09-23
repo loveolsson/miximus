@@ -21,6 +21,16 @@ struct connected_status_s
     bool connected{};
 };
 
+struct cef_browser_status_s
+{
+    std::string cef_state;
+    std::string cef_error;
+    uint64_t    cef_paints{};
+    uint64_t    cef_copies{};
+    uint64_t    cef_capacity_drops{};
+    uint64_t    cef_restarts{};
+};
+
 struct device_names_status_s
 {
     std::vector<settings_option_s> device_names;
@@ -271,6 +281,9 @@ struct screen_output_metrics_status_s
 };
 
 BOOST_DESCRIBE_STRUCT(connected_status_s, (), (connected))
+BOOST_DESCRIBE_STRUCT(cef_browser_status_s,
+                      (),
+                      (cef_state, cef_error, cef_paints, cef_copies, cef_capacity_drops, cef_restarts))
 BOOST_DESCRIBE_STRUCT(device_names_status_s, (), (device_names))
 BOOST_DESCRIBE_STRUCT(display_modes_status_s, (), (display_modes))
 BOOST_DESCRIBE_STRUCT(source_names_status_s, (), (source_names))
@@ -469,6 +482,7 @@ struct contract_s
     contract_s<type> { #type }
 inline constexpr auto contracts = std::tuple{
     STATUS_CONTRACT(connected_status_s),
+    STATUS_CONTRACT(cef_browser_status_s),
     STATUS_CONTRACT(device_names_status_s),
     STATUS_CONTRACT(display_modes_status_s),
     STATUS_CONTRACT(source_names_status_s),

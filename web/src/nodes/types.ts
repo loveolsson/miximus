@@ -32,6 +32,7 @@ import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
 import { NdiInputNode, NdiOutputNode } from "./ndi";
 import { TeleprompterNode } from "./teleprompter";
+import { CefBrowserNode } from "./cef";
 import TextNode from "./text";
 
 export function register_node_types(editor: Editor): void {
@@ -65,6 +66,7 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(ScreenOutputNode, { category: "Output" });
   editor.registerNodeType(DeckLinkInputNode, { category: "Input" });
   editor.registerNodeType(DeckLinkOutputNode, { category: "Output" });
+  editor.registerNodeType(CefBrowserNode, { category: "Input" });
   editor.registerNodeType(NdiInputNode, { category: "Input" });
   editor.registerNodeType(NdiOutputNode, { category: "Output" });
   editor.registerNodeType(TeleprompterNode, { category: "Content" });

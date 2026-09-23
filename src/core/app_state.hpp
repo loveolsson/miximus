@@ -8,6 +8,7 @@
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
 #include "gpu/window_fwd.hpp"
+#include "nodes/cef/subsystem_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
 #include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
@@ -86,6 +87,8 @@ class app_state_s
     std::unique_ptr<nodes::ndi::ndi_registry_s>                ndi_registry_;
     std::unique_ptr<render::font_registry_s>                   font_registry_;
     std::unique_ptr<node_status_registry_s>                    status_registry_;
+    std::shared_ptr<nodes::cef::subsystem_s>                   cef_subsystem_;
+    std::string                                                cef_error_{"CEF support is not enabled in this build"};
 
     frame_settings_s frame_settings_{};
     frame_context_s  frame_context_{};
@@ -125,15 +128,17 @@ class app_state_s
         frame_scope_s(const frame_scope_s&)            = delete;
         frame_scope_s& operator=(const frame_scope_s&) = delete;
     };
-    void abort_gpu() noexcept;
-    auto fallback_texture() noexcept { return fallback_texture_.get(); }
-    auto texture_upload_service() noexcept { return texture_upload_service_.get(); }
-    auto texture_readback_service() noexcept { return texture_readback_service_.get(); }
-    auto decklink_registry() noexcept { return decklink_registry_.get(); }
-    auto ndi_registry() noexcept { return ndi_registry_.get(); }
-    auto font_registry() noexcept { return font_registry_.get(); }
-    auto thread_pool() noexcept { return thread_pool_.get(); }
-    auto status_registry() noexcept { return status_registry_.get(); }
+    void                     abort_gpu() noexcept;
+    auto                     fallback_texture() noexcept { return fallback_texture_.get(); }
+    auto                     texture_upload_service() noexcept { return texture_upload_service_.get(); }
+    auto                     texture_readback_service() noexcept { return texture_readback_service_.get(); }
+    auto                     decklink_registry() noexcept { return decklink_registry_.get(); }
+    auto                     ndi_registry() noexcept { return ndi_registry_.get(); }
+    auto                     font_registry() noexcept { return font_registry_.get(); }
+    auto                     thread_pool() noexcept { return thread_pool_.get(); }
+    auto                     status_registry() noexcept { return status_registry_.get(); }
+    nodes::cef::subsystem_s* cef_subsystem() noexcept { return cef_subsystem_.get(); }
+    const std::string&       cef_error() const noexcept { return cef_error_; }
 
     const command_line_options_s& command_line_options() const noexcept { return command_line_options_; }
 

@@ -22,7 +22,7 @@ class browser_session_s
         std::string  url;
         gpu::vec2i_t dimensions{1920, 1080};
         int          frame_rate{60};
-        bool         transparent{true};
+        bool         operator==(const options_s&) const = default;
     };
 
     enum class phase_e : uint8_t
@@ -61,7 +61,10 @@ class browser_session_s
     void close_async();
     bool closed() const noexcept;
     // Control/shutdown worker only; never wait for browser closure on a frame.
-    bool wait_closed(std::chrono::milliseconds timeout) const;
+    bool          wait_closed(std::chrono::milliseconds timeout) const;
+    static size_t texture_budget(const options_s& options);
+    // Control worker, after closure and exclusive consumer ownership.
+    bool resources_idle() const;
 
     // Render-thread methods, matching the existing media input lifecycle.
     void        advance_frames(utils::flicks pts, utils::flicks target_time, bool discontinuity);
