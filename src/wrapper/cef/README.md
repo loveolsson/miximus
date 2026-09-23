@@ -39,6 +39,7 @@ python3 src/wrapper/cef/source_build.py test --work-dir "$PWD/build-cef-source" 
 python3 src/wrapper/cef/source_build.py package --work-dir "$PWD/build-cef-source"
 ```
 
+The build targets the library, resources and sandbox required by the SDK; it does not build the GTK sample application.
 Stages stop on failure. `sync` explicitly bootstraps the pinned depot_tools Python and uses CEF's pinned automation
 and shallow Chromium history; do not resync a prepared
 tree because upstream sync can revert Chromium modifications. `prepare` registers the Chromium patch with CEF's

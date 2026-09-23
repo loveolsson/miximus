@@ -252,6 +252,11 @@ the pinned PGO profile, and six compilation jobs. The build recipe explicitly bo
 and prevents its automation from substituting an unpinned `latest` siso package. No application render code changes
 are involved. A completed binary, upstream regression-test results and accelerated hardware results are still pending.
 
+The compilation subsequently reached the CEF sample application and failed on its missing GTK headers in the pinned
+sysroot. The SDK packaging script does not require that sample binary. The build recipe now requests `libcef`,
+`cef_resources` and `chrome_sandbox` directly, preserving the source patches, optimization settings and completed
+objects. The resumed build uses ten jobs with matching CPU affinity to bound LLVM's internal worker concurrency.
+
 Checkpoint validation: native build and all 135 non-hardware tests pass. Fresh-profile CEF initialization/shutdown
 passes with the system Vulkan loader retained and no validation errors. The real accelerated probe fails at the
 documented capture gate; it must not be counted as passing or used to enable a browser node.

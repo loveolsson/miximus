@@ -157,7 +157,7 @@ def main():
         print(f"Build CPU affinity: {cpus} (also bounds LLVM worker pools)", flush=True)
     if args.stage == "build":
         run([depot / "autoninja", "-C", "out/Release_GN_x64", f"-j{args.jobs}",
-             "cefclient", "chrome_sandbox"], chromium, env)
+             "libcef", "cef_resources", "chrome_sandbox"], chromium, env)
         return
 
     if args.stage == "test":
