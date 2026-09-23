@@ -68,7 +68,7 @@ def main():
     env = dict(os.environ)
     env.update(DEPOT_TOOLS_UPDATE="0", GN_DEFINES=MANIFEST["gn_defines"])
     env["PATH"] = str(depot) + os.pathsep + env["PATH"]
-    for patch in MANIFEST["patches"]:
+    for patch in MANIFEST["patches"] + MANIFEST.get("test_patches", []):
         if digest(ROOT / patch["file"]) != patch["sha256"]:
             raise RuntimeError(f"Patch digest mismatch: {patch['file']}")
 
@@ -161,6 +161,8 @@ def main():
         return
 
     if args.stage == "test":
+        for patch in MANIFEST.get("test_patches", []):
+            apply_once(chromium, ROOT / patch["file"])
         run([depot / "autoninja", "-C", "out/Release_GN_x64", f"-j{args.jobs}",
              "viz_unittests"], chromium, env)
         run([chromium / "out/Release_GN_x64/viz_unittests",

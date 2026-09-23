@@ -287,3 +287,22 @@ The pinned Chromium EGL import sources do not select `EGL_IMPORT_EXPLICIT_SYNC_E
 [EGL implicit-sync control extension](https://registry.khronos.org/EGL/extensions/EXT/EGL_EXT_image_implicit_sync_control.txt)
 describes implicit synchronization as the default, but that is not evidence that this driver's capture path publishes
 the required fences. This diagnostic builds successfully; its actual CEF result awaits the patched binary.
+
+## Patched SDK build and regression tests, 2026-09-23
+
+The patched release library, resources and sandbox now build successfully. All 168 selected upstream
+`FrameSinkVideoCapturerTest` cases pass, including the backported native-handle blit cases. Building this suite required
+a test-only compatibility patch: CEF's existing `viz_osr_2575` patch exposes `CreateLayeredWindowUpdater` on every
+platform, while Chromium's `MockDisplayClient` still guarded that method with `IS_WIN`. The separately hashed
+`test_patches` entry removes that guard for this mock method; it changes no production code.
+
+The standard-layout release SDK and local acquisition manifest were generated successfully:
+
+```text
+Archive: miximus_cef_linux64_native_handle_r1.tar.bz2
+SHA-256: ca969b20a34e3669f8fa2caa42fa81060667197b42793d8e5fdb274ccdb9acad
+libcef.so SHA-256: 658a2d4b8ad89c6502d1c51c28f3549124a906301b33d6d7958f40b394f0c006
+```
+
+These results establish the source build and regression-test checkpoint. Actual accelerated delivery, producer
+synchronization and Miximus GPU import remain separate hardware qualification gates.

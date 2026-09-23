@@ -20,5 +20,12 @@
       "sha256": "258a0b30abd8af881dbfaf9f1f968fc27b00b5fd05b06efeeed511063e739d54"
     }
   ],
-  "siso_version": "git_revision:7bc9a0bfe050ef97e1712ff61c6f11952799e951"
+  "siso_version": "git_revision:7bc9a0bfe050ef97e1712ff61c6f11952799e951",
+  "test_patches": [
+    {
+      "file": "patches/chromium-cef-display-client-test.patch",
+      "sha256": "a831b3b358b2a646d0767cd9b9a79303d82d79a6e13ce5d1d8cafc5c9be630c5",
+      "reason": "Match MockDisplayClient to CEF's existing cross-platform CreateLayeredWindowUpdater interface; test-only, no runtime changes."
+    }
+  ]
 }

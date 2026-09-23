@@ -21,7 +21,11 @@ The two changes are:
   result. Includes upstream regression tests and author attribution. Only diff path prefixes were changed, to match
   CEF's `git apply -p0` patch manager; code changes are unchanged.
 
-Both patches apply to the pinned source. That is not yet evidence of a successful build or working GPU capture.
+The pinned SDK builds successfully, and all 168 selected frame-sink capture tests pass. Working GPU capture still
+requires the separate accelerated hardware probe.
+The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
+`CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility
+patch is applied only by the test stage and changes no production code.
 Their source licenses and upstream attribution are retained. No ABI, renderer scheduling, sandbox policy or Miximus
 render path change is part of these backports. Remove the backports only after a stock stable SDK contains both
 changes and passes the same hardware tests.
