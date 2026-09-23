@@ -31,7 +31,9 @@ tested NVIDIA path returned the kernel's boot-time stub fence when its DMA-BUF w
 patch retains Skia's existing asynchronous GPU-finished callback before delivering Linux RGBA blit results, independent
 of CPU mappability. It changes no allocation flags, public CEF ABI or Miximus rendering code, and performs no CPU pixel
 access. It also waits for other Linux RGBA blit requests in this custom CEF build; non-blit results, NV12 and other
-platforms retain their existing behavior. Hardware qualification of revision 2 is pending.
+platforms retain their existing behavior. Revision 2 builds, passes all 168 capture regression tests, and completes
+120 accelerated GPU copies at both HD and UHD on the local NVIDIA P2000 with Vulkan validation. Those checks do not
+yet qualify other drivers, pixel color accuracy, browser lifecycle stress or the eventual node integration.
 
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
 `CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility

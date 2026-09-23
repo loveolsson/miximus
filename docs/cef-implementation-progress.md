@@ -329,3 +329,24 @@ sends a shared-image result despite its historical name; it performs no CPU pixe
 RGBA blit requests in this custom binary, not non-blit results, NV12 or other platforms. Miximus still completes its
 own GPU copy before returning the borrowed handle. No graph, submission, scheduler or window-service changes are
 involved. Revision 2 is building; its regression tests, package and hardware results remain pending.
+
+### Revision 2 qualification checkpoint
+
+Revision 2 built successfully and again passed all 168 selected upstream capture tests. Its archive was verified and
+extracted separately, and the staged library digest matches the packaged provenance:
+
+```text
+Archive: miximus_cef_linux64_native_handle_r2.tar.bz2
+SHA-256: 76314c3e61a412aad1863a63738913b1473c8a25ba0656e7d848a33d29fa4d3a
+libcef.so SHA-256: ae6a3d60fed1207ec1e17985f0b1bcc84e022f44c4e9b5320bc4fade16c064f3
+```
+
+The full Miximus native build passed against this SDK. A fresh-profile runtime probe initialized and shut down with
+the system Vulkan loader retained. HD and UHD accelerated probes each completed 120 GPU copies, browser closure and
+runtime shutdown with no Vulkan validation errors. Capture timestamp ranges were `0..2033252` and `0..2049918` µs.
+The reservation snapshot still contains the boot-time stub, as expected: producer readiness now follows the retained
+Skia GPU-finished callback, not that snapshot. Consumer reads still finish before returning CEF's borrowed handle.
+
+This qualifies the initial GPU-transfer execution path on the local P2000/580.178.04 combination. It does not establish
+pixel color accuracy, other adapters/drivers, multi-browser performance, lifecycle stress or completion of the browser
+node. Those remain subsequent implementation and hardware-validation work.
