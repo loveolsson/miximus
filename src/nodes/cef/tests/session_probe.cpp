@@ -26,30 +26,38 @@ struct scoped_session_s
         : session(device, std::move(options))
     {
     }
+    scoped_session_s(const scoped_session_s& other)            = delete;
+    scoped_session_s& operator=(const scoped_session_s& other) = delete;
+    scoped_session_s(scoped_session_s&& other)                 = delete;
+    scoped_session_s& operator=(scoped_session_s&& other)      = delete;
+
     ~scoped_session_s()
     {
         session.close_async();
         session.reset_frames();
-        if (!session.wait_closed(10s))
+        if (!session.wait_closed(10s)) {
             std::terminate();
+        }
     }
 
     void finish()
     {
         session.close_async();
         session.reset_frames();
-        if (!session.wait_closed(10s))
+        if (!session.wait_closed(10s)) {
             throw std::runtime_error("Browser did not close");
+        }
         const auto result = session.metrics();
-        if (!result.error.empty())
+        if (!result.error.empty()) {
             throw std::runtime_error(result.error);
+        }
     }
 };
 
 browser_session_s::frame_ptr_t consume(gpu::device_s& device, browser_session_s& session, bool animated)
 {
     auto                           context     = device.create_recording_context(3);
-    auto                           destination = device.create_texture({640, 360});
+    auto                           destination = device.create_texture({.width = 640, .height = 360});
     const auto                     start       = std::chrono::steady_clock::now();
     auto                           next        = start;
     gpu::completion_s              completion;
@@ -72,13 +80,15 @@ browser_session_s::frame_ptr_t consume(gpu::device_s& device, browser_session_s&
         }
         session.release_prepared_frame();
         const auto metrics = session.metrics();
-        if (!metrics.error.empty())
+        if (!metrics.error.empty()) {
             throw std::runtime_error(metrics.error);
+        }
         const bool enough = animated ? metrics.copied >= 120 && consumed >= 90
                                      : metrics.copied > 0 && consumed >= 60 && metrics.source_queue.repeated > 0;
         if (enough) {
-            if (completion.wait(5s) != gpu::wait_result_e::ready)
+            if (completion.wait(5s) != gpu::wait_result_e::ready) {
                 throw std::runtime_error("Session consumer GPU work did not complete");
+            }
             std::cout << (animated ? "Animated" : "Static") << " session: captured=" << metrics.copied
                       << " consumed=" << consumed << " repeated=" << metrics.source_queue.repeated
                       << " dropped=" << metrics.dropped << '\n';
@@ -99,26 +109,31 @@ void exhaust_and_recover(browser_session_s& session)
         session.advance_frames(now, now, false);
         if (session.submit_frame(now)) {
             auto frame = session.resolve_frame();
-            if (frame && std::find(held.begin(), held.end(), frame) == held.end())
+            if (frame && std::ranges::find(held, frame) == held.end()) {
                 held.push_back(std::move(frame));
+            }
         }
         session.release_prepared_frame();
         std::this_thread::sleep_for(10ms);
     }
-    if (held.size() != 8)
+    if (held.size() != 8) {
         throw std::runtime_error("Could not retain all session pool slots");
+    }
     const auto before = session.metrics();
     std::this_thread::sleep_for(150ms);
     const auto exhausted = session.metrics();
-    if (exhausted.dropped <= before.dropped)
+    if (exhausted.dropped <= before.dropped) {
         throw std::runtime_error("Session did not drop paints when its pool was exhausted");
+    }
     held.clear();
     const auto recovery_deadline = std::chrono::steady_clock::now() + 2s;
-    while (session.metrics().copied == exhausted.copied && std::chrono::steady_clock::now() < recovery_deadline)
+    while (session.metrics().copied == exhausted.copied && std::chrono::steady_clock::now() < recovery_deadline) {
         std::this_thread::sleep_for(10ms);
+    }
     const auto recovered = session.metrics();
-    if (recovered.copied == exhausted.copied || !recovered.error.empty())
+    if (recovered.copied == exhausted.copied || !recovered.error.empty()) {
         throw std::runtime_error("Session failed to recover released pool capacity");
+    }
     std::cout << "Pool exhaustion dropped " << exhausted.dropped - before.dropped
               << " paints and recovered after leases were released\n";
 }
@@ -126,8 +141,9 @@ void exhaust_and_recover(browser_session_s& session)
 
 int main(int argc, char* argv[])
 {
-    if (argc != 3)
+    if (argc != 3) {
         return 2;
+    }
     std::cout.setf(std::ios::unitbuf);
     logger::init_loggers(spdlog::level::warn);
     try {
@@ -179,13 +195,15 @@ int main(int argc, char* argv[])
                 still.finish();
             }
             auto context   = device.create_recording_context(1);
-            auto target    = device.create_texture({640, 360});
+            auto target    = device.create_texture({.width = 640, .height = 360});
             auto recording = context.try_record();
-            if (!old_generation || !recording)
+            if (!old_generation || !recording) {
                 throw std::runtime_error("Old session frame was not retained");
+            }
             recording->draw(old_generation->texture(), target, {});
-            if (recording->submit().wait(5s) != gpu::wait_result_e::ready)
+            if (recording->submit().wait(5s) != gpu::wait_result_e::ready) {
                 throw std::runtime_error("Retained session frame could not be consumed after browser closure");
+            }
             std::cout << "Old viewport generation remains a usable ordinary GPU texture after closure\n";
         }
         return device.validation_errors() == 0 ? 0 : 1;

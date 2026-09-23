@@ -60,18 +60,18 @@ struct shared_state_s
     uint64_t                         next_request{};
     uint64_t                         navigation{};
     std::string                      context;
-    std::atomic_bool                 context_ready{};
+    std::atomic_bool                 context_ready;
     bool                             timeout_check_scheduled{};
-    std::atomic_bool                 timing_enabled{};
+    std::atomic_bool                 timing_enabled;
     uint64_t                         timing_rejections{};
     std::string                      timing_error;
     std::atomic<phase_e>             phase{phase_e::starting};
-    std::atomic_bool                 started{};
-    std::atomic_bool                 close_requested{};
-    std::atomic_bool                 closed{};
-    std::atomic_uint64_t             received{};
-    std::atomic_uint64_t             copied{};
-    std::atomic_uint64_t             dropped{};
+    std::atomic_bool                 started;
+    std::atomic_bool                 close_requested;
+    std::atomic_bool                 closed;
+    std::atomic_uint64_t             received;
+    std::atomic_uint64_t             copied;
+    std::atomic_uint64_t             dropped;
     mutable std::mutex               mutex;
     mutable std::condition_variable  changed;
     std::string                      error;
@@ -83,23 +83,26 @@ struct shared_state_s
 
     void cancel_commands(std::string_view reason)
     {
-        const std::lock_guard lock(mutex);
+        const std::scoped_lock lock(mutex);
         context_ready  = false;
         timing_enabled = false;
         context.clear();
         ++navigation;
-        for (auto& [id, request] : pending)
-            if (!request.settled)
+        for (auto& [id, request] : pending) {
+            if (!request.settled) {
                 request.promise.set_value({.json = {}, .error = std::string(reason)});
+            }
+        }
         pending.clear();
     }
 
     void expire_command(const std::string& id, std::string reason)
     {
-        const std::lock_guard lock(mutex);
-        const auto            found = pending.find(id);
-        if (found == pending.end() || found->second.settled)
+        const std::scoped_lock lock(mutex);
+        const auto             found = pending.find(id);
+        if (found == pending.end() || found->second.settled) {
             return;
+        }
         if (found->second.frame) {
             auto message = CefProcessMessage::Create(command_protocol::CANCEL);
             message->GetArgumentList()->SetString(0, id);
@@ -114,15 +117,17 @@ struct shared_state_s
         // Retain the in-flight slot until the renderer acknowledges cancellation
         // or returns its result. A hung renderer cannot grow its IPC backlog.
         found->second.settled = true;
-        if (!found->second.frame)
+        if (!found->second.frame) {
             pending.erase(found);
+        }
     }
 
     void fail(std::string message)
     {
-        std::lock_guard lock(mutex);
-        if (error.empty())
+        std::scoped_lock lock(mutex);
+        if (error.empty()) {
             error = std::move(message);
+        }
         phase = phase_e::failed;
     }
 
@@ -130,7 +135,7 @@ struct shared_state_s
     {
         cancel_commands("Browser closed");
         {
-            std::lock_guard lock(mutex);
+            std::scoped_lock lock(mutex);
             closed = true;
             phase  = error.empty() ? phase_e::closed : phase_e::failed;
         }
@@ -145,28 +150,32 @@ void schedule_timeout_check(const std::shared_ptr<shared_state_s>& state)
     if (!CefPostDelayedTask(TID_UI,
                             new task_s([weak = std::weak_ptr(state)] {
                                 const auto state = weak.lock();
-                                if (!state)
+                                if (!state) {
                                     return;
+                                }
                                 std::vector<std::string> expired;
                                 {
-                                    const std::lock_guard lock(state->mutex);
+                                    const std::scoped_lock lock(state->mutex);
                                     if (std::ranges::none_of(state->pending,
                                                              [](const auto& item) { return !item.second.settled; })) {
                                         state->timeout_check_scheduled = false;
                                         return;
                                     }
                                     const auto now = std::chrono::steady_clock::now();
-                                    for (const auto& [id, request] : state->pending)
-                                        if (!request.settled && now >= request.deadline)
+                                    for (const auto& [id, request] : state->pending) {
+                                        if (!request.settled && now >= request.deadline) {
                                             expired.push_back(id);
+                                        }
+                                    }
                                 }
-                                for (const auto& id : expired)
+                                for (const auto& id : expired) {
                                     state->expire_command(id, "Browser command timed out");
+                                }
                                 schedule_timeout_check(state);
                             }),
                             10)) {
         state->cancel_commands("Cannot schedule browser command timeout");
-        const std::lock_guard lock(state->mutex);
+        const std::scoped_lock lock(state->mutex);
         state->timeout_check_scheduled = false;
     }
 }
@@ -225,7 +234,7 @@ class client_s final
         }
         CefWindowInfo window;
         window.SetAsWindowless(0);
-        window.shared_texture_enabled = true;
+        window.shared_texture_enabled = 1;
         CefBrowserSettings settings;
         settings.windowless_frame_rate = options_.frame_rate;
         settings.background_color      = CefColorSetARGB(0, 0, 0, 0);
@@ -239,10 +248,11 @@ class client_s final
     void close()
     {
         state_->cancel_commands("Browser is closing");
-        if (browser_)
+        if (browser_) {
             browser_->GetHost()->CloseBrowser(true);
-        else if (!creation_pending_)
+        } else if (!creation_pending_) {
             state_->mark_closed();
+        }
     }
 
     void GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
@@ -255,10 +265,11 @@ class client_s final
         creation_pending_ = false;
         browser_          = browser;
         browser_->GetHost()->SetAudioMuted(true);
-        if (state_->close_requested)
+        if (state_->close_requested) {
             close();
-        else
+        } else {
             state_->phase = phase_e::loading;
+        }
     }
 
     void OnBeforeClose(CefRefPtr<CefBrowser> /* browser */) override
@@ -397,8 +408,9 @@ class client_s final
                      const CefString&    text,
                      const CefString& /* failed_url */) override
     {
-        if (frame->IsMain() && code != ERR_ABORTED && !state_->close_requested)
+        if (frame->IsMain() && code != ERR_ABORTED && !state_->close_requested) {
             state_->fail(std::format("CEF load error {}: {}", static_cast<int>(code), text.ToString()));
+        }
     }
 
     void OnRenderProcessTerminated(CefRefPtr<CefBrowser> /* browser */,
@@ -412,10 +424,11 @@ class client_s final
 
     void dispatch_command(const std::string& id, const std::string& source, const std::string& json)
     {
-        const std::lock_guard lock(state_->mutex);
-        const auto            found = state_->pending.find(id);
-        if (found == state_->pending.end())
+        const std::scoped_lock lock(state_->mutex);
+        const auto             found = state_->pending.find(id);
+        if (found == state_->pending.end()) {
             return;
+        }
         if (!browser_ || !state_->context_ready || state_->close_requested) {
             found->second.promise.set_value({.json = {}, .error = "Browser JavaScript context is unavailable"});
             state_->pending.erase(found);
@@ -457,11 +470,12 @@ class client_s final
                                   CefRefPtr<CefProcessMessage> message) override
     {
         if (source != PID_RENDERER || !frame->IsMain() || !browser_ ||
-            frame->GetIdentifier() != browser_->GetMainFrame()->GetIdentifier())
+            frame->GetIdentifier() != browser_->GetMainFrame()->GetIdentifier()) {
             return false;
-        const auto            name = message->GetName();
-        const auto            args = message->GetArgumentList();
-        const std::lock_guard lock(state_->mutex);
+        }
+        const auto             name = message->GetName();
+        const auto             args = message->GetArgumentList();
+        const std::scoped_lock lock(state_->mutex);
         if (name == command_protocol::CONTEXT_READY && args->GetSize() == 1) {
             state_->context       = args->GetString(0).ToString();
             state_->context_ready = !state_->close_requested;
@@ -472,35 +486,48 @@ class client_s final
                 state_->context_ready  = false;
                 state_->timing_enabled = false;
                 state_->context.clear();
-                for (auto& [id, request] : state_->pending)
-                    if (!request.settled)
+                for (auto& [id, request] : state_->pending) {
+                    if (!request.settled) {
                         request.promise.set_value({.json = {}, .error = "JavaScript context was released"});
+                    }
+                }
                 state_->pending.clear();
             }
             return true;
         }
-        if (name != command_protocol::RESULT)
+        if (name != command_protocol::RESULT) {
             return false;
-        if (args->GetSize() != 5)
-            return true;
+        }
+        receive_command_result(args);
+        return true;
+    }
+
+    // Called on the CEF UI thread with state_->mutex held.
+    void receive_command_result(const CefRefPtr<CefListValue>& args)
+    {
+        if (args->GetSize() != 5) {
+            return;
+        }
         const auto found = state_->pending.find(args->GetString(0).ToString());
         if (found == state_->pending.end() || found->second.generation != args->GetString(1).ToString() ||
-            found->second.context != args->GetString(2).ToString())
-            return true;
+            found->second.context != args->GetString(2).ToString()) {
+            return;
+        }
         if (found->second.settled) {
             state_->pending.erase(found);
-            return true;
+            return;
         }
         browser_session_s::command_result_s result;
         auto                                payload = args->GetString(4).ToString();
-        if (payload.size() > command_protocol::MAX_JSON_BYTES)
+        if (payload.size() > command_protocol::MAX_JSON_BYTES) {
             result.error = "JavaScript result exceeds the JSON response limit";
-        else if (!args->GetBool(3))
+        } else if (!args->GetBool(3)) {
             result.error = std::move(payload);
-        else if (!CefParseJSON(payload, JSON_PARSER_RFC))
+        } else if (!CefParseJSON(payload, JSON_PARSER_RFC)) {
             result.error = "JavaScript result is not valid JSON";
-        else
+        } else {
             result.json = std::move(payload);
+        }
         if (found->second.kind == command_protocol::request_kind_e::timing_handler && result.error.empty()) {
             state_->timing_enabled = true;
             state_->timing_error.clear();
@@ -511,7 +538,6 @@ class client_s final
         }
         found->second.promise.set_value(std::move(result));
         state_->pending.erase(found);
-        return true;
     }
 
     void OnPaint(CefRefPtr<CefBrowser> /* browser */,
@@ -521,8 +547,9 @@ class client_s final
                  int /* width */,
                  int /* height */) override
     {
-        if (type == PET_POPUP)
+        if (type == PET_POPUP) {
             return;
+        }
         state_->fail("CEF delivered software paint; accelerated rendering is required");
     }
 
@@ -533,26 +560,32 @@ class client_s final
                             const CefAcceleratedPaintInfo& info) override
     {
         // Native control popup surfaces are outside this headless graphics source.
-        if (type == PET_POPUP || state_->close_requested || state_->phase == phase_e::failed)
+        if (type == PET_POPUP || state_->close_requested || state_->phase == phase_e::failed) {
             return;
+        }
         const auto capture_started = std::chrono::steady_clock::now();
         const auto arrival         = utils::flicks_now();
         const auto sequence        = ++state_->received;
         try {
-            if (type != PET_VIEW)
+            if (type != PET_VIEW) {
                 throw std::runtime_error("Unknown CEF paint element");
+            }
             if (info.plane_count != 1 ||
-                (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888))
+                (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888)) {
                 throw std::runtime_error("Unsupported CEF accelerated format or plane count");
+            }
             if (info.extra.coded_size.width != options_.dimensions.x ||
-                info.extra.coded_size.height != options_.dimensions.y)
+                info.extra.coded_size.height != options_.dimensions.y) {
                 throw std::runtime_error("CEF paint does not match the session viewport generation");
+            }
             const auto maximum_timestamp =
                 std::chrono::duration_cast<std::chrono::microseconds>(utils::flicks::max()).count();
-            if (info.extra.timestamp > static_cast<uint64_t>(maximum_timestamp))
+            if (info.extra.timestamp > static_cast<uint64_t>(maximum_timestamp)) {
                 throw std::runtime_error("CEF capture timestamp is outside the supported range");
-            if (previous_timestamp_ && info.extra.timestamp < *previous_timestamp_)
+            }
+            if (previous_timestamp_ && info.extra.timestamp < *previous_timestamp_) {
                 ++epoch_;
+            }
             previous_timestamp_ = info.extra.timestamp;
 
             auto frame     = pool_.try_acquire();
@@ -563,8 +596,8 @@ class client_s final
             }
             gpu::detail::dma_buf_image_s source;
             source.fd     = info.planes[0].fd;
-            source.extent = {static_cast<uint32_t>(info.extra.coded_size.width),
-                             static_cast<uint32_t>(info.extra.coded_size.height)};
+            source.extent = {.width  = static_cast<uint32_t>(info.extra.coded_size.width),
+                             .height = static_cast<uint32_t>(info.extra.coded_size.height)};
             source.order =
                 info.format == CEF_COLOR_TYPE_BGRA_8888 ? gpu::channel_order_e::bgra : gpu::channel_order_e::rgba;
             source.modifier = info.modifier;
@@ -582,8 +615,9 @@ class client_s final
             while (completion.wait(1s) != gpu::wait_result_e::ready) {
             }
             const auto wait_finished = std::chrono::steady_clock::now();
-            if (state_->close_requested)
+            if (state_->close_requested) {
                 return;
+            }
             const media::media_clock_sample_s clock{
                 .stream_epoch   = epoch_,
                 .frame_sequence = sequence,
@@ -593,8 +627,8 @@ class client_s final
             state_->frames.push(std::make_shared<frame_queue_t::frame_t>(
                 clock, arrival, std::move(frame), media::source_frame_readiness_e::ready));
             {
-                const auto            finished = std::chrono::steady_clock::now();
-                const std::lock_guard lock(state_->mutex);
+                const auto             finished = std::chrono::steady_clock::now();
+                const std::scoped_lock lock(state_->mutex);
                 state_->capture_timing.add(finished - capture_started);
                 state_->completion_wait_timing.add(wait_finished - wait_started);
                 ++state_->copied;
@@ -619,13 +653,15 @@ struct browser_session_s::impl_s
 browser_session_s::browser_session_s(gpu::device_s& device, options_s options)
     : impl_(std::make_unique<impl_s>())
 {
-    if (!MIXIMUS_CEF_NATIVE_CAPTURE_READY)
+    if (!MIXIMUS_CEF_NATIVE_CAPTURE_READY) {
         throw std::runtime_error("CEF sessions require the verified native-handle completion SDK");
+    }
     // CEF 152 has no historical 60 fps ceiling; its microsecond period must
     // remain nonzero. Actual delivery can be slower than the requested rate.
     if (options.url.empty() || options.dimensions.x < 1 || options.dimensions.y < 1 || options.dimensions.x > 8192 ||
-        options.dimensions.y > 8192 || options.frame_rate < 1 || options.frame_rate > 1'000'000)
+        options.dimensions.y > 8192 || options.frame_rate < 1 || options.frame_rate > 1'000'000) {
         throw std::invalid_argument("Invalid CEF session options");
+    }
     impl_->client = new client_s(device, std::move(options), impl_->state);
 }
 
@@ -633,8 +669,9 @@ browser_session_s::~browser_session_s() { close_async(); }
 
 void browser_session_s::start_async()
 {
-    if (impl_->state->started.exchange(true))
+    if (impl_->state->started.exchange(true)) {
         return;
+    }
     if (!CefPostTask(TID_UI, new task_s([client = impl_->client] { client->start(); }))) {
         impl_->state->fail("Cannot dispatch CEF browser creation");
         impl_->state->mark_closed();
@@ -643,12 +680,14 @@ void browser_session_s::start_async()
 
 void browser_session_s::close_async()
 {
-    if (impl_->state->closed || impl_->state->close_requested.exchange(true))
+    if (impl_->state->closed || impl_->state->close_requested.exchange(true)) {
         return;
+    }
     impl_->state->cancel_commands("Browser is closing");
     impl_->state->phase = phase_e::closing;
-    if (!CefPostTask(TID_UI, new task_s([client = impl_->client] { client->close(); })))
+    if (!CefPostTask(TID_UI, new task_s([client = impl_->client] { client->close(); }))) {
         impl_->state->fail("Cannot dispatch CEF browser closure");
+    }
 }
 
 bool browser_session_s::closed() const noexcept { return impl_->state->closed; }
@@ -656,12 +695,14 @@ bool browser_session_s::closed() const noexcept { return impl_->state->closed; }
 size_t browser_session_s::texture_budget(const options_s& options)
 {
     if (options.dimensions.x < 1 || options.dimensions.y < 1 || options.dimensions.x > 8192 ||
-        options.dimensions.y > 8192)
+        options.dimensions.y > 8192) {
         throw std::invalid_argument("Invalid CEF viewport dimensions");
+    }
     const auto bytes = gpu::texture_s::estimate_storage_byte_size(
         options.dimensions, gpu::format_e::rgba_unorm16, gpu::sampling_e::linear);
-    if (bytes == 0 || bytes > FRAME_BUDGET / FRAME_CAPACITY)
+    if (bytes == 0 || bytes > FRAME_BUDGET / FRAME_CAPACITY) {
         throw std::invalid_argument("CEF viewport exceeds the session texture budget");
+    }
     return bytes * FRAME_CAPACITY;
 }
 
@@ -683,8 +724,9 @@ browser_session_s::set_program_time_handler(std::string function_source)
 
 void browser_session_s::send_program_time(core::frame_context_s time)
 {
-    if (impl_->state->timing_enabled)
+    if (impl_->state->timing_enabled) {
         (void)request_impl({}, {}, 1s, command_protocol::request_kind_e::program_time, time);
+    }
 }
 
 std::future<browser_session_s::command_result_s>
@@ -708,7 +750,7 @@ browser_session_s::request_impl(std::string                          function_so
     pending.kind     = kind;
     pending.time     = time;
     {
-        const std::lock_guard lock(state->mutex);
+        const std::scoped_lock lock(state->mutex);
         if (state->close_requested || !state->context_ready || state->pending.size() >= command_protocol::MAX_PENDING) {
             if (kind == command_protocol::request_kind_e::program_time) {
                 ++state->timing_rejections;
@@ -722,8 +764,9 @@ browser_session_s::request_impl(std::string                          function_so
         state->pending.emplace(id, std::move(pending));
         start_timer = !std::exchange(state->timeout_check_scheduled, true);
     }
-    if (start_timer)
+    if (start_timer) {
         schedule_timeout_check(state);
+    }
     if (!CefPostTask(
             TID_UI,
             new task_s([client = impl_->client, id, source = std::move(function_source), json = std::move(json)] {
@@ -754,11 +797,13 @@ bool browser_session_s::submit_frame(utils::flicks pts)
 
 browser_session_s::frame_ptr_t browser_session_s::resolve_frame()
 {
-    if (!impl_->prepared || !impl_->prepared->frame())
+    if (!impl_->prepared || !impl_->prepared->frame()) {
         return {};
+    }
     const auto& ticket = *impl_->prepared;
-    if (!ticket.await() || !impl_->state->frames.commit(ticket))
+    if (!ticket.await() || !impl_->state->frames.commit(ticket)) {
         return {};
+    }
     return ticket.frame()->payload();
 }
 
@@ -771,8 +816,8 @@ void browser_session_s::reset_frames()
 
 browser_session_s::metrics_s browser_session_s::metrics() const
 {
-    auto&           state = *impl_->state;
-    std::lock_guard lock(state.mutex);
+    auto&            state = *impl_->state;
+    std::scoped_lock lock(state.mutex);
     return {.phase             = state.phase.load(),
             .error             = state.error,
             .received          = state.received.load(),

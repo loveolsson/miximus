@@ -19,7 +19,7 @@ class frame_pool_test : public testing::Test
 {
   protected:
     static inline std::unique_ptr<gpu::device_s> device;
-    static constexpr size_t                      budget = 1024 * 1024;
+    static constexpr size_t                      budget = size_t{1024} * 1024;
 
     static void SetUpTestSuite()
     {
@@ -148,7 +148,7 @@ TEST_F(frame_pool_test, RejectsInvalidOrOverBudgetGenerations)
 {
     EXPECT_THROW((frame_pool_s(*device, {32, 32}, 0, budget)), std::invalid_argument);
     EXPECT_THROW((frame_pool_s(*device, {0, 32}, 1, budget)), std::invalid_argument);
-    EXPECT_THROW((frame_pool_s(*device, {32, 32}, 2, 32 * 32 * 8)), std::invalid_argument);
+    EXPECT_THROW((frame_pool_s(*device, {32, 32}, 2, size_t{32} * 32 * 8)), std::invalid_argument);
 }
 
 }} // namespace miximus::nodes::cef::detail

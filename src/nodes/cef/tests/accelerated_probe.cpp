@@ -32,28 +32,41 @@ void log_producer_fence(int dma_buf)
     dma_buf_export_sync_file exported{};
     exported.flags = DMA_BUF_SYNC_READ;
     exported.fd    = -1;
-    if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0)
+    if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF producer fence");
+    }
     struct owned_fd_s
     {
         int value;
+        explicit owned_fd_s(int fd)
+            : value(fd)
+        {
+        }
+        owned_fd_s(const owned_fd_s& other)            = delete;
+        owned_fd_s& operator=(const owned_fd_s& other) = delete;
+        owned_fd_s(owned_fd_s&& other)                 = delete;
+        owned_fd_s& operator=(owned_fd_s&& other)      = delete;
         ~owned_fd_s() { close(value); }
     } fence{exported.fd};
     sync_file_info info{};
-    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0)
+    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF sync-file metadata");
+    }
     // Metadata only: this does not map or read any image memory. A signalled
     // snapshot alone cannot prove that every producer write was published.
     std::cout << "CEF producer sync-file: fences=" << info.num_fences << " status=" << info.status << '\n';
-    if (info.num_fences > 64)
+    if (info.num_fences > 64) {
         throw std::runtime_error("Unexpected producer fence count");
+    }
     std::vector<sync_fence_info> fences(info.num_fences);
     info.sync_fence_info = reinterpret_cast<uintptr_t>(fences.data());
-    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0)
+    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF fence identities");
-    for (const auto& entry : fences)
+    }
+    for (const auto& entry : fences) {
         std::cout << "Producer fence: driver=" << entry.driver_name << " timeline=" << entry.obj_name
                   << " status=" << entry.status << " timestamp_ns=" << entry.timestamp_ns << '\n';
+    }
 }
 
 class task_s final : public CefTask
@@ -80,7 +93,6 @@ class client_s final
     bool                     fence_logged_{};
     IMPLEMENT_REFCOUNTING(client_s);
 
-  public:
     std::mutex              mutex;
     std::condition_variable changed;
     CefRefPtr<CefBrowser>   browser;
@@ -92,6 +104,7 @@ class client_s final
     uint64_t                first_timestamp{};
     std::string             error;
 
+  public:
     static constexpr size_t required_frames = 120;
 
     client_s(gpu::device_s& device, gpu::extent_s dimensions)
@@ -100,6 +113,43 @@ class client_s final
         , dimensions_(dimensions)
     {
     }
+    void creation_failed()
+    {
+        {
+            std::scoped_lock lock(mutex);
+            closed = true;
+        }
+        fail("CEF browser creation rejected");
+    }
+
+    bool wait_for_capture()
+    {
+        std::unique_lock lock(mutex);
+        const bool       signalled = changed.wait_for(lock, 15s, [&] { return received || !error.empty(); });
+        const bool       success   = signalled && received && error.empty();
+        if (!success) {
+            std::cerr << "Accelerated probe failed: " << (error.empty() ? "insufficient accelerated frames" : error)
+                      << " (completed " << copied_frames << '/' << required_frames << ")\n";
+        } else {
+            std::cout << "Completed " << copied_frames << " accelerated GPU copies; capture timestamps "
+                      << first_timestamp << ".." << last_timestamp << " us\n";
+        }
+        return success;
+    }
+
+    bool wait_for_close(bool success)
+    {
+        std::unique_lock lock(mutex);
+        if (!changed.wait_for(lock, 10s, [&] { return closed; })) {
+            std::terminate();
+        }
+        if (success && !error.empty()) {
+            std::cerr << "Accelerated probe failed during closure: " << error << '\n';
+            success = false;
+        }
+        return success;
+    }
+
     CefRefPtr<CefRenderHandler>   GetRenderHandler() override { return this; }
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     void                          GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
@@ -108,38 +158,40 @@ class client_s final
     }
     void OnAfterCreated(CefRefPtr<CefBrowser> created) override
     {
-        bool closing;
+        bool closing{};
         {
-            std::lock_guard lock(mutex);
+            std::scoped_lock lock(mutex);
             browser = created;
             closing = close_requested;
             std::cout << "CEF browser created\n";
             changed.notify_all();
         }
-        if (closing)
+        if (closing) {
             created->GetHost()->CloseBrowser(true);
+        }
     }
     void request_close()
     {
         CefRefPtr<CefBrowser> current;
         {
-            std::lock_guard lock(mutex);
+            std::scoped_lock lock(mutex);
             close_requested = true;
             current         = browser;
         }
-        if (current)
+        if (current) {
             current->GetHost()->CloseBrowser(true);
+        }
     }
     void OnBeforeClose(CefRefPtr<CefBrowser> /* browser */) override
     {
-        std::lock_guard lock(mutex);
+        std::scoped_lock lock(mutex);
         browser = nullptr;
         closed  = true;
         changed.notify_all();
     }
     void fail(std::string message)
     {
-        std::lock_guard lock(mutex);
+        std::scoped_lock lock(mutex);
         error = std::move(message);
         changed.notify_all();
     }
@@ -157,8 +209,9 @@ class client_s final
                             const RectList& /* dirty_rects */,
                             const CefAcceleratedPaintInfo& info) override
     {
-        if (type != PET_VIEW)
+        if (type != PET_VIEW) {
             return;
+        }
         try {
             if (info.plane_count != 1 ||
                 (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888)) {
@@ -166,8 +219,8 @@ class client_s final
             }
             gpu::detail::dma_buf_image_s source;
             source.fd     = info.planes[0].fd;
-            source.extent = {static_cast<uint32_t>(info.extra.coded_size.width),
-                             static_cast<uint32_t>(info.extra.coded_size.height)};
+            source.extent = {.width  = static_cast<uint32_t>(info.extra.coded_size.width),
+                             .height = static_cast<uint32_t>(info.extra.coded_size.height)};
             source.order =
                 info.format == CEF_COLOR_TYPE_BGRA_8888 ? gpu::channel_order_e::bgra : gpu::channel_order_e::rgba;
             source.modifier = info.modifier;
@@ -178,8 +231,9 @@ class client_s final
                 fence_logged_ = true;
             }
             auto recording = context_.try_record();
-            if (!recording)
+            if (!recording) {
                 throw gpu::recording_unavailable_s{};
+            }
             gpu::draw_s conversion;
             conversion.compositing = gpu::compositing_e::replace;
             conversion.transfer    = gpu::color_operation_e::decode_srgb_premultiplied;
@@ -189,7 +243,7 @@ class client_s final
             // merely because one completion wait timed out.
             while (complete.wait(1s) != gpu::wait_result_e::ready) {
             }
-            std::lock_guard lock(mutex);
+            std::scoped_lock lock(mutex);
             if (copied_frames == 0) {
                 first_timestamp = info.extra.timestamp;
                 std::cout << "Accelerated GPU copy: " << source.extent.width << 'x' << source.extent.height
@@ -210,21 +264,23 @@ class client_s final
 
 int main(int argc, char* argv[])
 {
-    if (argc != 3 && argc != 5)
+    if (argc != 3 && argc != 5) {
         return 2;
+    }
     std::cout.setf(std::ios::unitbuf);
     logger::init_loggers(spdlog::level::warn);
     try {
-        gpu::extent_s dimensions{640, 360};
+        gpu::extent_s dimensions{.width = 640, .height = 360};
         if (argc == 5) {
             auto parse_dimension = [](std::string_view text) {
                 uint32_t   value{};
                 const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-                if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || value == 0 || value > 8192)
+                if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || value == 0 || value > 8192) {
                     throw std::invalid_argument("Probe dimensions must be between 1 and 8192");
+                }
                 return value;
             };
-            dimensions = {parse_dimension(argv[3]), parse_dimension(argv[4])};
+            dimensions = {.width = parse_dimension(argv[3]), .height = parse_dimension(argv[4])};
         }
         gpu::device_options_s options;
         options.external_image_import = true;
@@ -239,7 +295,7 @@ int main(int argc, char* argv[])
             if (!CefPostTask(TID_UI, new task_s([client] {
                                  CefWindowInfo window;
                                  window.SetAsWindowless(0);
-                                 window.shared_texture_enabled = true;
+                                 window.shared_texture_enabled = 1;
                                  CefBrowserSettings settings;
                                  settings.windowless_frame_rate = 60;
                                  const char* url =
@@ -249,39 +305,19 @@ int main(int argc, char* argv[])
                                      "style='background:rgba(128,64,32,0.5);width:200px;height:200px;"
                                      "animation:move 1s linear infinite alternate'></div></body></html>";
                                  if (!CefBrowserHost::CreateBrowser(window, client, url, settings, nullptr, nullptr)) {
-                                     {
-                                         std::lock_guard lock(client->mutex);
-                                         client->closed = true;
-                                     }
-                                     client->fail("CEF browser creation rejected");
+                                     client->creation_failed();
                                  }
-                             })))
+                             }))) {
                 throw std::runtime_error("Cannot dispatch browser creation");
-            std::unique_lock lock(client->mutex);
-            const bool       signalled =
-                client->changed.wait_for(lock, 15s, [&] { return client->received || !client->error.empty(); });
-            success = signalled && client->received && client->error.empty();
-            if (!success)
-                std::cerr << "Accelerated probe failed: "
-                          << (client->error.empty() ? "insufficient accelerated frames" : client->error)
-                          << " (completed " << client->copied_frames << '/' << client_s::required_frames << ")\n";
-            else
-                std::cout << "Completed " << client->copied_frames << " accelerated GPU copies; capture timestamps "
-                          << client->first_timestamp << ".." << client->last_timestamp << " us\n";
-            lock.unlock();
+            }
+            success = client->wait_for_capture();
             // Creation may still be pending when capture times out. Keep the client
             // alive and close even a browser that arrives after this request.
-            if (!CefPostTask(TID_UI, new task_s([client] { client->request_close(); })))
+            if (!CefPostTask(TID_UI, new task_s([client] { client->request_close(); }))) {
                 std::terminate();
-            lock.lock();
-            if (!client->changed.wait_for(lock, 10s, [&] { return client->closed; }))
-                std::terminate();
-            if (success && !client->error.empty()) {
-                std::cerr << "Accelerated probe failed during closure: " << client->error << '\n';
-                success = false;
             }
-            lock.unlock();
-            client = nullptr;
+            success = client->wait_for_close(success);
+            client  = nullptr;
         }
         // Include errors emitted while CEF shuts down, with the Vulkan device
         // still alive and its validation callback installed.

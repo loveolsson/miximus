@@ -13,7 +13,7 @@ namespace miximus::nodes::cef::detail {
 namespace {
 namespace protocol = command_protocol;
 
-void send_context(CefRefPtr<CefFrame> frame, const char* message_name, const std::string& token)
+void send_context(const CefRefPtr<CefFrame>& frame, const char* message_name, const std::string& token)
 {
     auto message = CefProcessMessage::Create(message_name);
     message->GetArgumentList()->SetString(0, token);
@@ -41,7 +41,7 @@ class result_handler_s final : public CefV8Handler
     IMPLEMENT_REFCOUNTING(result_handler_s);
 
   public:
-    result_handler_s(std::shared_ptr<context_state_s> context, std::string request, std::string generation)
+    result_handler_s(const std::shared_ptr<context_state_s>& context, std::string request, std::string generation)
         : context_(context)
         , request_(std::move(request))
         , generation_(std::move(generation))
@@ -51,8 +51,9 @@ class result_handler_s final : public CefV8Handler
     void deliver(bool success, std::string json)
     {
         const auto context = context_.lock();
-        if (delivered_ || !context || !context->active)
+        if (delivered_ || !context || !context->active) {
             return;
+        }
         delivered_ = true;
         if (json.size() > protocol::MAX_JSON_BYTES) {
             success = false;
@@ -75,11 +76,23 @@ class result_handler_s final : public CefV8Handler
                  CefRefPtr<CefV8Value>& /* retval */,
                  CefString& /* exception */) override
     {
-        if (arguments.size() == 2 && arguments[0]->IsBool() && arguments[1]->IsString())
+        if (arguments.size() == 2 && arguments[0]->IsBool() && arguments[1]->IsString()) {
             deliver(arguments[0]->GetBoolValue(), arguments[1]->GetStringValue().ToString());
+        }
         return true;
     }
 };
+
+void cancel_command(const std::shared_ptr<context_state_s>& state, const std::string& request)
+{
+    const auto pending = state->pending.find(request);
+    if (pending != state->pending.end()) {
+        // deliver() removes the pending entry; retain the handler
+        // through that removal and acknowledge transport retirement.
+        const auto result = pending->second;
+        result->deliver(false, "Command cancelled");
+    }
+}
 
 class renderer_app_s final
     : public CefApp
@@ -95,15 +108,16 @@ class renderer_app_s final
     void
     OnContextCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) override
     {
-        if (!frame->IsMain())
+        if (!frame->IsMain()) {
             return;
+        }
         auto state     = std::make_shared<context_state_s>();
         state->token   = frame->GetIdentifier().ToString() + ":" + std::to_string(++next_context_);
         state->context = context;
         CefRefPtr<CefV8Exception> exception;
         // The native callback is an argument, never installed on window. Promise
         // completion is explicit; neither execution nor its reply implies paint.
-        constexpr char invoke[] = R"JS((function(fn, payload, reply, discardResult) {
+        constexpr auto* invoke = R"JS((function(fn, payload, reply, discardResult) {
             const fail = error => {
                 try { reply(false, String(error)); }
                 catch (_) { reply(false, 'JavaScript exception could not be serialized'); }
@@ -118,8 +132,9 @@ class renderer_app_s final
                 }, fail);
             } catch (error) { fail(error); }
         }))JS";
-        if (!context->Eval(invoke, "miximus-internal-command", 1, state->invoke, exception))
+        if (!context->Eval(invoke, "miximus-internal-command", 1, state->invoke, exception)) {
             return;
+        }
         contexts_[browser->GetIdentifier()] = state;
         send_context(frame, protocol::CONTEXT_READY, state->token);
     }
@@ -128,11 +143,13 @@ class renderer_app_s final
                            CefRefPtr<CefFrame>     frame,
                            CefRefPtr<CefV8Context> context) override
     {
-        if (!frame->IsMain())
+        if (!frame->IsMain()) {
             return;
+        }
         const auto found = contexts_.find(browser->GetIdentifier());
-        if (found == contexts_.end() || !found->second->context->IsSame(context))
+        if (found == contexts_.end() || !found->second->context->IsSame(context)) {
             return;
+        }
         found->second->active = false;
         send_context(frame, protocol::CONTEXT_RELEASED, found->second->token);
         contexts_.erase(found);
@@ -144,26 +161,23 @@ class renderer_app_s final
                                   CefRefPtr<CefProcessMessage> message) override
     {
         if (source != PID_BROWSER || !frame->IsMain() ||
-            (message->GetName() != protocol::REQUEST && message->GetName() != protocol::CANCEL))
+            (message->GetName() != protocol::REQUEST && message->GetName() != protocol::CANCEL)) {
             return false;
+        }
         const auto args  = message->GetArgumentList();
         const auto found = contexts_.find(browser->GetIdentifier());
         if (message->GetName() == protocol::CANCEL) {
             if (args->GetSize() == 2 && found != contexts_.end() && args->GetString(1) == found->second->token) {
-                const auto pending = found->second->pending.find(args->GetString(0).ToString());
-                if (pending != found->second->pending.end()) {
-                    // deliver() removes the pending entry; retain the handler
-                    // through that removal and acknowledge transport retirement.
-                    const auto result = pending->second;
-                    result->deliver(false, "Command cancelled");
-                }
+                cancel_command(found->second, args->GetString(0).ToString());
             }
             return true;
         }
-        if (args->GetSize() != 6)
+        if (args->GetSize() != 6) {
             return true;
-        if (found == contexts_.end() || args->GetString(2) != found->second->token)
+        }
+        if (found == contexts_.end() || args->GetString(2) != found->second->token) {
             return true; // Browser-side navigation cancellation/timeout owns settlement.
+        }
         const auto                  state = found->second;
         CefRefPtr<result_handler_s> result =
             new result_handler_s(state, args->GetString(0).ToString(), args->GetString(1).ToString());
@@ -185,8 +199,9 @@ class renderer_app_s final
         CefRefPtr<CefV8Value>     function;
         CefRefPtr<CefV8Exception> exception;
         const auto                kind = static_cast<protocol::request_kind_e>(args->GetInt(5));
-        if (kind == protocol::request_kind_e::program_time)
+        if (kind == protocol::request_kind_e::program_time) {
             function = state->timing_handler;
+        }
         const bool evaluated =
             kind == protocol::request_kind_e::program_time ||
             state->context->Eval("(" + function_source + ")", "miximus-internal-command", 1, function, exception);

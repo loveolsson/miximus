@@ -29,8 +29,8 @@ class node_impl final : public node_i
     std::shared_ptr<session_t>              session_;
     session_t::frame_ptr_t                  output_;
     std::optional<session_t::options_s>     selection_;
-    std::chrono::steady_clock::time_point   retry_after_{};
-    std::chrono::steady_clock::time_point   next_metrics_{};
+    std::chrono::steady_clock::time_point   retry_after_;
+    std::chrono::steady_clock::time_point   next_metrics_;
     uint64_t                                restarts_{};
     std::string                             error_;
 
@@ -38,8 +38,9 @@ class node_impl final : public node_i
     {
         iface_tex_.set_value(nullptr);
         output_.reset();
-        if (session_)
+        if (session_) {
             session_->reset_frames();
+        }
         session_.reset();
         request_.reset();
     }
@@ -69,9 +70,88 @@ class node_impl final : public node_i
         }
         return "failed";
     }
+    void publish_metrics(core::node_status_registry_s*              status,
+                         const std::optional<session_t::metrics_s>& metrics,
+                         std::chrono::steady_clock::time_point      now)
+    {
+        // Lifecycle/error deltas are immediate; high-frequency counters are not.
+        if (now < next_metrics_ && metrics) {
+            return;
+        }
+        status::cef_browser_status_s browser_status;
+        browser_status.cef_restarts = restarts_;
+        if (metrics) {
+            browser_status.cef_state                        = phase_name(metrics->phase);
+            browser_status.cef_error                        = metrics->error;
+            browser_status.cef_paints                       = metrics->received;
+            browser_status.cef_copies                       = metrics->copied;
+            browser_status.cef_capacity_drops               = metrics->dropped;
+            browser_status.cef_timing_rejections            = metrics->timing_rejections;
+            browser_status.cef_timing_error                 = metrics->timing_error;
+            browser_status.cef_capture_p50_upper_us         = metrics->capture.p50_upper_us;
+            browser_status.cef_capture_p95_upper_us         = metrics->capture.p95_upper_us;
+            browser_status.cef_capture_p99_upper_us         = metrics->capture.p99_upper_us;
+            browser_status.cef_capture_max_us               = metrics->capture.maximum_us;
+            browser_status.cef_completion_wait_p95_upper_us = metrics->completion_wait.p95_upper_us;
+            browser_status.cef_completion_wait_max_us       = metrics->completion_wait.maximum_us;
+        } else {
+            browser_status.cef_state = request_ ? "starting" : "failed";
+            browser_status.cef_error = error_;
+        }
+        status->write(id_, browser_status);
+        if (metrics) {
+            const auto& queue = metrics->source_queue;
+            status->write(id_,
+                          status::source_timing_status_s{
+                              .source_queue_pushed                  = queue.pushed,
+                              .source_queue_depth                   = queue.queued,
+                              .source_queue_overflow_drops          = queue.overflow_drops,
+                              .source_queue_selection_drops         = queue.selection_drops,
+                              .source_queue_repeated                = queue.repeated,
+                              .source_queue_starvation_repeats      = queue.starvation_repeats,
+                              .source_queue_timing_repeats          = queue.timing_repeats,
+                              .source_queue_missing                 = queue.missing,
+                              .source_queue_discontinuities         = queue.discontinuities,
+                              .source_queue_transfer_failures       = queue.transfer_failures,
+                              .source_queue_transfer_cancellations  = queue.transfer_cancellations,
+                              .source_recovered_rate                = queue.recovered_rate,
+                              .source_observed_rate                 = queue.observed_rate,
+                              .source_phase_offset_us               = queue.phase_offset,
+                              .source_phase_error_us                = queue.phase_error,
+                              .source_phase_adjustment_us           = queue.phase_adjustment,
+                              .source_repeat_next_frame_lead_min_us = queue.repeat_next_frame_lead_min,
+                              .source_repeat_next_frame_lead_max_us = queue.repeat_next_frame_lead_max,
+                          });
+        }
+        next_metrics_ = now + 1s;
+    }
+
+    void update_session(cef::subsystem_s&                     subsystem,
+                        const session_t::options_s&           selection,
+                        std::chrono::steady_clock::time_point now)
+    {
+        if (!request_ && now >= retry_after_ && (error_.empty() || restarts_ < 3)) {
+            if (!error_.empty()) {
+                ++restarts_;
+            }
+            request_ = subsystem.create_session(selection);
+        }
+        if (request_ && !session_) {
+            session_ = request_->session();
+            if (auto error = request_->error(); !error.empty()) {
+                fail(std::move(error));
+            }
+        }
+    }
 #endif
 
   public:
+    node_impl()                                  = default;
+    node_impl(const node_impl& other)            = delete;
+    node_impl& operator=(const node_impl& other) = delete;
+    node_impl(node_impl&& other)                 = delete;
+    node_impl& operator=(node_impl&& other)      = delete;
+
     ~node_impl() override
     {
 #if MIXIMUS_ENABLE_CEF
@@ -84,7 +164,7 @@ class node_impl final : public node_i
         auto*      status  = app->status_registry();
         const bool enabled = state.get_option<bool>("enabled");
         const auto url     = state.get_option<std::string>("url");
-        if (!app->cef_subsystem() || !enabled || url.empty()) {
+        if (app->cef_subsystem() == nullptr || !enabled || url.empty()) {
 #if MIXIMUS_ENABLE_CEF
             stop();
             selection_.reset();
@@ -116,16 +196,7 @@ class node_impl final : public node_i
             next_metrics_ = {};
         }
         const auto now = std::chrono::steady_clock::now();
-        if (!request_ && now >= retry_after_ && (error_.empty() || restarts_ < 3)) {
-            if (!error_.empty())
-                ++restarts_;
-            request_ = app->cef_subsystem()->create_session(selection);
-        }
-        if (request_ && !session_) {
-            session_ = request_->session();
-            if (auto error = request_->error(); !error.empty())
-                fail(std::move(error));
-        }
+        update_session(*app->cef_subsystem(), selection, now);
         std::optional<session_t::metrics_s> metrics;
         if (session_) {
             const auto& frame = app->frame_context();
@@ -141,61 +212,16 @@ class node_impl final : public node_i
                       status::connected_status_s{
                           .connected = metrics && metrics->phase == session_t::phase_e::ready,
                       });
-        // Lifecycle/error deltas are immediate; high-frequency counters are not.
-        if (now >= next_metrics_ || !metrics) {
-            status->write(id_,
-                          status::cef_browser_status_s{
-                              .cef_state                        = metrics    ? std::string(phase_name(metrics->phase))
-                                                                  : request_ ? "starting"
-                                                                             : "failed",
-                              .cef_error                        = metrics ? metrics->error : error_,
-                              .cef_paints                       = metrics ? metrics->received : 0,
-                              .cef_copies                       = metrics ? metrics->copied : 0,
-                              .cef_capacity_drops               = metrics ? metrics->dropped : 0,
-                              .cef_restarts                     = restarts_,
-                              .cef_timing_rejections            = metrics ? metrics->timing_rejections : 0,
-                              .cef_timing_error                 = metrics ? metrics->timing_error : "",
-                              .cef_capture_p50_upper_us         = metrics ? metrics->capture.p50_upper_us : 0,
-                              .cef_capture_p95_upper_us         = metrics ? metrics->capture.p95_upper_us : 0,
-                              .cef_capture_p99_upper_us         = metrics ? metrics->capture.p99_upper_us : 0,
-                              .cef_capture_max_us               = metrics ? metrics->capture.maximum_us : 0,
-                              .cef_completion_wait_p95_upper_us = metrics ? metrics->completion_wait.p95_upper_us : 0,
-                              .cef_completion_wait_max_us       = metrics ? metrics->completion_wait.maximum_us : 0,
-                          });
-            if (metrics) {
-                const auto& queue = metrics->source_queue;
-                status->write(id_,
-                              status::source_timing_status_s{
-                                  .source_queue_pushed                  = queue.pushed,
-                                  .source_queue_depth                   = queue.queued,
-                                  .source_queue_overflow_drops          = queue.overflow_drops,
-                                  .source_queue_selection_drops         = queue.selection_drops,
-                                  .source_queue_repeated                = queue.repeated,
-                                  .source_queue_starvation_repeats      = queue.starvation_repeats,
-                                  .source_queue_timing_repeats          = queue.timing_repeats,
-                                  .source_queue_missing                 = queue.missing,
-                                  .source_queue_discontinuities         = queue.discontinuities,
-                                  .source_queue_transfer_failures       = queue.transfer_failures,
-                                  .source_queue_transfer_cancellations  = queue.transfer_cancellations,
-                                  .source_recovered_rate                = queue.recovered_rate,
-                                  .source_observed_rate                 = queue.observed_rate,
-                                  .source_phase_offset_us               = queue.phase_offset,
-                                  .source_phase_error_us                = queue.phase_error,
-                                  .source_phase_adjustment_us           = queue.phase_adjustment,
-                                  .source_repeat_next_frame_lead_min_us = queue.repeat_next_frame_lead_min,
-                                  .source_repeat_next_frame_lead_max_us = queue.repeat_next_frame_lead_max,
-                              });
-            }
-            next_metrics_ = now + 1s;
-        }
+        publish_metrics(status, metrics, now);
 #endif
     }
 
     void submit(core::app_state_s* app, const node_map_t& /* nodes */, const node_state_s& /* state */) final
     {
 #if MIXIMUS_ENABLE_CEF
-        if (session_)
+        if (session_) {
             (void)session_->submit_frame(app->frame_context().program_pts);
+        }
 #endif
     }
 
@@ -214,8 +240,9 @@ class node_impl final : public node_i
 #if MIXIMUS_ENABLE_CEF
         iface_tex_.set_value(nullptr);
         output_.reset();
-        if (session_)
+        if (session_) {
             session_->release_prepared_frame();
+        }
 #endif
     }
 
@@ -231,12 +258,14 @@ class node_impl final : public node_i
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
-        if (name == "enabled")
+        if (name == "enabled") {
             return normalize_option_value<bool>(value);
+        }
         if (name == "size") {
             auto result = normalize_option_value<gpu::vec2_t>(value, gpu::vec2_t{1, 1}, gpu::vec2_t{4096, 4096});
-            if (result == option_result_e::invalid)
+            if (result == option_result_e::invalid) {
                 return result;
+            }
             for (auto& component : *value) {
                 const auto rounded = std::round(component.get<double>());
                 if (component != rounded) {
@@ -248,8 +277,9 @@ class node_impl final : public node_i
         }
         if (name == "url") {
             const auto result = normalize_option_value<std::string_view>(value);
-            if (result == option_result_e::invalid || value->get_ref<const std::string&>().size() > 65536)
+            if (result == option_result_e::invalid || value->get_ref<const std::string&>().size() > 65536) {
                 return option_result_e::invalid;
+            }
             return result;
         }
         return option_result_e::invalid;

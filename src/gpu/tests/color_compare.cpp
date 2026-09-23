@@ -15,10 +15,17 @@ struct color_comparison_s::state_s : resource_state_s
     VkPipelineLayout      layout{};
     VkPipeline            pipeline{};
 
+    state_s()                                = default;
+    state_s(const state_s& other)            = delete;
+    state_s& operator=(const state_s& other) = delete;
+    state_s(state_s&& other)                 = delete;
+    state_s& operator=(state_s&& other)      = delete;
+
     ~state_s()
     {
-        if (!owner)
+        if (!owner) {
             return;
+        }
         owner->retire(last_use_timeline_value.load(),
                       [device      = owner->device,
                        vk          = owner->vk,
@@ -26,14 +33,18 @@ struct color_comparison_s::state_s : resource_state_s
                        descriptors = descriptors,
                        layout      = layout,
                        pipeline    = pipeline] {
-                          if (pipeline)
+                          if (pipeline != VK_NULL_HANDLE) {
                               vk.vkDestroyPipeline(device, pipeline, nullptr);
-                          if (layout)
+                          }
+                          if (layout != VK_NULL_HANDLE) {
                               vk.vkDestroyPipelineLayout(device, layout, nullptr);
-                          if (descriptors)
+                          }
+                          if (descriptors != VK_NULL_HANDLE) {
                               vk.vkDestroyDescriptorSetLayout(device, descriptors, nullptr);
-                          if (shader)
+                          }
+                          if (shader != VK_NULL_HANDLE) {
                               vk.vkDestroyShaderModule(device, shader, nullptr);
+                          }
                       });
     }
 };
@@ -41,17 +52,20 @@ struct color_comparison_s::state_s : resource_state_s
 color_comparison_s::color_comparison_s(const texture_s& source, const std::filesystem::path& shader_path)
     : state_(std::make_shared<state_s>())
 {
-    if (!source.state_)
+    if (!source.state_) {
         throw std::invalid_argument("Color comparison needs an owned source image");
+    }
     state_->owner = source.state_->owner;
     std::ifstream input(shader_path, std::ios::binary | std::ios::ate);
     const auto    bytes = input.tellg();
-    if (!input || bytes <= 0 || bytes % 4 != 0)
+    if (!input || bytes <= 0 || bytes % 4 != 0) {
         throw std::runtime_error("Cannot read color comparison shader");
+    }
     std::vector<uint32_t> code(static_cast<size_t>(bytes) / 4);
     input.seekg(0);
-    if (!input.read(reinterpret_cast<char*>(code.data()), bytes))
+    if (!input.read(reinterpret_cast<char*>(code.data()), bytes)) {
         throw std::runtime_error("Incomplete color comparison shader");
+    }
     const auto               device = state_->owner->device;
     const auto&              vk     = state_->owner->vk;
     VkShaderModuleCreateInfo shader{};
@@ -61,8 +75,16 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
     check(vk.vkCreateShaderModule(device, &shader, nullptr, &state_->shader), "create comparison shader");
     const std::array<VkDescriptorSetLayoutBinding, 2> bindings{
         {
-         {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+         {.binding            = 0,
+             .descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+             .descriptorCount    = 1,
+             .stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT,
+             .pImmutableSamplers = nullptr},
+         {.binding            = 1,
+             .descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             .descriptorCount    = 1,
+             .stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT,
+             .pImmutableSamplers = nullptr},
          }
     };
     VkDescriptorSetLayoutCreateInfo descriptors{};
@@ -98,11 +120,13 @@ void color_comparison_s::record(recording_s&         recording,
                                 std::array<float, 4> reference,
                                 float                tolerance)
 {
-    if (!recording.state_ || !source.state_ || !counters.state_ || counters.size() != 8 || tolerance < 0)
+    if (!recording.state_ || !source.state_ || !counters.state_ || counters.size() != 8 || tolerance < 0) {
         throw std::invalid_argument("Invalid color comparison resources");
+    }
     auto& state = *recording.state_;
-    if (state.owner != state_->owner || source.state_->owner != state.owner || counters.state_->owner != state.owner)
+    if (state.owner != state_->owner || source.state_->owner != state.owner || counters.state_->owner != state.owner) {
         throw std::invalid_argument("Color comparison resources must share the recording device");
+    }
     state.retain(state_);
     state.retain(counters.state_);
     state.buffer_barrier(counters.state_,
@@ -136,7 +160,7 @@ void color_comparison_s::record(recording_s&         recording,
     {
         std::array<float, 4> reference;
         float                tolerance;
-    } parameters{reference, tolerance};
+    } parameters{.reference = reference, .tolerance = tolerance};
     static_assert(sizeof(parameters) == 20);
     vk.vkCmdPushConstants(
         state.arena->commands, state_->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(parameters), &parameters);

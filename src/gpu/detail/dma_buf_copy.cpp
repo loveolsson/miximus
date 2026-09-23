@@ -18,9 +18,15 @@ struct read_fence_s : resource_state_s
 {
     VkSemaphore semaphore{};
 
+    read_fence_s()                                     = default;
+    read_fence_s(const read_fence_s& other)            = delete;
+    read_fence_s& operator=(const read_fence_s& other) = delete;
+    read_fence_s(read_fence_s&& other)                 = delete;
+    read_fence_s& operator=(read_fence_s&& other)      = delete;
+
     ~read_fence_s()
     {
-        if (semaphore) {
+        if (semaphore != VK_NULL_HANDLE) {
             owner->retire(last_use_timeline_value.load(),
                           [device = owner->device, destroy = owner->vk.vkDestroySemaphore, handle = semaphore] {
                               destroy(device, handle, nullptr);
@@ -61,10 +67,19 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
     struct owned_fd_s
     {
         int value;
+        explicit owned_fd_s(int fd)
+            : value(fd)
+        {
+        }
+        owned_fd_s(const owned_fd_s& other)            = delete;
+        owned_fd_s& operator=(const owned_fd_s& other) = delete;
+        owned_fd_s(owned_fd_s&& other)                 = delete;
+        owned_fd_s& operator=(owned_fd_s&& other)      = delete;
         ~owned_fd_s()
         {
-            if (value >= 0)
+            if (value >= 0) {
                 close(value);
+            }
         }
     } sync_file{export_fence.fd};
     const auto start = std::chrono::steady_clock::now();
@@ -72,14 +87,17 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
         const auto elapsed   = std::chrono::steady_clock::now() - start;
         const auto remaining = std::max(std::chrono::milliseconds::zero(),
                                         timeout - std::chrono::duration_cast<std::chrono::milliseconds>(elapsed));
-        pollfd     descriptor{sync_file.value, POLLIN, 0};
+        pollfd     descriptor{.fd = sync_file.value, .events = POLLIN, .revents = 0};
         const int  result = poll(&descriptor, 1, static_cast<int>(std::min<int64_t>(remaining.count(), INT_MAX)));
-        if (result < 0 && errno == EINTR)
+        if (result < 0 && errno == EINTR) {
             continue;
-        if (result < 0)
+        }
+        if (result < 0) {
             throw std::system_error(errno, std::generic_category(), "wait for DMA-BUF write fence");
-        if (result == 0)
+        }
+        if (result == 0) {
             throw recording_unavailable_s("DMA-BUF producer readiness budget exhausted");
+        }
         if ((descriptor.revents & (POLLERR | POLLNVAL | POLLHUP)) != 0 || (descriptor.revents & POLLIN) == 0) {
             throw std::runtime_error("DMA-BUF producer fence failed");
         }
@@ -138,7 +156,11 @@ completion_s dma_buf_copy_s::submit(recording_s&              record,
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
     barrier.dstQueueFamilyIndex = state.owner->queue_family;
     barrier.image               = image->image;
-    barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                   .baseMipLevel   = 0,
+                                   .levelCount     = 1,
+                                   .baseArrayLayer = 0,
+                                   .layerCount     = 1};
     VkDependencyInfo dependency{};
     dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependency.imageMemoryBarrierCount = 1;

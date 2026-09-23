@@ -147,6 +147,8 @@ struct device_state_s : std::enable_shared_from_this<device_state_s>
     std::vector<const char*> select_cuda_extensions(std::span<const uint8_t, VK_UUID_SIZE> uuid,
                                                     std::span<const VkExtensionProperties> extensions);
     std::vector<const char*> select_physical_device(bool surface_maintenance_available);
+    void                     enable_external_image_import(std::span<const VkExtensionProperties> selected_extensions,
+                                                          std::vector<const char*>&              device_extensions);
     void                     initialize_logical_device(std::span<const char* const> device_extensions);
     void                     initialize_allocator();
     void                     initialize_submission_timeline();

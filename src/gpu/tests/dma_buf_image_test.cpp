@@ -16,7 +16,7 @@ namespace miximus::gpu::detail { namespace {
 
 class dma_buf_image_test : public testing::Test
 {
-  protected:
+  public:
     std::shared_ptr<device_state_s>  device;
     std::shared_ptr<texture_state_s> exported;
     dma_buf_image_s                  descriptor;
@@ -44,12 +44,13 @@ class dma_buf_image_test : public testing::Test
 
     void TearDown() override
     {
-        if (producer_pool) {
+        if (producer_pool != VK_NULL_HANDLE) {
             device->vk.vkQueueWaitIdle(device->queue);
             device->vk.vkDestroyCommandPool(device->device, producer_pool, nullptr);
         }
-        if (producer_signal)
+        if (producer_signal != VK_NULL_HANDLE) {
             device->vk.vkDestroySemaphore(device->device, producer_signal, nullptr);
+        }
         if (descriptor.fd >= 0) {
             close(descriptor.fd);
         }
@@ -122,7 +123,7 @@ class dma_buf_image_test : public testing::Test
             info.pNext       = &external;
             info.imageType   = query.type;
             info.format      = format;
-            info.extent      = {64, 32, 1};
+            info.extent      = {.width = 64, .height = 32, .depth = 1};
             info.mipLevels   = 1;
             info.arrayLayers = 1;
             info.samples     = VK_SAMPLE_COUNT_1_BIT;
@@ -157,7 +158,7 @@ class dma_buf_image_test : public testing::Test
             subresource.aspectMask = VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT;
             VkSubresourceLayout layout{};
             device->vk.vkGetImageSubresourceLayout(device->device, exported->image, &subresource, &layout);
-            descriptor.extent   = {64, 32};
+            descriptor.extent   = {.width = 64, .height = 32};
             descriptor.order    = format == VK_FORMAT_B8G8R8A8_UNORM ? channel_order_e::bgra : channel_order_e::rgba;
             descriptor.modifier = candidate.drmFormatModifier;
             descriptor.offset   = layout.offset;
@@ -194,7 +195,11 @@ class dma_buf_image_test : public testing::Test
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image               = exported->image;
-        barrier.subresourceRange    = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                       .baseMipLevel   = 0,
+                                       .levelCount     = 1,
+                                       .baseArrayLayer = 0,
+                                       .layerCount     = 1};
         VkDependencyInfo dependency{};
         dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency.imageMemoryBarrierCount = 1;
@@ -249,17 +254,20 @@ class dma_buf_image_test : public testing::Test
         check(device->vk.vkGetSemaphoreFdKHR(device->device, &get, &fd), "export test producer fence");
         // SYNC_FD may use -1 for an already-signalled payload. In that case
         // the producer has completed; there is no outstanding fence to attach.
-        if (fd == -1)
+        if (fd == -1) {
             return;
+        }
         dma_buf_import_sync_file fence{};
         fence.flags      = DMA_BUF_SYNC_WRITE;
         fence.fd         = fd;
         const int result = ioctl(descriptor.fd, DMA_BUF_IOCTL_IMPORT_SYNC_FILE, &fence);
         const int error  = errno;
-        if (fd >= 0)
+        if (fd >= 0) {
             close(fd);
-        if (result < 0)
+        }
+        if (result < 0) {
             throw std::system_error(error, std::generic_category(), "attach test producer fence");
+        }
     }
 };
 

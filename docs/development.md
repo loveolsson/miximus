@@ -45,8 +45,12 @@ Use a separate build directory for clang-tidy so normal builds remain unaffected
 
 ```bash
 cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON
-cmake --build build-tidy -j
+cmake --build build-tidy -j2
 ```
+
+Start tidy builds with two jobs and avoid running another build or tidy pass concurrently. Clang-tidy disables
+precompiled headers and can use considerably more memory than an ordinary compile; increase concurrency only when
+there is enough memory left for the editor and other applications.
 
 The repository-root `.clang-tidy` contains the shared check configuration used by both CMake and supporting IDE
 extensions. CMake also exports `build/compile_commands.json` for clangd and other compilation-database consumers.
@@ -54,7 +58,7 @@ Precompiled headers are enabled by default for targets that make extensive use o
 can be disabled with `-DMIXIMUS_ENABLE_PRECOMPILED_HEADERS=OFF`. They are disabled automatically while clang-tidy is
 enabled because the compiler and clang-tidy may use incompatible PCH formats.
 
-GPU tests inherit these checks and exclude GoogleTest macro expansions from cognitive-complexity scoring.
+GPU and CEF tests inherit these checks and exclude GoogleTest macro expansions from cognitive-complexity scoring.
 Their own loops and conditionals are still checked; assertion implementation details do not inflate the score.
 
 ### Sanitizers

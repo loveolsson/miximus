@@ -22,8 +22,9 @@ int main(int argc, char* argv[])
         miximus::gpu::device_s gpu(options);
         auto                   loader_path = [] {
             auto* library = dlopen("libvulkan.so.1", RTLD_NOLOAD | RTLD_NOW);
-            if (!library)
+            if (!library) {
                 throw std::runtime_error("Vulkan loader is not loaded");
+            }
             Dl_info           info{};
             const bool        found = dladdr(dlsym(library, "vkGetInstanceProcAddr"), &info) != 0;
             const std::string path  = found ? info.dli_fname : "";
@@ -35,11 +36,13 @@ int main(int argc, char* argv[])
         {
             miximus::nodes::cef::detail::runtime_s runtime(argv[1], argv[2]);
             std::cout << "CEF threaded runtime initialized\n";
-            if (loader_path() != before)
+            if (loader_path() != before) {
                 throw std::runtime_error("CEF changed the Vulkan loader");
+            }
         }
-        if (gpu.validation_errors() != 0)
+        if (gpu.validation_errors() != 0) {
             throw std::runtime_error("Vulkan validation failed");
+        }
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

@@ -128,6 +128,11 @@ target_link_libraries(cef_sdk INTERFACE libcef_dll_wrapper cef_binary ${CEF_STAN
 
 add_executable(miximus_cef_helper helper.cpp)
 target_link_libraries(miximus_cef_helper PRIVATE cef_sdk)
+# The wrapper directory exempts external libraries from tidy, but this helper
+# and its renderer callbacks are Miximus code.
+if(MIXIMUS_ENABLE_CLANG_TIDY)
+    set_property(TARGET miximus_cef_helper PROPERTY CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_EXECUTABLE}")
+endif()
 set_target_properties(miximus_cef_helper PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CEF_STAGE}"
     BUILD_RPATH "$ORIGIN"

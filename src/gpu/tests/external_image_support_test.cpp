@@ -37,7 +37,7 @@ TEST(external_image_support, MissingAnyRequiredExtensionLeavesImportDisabled)
         EXPECT_FALSE(result.enabled);
         EXPECT_TRUE(result.enabled_extensions.empty());
         ASSERT_EQ(result.missing_support.size(), 1U);
-        EXPECT_EQ(result.missing_support.front(), complete_set[missing]);
+        EXPECT_EQ(result.missing_support.front(), complete_set.at(missing));
     }
 }
 
@@ -51,7 +51,7 @@ TEST(external_image_support, CompleteSetEnablesOnlyTheImportExtensions)
     EXPECT_TRUE(result.missing_support.empty());
     ASSERT_EQ(result.enabled_extensions.size(), complete_set.size());
     for (size_t index = 0; index < complete_set.size(); ++index) {
-        EXPECT_EQ(result.enabled_extensions[index], complete_set[index]);
+        EXPECT_EQ(result.enabled_extensions[index], complete_set.at(index));
     }
 }
 #else

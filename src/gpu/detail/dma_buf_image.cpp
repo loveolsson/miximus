@@ -110,7 +110,7 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     info.pNext       = &external;
     info.imageType   = VK_IMAGE_TYPE_2D;
     info.format      = format;
-    info.extent      = {descriptor.extent.width, descriptor.extent.height, 1};
+    info.extent      = {.width = descriptor.extent.width, .height = descriptor.extent.height, .depth = 1};
     info.mipLevels   = 1;
     info.arrayLayers = 1;
     info.samples     = VK_SAMPLE_COUNT_1_BIT;
@@ -160,7 +160,11 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     view.image            = image->image;
     view.viewType         = VK_IMAGE_VIEW_TYPE_2D;
     view.format           = format;
-    view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    view.subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                             .baseMipLevel   = 0,
+                             .levelCount     = 1,
+                             .baseArrayLayer = 0,
+                             .layerCount     = 1};
     check(device->vk.vkCreateImageView(device->device, &view, nullptr, &image->view), "create DMA-BUF sampled view");
     image->sampled_view = image->view;
     return image;

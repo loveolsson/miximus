@@ -64,6 +64,18 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBit
     return VK_FALSE;
 }
 
+int device_score(VkPhysicalDeviceType type)
+{
+    switch (type) {
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+            return 3;
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+            return 2;
+        default:
+            return 1;
+    }
+}
+
 std::string uuid_string(const uint8_t* uuid)
 {
     std::string result;
@@ -433,17 +445,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
             (!options.presentation || has_device_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME));
         entry["supported"] = supported;
         report["devices"].push_back(entry);
-        int score = 1;
-        switch (device_properties.properties.deviceType) {
-            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
-                score = 3;
-                break;
-            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
-                score = 2;
-                break;
-            default:
-                break;
-        }
+        const int score = device_score(device_properties.properties.deviceType);
 
         if (!supported || score <= best_score ||
             (!requested_device_uuid.empty() && requested_device_uuid != uuid_string(identity.deviceUUID))) {
@@ -492,21 +494,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         }
     }
 
-    // Import capability never participates in device eligibility or scoring.
-    // Keep its owned extension strings alive through vkCreateDevice, and avoid
-    // duplicates with the independently requested CUDA extension set.
-    std::vector<std::string_view> import_extensions;
-    import_extensions.reserve(selected_extensions.size());
-    for (const auto& extension : selected_extensions) {
-        import_extensions.emplace_back(extension.extensionName);
-    }
-    external_image_import = probe_external_image_import(options.external_image_import, import_extensions);
-    for (const auto& extension : external_image_import.enabled_extensions) {
-        if (!std::ranges::any_of(device_extensions,
-                                 [&extension](const char* existing) { return extension == existing; })) {
-            device_extensions.push_back(extension.c_str());
-        }
-    }
+    enable_external_image_import(selected_extensions, device_extensions);
     report["external_image_import"] = {
         {"requested",          external_image_import.requested         },
         {"enabled",            external_image_import.enabled           },
@@ -526,6 +514,26 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
     }
 
     return device_extensions;
+}
+
+void device_state_s::enable_external_image_import(std::span<const VkExtensionProperties> selected_extensions,
+                                                  std::vector<const char*>&              device_extensions)
+{
+    // Import capability never participates in device eligibility or scoring.
+    // Keep its owned extension strings alive through vkCreateDevice, and avoid
+    // duplicates with the independently requested CUDA extension set.
+    std::vector<std::string_view> import_extensions;
+    import_extensions.reserve(selected_extensions.size());
+    for (const auto& extension : selected_extensions) {
+        import_extensions.emplace_back(extension.extensionName);
+    }
+    external_image_import = probe_external_image_import(options.external_image_import, import_extensions);
+    for (const auto& extension : external_image_import.enabled_extensions) {
+        if (!std::ranges::any_of(device_extensions,
+                                 [&extension](const char* existing) { return extension == existing; })) {
+            device_extensions.push_back(extension.c_str());
+        }
+    }
 }
 
 void device_state_s::initialize_logical_device(std::span<const char* const> device_extensions)

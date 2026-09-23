@@ -81,7 +81,7 @@ TEST_F(external_image_device, OptionalImportPreservesDeviceAndOrdinaryRendering)
     EXPECT_EQ(support.enabled_extensions.size(), available ? 5U : 0U);
     EXPECT_EQ(support.missing_support.empty(), available);
 
-    auto texture = importing.create_texture({32, 32});
+    auto texture = importing.create_texture({.width = 32, .height = 32});
     auto context = importing.create_recording_context();
     auto record  = context.try_record();
     ASSERT_TRUE(record);
@@ -101,7 +101,7 @@ TEST_F(external_image_device, ImportAndCudaRequestsCanCoexist)
     // support must remain independent, with no duplicate device extensions.
     device_s device(options);
     EXPECT_TRUE(device.external_image_import_support().requested);
-    auto texture = device.create_texture({32, 32});
+    auto texture = device.create_texture({.width = 32, .height = 32});
     auto record  = device.try_record();
     ASSERT_TRUE(record);
     record->clear(texture);

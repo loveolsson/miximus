@@ -5,8 +5,8 @@
 #include <array>
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <mutex>
-#include <signal.h>
 #include <stdexcept>
 #include <thread>
 
@@ -23,15 +23,24 @@ class preserved_signals_s
   public:
     preserved_signals_s()
     {
-        for (size_t index = 0; index < signals.size(); ++index)
-            if (sigaction(signals[index], nullptr, &actions_[index]) != 0)
+        for (size_t index = 0; index < signals.size(); ++index) {
+            if (sigaction(signals.at(index), nullptr, &actions_.at(index)) != 0) {
                 throw std::runtime_error("Cannot preserve application signal handlers before CEF startup");
+            }
+        }
     }
+    preserved_signals_s(const preserved_signals_s& other)            = delete;
+    preserved_signals_s& operator=(const preserved_signals_s& other) = delete;
+    preserved_signals_s(preserved_signals_s&& other)                 = delete;
+    preserved_signals_s& operator=(preserved_signals_s&& other)      = delete;
+
     ~preserved_signals_s()
     {
-        for (size_t index = 0; index < signals.size(); ++index)
-            if (sigaction(signals[index], &actions_[index], nullptr) != 0)
+        for (size_t index = 0; index < signals.size(); ++index) {
+            if (sigaction(signals.at(index), &actions_.at(index), nullptr) != 0) {
                 std::terminate();
+            }
+        }
     }
 };
 
@@ -41,10 +50,16 @@ class browser_app_s final
 {
     IMPLEMENT_REFCOUNTING(browser_app_s);
 
-  public:
     std::mutex              mutex;
     std::condition_variable ready;
     bool                    initialized{};
+
+  public:
+    bool wait_initialized()
+    {
+        std::unique_lock lock(mutex);
+        return ready.wait_for(lock, std::chrono::seconds(10), [&] { return initialized; });
+    }
 
     void OnBeforeCommandLineProcessing(const CefString& /* process_type */,
                                        CefRefPtr<CefCommandLine> command_line) override
@@ -64,7 +79,7 @@ class browser_app_s final
     void                                OnContextInitialized() override
     {
         {
-            std::lock_guard lock(mutex);
+            std::scoped_lock lock(mutex);
             initialized = true;
         }
         ready.notify_all();
@@ -85,26 +100,24 @@ runtime_s::runtime_s(const std::filesystem::path& runtime_directory, const std::
     const auto profile = std::filesystem::absolute(profile_directory);
     std::filesystem::create_directories(profile);
     CefSettings settings;
-    settings.multi_threaded_message_loop  = true;
-    settings.windowless_rendering_enabled = true;
-    settings.command_line_args_disabled   = true;
+    settings.multi_threaded_message_loop  = 1;
+    settings.windowless_rendering_enabled = 1;
+    settings.command_line_args_disabled   = 1;
     // Keep the host application's existing SIGINT/SIGTERM handlers in charge.
-    settings.disable_signal_handlers             = true;
+    settings.disable_signal_handlers             = 1;
     CefString(&settings.browser_subprocess_path) = (runtime / "miximus_cef_helper").string();
     CefString(&settings.resources_dir_path)      = runtime.string();
     CefString(&settings.locales_dir_path)        = (runtime / "locales").string();
     CefString(&settings.root_cache_path)         = profile.string();
     CefString(&settings.log_file)                = (profile / "cef.log").string();
-    char                      name[]             = "miximus";
-    char*                     argv[]             = {name, nullptr};
-    const CefMainArgs         args(1, argv);
+    std::array<char, 8>       name{"miximus"};
+    std::array<char*, 2>      argv{name.data(), nullptr};
+    const CefMainArgs         args(1, argv.data());
     const preserved_signals_s application_signals;
     if (!CefInitialize(args, settings, state_->app, nullptr)) {
         throw std::runtime_error("CEF initialization failed");
     }
-    std::unique_lock lock(state_->app->mutex);
-    if (!state_->app->ready.wait_for(lock, std::chrono::seconds(10), [&] { return state_->app->initialized; })) {
-        lock.unlock();
+    if (!state_->app->wait_initialized()) {
         CefShutdown();
         throw std::runtime_error("CEF context initialization timed out");
     }
