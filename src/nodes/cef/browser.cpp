@@ -145,16 +145,22 @@ class node_impl final : public node_i
         if (now >= next_metrics_ || !metrics) {
             status->write(id_,
                           status::cef_browser_status_s{
-                              .cef_state             = metrics    ? std::string(phase_name(metrics->phase))
-                                                       : request_ ? "starting"
-                                                                  : "failed",
-                              .cef_error             = metrics ? metrics->error : error_,
-                              .cef_paints            = metrics ? metrics->received : 0,
-                              .cef_copies            = metrics ? metrics->copied : 0,
-                              .cef_capacity_drops    = metrics ? metrics->dropped : 0,
-                              .cef_restarts          = restarts_,
-                              .cef_timing_rejections = metrics ? metrics->timing_rejections : 0,
-                              .cef_timing_error      = metrics ? metrics->timing_error : "",
+                              .cef_state                        = metrics    ? std::string(phase_name(metrics->phase))
+                                                                  : request_ ? "starting"
+                                                                             : "failed",
+                              .cef_error                        = metrics ? metrics->error : error_,
+                              .cef_paints                       = metrics ? metrics->received : 0,
+                              .cef_copies                       = metrics ? metrics->copied : 0,
+                              .cef_capacity_drops               = metrics ? metrics->dropped : 0,
+                              .cef_restarts                     = restarts_,
+                              .cef_timing_rejections            = metrics ? metrics->timing_rejections : 0,
+                              .cef_timing_error                 = metrics ? metrics->timing_error : "",
+                              .cef_capture_p50_upper_us         = metrics ? metrics->capture.p50_upper_us : 0,
+                              .cef_capture_p95_upper_us         = metrics ? metrics->capture.p95_upper_us : 0,
+                              .cef_capture_p99_upper_us         = metrics ? metrics->capture.p99_upper_us : 0,
+                              .cef_capture_max_us               = metrics ? metrics->capture.maximum_us : 0,
+                              .cef_completion_wait_p95_upper_us = metrics ? metrics->completion_wait.p95_upper_us : 0,
+                              .cef_completion_wait_max_us       = metrics ? metrics->completion_wait.maximum_us : 0,
                           });
             if (metrics) {
                 const auto& queue = metrics->source_queue;

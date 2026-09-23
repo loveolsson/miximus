@@ -1,4 +1,7 @@
 #include "gpu/tests/color_compare.hpp"
+#include "include/cef_browser.h"
+#include "include/cef_devtools_message_observer.h"
+#include "include/cef_task.h"
 #include "logger/logger.hpp"
 #include "nodes/cef/subsystem.hpp"
 
@@ -12,6 +15,7 @@
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <sys/resource.h>
 #include <thread>
 #include <vector>
 
@@ -137,6 +141,121 @@ void exercise_commands(detail::browser_session_s& session)
         << "JSON/Promise replies, exceptions, bounded pending requests, timeouts and navigation cancellation passed\n";
 }
 
+// Test-process-only fault injection through CEF's public DevTools interface.
+// No debugging port, production command or session API is added.
+class crash_observer_s final : public CefDevToolsMessageObserver
+{
+    IMPLEMENT_REFCOUNTING(crash_observer_s);
+
+  public:
+    bool OnDevToolsMessage(CefRefPtr<CefBrowser>, const void* message, size_t size) override
+    {
+        std::cerr << "Crash probe DevTools: " << std::string_view(static_cast<const char*>(message), size) << '\n';
+        return false;
+    }
+};
+
+class crash_task_s final : public CefTask
+{
+    std::promise<CefRefPtr<CefRegistration>> result_;
+    std::string                              url_;
+    std::string                              method_;
+    IMPLEMENT_REFCOUNTING(crash_task_s);
+
+  public:
+    crash_task_s(std::promise<CefRefPtr<CefRegistration>> result, std::string url, std::string method)
+        : result_(std::move(result))
+        , url_(std::move(url))
+        , method_(std::move(method))
+    {
+    }
+    void Execute() override
+    {
+        // This probe creates fewer than 32 browsers, in its own embedded runtime.
+        // Match the fixture URL as well; never target another live test browser.
+        for (int id = 1; id <= 32; ++id) {
+            auto browser = CefBrowserHost::GetBrowserByIdentifier(id);
+            if (browser && browser->GetMainFrame()->GetURL().ToString() == url_) {
+                auto observer = browser->GetHost()->AddDevToolsMessageObserver(new crash_observer_s);
+                if (browser->GetHost()->ExecuteDevToolsMethod(0, method_, nullptr) == 0)
+                    observer = nullptr;
+                result_.set_value(observer);
+                return;
+            }
+        }
+        result_.set_value(nullptr);
+    }
+};
+
+void exercise_renderer_failure(detail::browser_session_s& session)
+{
+    await_context(session);
+    auto                                     pending = session.request("() => new Promise(() => {})", "null");
+    std::promise<CefRefPtr<CefRegistration>> injected;
+    auto                                     result = injected.get_future();
+    if (!CefPostTask(TID_UI,
+                     new crash_task_s(std::move(injected),
+                                      "data:text/html,<body style='background:blue'>Resize</body>",
+                                      "Page.crash")) ||
+        result.wait_for(5s) != std::future_status::ready)
+        throw std::runtime_error("Cannot inject renderer crash");
+    auto observer = result.get();
+    if (!observer)
+        throw std::runtime_error("Cannot observe renderer crash");
+    const auto deadline = std::chrono::steady_clock::now() + 45s;
+    while (session.metrics().phase != detail::browser_session_s::phase_e::failed &&
+           std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(10ms);
+    const auto metrics = session.metrics();
+    if (metrics.phase != detail::browser_session_s::phase_e::failed ||
+        metrics.error.find("renderer terminated") == std::string::npos)
+        throw std::runtime_error("Renderer termination did not fail its session: phase=" +
+                                 std::to_string(static_cast<int>(metrics.phase)) + " error=" + metrics.error);
+    const auto cancelled = command_result(std::move(pending));
+    if (cancelled.error.empty() || cancelled.error.find("timed out") != std::string::npos || session.context_ready())
+        throw std::runtime_error("Renderer termination did not invalidate pending commands/context");
+    std::cout << "Renderer crash reported and pending commands cancelled: " << metrics.error << '\n';
+}
+
+void exercise_gpu_failure(gpu::device_s& device, detail::browser_session_s& session)
+{
+    await_context(session);
+    auto                                     retained = await_frame(session);
+    std::promise<CefRefPtr<CefRegistration>> injected;
+    auto                                     result = injected.get_future();
+    if (!CefPostTask(TID_UI,
+                     new crash_task_s(std::move(injected),
+                                      "data:text/html,<body style='background:green'>Recovered</body>",
+                                      "Browser.crashGpuProcess")) ||
+        result.wait_for(5s) != std::future_status::ready)
+        throw std::runtime_error("Cannot inject GPU subprocess crash");
+    auto observer = result.get();
+    if (!observer)
+        throw std::runtime_error("Cannot observe GPU subprocess crash");
+    // Test-only settling interval. Production never guesses readiness from time.
+    std::this_thread::sleep_for(1s);
+    auto context     = device.create_recording_context(1);
+    auto destination = device.create_texture({801, 451});
+    auto recording   = context.try_record();
+    recording->draw(retained->texture(), destination, {});
+    if (recording->submit().wait(5s) != gpu::wait_result_e::ready)
+        throw std::runtime_error("Owned frame became unusable after CEF GPU subprocess loss");
+    recording.reset();
+    const auto before = session.metrics().copied;
+    const auto changed =
+        command_result(session.request("() => { document.body.style.background='red'; return null; }", "null"));
+    if (!changed.error.empty())
+        throw std::runtime_error("Renderer unavailable after GPU subprocess loss: " + changed.error);
+    const auto deadline = std::chrono::steady_clock::now() + 10s;
+    while (session.metrics().copied <= before && std::chrono::steady_clock::now() < deadline) {
+        (void)await_frame(session);
+        std::this_thread::sleep_for(10ms);
+    }
+    if (session.metrics().copied <= before)
+        throw std::runtime_error("Accelerated capture did not resume after GPU subprocess loss");
+    std::cout << "Owned frame survived CEF GPU subprocess loss and accelerated capture resumed\n";
+}
+
 void exercise_color(gpu::device_s& device, detail::browser_session_s& session)
 {
     await_context(session);
@@ -212,6 +331,12 @@ int main(int argc, char** argv)
     if (argc != 3)
         return 2;
     try {
+        // This executable intentionally crashes its own renderer. Avoid lengthy
+        // systemd core collection delaying the child-exit notification. The
+        // limit applies only to this probe and its children, never the app/host.
+        const rlimit core_limit{0, 0};
+        if (setrlimit(RLIMIT_CORE, &core_limit) != 0)
+            throw std::runtime_error("Cannot disable core dumps for the crash probe");
         logger::init_loggers(spdlog::level::info);
         gpu::device_options_s options;
         options.external_image_import = true;
@@ -267,12 +392,25 @@ int main(int argc, char** argv)
                 throw std::runtime_error("Retiring generation GPU use failed");
             recording.reset();
             request = subsystem.create_session({
-                .url = "data:text/html,<body style='background:blue'>Resize</body>", .dimensions = {800, 450}
+                .url = "data:text/html,<body style='background:blue'>Resize</body>", .dimensions = {801, 451}
             });
             session = await_session(*request);
             frame   = await_frame(*session);
-            if (frame->texture().dimensions() != gpu::vec2i_t{800, 450})
+            if (frame->texture().dimensions() != gpu::vec2i_t{801, 451})
                 throw std::runtime_error("Replacement viewport was not applied");
+            exercise_renderer_failure(*session);
+            frame.reset();
+            session.reset();
+            request.reset();
+            request = subsystem.create_session({
+                .url = "data:text/html,<body style='background:green'>Recovered</body>", .dimensions = {801, 451}
+            });
+            session = await_session(*request);
+            frame   = await_frame(*session);
+            if (frame->texture().dimensions() != gpu::vec2i_t{801, 451})
+                throw std::runtime_error("Odd-sized replacement after renderer crash failed");
+            std::cout << "Fresh renderer captured an odd-sized viewport after crash retirement\n";
+            exercise_gpu_failure(device, *session);
             auto invalid = subsystem.create_session({
                 .url = "about:blank", .dimensions = {8192, 8192}
             });

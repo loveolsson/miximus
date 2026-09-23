@@ -15,9 +15,13 @@ DeckLink module boundaries. Browser sessions, transport selection, timing, comma
 node's details and subsystem. Its graph output is the existing sampled texture interface: **no downstream node
 should know or care that its texture came from CEF**. App state owns the shared runtime, not browser behavior.
 
-Use **stock CEF 152.0.8 binary distributions, pinned per operating system and architecture**, behind a wrapper in
-`src/wrapper/cef/`. Keep binaries out of Git and ship the complete tested runtime alongside the application. A
-submodule can pin integration source, but cannot replace the binary SDK.
+Use **CEF 152.0.8, pinned per operating system and architecture**, behind a wrapper in `src/wrapper/cef/`.
+The approved Linux build now requires the revision-2 native-handle allocation/capture and producer-completion
+patches; the stock Linux SDK did not satisfy accelerated capture on the tested NVIDIA adapter. See the
+[wrapper's source-build and qualification contract](../src/wrapper/cef/README.md). This approved dependency patching
+does not authorize Miximus rendering changes. Other platform artifacts still require their own qualification.
+Keep binaries out of Git and ship the complete tested runtime alongside the application. A submodule can pin
+integration source, but cannot replace the binary SDK.
 
 **Accelerated paint only. All frame copies, blits, conversions and popup composition must execute on the GPU.**
 Implement `OnAcceleratedPaint`; do not implement a CPU pixel ingestion path, CPU staging/readback/upload transport,

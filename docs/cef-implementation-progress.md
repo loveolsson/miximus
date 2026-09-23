@@ -496,3 +496,64 @@ adapter, not an endurance or cross-platform qualification.
 Renderer-crash recovery is still unqualified. An attempted `chrome://crash` navigation stayed in initial loading and
 did not demonstrate renderer termination; it must not be reported as a successful crash-injection test. Popup
 composition, controlled local assets, deployment and remaining platform qualification are also still outstanding.
+
+## Renderer termination and odd viewport qualification
+
+The standalone subsystem probe now uses CEF's public DevTools `Page.crash` command to terminate its own fixture
+renderer. It verifies the session reports the termination, invalidates its JavaScript context, cancels pending
+requests, closes/retires the failed browser, and captures from a newly created renderer. Replacement at 801×451
+also passed, exercising odd native-image dimensions. This tests subsystem replacement; it does not yet prove the
+full node's three-retry/backoff behavior under repeated renderer crashes or GPU-process failure.
+
+The first fault-injection attempts were delayed by this machine's systemd core collector. A crash command accepted
+by DevTools is not itself evidence that `OnRenderProcessTerminated` has run. The hardware probe therefore disables
+core dumps for its own process and children before initialization. With that test-only limit, CEF reported
+`SIGTRAP`, cancellation and replacement passed, and Vulkan validation remained clean. Miximus production signal
+handling, crash policy and recovery behavior were not changed.
+
+`scripts/test_cef_load.py` makes the earlier campaign repeatable, using private settings and retaining raw samples,
+arguments and per-case reports. It defaults to 95 seconds per case with a 30-second measurement warm-up and a 20 ms
+injected render stall every 120 frames. Use `--four-uhd-only` for the focused recovery run. Run with the documented
+Vulkan validation environment. Counter values are reported rather than silently classified as acceptable;
+initial clock acquisition remains visible in the raw samples.
+
+The CEF wrapper's install rules were exercised into a private prefix. Runtime assets, notices, provenance, relative
+`cef-link` symlinks and the helper's `$ORIGIN` library path installed successfully. This is CEF payload staging
+validation, not an offline full-app deployment result: Miximus currently has no application install target, and its
+other existing SDK/system-library dependencies have not been packaged by this work.
+
+## Capture timing diagnostics and repeatability limit
+
+A repeat of the four-UHD campaign (`cef-load-20260923-104153`) did not reproduce the earlier result: measured capture
+rates were approximately 34–35 fps, with 78 deadline misses and two skipped program frames for 32 injected stalls.
+There were still no capture-capacity drops, queue overflows or Vulkan validation errors. This later result prevents
+claiming a generally qualified four-UHD/60 workload from the successful earlier run. No queue tuning, paint skipping
+or graph changes were made in response.
+
+The CEF session now records fixed-size lifetime distributions for each browser generation. `cef_capture_*` measures
+host elapsed time from accelerated callback entry through full-frame import/conversion, completed borrowed-source
+reads and enqueue, for successful captures only. `cef_completion_wait_*` measures the portion spent waiting on
+Miximus's completion ticket after submission; it excludes import/recording and the producer-fence check. Neither is
+a GPU timestamp measurement, Chromium render time, IPC latency, nor a frame-correlation measurement. Capacity drops
+remain a separate count. Metadata-only histograms have constant producer work; percentiles are upper bounds with
+100 microsecond buckets through 12.8 ms and the observed maximum as the overflow bound. Maxima are rounded up to
+microseconds. Counters reset with the browser session and follow the existing rate-limited status publication.
+Native and generated web contracts expose the same names.
+
+The campaign's optional `--gpu-telemetry` records NVIDIA utilization, clocks, memory and temperature every five
+seconds, alongside raw status samples, to help distinguish transfer contention and system pressure in subsequent
+measurements. It does not change application scheduling or GPU policy.
+
+The instrumented repeat (`cef-load-20260923-104527`) measured 64.85 seconds after warm-up: 33 injected stalls,
+33 deadline misses, zero skipped frames, approximately 59.8 captures/s per source and zero repeats, capacity drops
+or queue overflows. Lifetime capture p95 upper bounds were 3.3–3.8 ms; completion-wait p95 bounds were 2.0–2.4 ms.
+Capture maxima were 6.33–8.49 ms. The retained telemetry records a 5 GiB P2000, roughly 4.3 GiB total GPU memory use
+under load and changing GPU clocks/temperature. The slower previous run had no such telemetry, so its cause remains
+unproven. Both outcomes are retained rather than attributing the difference to the new instrumentation.
+
+The subsystem probe additionally invokes DevTools `Browser.crashGpuProcess` in its isolated runtime. CEF's log
+confirmed GPU subprocess exit and reinitialization (140 ms on this run). A previously owned texture remained usable
+by an ordinary Miximus GPU draw; a subsequent page update produced new accelerated captures. Renderer loss,
+GPU-subprocess loss, odd-size replacement, color/alpha comparisons and shutdown all passed with zero Vulkan
+validation errors. These deliberate faults affect only the probe's Chromium processes; no production fault-injection
+API was introduced. Native/web builds and all 136 ordinary tests passed after the diagnostics change.

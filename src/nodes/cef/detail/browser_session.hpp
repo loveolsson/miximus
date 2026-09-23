@@ -1,5 +1,6 @@
 #pragma once
 
+#include "capture_timing.hpp"
 #include "command_protocol.hpp"
 #include "core/frame_context.hpp"
 #include "frame_pool.hpp"
@@ -48,6 +49,8 @@ class browser_session_s
         uint64_t                            dropped{};
         uint64_t                            timing_rejections{};
         std::string                         timing_error;
+        capture_timing_s::snapshot_s        capture;
+        capture_timing_s::snapshot_s        completion_wait;
         media::timed_source_queue_metrics_s source_queue;
     };
 

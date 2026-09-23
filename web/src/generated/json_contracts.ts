@@ -261,6 +261,12 @@ export interface cef_browser_status_s {
   readonly cef_restarts: number;
   readonly cef_timing_rejections: number;
   readonly cef_timing_error: string;
+  readonly cef_capture_p50_upper_us: number;
+  readonly cef_capture_p95_upper_us: number;
+  readonly cef_capture_p99_upper_us: number;
+  readonly cef_capture_max_us: number;
+  readonly cef_completion_wait_p95_upper_us: number;
+  readonly cef_completion_wait_max_us: number;
 }
 
 export interface device_names_status_s {

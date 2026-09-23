@@ -74,6 +74,8 @@ struct shared_state_s
     mutable std::mutex               mutex;
     mutable std::condition_variable  changed;
     std::string                      error;
+    capture_timing_s                 capture_timing;
+    capture_timing_s                 completion_wait_timing;
     frame_queue_t                    frames{
                            {.capacity = 4, .playout_delay_frames = 1}
     };
@@ -454,8 +456,9 @@ class client_s final
     {
         if (state_->close_requested || state_->phase == phase_e::failed)
             return;
-        const auto arrival  = utils::flicks_now();
-        const auto sequence = ++state_->received;
+        const auto capture_started = std::chrono::steady_clock::now();
+        const auto arrival         = utils::flicks_now();
+        const auto sequence        = ++state_->received;
         try {
             // Popup composition is a subsequent contained session step. Never
             // silently publish an incomplete browser image or ingest CPU paint.
@@ -498,8 +501,10 @@ class client_s final
             // A timeout does not cancel GPU work. The borrowed source cannot be
             // returned while our read is pending; the app's shutdown watchdog
             // handles a device that stops making progress.
+            const auto wait_started = std::chrono::steady_clock::now();
             while (completion.wait(1s) != gpu::wait_result_e::ready) {
             }
+            const auto wait_finished = std::chrono::steady_clock::now();
             if (state_->close_requested)
                 return;
             const media::media_clock_sample_s clock{
@@ -510,7 +515,13 @@ class client_s final
             };
             state_->frames.push(std::make_shared<frame_queue_t::frame_t>(
                 clock, arrival, std::move(frame), media::source_frame_readiness_e::ready));
-            ++state_->copied;
+            {
+                const auto            finished = std::chrono::steady_clock::now();
+                const std::lock_guard lock(state_->mutex);
+                state_->capture_timing.add(finished - capture_started);
+                state_->completion_wait_timing.add(wait_finished - wait_started);
+                ++state_->copied;
+            }
             state_->phase = phase_e::ready;
         } catch (const gpu::recording_unavailable_s&) {
             ++state_->dropped;
@@ -692,6 +703,8 @@ browser_session_s::metrics_s browser_session_s::metrics() const
             .dropped           = state.dropped.load(),
             .timing_rejections = state.timing_rejections,
             .timing_error      = state.timing_error,
+            .capture           = state.capture_timing.snapshot(),
+            .completion_wait   = state.completion_wait_timing.snapshot(),
             .source_queue      = state.frames.metrics()};
 }
 

@@ -6,7 +6,7 @@ failed with that artifact. Do not claim accelerated support from its successful 
 
 ## Approved source build
 
-`source-build.json` pins CEF, Chromium, depot_tools, the bootstrap script digest, build arguments and both patch
+`source-build.json` pins CEF, Chromium, depot_tools, the bootstrap script digest, build arguments and required patch
 digests. The user approved maintaining this patched Linux version on 2026-09-22. The source build remains based on
 the selected stable CEF 152.0.8 / Chromium 152.0.7977.134 release.
 
