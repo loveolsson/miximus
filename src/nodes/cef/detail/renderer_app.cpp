@@ -27,6 +27,7 @@ struct context_state_s
     std::string                                        token;
     CefRefPtr<CefV8Context>                            context;
     CefRefPtr<CefV8Value>                              invoke;
+    CefRefPtr<CefV8Value>                              timing_handler;
     bool                                               active{true};
     std::map<std::string, CefRefPtr<result_handler_s>> pending;
 };
@@ -102,7 +103,7 @@ class renderer_app_s final
         CefRefPtr<CefV8Exception> exception;
         // The native callback is an argument, never installed on window. Promise
         // completion is explicit; neither execution nor its reply implies paint.
-        constexpr char invoke[] = R"JS((function(fn, payload, reply) {
+        constexpr char invoke[] = R"JS((function(fn, payload, reply, discardResult) {
             const fail = error => {
                 try { reply(false, String(error)); }
                 catch (_) { reply(false, 'JavaScript exception could not be serialized'); }
@@ -110,7 +111,7 @@ class renderer_app_s final
             try {
                 Promise.resolve(fn(JSON.parse(payload))).then(value => {
                     try {
-                        const json = JSON.stringify(value);
+                        const json = discardResult ? "null" : JSON.stringify(value);
                         if (typeof json !== 'string') throw new Error('Result is not JSON serializable');
                         reply(true, json);
                     } catch (error) { fail(error); }
@@ -159,7 +160,7 @@ class renderer_app_s final
             }
             return true;
         }
-        if (args->GetSize() != 5)
+        if (args->GetSize() != 6)
             return true;
         if (found == contexts_.end() || args->GetString(2) != found->second->token)
             return true; // Browser-side navigation cancellation/timeout owns settlement.
@@ -183,16 +184,25 @@ class renderer_app_s final
         }
         CefRefPtr<CefV8Value>     function;
         CefRefPtr<CefV8Exception> exception;
-        if (!state->context->Eval("(" + function_source + ")", "miximus-internal-command", 1, function, exception) ||
-            !function || !function->IsFunction()) {
+        const auto                kind = static_cast<protocol::request_kind_e>(args->GetInt(5));
+        if (kind == protocol::request_kind_e::program_time)
+            function = state->timing_handler;
+        const bool evaluated =
+            kind == protocol::request_kind_e::program_time ||
+            state->context->Eval("(" + function_source + ")", "miximus-internal-command", 1, function, exception);
+        if (!evaluated || !function || !function->IsFunction()) {
             result->deliver(false,
                             exception ? exception->GetMessage().ToString() : "Command must evaluate to a function");
+        } else if (kind == protocol::request_kind_e::timing_handler) {
+            state->timing_handler = function;
+            result->deliver(true, "null");
         } else {
             state->invoke->ExecuteFunction(nullptr,
                                            {
                                                function,
                                                CefV8Value::CreateString(payload),
                                                CefV8Value::CreateFunction("reply", result),
+                                               CefV8Value::CreateBool(kind == protocol::request_kind_e::program_time),
                                            });
             if (state->invoke->HasException()) {
                 result->deliver(false, state->invoke->GetException()->GetMessage().ToString());

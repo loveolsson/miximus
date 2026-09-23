@@ -29,6 +29,8 @@ struct cef_browser_status_s
     uint64_t    cef_copies{};
     uint64_t    cef_capacity_drops{};
     uint64_t    cef_restarts{};
+    uint64_t    cef_timing_rejections{};
+    std::string cef_timing_error{};
 };
 
 struct device_names_status_s
@@ -283,7 +285,14 @@ struct screen_output_metrics_status_s
 BOOST_DESCRIBE_STRUCT(connected_status_s, (), (connected))
 BOOST_DESCRIBE_STRUCT(cef_browser_status_s,
                       (),
-                      (cef_state, cef_error, cef_paints, cef_copies, cef_capacity_drops, cef_restarts))
+                      (cef_state,
+                       cef_error,
+                       cef_paints,
+                       cef_copies,
+                       cef_capacity_drops,
+                       cef_restarts,
+                       cef_timing_rejections,
+                       cef_timing_error))
 BOOST_DESCRIBE_STRUCT(device_names_status_s, (), (device_names))
 BOOST_DESCRIBE_STRUCT(display_modes_status_s, (), (display_modes))
 BOOST_DESCRIBE_STRUCT(source_names_status_s, (), (source_names))

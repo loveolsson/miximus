@@ -20,6 +20,8 @@ const browserStatus: readonly NodeStatusSection[] = [
       { key: "cef_copies", label: "Copied", format: "integer" },
       { key: "cef_capacity_drops", label: "Capacity drops", format: "integer" },
       { key: "cef_restarts", label: "Restarts", format: "integer" },
+      { key: "cef_timing_rejections", label: "Program-time rejections", format: "integer" },
+      { key: "cef_timing_error", label: "Program-time error" },
     ],
   },
   {

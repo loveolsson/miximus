@@ -450,3 +450,22 @@ undefined/circular results, invalid request JSON, 64-command saturation, timeout
 capacity recovery, navigation to a new main-frame context, and closure cancellation. Existing GPU retirement and
 subsystem shutdown checks still passed with Vulkan validation enabled. The full native build passed; no CPU pixel
 path or graph/render-loop changes were introduced.
+
+## Opt-in cooperative program-time capability
+
+A trusted-native caller can install a context-local JavaScript timing function through the internal bridge. The CEF
+node's ordinary `prepare()` forwards its immutable frame context only while that capability is enabled. With no
+handler installed, there is no timing IPC. Navigation invalidates the handler; lifecycle-aware future controls can
+choose when to reinstall it. This introduces no public page namespace, user option or WebSocket command.
+
+Every admitted frame is dispatched separately through the bounded command infrastructure, with no coalescing.
+Serialization runs on CEF's UI thread. Epoch, frame number, PTS, duration and flick timebase use decimal strings;
+relative milliseconds and discontinuity are also provided. Saturation, timeout and callback errors are explicit
+`cef_timing_rejections`/`cef_timing_error` status diagnostics. Timing replies retire command capacity; they are not
+paint acknowledgements. CEF remains free-running, rAF is untouched, and every accelerated callback still performs its
+full-frame GPU copy independently of these commands.
+
+The hardware probe installed an internal timing callback and delivered three adjacent program frames, including
+frame numbers beyond JavaScript's exact Number range. It verified all three arrivals, exact flick PTS/duration,
+timebase and discontinuity without rejections. Existing JSON, navigation, closure and GPU retirement checks passed
+with Vulkan validation. Native and web builds passed. Strict request-to-pixel correlation remains outside this work.

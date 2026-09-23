@@ -259,6 +259,8 @@ export interface cef_browser_status_s {
   readonly cef_copies: number;
   readonly cef_capacity_drops: number;
   readonly cef_restarts: number;
+  readonly cef_timing_rejections: number;
+  readonly cef_timing_error: string;
 }
 
 export interface device_names_status_s {

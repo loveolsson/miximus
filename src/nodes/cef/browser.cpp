@@ -130,6 +130,7 @@ class node_impl final : public node_i
         if (session_) {
             const auto& frame = app->frame_context();
             session_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
+            session_->send_program_time(frame);
             metrics = session_->metrics();
             if (metrics->phase == session_t::phase_e::failed || metrics->phase == session_t::phase_e::closed) {
                 fail(metrics->error.empty() ? "Browser closed unexpectedly" : metrics->error);
@@ -144,14 +145,16 @@ class node_impl final : public node_i
         if (now >= next_metrics_ || !metrics) {
             status->write(id_,
                           status::cef_browser_status_s{
-                              .cef_state          = metrics    ? std::string(phase_name(metrics->phase))
-                                                    : request_ ? "starting"
-                                                               : "failed",
-                              .cef_error          = metrics ? metrics->error : error_,
-                              .cef_paints         = metrics ? metrics->received : 0,
-                              .cef_copies         = metrics ? metrics->copied : 0,
-                              .cef_capacity_drops = metrics ? metrics->dropped : 0,
-                              .cef_restarts       = restarts_,
+                              .cef_state             = metrics    ? std::string(phase_name(metrics->phase))
+                                                       : request_ ? "starting"
+                                                                  : "failed",
+                              .cef_error             = metrics ? metrics->error : error_,
+                              .cef_paints            = metrics ? metrics->received : 0,
+                              .cef_copies            = metrics ? metrics->copied : 0,
+                              .cef_capacity_drops    = metrics ? metrics->dropped : 0,
+                              .cef_restarts          = restarts_,
+                              .cef_timing_rejections = metrics ? metrics->timing_rejections : 0,
+                              .cef_timing_error      = metrics ? metrics->timing_error : "",
                           });
             if (metrics) {
                 const auto& queue = metrics->source_queue;

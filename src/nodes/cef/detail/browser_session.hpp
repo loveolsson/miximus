@@ -1,5 +1,7 @@
 #pragma once
 
+#include "command_protocol.hpp"
+#include "core/frame_context.hpp"
 #include "frame_pool.hpp"
 #include "media/timed_source_queue.hpp"
 
@@ -7,6 +9,7 @@
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace miximus::nodes::cef::detail {
@@ -43,6 +46,8 @@ class browser_session_s
         uint64_t                            received{};
         uint64_t                            copied{};
         uint64_t                            dropped{};
+        uint64_t                            timing_rejections{};
+        std::string                         timing_error;
         media::timed_source_queue_metrics_s source_queue;
     };
 
@@ -57,7 +62,12 @@ class browser_session_s
 
   private:
     struct impl_s;
-    std::unique_ptr<impl_s> impl_;
+    std::unique_ptr<impl_s>       impl_;
+    std::future<command_result_s> request_impl(std::string                          function_source,
+                                               std::string                          json,
+                                               std::chrono::milliseconds            timeout,
+                                               command_protocol::request_kind_e     kind,
+                                               std::optional<core::frame_context_s> time = {});
 
   public:
     browser_session_s(gpu::device_s& device, options_s options);
@@ -80,6 +90,10 @@ class browser_session_s
     std::future<command_result_s>
     request(std::string function_source, std::string json, std::chrono::milliseconds timeout = std::chrono::seconds(5));
     bool context_ready() const noexcept;
+    // Cooperative timing is opt-in through this internal native capability.
+    // Navigation invalidates the handler. No rAF override or paint correlation.
+    std::future<command_result_s> set_program_time_handler(std::string function_source);
+    void                          send_program_time(core::frame_context_s time);
 
     // Render-thread methods, matching the existing media input lifecycle.
     void        advance_frames(utils::flicks pts, utils::flicks target_time, bool discontinuity);

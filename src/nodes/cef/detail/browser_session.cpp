@@ -52,6 +52,8 @@ struct shared_state_s
         CefRefPtr<CefFrame>                               frame;
         std::chrono::steady_clock::time_point             deadline;
         bool                                              settled{};
+        command_protocol::request_kind_e                  kind{command_protocol::request_kind_e::custom};
+        std::optional<core::frame_context_s>              time;
     };
     std::map<std::string, pending_s> pending;
     uint64_t                         next_request{};
@@ -59,6 +61,9 @@ struct shared_state_s
     std::string                      context;
     std::atomic_bool                 context_ready{};
     bool                             timeout_check_scheduled{};
+    std::atomic_bool                 timing_enabled{};
+    uint64_t                         timing_rejections{};
+    std::string                      timing_error;
     std::atomic<phase_e>             phase{phase_e::starting};
     std::atomic_bool                 started{};
     std::atomic_bool                 close_requested{};
@@ -76,7 +81,8 @@ struct shared_state_s
     void cancel_commands(std::string_view reason)
     {
         const std::lock_guard lock(mutex);
-        context_ready = false;
+        context_ready  = false;
+        timing_enabled = false;
         context.clear();
         ++navigation;
         for (auto& [id, request] : pending)
@@ -96,6 +102,10 @@ struct shared_state_s
             message->GetArgumentList()->SetString(0, id);
             message->GetArgumentList()->SetString(1, found->second.context);
             found->second.frame->SendProcessMessage(PID_RENDERER, message);
+        }
+        if (found->second.kind == command_protocol::request_kind_e::program_time) {
+            ++timing_rejections;
+            timing_error = reason;
         }
         found->second.promise.set_value({.json = {}, .error = std::move(reason)});
         // Retain the in-flight slot until the renderer acknowledges cancellation
@@ -348,7 +358,23 @@ class client_s final
         args->SetString(1, request.generation);
         args->SetString(2, request.context);
         args->SetString(3, source);
-        args->SetString(4, json);
+        if (request.time) {
+            const auto& time  = *request.time;
+            auto        value = CefDictionaryValue::Create();
+            value->SetString("epoch", std::to_string(time.epoch));
+            value->SetString("frameNumber", std::to_string(time.frame_number));
+            value->SetString("pts", std::to_string(time.program_pts.count()));
+            value->SetString("duration", std::to_string(time.frame_duration.count()));
+            value->SetString("timebase", std::to_string(utils::flicks::period::den));
+            value->SetDouble("milliseconds", std::chrono::duration<double, std::milli>(time.program_pts).count());
+            value->SetBool("discontinuity", time.discontinuity);
+            auto payload = CefValue::Create();
+            payload->SetDictionary(value);
+            args->SetString(4, CefWriteJSON(payload, JSON_WRITER_DEFAULT));
+        } else {
+            args->SetString(4, json);
+        }
+        args->SetInt(5, static_cast<int>(request.kind));
         request.frame->SendProcessMessage(PID_RENDERER, message);
     }
 
@@ -370,7 +396,8 @@ class client_s final
         }
         if (name == command_protocol::CONTEXT_RELEASED && args->GetSize() == 1) {
             if (state_->context == args->GetString(0).ToString()) {
-                state_->context_ready = false;
+                state_->context_ready  = false;
+                state_->timing_enabled = false;
                 state_->context.clear();
                 for (auto& [id, request] : state_->pending)
                     if (!request.settled)
@@ -391,15 +418,25 @@ class client_s final
             state_->pending.erase(found);
             return true;
         }
-        auto result = args->GetString(4).ToString();
-        if (result.size() > command_protocol::MAX_JSON_BYTES)
-            found->second.promise.set_value({.json = {}, .error = "JavaScript result exceeds the JSON response limit"});
+        browser_session_s::command_result_s result;
+        auto                                payload = args->GetString(4).ToString();
+        if (payload.size() > command_protocol::MAX_JSON_BYTES)
+            result.error = "JavaScript result exceeds the JSON response limit";
         else if (!args->GetBool(3))
-            found->second.promise.set_value({.json = {}, .error = std::move(result)});
-        else if (!CefParseJSON(result, JSON_PARSER_RFC))
-            found->second.promise.set_value({.json = {}, .error = "JavaScript result is not valid JSON"});
+            result.error = std::move(payload);
+        else if (!CefParseJSON(payload, JSON_PARSER_RFC))
+            result.error = "JavaScript result is not valid JSON";
         else
-            found->second.promise.set_value({.json = std::move(result), .error = {}});
+            result.json = std::move(payload);
+        if (found->second.kind == command_protocol::request_kind_e::timing_handler && result.error.empty()) {
+            state_->timing_enabled = true;
+            state_->timing_error.clear();
+        }
+        if (found->second.kind == command_protocol::request_kind_e::program_time && !result.error.empty()) {
+            ++state_->timing_rejections;
+            state_->timing_error = result.error;
+        }
+        found->second.promise.set_value(std::move(result));
         state_->pending.erase(found);
         return true;
     }
@@ -547,20 +584,48 @@ bool browser_session_s::context_ready() const noexcept { return impl_->state->co
 std::future<browser_session_s::command_result_s>
 browser_session_s::request(std::string function_source, std::string json, std::chrono::milliseconds timeout)
 {
+    return request_impl(std::move(function_source), std::move(json), timeout, command_protocol::request_kind_e::custom);
+}
+
+std::future<browser_session_s::command_result_s>
+browser_session_s::set_program_time_handler(std::string function_source)
+{
+    return request_impl(std::move(function_source), "null", 5s, command_protocol::request_kind_e::timing_handler);
+}
+
+void browser_session_s::send_program_time(core::frame_context_s time)
+{
+    if (impl_->state->timing_enabled)
+        (void)request_impl({}, {}, 1s, command_protocol::request_kind_e::program_time, time);
+}
+
+std::future<browser_session_s::command_result_s>
+browser_session_s::request_impl(std::string                          function_source,
+                                std::string                          json,
+                                std::chrono::milliseconds            timeout,
+                                command_protocol::request_kind_e     kind,
+                                std::optional<core::frame_context_s> time)
+{
     auto                      state = impl_->state;
     shared_state_s::pending_s pending;
     auto                      result = pending.promise.get_future();
     if (function_source.size() > command_protocol::MAX_SOURCE_BYTES || json.size() > command_protocol::MAX_JSON_BYTES ||
-        timeout <= 0ms || timeout > 30s || !CefParseJSON(json, JSON_PARSER_RFC)) {
+        timeout <= 0ms || timeout > 30s || (!time && !CefParseJSON(json, JSON_PARSER_RFC))) {
         pending.promise.set_value({.json = {}, .error = "Invalid command payload or timeout"});
         return result;
     }
     std::string id;
     bool        start_timer{};
     pending.deadline = std::chrono::steady_clock::now() + timeout;
+    pending.kind     = kind;
+    pending.time     = time;
     {
         const std::lock_guard lock(state->mutex);
         if (state->close_requested || !state->context_ready || state->pending.size() >= command_protocol::MAX_PENDING) {
+            if (kind == command_protocol::request_kind_e::program_time) {
+                ++state->timing_rejections;
+                state->timing_error = "Program-time dispatch capacity exhausted or context unavailable";
+            }
             pending.promise.set_value(
                 {.json = {}, .error = "Browser context unavailable or command capacity exhausted"});
             return result;
@@ -620,12 +685,14 @@ browser_session_s::metrics_s browser_session_s::metrics() const
 {
     auto&           state = *impl_->state;
     std::lock_guard lock(state.mutex);
-    return {.phase        = state.phase.load(),
-            .error        = state.error,
-            .received     = state.received.load(),
-            .copied       = state.copied.load(),
-            .dropped      = state.dropped.load(),
-            .source_queue = state.frames.metrics()};
+    return {.phase             = state.phase.load(),
+            .error             = state.error,
+            .received          = state.received.load(),
+            .copied            = state.copied.load(),
+            .dropped           = state.dropped.load(),
+            .timing_rejections = state.timing_rejections,
+            .timing_error      = state.timing_error,
+            .source_queue      = state.frames.metrics()};
 }
 
 } // namespace miximus::nodes::cef::detail

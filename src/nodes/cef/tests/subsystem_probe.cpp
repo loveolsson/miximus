@@ -97,6 +97,30 @@ void exercise_commands(detail::browser_session_s& session)
     }
     if (!recovered)
         throw std::runtime_error("Renderer command capacity did not recover after cancellation acknowledgements");
+    const auto installed = command_result(session.set_program_time_handler(
+        "time => { if (!window.testProgramTimes) window.testProgramTimes=[]; window.testProgramTimes.push(time); }"));
+    if (!installed.error.empty())
+        throw std::runtime_error("Cannot install internal program-time handler: " + installed.error);
+    // Adjacent recovered program frames must both arrive, including exact
+    // integer metadata beyond JavaScript's safe Number range.
+    constexpr uint64_t frame_number = 9'007'199'254'740'992ULL;
+    for (uint64_t index = 0; index < 3; ++index) {
+        session.send_program_time({.frame_number   = frame_number + index,
+                                   .epoch          = 7,
+                                   .program_pts    = utils::flicks(11771760 * index),
+                                   .frame_duration = utils::flicks(11771760),
+                                   .discontinuity  = index == 0});
+    }
+    const auto time_reply = command_result(session.request("() => window.testProgramTimes", "null"));
+    if (!time_reply.error.empty())
+        throw std::runtime_error(time_reply.error);
+    const auto times = nlohmann::json::parse(time_reply.json);
+    if (times.size() != 3 || times[0]["frameNumber"] != "9007199254740992" ||
+        times[1]["frameNumber"] != "9007199254740993" || times[2]["pts"] != "23543520" ||
+        times[0]["timebase"] != "705600000" || times[0]["discontinuity"] != true ||
+        session.metrics().timing_rejections != 0)
+        throw std::runtime_error("Program time was coalesced, rounded or rejected");
+    std::cout << "Cooperative program-time delivery preserves adjacent frames and exact integer metadata\n";
     const auto navigation = command_result(session.request(
         "() => { setTimeout(() => location.href='about:blank', 0); return new Promise(() => {}); }", "null"));
     if (navigation.error.empty() || navigation.error.find("timed out") != std::string::npos)

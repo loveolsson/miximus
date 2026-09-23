@@ -3,6 +3,12 @@
 #include <cstddef>
 
 namespace miximus::nodes::cef::detail::command_protocol {
+enum class request_kind_e
+{
+    custom,
+    timing_handler,
+    program_time
+};
 inline constexpr char   CONTEXT_READY[]    = "miximus.cef.context.ready";
 inline constexpr char   CONTEXT_RELEASED[] = "miximus.cef.context.released";
 inline constexpr char   REQUEST[]          = "miximus.cef.request";
