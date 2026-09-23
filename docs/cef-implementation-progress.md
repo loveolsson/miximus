@@ -557,3 +557,22 @@ by an ordinary Miximus GPU draw; a subsequent page update produced new accelerat
 GPU-subprocess loss, odd-size replacement, color/alpha comparisons and shutdown all passed with zero Vulkan
 validation errors. These deliberate faults affect only the probe's Chromium processes; no production fault-injection
 API was introduced. Native/web builds and all 136 ordinary tests passed after the diagnostics change.
+
+## Headless broadcast rendering scope correction
+
+The user explicitly excluded native control popup surfaces from the renderer. The unfinished popup queue/capture
+experiment was removed in full, including its screen overrides, without being committed or runtime-tested. There is
+one main-view capture queue and no popup composition. Earlier popup-composition requirements and outstanding-work
+entries in this report are superseded by this decision.
+
+Both paint callbacks ignore `PET_POPUP` without accessing its pixels/handles or failing the browser. Main-view
+software paint still fails explicitly; every admitted accelerated main-view callback still copies the full frame.
+New windows/tabs are denied. JavaScript alert/confirm/prompt use CEF's suppression path; beforeunload continues the
+requested navigation or closure. Native file choosers are cancelled and context menus cleared. Existing download
+and media-permission denials remain. These policies live entirely in the CEF client; page-rendered HTML/CSS overlays
+are unaffected and the established Miximus rendering path is unchanged.
+
+Validation: the full native build and all 136 ordinary tests passed. The accelerated subsystem probe verified that
+alert/confirm/prompt return without interaction (confirm false, prompt null), `window.open` is denied, and navigation
+continues with a beforeunload handler installed. Existing GPU color, renderer/GPU-process recovery and shutdown checks
+also passed with zero Vulkan validation errors. No web option or public command was added.

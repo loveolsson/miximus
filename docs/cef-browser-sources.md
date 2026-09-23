@@ -23,7 +23,7 @@ does not authorize Miximus rendering changes. Other platform artifacts still req
 Keep binaries out of Git and ship the complete tested runtime alongside the application. A submodule can pin
 integration source, but cannot replace the binary SDK.
 
-**Accelerated paint only. All frame copies, blits, conversions and popup composition must execute on the GPU.**
+**Accelerated paint only. All main-view frame copies, blits and conversions must execute on the GPU.**
 Implement `OnAcceleratedPaint`; do not implement a CPU pixel ingestion path, CPU staging/readback/upload transport,
 or automatic unaccelerated fallback. If the CEF interface requires an `OnPaint` override, provide only the mandatory
 stub that rejects unexpected delivery and reports unsupported operation; never copy or consume its pixels. CPU-side
@@ -350,7 +350,7 @@ asynchronous; macOS implementation must wait for an explicitly approved solution
   Node destruction requests asynchronous session closure; the subsystem retains callbacks and resources until safe.
 
 Publish the existing `const gpu::texture_s*` interface, with the same working color/alpha and sampling conventions as
-other sources. Perform browser-specific channel ordering, orientation, alpha/color conversion and popup composition
+other sources. Perform browser-specific channel ordering, orientation, alpha/color conversion
 before that boundary. Retain the output and backing pool lease for every submitted consumer use, including fan-out
 and repeated/static frames. A raw interface pointer is not a substitute for recording/resource lifetime tracking.
 Downstream transforms, switches, compositors and outputs must use their existing texture resolution and GPU commands
@@ -461,7 +461,7 @@ New contained helpers may supply those platform capabilities within the existing
    establishes the producer-read dependency. If no slot/context is available, drop the incoming paint before issuing
    GPU work; do not block graph execution or overwrite a retained frame.
 4. Record a GPU copy or conversion from the imported source into that destination through the contained helper and
-   existing recording/submission machinery. Channel order, color/alpha conversion and popup composition stay on GPU.
+   existing recording/submission machinery. Channel order and color/alpha conversion stay on GPU.
 5. Submit and **finish every GPU read of CEF's borrowed source before returning from the callback**. A submission
    ticket or retained native handle alone does not authorize deferred reads. Use a contained blit-completion helper
    backed by existing completion primitives. The callback may wait for its GPU work; it must not wait for the graph
@@ -541,7 +541,7 @@ See [IOSurface import](https://docs.vulkan.org/refpages/latest/refpages/source/V
 Use tested SDR sRGB with premultiplied alpha at the browser boundary and convert on GPU into Miximus's existing
 linear premultiplied UNORM16 working representation. For premultiplied encoded input, unpremultiply where alpha is
 nonzero, decode sRGB, then premultiply in linear light; do not gamma-correct alpha. Test transparent black, low alpha,
-antialiased text, popups, channel order and orientation without adding a CPU pixel-conversion path.
+antialiased text, channel order and orientation without adding a CPU pixel-conversion path.
 
 Measure GPU copy/conversion time, callback waits, queue contention and memory. A tightly packed BGRA source contains
 about 8.29 MB at 1080p or 33.18 MB at UHD; 60 full-frame copies/s represent about 0.50 or 1.99 GB/s of source payload,
@@ -689,8 +689,14 @@ generations without reusing slots still referenced by the graph. Keep teardown w
 boundary; do not add CEF event pumping to Miximus's loop. Embedded browser-process crashes are not isolated from Miximus.
 
 Serve local templates through a controlled asset origin/custom scheme with well-defined relative URLs and MIME
-types. Use the native permission defaults deliberately: navigation, popup windows, downloads, camera/microphone,
-file access and developer tools need policy. Do not inherit CasparCG's global web-security bypass or automatic media
+types. This is a headless broadcast graphics renderer. Render only the main `PET_VIEW` surface; ignore native
+control `PET_POPUP` surfaces without importing, copying, queueing or compositing them and without failing the source.
+The full-frame accelerated-copy requirement applies to every admitted main-view callback. There is no popup pool,
+second queue or composition stage. Ordinary HTML/CSS overlays already drawn into the main page remain page content.
+Deny new tabs/windows, including `window.open()` and links targeting a new browsing context. Suppress `alert`,
+`confirm` and `prompt`; allow requested navigation/reload/closure through `beforeunload` without showing a dialog.
+Cancel native file choosers and context menus. Downloads and media permission prompts remain denied. Main-frame
+navigation stays supported. File access and developer tools retain their separate contained policies. Do not inherit CasparCG's global web-security bypass or automatic media
 permission switches merely for compatibility. Keep template content separate from the editor's privileged origin.
 
 ## Implementation order and explicit approval gates
@@ -699,7 +705,7 @@ permission switches merely for compatibility. Keep template content separate fro
 | --- | --- | --- |
 | 0. Existing-structure fit | Map accelerated import, owned pool, independent recording context and callback completion onto current APIs; identify exact missing helpers and platform constraints | No render/window/scheduler changes; every proposed structural deviation explicitly approved by the user before implementation |
 | 1. SDK and embedded runtime | Pinned SDK/wrapper, ordinary Chromium helpers and app-owned contained subsystem; qualify Windows/Linux threaded UI loop | Supported initialization/close/shutdown without main-loop servicing; packaging and loader coexistence; macOS remains gated, not silently redesigned |
-| 2. Accelerated source | Native/web source node, contained native import/sharing helpers, GPU pool, blit completion, timed queue and ordinary `tex` output | All pixel copies/conversions on GPU; source reads complete before callback return; existing consumers unchanged; transparency/popup/resize tests and bounded memory |
+| 2. Accelerated source | Native/web source node, contained native import/sharing helpers, GPU pool, blit completion, timed queue and ordinary `tex` output | All pixel copies/conversions on GPU; source reads complete before callback return; existing consumers unchanged; transparency/resize and suppressed-UI tests and bounded memory |
 | 3. Interaction and timing infrastructure | Internal custom-request/JSON-result bridge, lifecycle hooks and node-local program-time delivery | Correlated replies and navigation invalidation; no global timing hooks or new public control model |
 | 4. Platform qualification | Windows/Linux GPU import paths; macOS only after its event-loop gate is explicitly resolved | Adapter/format/synchronization and driver stress tests; no CPU fallback; deviations require specific explicit user approval |
 | 5. Production hardening | Accelerated-path recovery, deployment artifacts and diagnostics | Multi-source soak, crashes, GPU pressure, lifecycle and offline installation tests; no changes to existing render behavior |
@@ -717,7 +723,7 @@ control/driver overhead, not permission for CPU pixel copies. Record CEF build, 
 performance transfers to Miximus.
 
 Use focused tests for pool/lease generations, command ordering and completion. GPU/platform tests must cover delayed
-blits, slot exhaustion, source removal with in-flight work, navigation/resize, popups, static retention, renderer/GPU
+blits, slot exhaustion, source removal with in-flight work, navigation/resize, suppressed browser UI, static retention, renderer/GPU
 subprocess failure and shutdown. Validate rendered color/alpha and visible frame IDs against reference fixtures.
 Do not use test instrumentation as permission to implement a CPU paint, pixel-copy or fallback path.
 

@@ -73,6 +73,18 @@ auto command_result(std::future<detail::browser_session_s::command_result_s> res
 void exercise_commands(detail::browser_session_s& session)
 {
     await_context(session);
+    const auto dialogs = command_result(session.request(
+        "() => { alert('suppressed'); return {confirm:confirm('suppressed'), prompt:prompt('suppressed','default')}; }",
+        "null"));
+    if (!dialogs.error.empty() || nlohmann::json::parse(dialogs.json) != nlohmann::json{
+                                                                             {"confirm", false  },
+                                                                             {"prompt",  nullptr}
+    })
+        throw std::runtime_error("JavaScript dialogs were not suppressed");
+    const auto popup = command_result(session.request("() => window.open('about:blank','_blank') === null", "null"));
+    if (!popup.error.empty() || popup.json != "true")
+        throw std::runtime_error("New browser window was not denied");
+    std::cout << "JavaScript dialogs suppressed and window.open denied\n";
     auto       first  = session.request("value => new Promise(resolve => setTimeout(() => resolve({echo:value}), 50))",
                                  R"({"message":"hello","number":42})");
     const auto second = command_result(session.request("value => value + 1", "4"));
@@ -130,8 +142,10 @@ void exercise_commands(detail::browser_session_s& session)
         session.metrics().timing_rejections != 0)
         throw std::runtime_error("Program time was coalesced, rounded or rejected");
     std::cout << "Cooperative program-time delivery preserves adjacent frames and exact integer metadata\n";
-    const auto navigation = command_result(session.request(
-        "() => { setTimeout(() => location.href='about:blank', 0); return new Promise(() => {}); }", "null"));
+    const auto navigation = command_result(
+        session.request("() => { window.onbeforeunload = e => { e.preventDefault(); e.returnValue='stay'; }; "
+                        "setTimeout(() => location.href='about:blank', 0); return new Promise(() => {}); }",
+                        "null"));
     if (navigation.error.empty() || navigation.error.find("timed out") != std::string::npos)
         throw std::runtime_error("Navigation did not cancel its pending request");
     await_context(session);

@@ -4,6 +4,7 @@
 #include "gpu/detail/dma_buf_copy.hpp"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
+#include "include/cef_jsdialog_handler.h"
 #include "include/cef_parser.h"
 #include "include/cef_process_message.h"
 #include "include/cef_task.h"
@@ -180,6 +181,9 @@ class client_s final
     , public CefRequestHandler
     , public CefPermissionHandler
     , public CefDownloadHandler
+    , public CefJSDialogHandler
+    , public CefDialogHandler
+    , public CefContextMenuHandler
 {
     std::shared_ptr<shared_state_s> state_;
     browser_session_s::options_s    options_;
@@ -206,6 +210,10 @@ class client_s final
     CefRefPtr<CefRequestHandler>    GetRequestHandler() override { return this; }
     CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
     CefRefPtr<CefDownloadHandler>   GetDownloadHandler() override { return this; }
+
+    CefRefPtr<CefJSDialogHandler>    GetJSDialogHandler() override { return this; }
+    CefRefPtr<CefDialogHandler>      GetDialogHandler() override { return this; }
+    CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
 
     bool resources_idle() const { return pool_.idle(); }
 
@@ -274,6 +282,59 @@ class client_s final
                        bool*) override
     {
         return true;
+    }
+
+    bool OnOpenURLFromTab(CefRefPtr<CefBrowser>,
+                          CefRefPtr<CefFrame>,
+                          const CefString&,
+                          WindowOpenDisposition disposition,
+                          bool) override
+    {
+        return disposition != CEF_WOD_CURRENT_TAB;
+    }
+
+    bool OnJSDialog(CefRefPtr<CefBrowser>,
+                    const CefString&,
+                    JSDialogType,
+                    const CefString&,
+                    const CefString&,
+                    CefRefPtr<CefJSDialogCallback>,
+                    bool& suppress) override
+    {
+        // CEF's suppression path continues script execution without a modal UI.
+        suppress = true;
+        return false;
+    }
+
+    bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser>,
+                              const CefString&,
+                              bool,
+                              CefRefPtr<CefJSDialogCallback> callback) override
+    {
+        // Page content cannot veto a requested navigation/reload or shutdown.
+        callback->Continue(true, {});
+        return true;
+    }
+
+    bool OnFileDialog(CefRefPtr<CefBrowser>,
+                      FileDialogMode,
+                      const CefString&,
+                      const CefString&,
+                      const std::vector<CefString>&,
+                      const std::vector<CefString>&,
+                      const std::vector<CefString>&,
+                      CefRefPtr<CefFileDialogCallback> callback) override
+    {
+        callback->Cancel();
+        return true;
+    }
+
+    void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
+                             CefRefPtr<CefFrame>,
+                             CefRefPtr<CefContextMenuParams>,
+                             CefRefPtr<CefMenuModel> model) override
+    {
+        model->Clear();
     }
 
     bool CanDownload(CefRefPtr<CefBrowser>, const CefString&, const CefString&) override { return false; }
@@ -443,8 +504,10 @@ class client_s final
         return true;
     }
 
-    void OnPaint(CefRefPtr<CefBrowser>, PaintElementType, const RectList&, const void*, int, int) override
+    void OnPaint(CefRefPtr<CefBrowser>, PaintElementType type, const RectList&, const void*, int, int) override
     {
+        if (type == PET_POPUP)
+            return;
         state_->fail("CEF delivered software paint; accelerated rendering is required");
     }
 
@@ -454,16 +517,15 @@ class client_s final
                             const RectList&,
                             const CefAcceleratedPaintInfo& info) override
     {
-        if (state_->close_requested || state_->phase == phase_e::failed)
+        // Native control popup surfaces are outside this headless graphics source.
+        if (type == PET_POPUP || state_->close_requested || state_->phase == phase_e::failed)
             return;
         const auto capture_started = std::chrono::steady_clock::now();
         const auto arrival         = utils::flicks_now();
         const auto sequence        = ++state_->received;
         try {
-            // Popup composition is a subsequent contained session step. Never
-            // silently publish an incomplete browser image or ingest CPU paint.
             if (type != PET_VIEW)
-                throw std::runtime_error("CEF popup composition is not available yet");
+                throw std::runtime_error("Unknown CEF paint element");
             if (info.plane_count != 1 ||
                 (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888))
                 throw std::runtime_error("Unsupported CEF accelerated format or plane count");
