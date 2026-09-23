@@ -485,8 +485,12 @@ flowchart LR
     F --> P
 ```
 
-Use full-frame GPU copies initially; dropped paints and rotating slots make dirty-rectangle-only updates unsafe
-without image-history tracking. Handle accelerated `PET_POPUP` frames and composition in the CEF module. Include
+Every accelerated paint copies the complete received frame on the GPU and publishes it to the bounded buffer.
+This is a permanent capture contract: ignore dirty rectangles, damage history and missed-draw counts; do not
+deduplicate frames or skip copies based on content, graph demand or cadence estimates. Keep the work per received
+frame constant and predictable. The bounded-capacity and resource-lifetime rules above still apply; exhaustion
+must not overwrite an in-use texture or stall the render thread. Handle accelerated `PET_POPUP` frames and
+composition in the CEF module, with the same full-surface copy rule. Include
 session/navigation/size generations, sequence, dimensions, format, visible rectangle, timestamp domain and ownership
 in descriptors. No CPU pixel mapping or staging is permitted for these operations.
 

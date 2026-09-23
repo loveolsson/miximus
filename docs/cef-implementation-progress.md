@@ -360,6 +360,11 @@ advance, select, resolve, release prepared references and reset. Completed copie
 `media::timed_source_queue_s` with capture-relative timestamps and separately recorded arrival times, four queued
 frames and one nominal frame of playout delay. This is an estimated clock mapping, not request-to-pixel PTS correlation.
 
+Every accepted accelerated callback copies the entire received frame on the GPU and pushes the owned frame into
+that buffer. Dirty rectangles are ignored. There is no damage-history processing, missed-draw compensation,
+deduplication or content/demand-based capture skipping. This is the permanent capture contract, not an initial
+optimization choice; downstream frame selection remains the existing timed-source queue's responsibility.
+
 An eight-slot ordinary texture pool bounds storage for this session generation, with a 1 GiB texture-payload ceiling.
 Pool exhaustion drops the incoming paint before importing it. The eventual subsystem must also bound simultaneous
 sessions and retiring generations; the per-generation limit is not a process-wide GPU-memory guarantee. Capture stays

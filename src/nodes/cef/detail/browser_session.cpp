@@ -242,6 +242,7 @@ class client_s final
 
     void OnAcceleratedPaint(CefRefPtr<CefBrowser>,
                             PaintElementType type,
+                            // Always copy the full frame; damage does not change capture work.
                             const RectList&,
                             const CefAcceleratedPaintInfo& info) override
     {
