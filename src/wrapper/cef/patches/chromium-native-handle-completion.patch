@@ -1,0 +1,17 @@
+--- components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
++++ components/viz/service/display_embedder/skia_output_surface_impl_on_gpu.cc
+@@ -1065,9 +1065,13 @@
+   // receive a callback that the GPU work has completed - otherwise,
+   // memory-mapping the GMB may not yield the latest version of the
+   // contents.
++  // Linux native-handle capture consumers receive no acquire fence through
++  // CEF. Retain asynchronous GPU completion before delivering RGBA blit results,
++  // independently of CPU mappability. No image mapping or CPU copy is involved.
+   const bool should_wait_for_gpu_work =
+       request->has_blit_request() &&
+-      request->blit_request().populates_mappable_shared_image();
++      (request->blit_request().populates_mappable_shared_image() ||
++       BUILDFLAG(IS_LINUX));
+ 
+   std::unique_ptr<ReadbackContextTexture> readback_context;
+ 

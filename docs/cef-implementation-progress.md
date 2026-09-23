@@ -306,3 +306,26 @@ libcef.so SHA-256: 658a2d4b8ad89c6502d1c51c28f3549124a906301b33d6d7958f40b394f0c
 
 These results establish the source build and regression-test checkpoint. Actual accelerated delivery, producer
 synchronization and Miximus GPU import remain separate hardware qualification gates.
+
+### Revision 1 hardware results and synchronization correction
+
+Miximus's full native build and fresh-profile runtime probe passed against revision 1. The system Vulkan loader was
+retained. At 640×360, 1920×1080 and 3840×2160, the accelerated probe completed 120 GPU copies with no Vulkan validation
+errors. HD/UHD capture timestamps advanced from zero to approximately two seconds, consistent with capture-relative
+time; this is not a mapping to program PTS or a performance benchmark.
+
+The expanded fence diagnostic found a critical limit: first and last frame exports both reported a signalled fence
+with timestamp `656074305` ns while machine uptime exceeded 173,000 seconds. This matches the kernel's boot-time
+stub, returned when no applicable reservation fence is available. `detached-driver` / `signaled-timeline` names alone
+cannot identify its origin, because the kernel uses those names for signalled fences generally. See the kernel's
+[DMA-BUF export implementation](https://github.com/torvalds/linux/blob/v7.0/drivers/dma-buf/dma-buf.c) and
+[stub fence implementation](https://github.com/torvalds/linux/blob/v7.0/drivers/dma-buf/dma-fence.c).
+**The successful copies do not establish producer readiness; revision 1 is not synchronization-qualified.**
+
+Revision 2 adds a local dependency patch retaining the existing asynchronous Skia GPU-finished callback for Linux
+RGBA blit results. This decouples delivery completion from CPU mappability: the allocation stays GPU-renderable and
+non-mappable, while CEF receives the result only after the GPU write finishes. `ReadbackContextTexture::OnMailboxReady`
+sends a shared-image result despite its historical name; it performs no CPU pixel readback. The patch affects Linux
+RGBA blit requests in this custom binary, not non-blit results, NV12 or other platforms. Miximus still completes its
+own GPU copy before returning the borrowed handle. No graph, submission, scheduler or window-service changes are
+involved. Revision 2 is building; its regression tests, package and hardware results remain pending.

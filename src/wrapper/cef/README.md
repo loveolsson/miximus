@@ -10,7 +10,7 @@ failed with that artifact. Do not claim accelerated support from its successful 
 digests. The user approved maintaining this patched Linux version on 2026-09-22. The source build remains based on
 the selected stable CEF 152.0.8 / Chromium 152.0.7977.134 release.
 
-The two changes are:
+The two upstream allocation/capture changes are:
 
 - `cef-linux-native-handle.patch`: upstream CEF commit
   [cafbf7f24971aa2526381e8e1978e11d1838ae64](https://github.com/chromiumembedded/cef/commit/cafbf7f24971aa2526381e8e1978e11d1838ae64),
@@ -21,14 +21,24 @@ The two changes are:
   result. Includes upstream regression tests and author attribution. Only diff path prefixes were changed, to match
   CEF's `git apply -p0` patch manager; code changes are unchanged.
 
-The pinned SDK builds successfully, and all 168 selected frame-sink capture tests pass. Working GPU capture still
-requires the separate accelerated hardware probe.
+Revision 1 built successfully and passed all 168 selected frame-sink capture tests. Hardware probes delivered and
+GPU-copied 120 frames at 640×360, HD and UHD, but exposed an empty producer reservation-fence snapshot. Revision 1
+is therefore **not synchronization-qualified**.
+
+Revision 2 adds the local `chromium-native-handle-completion.patch`. The native-handle upstream change disables the
+completion wait associated with CPU-mappable capture. CEF supplies no acquire fence to the Linux callback, and the
+tested NVIDIA path returned the kernel's boot-time stub fence when its DMA-BUF write fences were exported. The local
+patch retains Skia's existing asynchronous GPU-finished callback before delivering Linux RGBA blit results, independent
+of CPU mappability. It changes no allocation flags, public CEF ABI or Miximus rendering code, and performs no CPU pixel
+access. It also waits for other Linux RGBA blit requests in this custom CEF build; non-blit results, NV12 and other
+platforms retain their existing behavior. Hardware qualification of revision 2 is pending.
+
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
 `CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility
 patch is applied only by the test stage and changes no production code.
 Their source licenses and upstream attribution are retained. No ABI, renderer scheduling, sandbox policy or Miximus
-render path change is part of these backports. Remove the backports only after a stock stable SDK contains both
-changes and passes the same hardware tests.
+render path change is part of these patches. Replace the custom build only after a stock stable SDK contains the
+allocation/capture fixes and provides a qualified producer-completion contract for the native-handle callback.
 
 Use a disk-backed directory with sufficient space for Chromium, its toolchain, dependencies and build outputs.
 Do not use `/tmp` when it is a small tmpfs. See the upstream
@@ -62,14 +72,14 @@ any optimization or change other processes' affinity. Choose the job count with 
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r1.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r2.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r1.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r1.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r2.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r2.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```

@@ -7,6 +7,7 @@
 #include "nodes/cef/detail/runtime.hpp"
 
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -16,9 +17,11 @@
 #include <linux/dma-buf.h>
 #include <linux/sync_file.h>
 #include <mutex>
+#include <string_view>
 #include <sys/ioctl.h>
 #include <system_error>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 using namespace std::chrono_literals;
@@ -42,6 +45,15 @@ void log_producer_fence(int dma_buf)
     // Metadata only: this does not map or read any image memory. A signalled
     // snapshot alone cannot prove that every producer write was published.
     std::cout << "CEF producer sync-file: fences=" << info.num_fences << " status=" << info.status << '\n';
+    if (info.num_fences > 64)
+        throw std::runtime_error("Unexpected producer fence count");
+    std::vector<sync_fence_info> fences(info.num_fences);
+    info.sync_fence_info = reinterpret_cast<uintptr_t>(fences.data());
+    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0)
+        throw std::system_error(errno, std::generic_category(), "inspect CEF fence identities");
+    for (const auto& entry : fences)
+        std::cout << "Producer fence: driver=" << entry.driver_name << " timeline=" << entry.obj_name
+                  << " status=" << entry.status << " timestamp_ns=" << entry.timestamp_ns << '\n';
 }
 
 class task_s final : public CefTask
@@ -64,6 +76,7 @@ class client_s final
 {
     gpu::texture_s           destination_;
     gpu::recording_context_s context_;
+    gpu::extent_s            dimensions_;
     bool                     fence_logged_{};
     IMPLEMENT_REFCOUNTING(client_s);
 
@@ -76,18 +89,23 @@ class client_s final
     bool                    close_requested{};
     size_t                  copied_frames{};
     uint64_t                last_timestamp{};
+    uint64_t                first_timestamp{};
     std::string             error;
 
     static constexpr size_t required_frames = 120;
 
-    explicit client_s(gpu::device_s& device)
-        : destination_(device.create_texture({640, 360}))
+    client_s(gpu::device_s& device, gpu::extent_s dimensions)
+        : destination_(device.create_texture(dimensions))
         , context_(device.create_recording_context(1))
+        , dimensions_(dimensions)
     {
     }
     CefRefPtr<CefRenderHandler>   GetRenderHandler() override { return this; }
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-    void GetViewRect(CefRefPtr<CefBrowser>, CefRect& rect) override { rect = {0, 0, 640, 360}; }
+    void                          GetViewRect(CefRefPtr<CefBrowser>, CefRect& rect) override
+    {
+        rect = {0, 0, static_cast<int>(dimensions_.width), static_cast<int>(dimensions_.height)};
+    }
     void OnAfterCreated(CefRefPtr<CefBrowser> created) override
     {
         bool closing;
@@ -150,7 +168,7 @@ class client_s final
             source.modifier = info.modifier;
             source.offset   = info.planes[0].offset;
             source.stride   = info.planes[0].stride;
-            if (!fence_logged_) {
+            if (!fence_logged_ || copied_frames == required_frames - 1) {
                 log_producer_fence(source.fd);
                 fence_logged_ = true;
             }
@@ -168,6 +186,7 @@ class client_s final
             }
             std::lock_guard lock(mutex);
             if (copied_frames == 0) {
+                first_timestamp = info.extra.timestamp;
                 std::cout << "Accelerated GPU copy: " << source.extent.width << 'x' << source.extent.height
                           << " modifier=" << source.modifier << " timestamp=" << info.extra.timestamp << '\n';
             }
@@ -186,11 +205,22 @@ class client_s final
 
 int main(int argc, char* argv[])
 {
-    if (argc != 3)
+    if (argc != 3 && argc != 5)
         return 2;
     std::cout.setf(std::ios::unitbuf);
     logger::init_loggers(spdlog::level::warn);
     try {
+        gpu::extent_s dimensions{640, 360};
+        if (argc == 5) {
+            auto parse_dimension = [](std::string_view text) {
+                uint32_t   value{};
+                const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+                if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || value == 0 || value > 8192)
+                    throw std::invalid_argument("Probe dimensions must be between 1 and 8192");
+                return value;
+            };
+            dimensions = {parse_dimension(argv[3]), parse_dimension(argv[4])};
+        }
         gpu::device_options_s options;
         options.external_image_import = true;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -200,7 +230,7 @@ int main(int argc, char* argv[])
         {
             nodes::cef::detail::runtime_s runtime(argv[1], argv[2]);
             std::cout << "CEF runtime initialized; creating accelerated browser\n";
-            CefRefPtr<client_s> client = new client_s(device);
+            CefRefPtr<client_s> client = new client_s(device, dimensions);
             if (!CefPostTask(TID_UI, new task_s([client] {
                                  CefWindowInfo window;
                                  window.SetAsWindowless(0);
@@ -231,7 +261,8 @@ int main(int argc, char* argv[])
                           << (client->error.empty() ? "insufficient accelerated frames" : client->error)
                           << " (completed " << client->copied_frames << '/' << client_s::required_frames << ")\n";
             else
-                std::cout << "Completed " << client->copied_frames << " accelerated GPU copies\n";
+                std::cout << "Completed " << client->copied_frames << " accelerated GPU copies; capture timestamps "
+                          << client->first_timestamp << ".." << client->last_timestamp << " us\n";
             lock.unlock();
             // Creation may still be pending when capture times out. Keep the client
             // alive and close even a browser that arrives after this request.

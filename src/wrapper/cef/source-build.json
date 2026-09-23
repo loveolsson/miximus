@@ -1,5 +1,5 @@
 {
-  "revision": 1,
+  "revision": 2,
   "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
   "chromium_revision": "066c60fad7c77efe3a81ad78c8109afba848b18d",
   "chromium_branch": "7977",
@@ -18,6 +18,13 @@
       "repository": "chromium",
       "upstream": "https://github.com/chromium/chromium/commit/9522ea8ad0bed3c3fd1b4f570ed9792dec8176d5",
       "sha256": "258a0b30abd8af881dbfaf9f1f968fc27b00b5fd05b06efeeed511063e739d54"
+    },
+    {
+      "file": "patches/chromium-native-handle-completion.patch",
+      "repository": "chromium",
+      "registration_name": "miximus_native_handle_completion",
+      "sha256": "3d5d8936924e44205b5150ecd7831007a02d742a1b0133a8363877b254b5511c",
+      "reason": "Local Linux RGBA blit completion fix: retain Chromium's asynchronous GPU-finished callback before exposing native handles through CEF, which supplies no acquire fence. No CPU pixel access."
     }
   ],
   "siso_version": "git_revision:7bc9a0bfe050ef97e1712ff61c6f11952799e951",

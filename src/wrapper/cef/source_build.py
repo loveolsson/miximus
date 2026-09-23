@@ -128,17 +128,19 @@ def main():
             else:
                 # Register with CEF's own patch manager so project generation and
                 # subsequent rebuilds retain the Chromium change.
-                destination = cef / "patch/patches/miximus_native_handle.patch"
+                name = patch.get("registration_name", "miximus_native_handle")
+                destination = cef / f"patch/patches/{name}.patch"
                 shutil.copyfile(ROOT / patch["file"], destination)
                 config = cef / "patch/patch.cfg"
-                registration = "\npatches.append({'name': 'miximus_native_handle'})\n"
+                registration = "\npatches.append({'name': '" + name + "'})\n"
                 text = config.read_text()
                 if registration not in text:
                     config.write_text(text + registration)
         run([depot / "python-bin/python3", cef / "tools/gclient_hook.py"], cef, env)
         # Require our Chromium patch to have been applied, not skipped or rejected.
-        patch = ROOT / MANIFEST["patches"][1]["file"]
-        run(["git", "apply", "-p0", "--reverse", "--check", patch], chromium)
+        for patch in MANIFEST["patches"]:
+            if patch["repository"] == "chromium":
+                run(["git", "apply", "-p0", "--reverse", "--check", ROOT / patch["file"]], chromium)
         (work / "prepared.json").write_text(json.dumps(MANIFEST, indent=2) + "\n")
         (work / "preparing.json").unlink()
         return
@@ -170,7 +172,7 @@ def main():
         return
 
     output = work / "distribution"
-    name = "miximus_cef_linux64_native_handle_r1"
+    name = f"miximus_cef_linux64_native_handle_r{MANIFEST['revision']}"
     if (output / name).exists():
         raise RuntimeError("Distribution already exists; use a fresh output directory")
     run([depot / "python-bin/python3", cef / "tools/make_distrib.py", f"--output-dir={output}",
