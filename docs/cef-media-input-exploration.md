@@ -17,9 +17,13 @@ inputs on the CEF node and expose those inputs to its page as real browser `Medi
 The constraints established during discussion are:
 
 - Do not require OS-enumerated virtual webcams or drivers.
-- The initial exploration accepted GPU readback and CPU pixel copies as a possible media-input transport budget.
-  With a custom runtime now available, the revised recommendation is to prototype GPU-only delivery; the stock CPU
-  path below is retained as prior research, not a prerequisite or automatic fallback.
+- Keep frame delivery from Miximus into Chromium on the GPU, including any bridge-owned staging or copying before
+  delivery to the browser track. GPU pixel-format conversion and GPU copies are allowed; CPU pixel readback/upload
+  and transcoding are not part of this ingress path. CPU handling of metadata, handles and completion is allowed.
+- Chromium's subsequent handling of an ingested frame is outside that GPU-only restriction. Its internal copies,
+  consumer-requested readbacks and one-time pause copy are acceptable and do not require replacement implementations.
+- The stock CPU delivery path below is retained as historical research. It is not the selected direction or an
+  authorized fallback for GPU ingress.
 - Do not use video encoding/decoding or compressed transport; pixel-format and color conversion are allowed.
 - Keep streams associated with node input slots through disconnection, reconnection and source-format changes.
 - Defer buffering depth, frame-selection policy and exact timing behavior.
@@ -85,7 +89,10 @@ This hook targets cooperating templates. An opt-in JavaScript compatibility adap
 templates is conceivable, but emulating device IDs, enumeration, constraints, device-change events and permission
 behavior is a separate project. It is not equivalent to registering a native device.
 
-## Stock CEF: supported uncompressed delivery
+## Stock CEF: supported uncompressed delivery (historical alternative)
+
+This section describes a technically available CPU route from the initial investigation. It does not satisfy the
+current GPU-only ingress requirement and is not proposed for implementation.
 
 CEF's [permission handler](https://github.com/chromiumembedded/cef/blob/1ce985cb23056548b9cc51483bbef4faf68b1cd3/include/cef_permission_handler.h)
 can approve or deny a page's camera/microphone request. It does not accept a custom device or pixel producer.
@@ -147,8 +154,8 @@ Uncompressed BGRA payload alone, calculated as width × height × four bytes × 
 
 These are decimal payload rates, not measured bus traffic. Readback, CPU copies and browser upload add costs.
 YUV conversion can reduce payload for opaque video but changes chroma/quality and format requirements. Alpha, range,
-transfer function and orientation need explicit treatment. Acceptance of CPU delivery does not imply unlimited
-multi-UHD capacity.
+transfer function and orientation need explicit treatment. The initial acceptance of CPU delivery did not establish
+unlimited multi-UHD capacity; that route is now outside the selected ingress requirements.
 
 CEF-output-to-Vulkan sharing is the opposite direction and does not solve this input path. Similarly, WebGPU's
 `importExternalTexture()` accepts an existing browser video element or `VideoFrame`, not an arbitrary Vulkan/OS handle.
@@ -176,7 +183,8 @@ Foundation contract Chromium already consumes. See
 [Windows capture](https://github.com/chromium/chromium/blob/152.0.7977.134/media/capture/video/win/video_capture_device_mf_win.cc#L2230)
 and its [GPU copy/completion logic](https://github.com/chromium/chromium/blob/152.0.7977.134/media/capture/video/win/video_capture_device_mf_win.cc#L685).
 
-CPU delivery remains a reasonable Miximus starting point independently of whether virtual cameras can do better.
+These findings corrected the assumption that all virtual cameras require CPU copies. They do not change the current
+Miximus requirement to deliver input frames into Chromium on the GPU.
 
 ## The native GPU boundary inside Chromium
 
@@ -348,8 +356,23 @@ and [Ozone external updates](https://github.com/chromium/chromium/blob/152.0.797
 
 A direct shared-allocation path could avoid the additional Chromium-side copy, but would couple external storage reuse
 to browser-consumer lifetimes and their GPU release synchronization. Investigate that optimization after establishing
-the copy-based contract; it is not a prerequisite. Browser consumers that explicitly request CPU-readable pixels are
-a separate concern from keeping the native ingress and ordinary video-compositing path on the GPU.
+the copy-based contract; it is not a prerequisite. The GPU-only requirement ends at delivery into Chromium's media
+path. It does not impose a GPU-only implementation on every subsequent browser operation or consumer.
+
+### Pause behavior is acceptable
+
+The intended use is live camera sources inside HTML graphics, where pause is uncommon. In the pinned Chromium
+revision, pausing a `MediaStream` video schedules `ReplaceCurrentFrameWithACopy()`. For a GPU-backed current frame,
+`CopyFrame()` allocates a CPU bitmap and wraps its pixels in a CPU-backed `VideoFrame`. This retains a frozen image
+while releasing the original producer buffer. It is a copy of the current frame into RAM, not a disk-cache operation
+or continuous copying of incoming frames while paused. This behavior is acceptable and requires no additional patch.
+See [pause handling](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/modules/mediastream/web_media_player_ms.cc#L867),
+[paused-frame copying](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/modules/mediastream/web_media_player_ms_compositor.cc#L66),
+and [CPU-frame wrapping](https://github.com/chromium/chromium/blob/152.0.7977.134/media/base/video_util.cc#L891).
+
+Pausing one `<video>` element does not necessarily stop its underlying track or other consumers. Suspending ingress
+when there are no active consumers is a possible optimization, subject to verifying the relevant feedback; it is not
+required to accommodate Chromium's pause copy. Retain normal bounded-resource and completion rules in either case.
 
 ### Patch size and maintenance estimate
 
@@ -492,7 +515,7 @@ Other references: [canvas capture](https://www.w3.org/TR/mediacapture-fromelemen
 
 Use ordinary sampled-texture input interfaces on the CEF node and keep its ordinary texture output. Input names must
 respect the existing prohibition on duplicate interface names; the page's numerical input index is an adapter over
-those native ports, not a new graph data type. Source conversion, readback, stream subscription, browser generations
+those native ports, not a new graph data type. GPU conversion, export pools, stream subscription, browser generations
 and native GPU bridge details belong inside the CEF module. App state wires subsystem ownership and lifecycle. New
 resource-sharing helpers must remain contained. This exploration grants no permission to change graph traversal,
 `tick_one_frame()` ordering, the render snapshot, existing submission behavior or other nodes; any deviation requires
@@ -511,8 +534,8 @@ CPU lifecycle and GPU readiness. Current NDI/DeckLink outputs record conversion 
 output through `app->defer_output()`, and publish the readback target after successful native submission. Workers obtain
 readable pixels only after readback completion and any required noncoherent-memory invalidation.
 
-Follow that existing path if CPU browser delivery is ever selected. `complete()` is a CPU lifecycle hook, not a
-GPU-completion signal; it must not expose unfinished transfer memory or recycle resources still in use. GPU delivery
+That is the existing CPU-transfer ownership pattern, not a proposal to add CPU browser delivery. `complete()` is a
+CPU lifecycle hook, not a GPU-completion signal; it must not expose unfinished transfer memory or recycle resources still in use. GPU delivery
 similarly needs a bounded export lease published after successful submission,
 producer completion before Chromium reads, and consumer completion before slot reuse. Neither the GPU proposal nor
 the historical CPU route calls for changing the existing graph/render lifecycle. See
