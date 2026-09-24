@@ -83,6 +83,7 @@ class media_input_exports_s
     bool     configure(size_t input, gpu::extent_s extent);
     void     invalidate(size_t input);
     uint64_t generation(size_t input) const;
+    size_t   allocated_bytes() const;
     std::shared_ptr<publication_s>
     record(size_t input, gpu::recording_s& recording, const gpu::texture_s& source, int64_t timestamp_us);
     // Poll actual producer completion and return at most one consumable lease.

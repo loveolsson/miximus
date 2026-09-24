@@ -517,6 +517,27 @@ int main(int argc, char** argv)
             }
             client->wait_colors();
             client->report_video_frames();
+            if (!export_queue) {
+                // Metadata invalidation must reject a subsequently arriving old
+                // frame without importing it or manufacturing a GPU completion.
+                auto await = [](std::future<std::pair<int, int>> result) {
+                    if (result.wait_for(5s) != std::future_status::ready)
+                        throw std::runtime_error("Generation qualification timed out");
+                    const auto response = result.get();
+                    if (!response.first)
+                        throw std::runtime_error("Generation qualification did not establish safe retirement");
+                    return response.second;
+                };
+                if (await(enqueue(api, client, {.source_generation = 2, .invalidate_only = 1})))
+                    throw std::runtime_error("Metadata invalidation delivered a video frame");
+                auto packet = describe(*exports[0], 0, 2'100'000);
+                if (await(enqueue(api, client, packet)))
+                    throw std::runtime_error("Superseded source generation entered the media source");
+                packet.source_generation = 2;
+                if (!await(enqueue(api, client, packet)))
+                    throw std::runtime_error("Current source generation was not admitted");
+                std::cout << "Metadata invalidation rejected the old generation and admitted its replacement\n";
+            }
         } catch (...) {
             client->close();
             throw;

@@ -116,6 +116,7 @@ class node_impl final : public node_i
             browser_status.cef_inputs_drops                 = inputs.drops;
             browser_status.cef_inputs_held                  = inputs.occupied;
             browser_status.cef_inputs_reserved_bytes        = inputs.reserved_bytes;
+            browser_status.cef_inputs_export_bytes          = inputs.export_bytes;
             browser_status.cef_paints                       = metrics->received;
             browser_status.cef_copies                       = metrics->copied;
             browser_status.cef_capacity_drops               = metrics->dropped;
@@ -242,6 +243,12 @@ class node_impl final : public node_i
             metrics = session_->metrics();
             if (metrics->phase == session_t::phase_e::failed || metrics->phase == session_t::phase_e::closed) {
                 fail(metrics->error.empty() ? "Browser closed unexpectedly" : metrics->error);
+                metrics.reset();
+            } else if (metrics->inputs.failed) {
+                // Lost GPU retirement poisons the whole export queue. Keep its
+                // allocations quarantined and recover through the existing
+                // bounded session restart policy, with a new document identity.
+                fail(metrics->inputs.error.empty() ? "Browser input transport failed" : metrics->inputs.error);
                 metrics.reset();
             }
         }

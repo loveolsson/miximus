@@ -35,6 +35,7 @@ const browserStatus: readonly NodeStatusSection[] = [
       { key: "cef_inputs_delivered", label: "Delivered", format: "integer" },
       { key: "cef_inputs_drops", label: "Dropped", format: "integer" },
       { key: "cef_inputs_held", label: "Held buffers", format: "integer" },
+      { key: "cef_inputs_export_bytes", label: "Export allocation bytes", format: "integer" },
       { key: "cef_inputs_reserved_bytes", label: "Reserved bytes", format: "integer" },
     ],
   },

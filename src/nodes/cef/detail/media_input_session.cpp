@@ -114,7 +114,7 @@ struct media_input_session_s::impl_s
             }
             reservation = std::make_shared<reservation_s>(runtime->impl_->budget);
             exports     = std::make_unique<media_input_exports_s>(
-                device, EXPORT_DEPTH, runtime->impl_->quarantine, 128ULL * 1024 * 1024, reservation);
+                device, EXPORT_DEPTH, runtime->impl_->quarantine, 256ULL * 1024 * 1024, reservation);
             black         = device.create_texture({16, 16});
             auto setup    = device.create_recording_context(1);
             auto commands = setup.try_record();
@@ -427,6 +427,7 @@ media_input_metrics_s media_input_session_s::metrics() const
                                  .delivered      = state.delivered,
                                  .drops          = state.transport_drops,
                                  .reserved_bytes = state.reservation ? state.reservation->reserved() : 0,
+                                 .export_bytes   = state.exports ? state.exports->allocated_bytes() : 0,
                                  .error          = state.error};
     if (state.exports)
         for (size_t input = 0; input < INPUTS; ++input) {

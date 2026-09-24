@@ -45,7 +45,7 @@ struct cef_browser_status_s
     std::string cef_inputs_state{"unavailable"};
     std::string cef_inputs_error;
     uint64_t cef_inputs_active{}, cef_inputs_submitted{}, cef_inputs_delivered{}, cef_inputs_drops{}, cef_inputs_held{},
-        cef_inputs_reserved_bytes{};
+        cef_inputs_reserved_bytes{}, cef_inputs_export_bytes{};
 };
 
 struct device_names_status_s
@@ -327,7 +327,8 @@ BOOST_DESCRIBE_STRUCT(cef_browser_status_s,
                        cef_inputs_delivered,
                        cef_inputs_drops,
                        cef_inputs_held,
-                       cef_inputs_reserved_bytes))
+                       cef_inputs_reserved_bytes,
+                       cef_inputs_export_bytes))
 BOOST_DESCRIBE_STRUCT(device_names_status_s, (), (device_names))
 BOOST_DESCRIBE_STRUCT(display_modes_status_s, (), (display_modes))
 BOOST_DESCRIBE_STRUCT(source_names_status_s, (), (source_names))

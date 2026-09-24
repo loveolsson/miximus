@@ -374,6 +374,16 @@ bool media_input_exports_s::idle() const
             return false;
     return true;
 }
+size_t media_input_exports_s::allocated_bytes() const
+{
+    std::lock_guard lock(state_->mutex);
+    size_t          bytes{};
+    for (const auto& input : state_->inputs)
+        for (const auto& image : input.images)
+            if (image)
+                bytes += image->allocation_bytes();
+    return bytes;
+}
 bool media_input_exports_s::failed() const
 {
     std::lock_guard lock(state_->mutex);

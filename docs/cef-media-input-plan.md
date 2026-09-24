@@ -199,11 +199,12 @@ qualified runtime; graph input ports and session integration remain the next ste
 The browser node now exposes `input_0`…`input_7` in both native and web definitions, including CEF-disabled builds.
 Only page-subscribed inputs demand graph execution. The node records through the existing frame recording and
 publishes via `defer_output`, after successful submission. Native/web status reports availability, subscriptions,
-committed frames, deliveries, drops, held export slots, reservation bytes and failures. A stock runtime reports the
+committed frames, deliveries, drops, held export slots, actual export allocation bytes, reservation estimates and failures. A stock runtime reports the
 input feature unavailable; browser output remains usable.
 
 The session owns a transfer worker, two Vulkan exports per active input, and a runtime-wide admission reservation.
-Allocation and producer-fence polling stay off the render thread. The 128 MiB export limit is supplemented by a
+Allocation and producer-fence polling stay off the render thread. The session export limit is now 256 MiB (the
+initial 128 MiB rejected some of eight HD inputs after driver allocation padding). It is supplemented by a
 separate 2 GiB shared input reservation, conservatively allowing eight Chromium destinations per input at padded
 high-water dimensions. This is an admission estimate, not measured driver memory. Actual export allocation bytes
 remain bounded separately. Reservations survive unknown-retirement quarantine until CEF shutdown. Chromium slot
@@ -239,3 +240,43 @@ CEF library and generated resources; do not mix a new library with old `.pak`/sn
 prototype build script and patches, not this machine-specific directory name. Remaining qualification includes
 rapid navigation/renderer failure with work in flight, retaining consumers, adapter mismatch, longer cadence runs,
 and HD/UHD memory/throughput tuning. Windows/native platform transports remain outside this Linux implementation.
+
+### Application graph and HD follow-up
+
+The new `scripts/test_cef_inputs.py` uses private application settings and a local page that reports native video
+size and `requestVideoFrameCallback().presentedFrames`. All eight source nodes are demanded with **no browser-output
+consumer**. The campaign applies live resize/disconnect/reconnect, six closely spaced reloads, disable/enable, and
+normal shutdown. Pixel correctness remains covered by the separate GPU comparison probes; this test observes graph
+execution and media presentation metadata. Its test-pattern sources upload their generated pattern once; the browser
+input transport itself still uses GPU images only.
+
+The first eight-input 1920×1080 run revealed two actionable limits:
+
+- Actual exports occupy **157,286,400 bytes (150 MiB)** on this driver, so the provisional 128 MiB cap rejected inputs.
+  Session admission now allows 256 MiB of actual export allocations. A separate status counter reports those bytes;
+  it is distinct from the padded input/destination reservation estimate (713,031,680 bytes for this case).
+- Navigation with work in flight can lose a Mojo completion reply. The queue correctly quarantines its buffers, but
+  previously left inputs permanently failed in a healthy browser session. The node now treats a poisoned input queue
+  as a session failure and uses its existing bounded restart/backoff policy. The old queue and reservation remain
+  quarantined until CEF shutdown. Repeated failures can exhaust the shared admission budget; restart never bypasses it.
+
+After that fix, the complete HD campaign passed with one automatic restart during reload stress and no Vulkan
+validation errors. A 15-second steady observation on the Quadro P2000 measured **34.1–34.4 presented frames/s per input**
+for eight 1080p sources, two Vulkan exports and three Chromium destinations. This is a functional/cadence result with
+validation enabled and a 640×360 browser viewport, not a 1080p output benchmark or a promise of 60 Hz on this hardware.
+The graph scheduled more work than the bounded transport admitted; drops are expected under this load.
+
+```sh
+VK_LAYER_PATH="$PWD/build/tools/vulkan-validation/1.4.357.0/x86_64/share/vulkan/explicit_layer.d" \
+MIXIMUS_VULKAN_VALIDATION=1 LD_LIBRARY_PATH="$PWD/build-cef-media-input-r5/link" \
+  python3 scripts/test_cef_inputs.py --width 1920 --height 1080 --steady-seconds 15
+```
+
+The serialized native transport probe additionally passes explicit v2 metadata invalidation: an older-generation
+packet is safely rejected, then a current-generation packet is admitted. All 960 eight-input frames preceding that
+check were delivered and the unique per-input GPU patterns matched.
+
+Follow-up validation: all 114 core tests and eight export/ownership GPU tests pass; native and CEF-disabled builds
+and the web build pass. The baseline runtime still passes browser-output replacement, disable/enable and shutdown,
+and explicitly reports media input unavailable with zero input allocations. The next tuning target, selected by the
+user, is **4–6 simultaneous 1080p60 inputs on the current GPU**; eight-port infrastructure remains required.

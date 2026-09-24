@@ -10,7 +10,7 @@ struct media_input_metrics_s
 {
     bool        available{}, failed{};
     uint32_t    subscribed{};
-    uint64_t    submitted{}, delivered{}, drops{}, occupied{}, reserved_bytes{};
+    uint64_t    submitted{}, delivered{}, drops{}, occupied{}, reserved_bytes{}, export_bytes{};
     std::string error;
 };
 namespace detail {

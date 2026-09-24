@@ -301,6 +301,7 @@ export interface cef_browser_status_s {
   readonly cef_inputs_drops: number;
   readonly cef_inputs_held: number;
   readonly cef_inputs_reserved_bytes: number;
+  readonly cef_inputs_export_bytes: number;
 }
 
 export interface device_names_status_s {
