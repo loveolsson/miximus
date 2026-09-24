@@ -2,12 +2,10 @@
 
 Initial research: **2026-09-22**. Custom-build reassessment: **2026-09-23**.
 
-This document records a separate exploration of feeding Miximus video **into** a web page hosted by CEF. It is not
-part of the [main CEF browser-source plan](cef-browser-sources.md), an implementation commitment, or an additional
-prerequisite for browser-source support. Miximus now patches and builds CEF/Chromium for accelerated browser output.
-No media-input prototype, runtime injection, or media-input platform benchmark has been performed. The reassessment
-below uses the pinned local source checkout; it does not authorize media-input implementation or change the main plan.
-
+Implementation authorized **2026-09-24**, on `feat/cef-media-inputs`. The staged delivery plan and validation
+record are now in [cef-media-input-plan.md](cef-media-input-plan.md). This document preserves the investigation,
+including rejected alternatives; its earlier “not authorized” statements describe the historical exploration scope.
+The GPU-only ingress, ordinary graph interfaces and explicit completion requirements remain binding.
 ## Purpose and constraints
 
 Broadcast templates often need live video inside their HTML composition. Today that commonly means opening a real
