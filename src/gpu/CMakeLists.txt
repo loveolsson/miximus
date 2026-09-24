@@ -36,6 +36,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(gpu PRIVATE
         detail/dma_buf_image.hpp detail/dma_buf_image.cpp
         detail/dma_buf_copy.hpp detail/dma_buf_copy.cpp
+        detail/dma_buf_export.hpp detail/dma_buf_export.cpp
     )
 endif()
 target_link_libraries(gpu PUBLIC glm::glm)

@@ -74,3 +74,13 @@ The production pin remains CEF `1ce985cb23056548b9cc51483bbef4faf68b1cd3` / Chro
 - Existing `gpu_dma_buf_vulkan_test`: all five tests passed locally with Vulkan synchronization validation on September 24.
   This includes exportable single-plane RGBA/BGRA and completed GPU copies across logical devices. The machine therefore
   passes this initial prerequisite; Chromium ingestion and eight-input throughput remain unproven.
+- Ownership foundation: `cef_media_input_test` passes eight deterministic tests, covering all depths 1–8, eight inputs,
+  generation invalidation, in-flight cancellation, stale/duplicate completion and concurrent navigation.
+- Export boundary: `gpu::detail::dma_buf_export_s` allocates single-plane renderable RGBA DMA-BUFs and records GPU
+  conversion plus FOREIGN/GENERAL handoff. The caller's bounded lease must still establish actual producer and consumer
+  completion. Abandoned recordings never commit foreign ownership.
+- `cef_media_input_vulkan_test` passes at 640×360: eight independent inputs at depths 1/2/3, four complete reuse rounds
+  each (192 exported frames), changing GPU-generated colors, GPU-only pixel verification, and abandoned recordings
+  before both initial use and reacquisition. No pixel readback occurs; only aggregate comparison counters reach the CPU.
+  This serialized ownership test does **not** establish live throughput, latency or Chromium compatibility.
+- Full native build, 30 GPU tests and 14 transfer GPU tests pass with Vulkan validation after the export changes.

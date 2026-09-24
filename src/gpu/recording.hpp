@@ -96,6 +96,7 @@ class recording_s
     friend class recording_context_s;
     friend struct detail::presenter_state_s;
     friend class transfer::detail::cuda_transfer_s;
+    friend class detail::dma_buf_export_s;
     friend class detail::dma_buf_copy_s;
 
   public:

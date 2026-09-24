@@ -43,6 +43,7 @@ class device_s
     std::unique_ptr<recording_context_s>    default_context_;
     friend struct detail::presenter_state_s;
     friend class transfer::detail::cuda_transfer_s;
+    friend class detail::dma_buf_export_s;
 
   public:
     explicit device_s(const device_options_s& options = {});
