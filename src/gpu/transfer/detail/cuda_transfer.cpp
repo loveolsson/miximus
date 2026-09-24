@@ -1,11 +1,13 @@
 #include "cuda_transfer.hpp"
 
 #include "gpu/detail/device.hpp"
+#include "gpu/detail/fatal.hpp"
 #include "logger/logger.hpp"
 
 #include <magic_enum/magic_enum.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <cuda_runtime_api.h>
 #include <format>
@@ -22,6 +24,12 @@ namespace {
 
 void check_cuda(cudaError_t result, const char* operation)
 {
+    if (result == cudaErrorIllegalAddress || result == cudaErrorLaunchTimeout || result == cudaErrorAssert ||
+        result == cudaErrorLaunchFailure || result == cudaErrorHardwareStackError ||
+        result == cudaErrorIllegalInstruction || result == cudaErrorMisalignedAddress ||
+        result == cudaErrorInvalidAddressSpace || result == cudaErrorInvalidPc || result == cudaErrorECCUncorrectable) {
+        gpu::detail::fatal_gpu_error(std::format("{}: {}", operation, cudaGetErrorString(result)));
+    }
     if (result != cudaSuccess) {
         throw std::runtime_error(std::format("{}: {}", operation, cudaGetErrorString(result)));
     }
@@ -49,13 +57,14 @@ struct cuda_transfer_s::state_s
     size_t               host_allocation_bytes{};
     size_t               device_allocation_bytes{};
 
-    cudaStream_t            stream{};
-    cudaEvent_t             copy_completed_event{};
-    VkSemaphore             to_cuda{};
-    VkSemaphore             to_vulkan{};
-    cudaExternalSemaphore_t cuda_wait{};
-    cudaExternalSemaphore_t cuda_signal{};
-    completion_s            last_submission;
+    cudaStream_t                          stream{};
+    cudaEvent_t                           copy_completed_event{};
+    VkSemaphore                           to_cuda{};
+    VkSemaphore                           to_vulkan{};
+    cudaExternalSemaphore_t               cuda_wait{};
+    cudaExternalSemaphore_t               cuda_signal{};
+    completion_s                          last_submission;
+    std::chrono::steady_clock::time_point transfer_started;
     enum class phase_e : uint8_t
     {
         idle,
@@ -63,6 +72,16 @@ struct cuda_transfer_s::state_s
         acquiring,
         submitted
     } phase{phase_e::idle};
+
+    void check_progress(std::string_view stage) const
+    {
+        // A fatal liveness limit, not a frame deadline. Never recycle memory
+        // which either API may still own or switch the selected backend.
+        if (std::chrono::steady_clock::now() - transfer_started > std::chrono::seconds(30)) {
+            gpu::detail::fatal_gpu_error(
+                std::format("CUDA transfer did not complete within 30 seconds during {}", stage));
+        }
+    }
 
     state_s(device_s&                                    gpu,
             std::shared_ptr<gpu::detail::device_state_s> native,
@@ -537,7 +556,8 @@ bool cuda_transfer_s::start_transfer(const completion_s& dependency)
     record->wait_for(dependency);
 
     record_ownership_transfer(*record, ownership_operation_e::release_to_cuda);
-    state.last_submission = submit(*record, ownership_operation_e::release_to_cuda);
+    state.last_submission  = submit(*record, ownership_operation_e::release_to_cuda);
+    state.transfer_started = std::chrono::steady_clock::now();
 
     cudaExternalSemaphoreWaitParams wait{};
     check_cuda(cudaWaitExternalSemaphoresAsync(&state.cuda_wait, &wait, 1, state.stream),
@@ -600,8 +620,16 @@ bool cuda_transfer_s::submit_transfer(const completion_s& dependency)
     // Do not queue a Vulkan wait until CUDA has actually signalled it. A stalled
     // CUDA copy must not block unrelated render submissions on the shared queue.
     if (state.phase == state_s::phase_e::copying) {
+        // Check the producer ticket even while CUDA is waiting for its signal.
+        // A failed producer cannot ever complete this event.
+        try {
+            (void)state.last_submission.submitted();
+        } catch (const std::exception& error) {
+            gpu::detail::fatal_gpu_error(std::format("CUDA Vulkan release failed: {}", error.what()));
+        }
         const auto ready = cudaEventQuery(state.copy_completed_event);
         if (ready == cudaErrorNotReady) {
+            state.check_progress("Vulkan release/CUDA copy");
             return false;
         }
 
@@ -614,6 +642,7 @@ bool cuda_transfer_s::submit_transfer(const completion_s& dependency)
         auto record =
             state.recording_context != nullptr ? state.recording_context->try_record() : state.device.try_record();
         if (!record) {
+            state.check_progress("Vulkan acquire recording");
             return false;
         }
 
@@ -637,6 +666,7 @@ bool cuda_transfer_s::transfer_ready()
     }
 
     if (state.phase != state_s::phase_e::submitted || !state.last_submission.ready()) {
+        state.check_progress("transfer completion");
         return false;
     }
 

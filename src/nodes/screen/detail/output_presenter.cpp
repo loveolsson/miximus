@@ -462,7 +462,10 @@ class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
             free_slots     = free_slots_.size();
             retiring_slots = retired_slots_.size();
         }
+        const auto presentation = presenter_ ? presenter_->metrics() : gpu::presentation_metrics_s{};
         return {
+            .failure                      = presentation.failure,
+            .stopped                      = presentation.stopped,
             .frames_submitted             = frames_submitted_.load(),
             .program_queue_overflow_drops = queue_overflow_drops_.load(),
             .program_timing_drops         = timing_drops_.load(),
@@ -470,7 +473,7 @@ class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
             .program_frames_missing       = frames_missing_.load(),
             .output_intervals_skipped     = output_intervals_skipped_.load(),
             .swaps_completed              = swaps_completed_.load(),
-            .presentation_drops           = presenter_ ? presenter_->metrics().mailbox_drops : 0,
+            .presentation_drops           = presentation.mailbox_drops,
             .render_acquire_misses        = render_acquire_misses_.load(),
             .queued_frames                = queued_frames_.load(),
             .slots                        = slots_.size(),

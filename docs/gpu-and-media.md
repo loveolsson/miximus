@@ -7,6 +7,24 @@ window and monitor service. Windows use `GLFW_NO_API`; Linux uses X11/XWayland t
 pixel sizes. Rendering and presentation still use Vulkan. Window creation, destruction, monitor queries, and event
 polling stay on the main/render thread. Presenter workers read cached drawable dimensions.
 
+Device selection requires the conversion storage-image features as well as the render format floor. Presentation
+additionally requires swapchain maintenance; each screen surface must support opaque composition, the selected
+sRGB format, and transfer-destination usage. Unsupported configurations are rejected with diagnostics rather than
+selecting a different rendering path. An unavailable fullscreen monitor fails that screen output instead of opening
+a window on another target.
+
+Screen-output failures are latched in `screen_error` with `connected=false`. They stop demanding graph execution;
+changing the enabled state or window/monitor configuration explicitly clears the failure. Resize and monitor
+refresh-rate notifications do not retry a failed endpoint. GPU device loss, submission/completion-query failure,
+and poisoned CUDA contexts terminate the process with a stderr diagnostic and failure exit code, without waiting
+for unsafe resource retirement. Pending CUDA transfers and synchronous upload waits have a 30-second fatal
+liveness limit, independent of frame deadlines. Normal short `cudaErrorNotReady` periods remain expected.
+Initialization has a 60-second watchdog; exceptional graph teardown uses the normal shutdown watchdog.
+
+Run `python3 scripts/test_screen_output_failure.py [build/miximus]` in a display session to verify unavailable
+monitor status, failure retention, explicit reconfiguration, and disabling the output. The script uses temporary
+settings and refuses to run alongside another application instance on the local API port.
+
 Ordinary nodes use `gpu::drawing.hpp` and `app->commands()` for typed operations. The sole GPU implementation lives
 directly in `src/gpu/`, with Vulkan/VMA state and pipeline internals in `src/gpu/detail/`. Public resource headers
 contain no native Vulkan types; dependency integration remains in `src/wrapper/vulkan/`. No OpenGL context or bridge

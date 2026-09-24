@@ -39,6 +39,8 @@ class node_impl : public node_i
     utils::observed_value_s<std::string>          monitor_id_;
     utils::observed_value_s<presenter_settings_t> presenter_settings_;
     bool                                          presenter_stopping_{};
+    std::string                                   failure_;
+    utils::observed_value_s<bool>                 enabled_;
     std::chrono::steady_clock::time_point         next_metrics_status_;
 
     void destroy_presenter()
@@ -117,6 +119,21 @@ class node_impl : public node_i
         window_settings_changed |= fullscreen_.observe(fullscreen);
         window_settings_changed |= monitor_id_.observe(monitor_id);
 
+        // Only an operator configuration change clears a failed endpoint. A
+        // monitor refresh-rate change or resize notification must not retry it.
+        const bool enabled_changed = enabled_.observe(enabled);
+        if (presenter_ && !presenter_stopping_) {
+            const auto metrics = presenter_->metrics();
+            if (!metrics.failure.empty() || metrics.stopped) {
+                failure_ = metrics.failure.empty() ? "Screen presenter stopped" : metrics.failure;
+                presenter_->request_stop();
+                presenter_stopping_ = true;
+            }
+        }
+        if (window_settings_changed || enabled_changed) {
+            failure_.clear();
+        }
+        app->status_registry()->write(id_, status::screen_output_status_s{.screen_error = failure_});
         const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
         const bool output_dimensions_changed  = presenter_ && presenter_->output_dimensions_changed();
         if (presenter_ && (presenter_settings_changed || window_settings_changed || output_dimensions_changed) &&
@@ -133,31 +150,38 @@ class node_impl : public node_i
             destroy_presenter();
         }
 
-        if (!enabled) {
+        if (!enabled || !failure_.empty()) {
             app->status_registry()->write(id_, status::connected_status_s{.connected = false});
             return;
         }
 
-        result->demands_execution = true;
-
         if (!presenter_) {
-            presenter_ = std::make_unique<output_presenter_s>(
-                *app->gpu(),
-                static_cast<size_t>(app->frame_settings().screen_output.buffer_frames),
-                nominal_frame_duration,
-                fullscreen,
-                monitor_id,
-                rect);
-            presenter_->start();
+            try {
+                presenter_ = std::make_unique<output_presenter_s>(
+                    *app->gpu(),
+                    static_cast<size_t>(app->frame_settings().screen_output.buffer_frames),
+                    nominal_frame_duration,
+                    fullscreen,
+                    monitor_id,
+                    rect);
+                presenter_->start();
+            } catch (const std::exception& error) {
+                failure_ = error.what();
+                destroy_presenter();
+                app->status_registry()->write(id_, status::screen_output_status_s{.screen_error = failure_});
+                app->status_registry()->write(id_, status::connected_status_s{.connected = false});
+                return;
+            }
         }
 
+        result->demands_execution = true;
         app->status_registry()->write(id_, status::connected_status_s{.connected = true});
         publish_metrics(app->status_registry());
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        if (!presenter_) {
+        if (!presenter_ || presenter_stopping_ || !failure_.empty()) {
             return;
         }
 

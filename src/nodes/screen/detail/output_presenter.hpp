@@ -10,30 +10,33 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace miximus::nodes::screen::detail {
 
 struct output_presenter_metrics_s
 {
-    uint64_t frames_submitted{};
-    uint64_t program_queue_overflow_drops{};
-    uint64_t program_timing_drops{};
-    uint64_t program_frames_repeated{};
-    uint64_t program_frames_missing{};
-    uint64_t output_intervals_skipped{};
-    uint64_t swaps_completed{};
-    uint64_t presentation_drops{};
-    uint64_t render_acquire_misses{};
-    size_t   queued_frames{};
-    size_t   slots{};
-    size_t   free_slots{};
-    size_t   retiring_slots{};
-    int64_t  output_latency_us{};
-    int64_t  program_selection_offset_us{};
-    int64_t  completion_interval_max_us{};
-    double   measured_refresh_hz{};
-    bool     uses_present_wait{};
+    std::string failure;
+    bool        stopped{};
+    uint64_t    frames_submitted{};
+    uint64_t    program_queue_overflow_drops{};
+    uint64_t    program_timing_drops{};
+    uint64_t    program_frames_repeated{};
+    uint64_t    program_frames_missing{};
+    uint64_t    output_intervals_skipped{};
+    uint64_t    swaps_completed{};
+    uint64_t    presentation_drops{};
+    uint64_t    render_acquire_misses{};
+    size_t      queued_frames{};
+    size_t      slots{};
+    size_t      free_slots{};
+    size_t      retiring_slots{};
+    int64_t     output_latency_us{};
+    int64_t     program_selection_offset_us{};
+    int64_t     completion_interval_max_us{};
+    double      measured_refresh_hz{};
+    bool        uses_present_wait{};
 };
 
 class output_presenter_s

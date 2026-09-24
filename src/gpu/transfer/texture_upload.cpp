@@ -1,5 +1,6 @@
 #include "texture_upload.hpp"
 
+#include "gpu/detail/fatal.hpp"
 #include "gpu/transfer/detail/frame_staging.hpp"
 #include "gpu/transfer/detail/transfer_layout.hpp"
 #include "gpu/transfer/detail/transfer_worker.hpp"
@@ -10,6 +11,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <format>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
@@ -701,20 +703,28 @@ texture_upload_wait_result_e texture_upload_stream_s::wait_for_upload(texture_up
     };
 
     std::unique_lock lock(state_->mutex);
-    state_->completion_cv.wait(lock, [this, &find_slot, availability] {
-        if (!state_->active) {
-            return true;
-        }
-        const auto slot = find_slot();
-        if (slot == state_->slots.end()) {
-            return true;
-        }
-        if (availability == availability_e::submitted && (*slot)->transfer_submitted) {
-            return true;
-        }
-        return ((*slot)->state != detail::slot_state_e::queued && (*slot)->state != detail::slot_state_e::current) ||
-               (*slot)->transfer_completed;
-    });
+    const bool       completed =
+        state_->completion_cv.wait_for(lock, std::chrono::seconds(30), [this, &find_slot, availability] {
+            if (!state_->active) {
+                return true;
+            }
+            const auto slot = find_slot();
+            if (slot == state_->slots.end()) {
+                return true;
+            }
+            if (availability == availability_e::submitted && (*slot)->transfer_submitted) {
+                return true;
+            }
+            return ((*slot)->state != detail::slot_state_e::queued &&
+                    (*slot)->state != detail::slot_state_e::current) ||
+                   (*slot)->transfer_completed;
+        });
+    if (!completed) {
+        gpu::detail::fatal_gpu_error(
+            std::format("Upload {} did not become {} within 30 seconds",
+                        upload_id.sequence,
+                        availability == availability_e::submitted ? "submitted" : "completed"));
+    }
     if (!state_->active) {
         return texture_upload_wait_result_e::stopped;
     }

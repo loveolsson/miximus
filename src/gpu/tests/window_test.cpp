@@ -66,6 +66,16 @@ class window_test : public testing::Test
     }
 };
 
+TEST_F(window_test, MissingFullscreenMonitorFailsInsteadOfOpeningWindow)
+{
+    EXPECT_THROW((window_s({
+                     .fullscreen = true,
+                     .monitor_id = "miximus-test-missing-monitor",
+                     .rect       = {.pos = {0, 0}, .size = {320, 180}}
+    })),
+                 std::runtime_error);
+}
+
 TEST_F(window_test, PresentsOnlyPublishedFramesAndRedrawsAfterResize)
 {
     const recti_s initial_rect{

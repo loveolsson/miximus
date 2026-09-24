@@ -36,6 +36,16 @@ namespace {
 
 constexpr int HTTP_PORT = 7351;
 
+struct exception_shutdown_guard_s
+{
+    ~exception_shutdown_guard_s()
+    {
+        if (std::uncaught_exceptions() != 0) {
+            utils::start_shutdown_watchdog();
+        }
+    }
+};
+
 auto& get_signal_status() noexcept
 {
     static volatile std::sig_atomic_t signal_status = 0;
@@ -88,17 +98,22 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
     getlog("app")->info("Process ID: {}", utils::process_id());
     utils::set_max_thread_priority();
 
+    int exit_code = EXIT_SUCCESS;
     try {
         {
+            utils::start_shutdown_watchdog(60s);
+            utils::begin_shutdown_step("application initialization");
             core::app_state_s app(std::move(command_line_options));
+            utils::finish_shutdown_watchdog();
             // web_server declared AFTER app so it is destroyed BEFORE app — the
             // websocketpp endpoint holds a raw pointer to cfg_executor_ and must
             // not outlive it.
             auto web_server = web_server::create_web_server();
             web_server->start(HTTP_PORT, app.cfg_executor());
 
-            core::node_manager_s  node_manager;
-            core::configuration_s configuration(node_manager);
+            core::node_manager_s             node_manager;
+            core::configuration_s            configuration(node_manager);
+            const exception_shutdown_guard_s exception_shutdown_guard;
             configuration.load_file(app.command_line_options().settings_path);
 
             // Set up web server config getters
@@ -168,13 +183,14 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
         }
         utils::report_shutdown_step_completed();
     } catch (std::exception& e) {
-        std::cout << "Panic: " << e.what() << '\n';
+        std::cerr << "Panic: " << e.what() << '\n';
+        exit_code = EXIT_FAILURE;
     }
 
     utils::finish_shutdown_watchdog();
     getlog("app")->info("Application shutdown complete");
     spdlog::shutdown();
-    return EXIT_SUCCESS;
+    return exit_code;
 }
 
 } // namespace

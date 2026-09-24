@@ -460,6 +460,10 @@ export interface decklink_output_metrics_status_s {
   readonly render_target_drops: number;
 }
 
+export interface screen_output_status_s {
+  readonly screen_error: string;
+}
+
 export interface screen_output_metrics_status_s {
   readonly clock_quality: string;
   readonly frames_submitted: number;
@@ -505,5 +509,6 @@ export type node_status_s = Partial<
   download_stream_status_s &
   ndi_output_metrics_status_s &
   decklink_output_metrics_status_s &
+  screen_output_status_s &
   screen_output_metrics_status_s
 >;

@@ -248,6 +248,11 @@ struct decklink_output_metrics_status_s
     uint64_t render_target_drops{};
 };
 
+struct screen_output_status_s
+{
+    std::string screen_error;
+};
+
 struct screen_output_metrics_status_s
 {
     std::string clock_quality;
@@ -436,6 +441,7 @@ BOOST_DESCRIBE_STRUCT(decklink_output_metrics_status_s,
                        program_selection_offset_us,
                        completion_time_failures,
                        render_target_drops))
+BOOST_DESCRIBE_STRUCT(screen_output_status_s, (), (screen_error))
 BOOST_DESCRIBE_STRUCT(screen_output_metrics_status_s,
                       (),
                       (clock_quality,
@@ -488,6 +494,7 @@ inline constexpr auto contracts = std::tuple{
     STATUS_CONTRACT(download_stream_status_s),
     STATUS_CONTRACT(ndi_output_metrics_status_s),
     STATUS_CONTRACT(decklink_output_metrics_status_s),
+    STATUS_CONTRACT(screen_output_status_s),
     STATUS_CONTRACT(screen_output_metrics_status_s),
 };
 #undef STATUS_CONTRACT

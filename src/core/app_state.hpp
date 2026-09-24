@@ -64,9 +64,13 @@ class app_state_s
     };
 
   private:
-    using io_service_t  = boost::asio::io_context;
-    using work_guard_t  = boost::asio::executor_work_guard<io_service_t::executor_type>;
-    using thread_pool_t = FiberPool::FiberPool<true>;
+    using io_service_t = boost::asio::io_context;
+    using work_guard_t = boost::asio::executor_work_guard<io_service_t::executor_type>;
+    struct thread_pool_t : FiberPool::FiberPool<true>
+    {
+        using FiberPool::FiberPool<true>::FiberPool;
+        ~thread_pool_t() { close_queue(); }
+    };
 
     const command_line_options_s   command_line_options_;
     io_service_t                   cfg_executor_;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fatal.hpp"
 #include "gpu/device.hpp"
 #include "utils/lookup.hpp"
 
