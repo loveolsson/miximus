@@ -13,6 +13,8 @@ add_library(app
     frame_scheduler.hpp
     frame_scheduler_fwd.hpp
     frame_scheduler.cpp
+    node_actions.hpp
+    node_actions.cpp
     node_manager.hpp
     node_manager_fwd.hpp
     node_manager.cpp
@@ -65,6 +67,7 @@ if(BUILD_TESTING)
         tests/command_line_options_test.cpp
         tests/node_status_registry_test.cpp
         tests/web_message_test.cpp
+        tests/node_actions_test.cpp
     )
     target_link_libraries(
         core_test

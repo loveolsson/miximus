@@ -406,6 +406,25 @@ error_e node_manager_s::handle_remove_connection(const connection_s& con, const 
     return remove_connection_locked(con, origin);
 }
 
+error_e node_manager_s::handle_node_action(std::string_view        id,
+                                           std::string_view        name,
+                                           const nlohmann::json&   payload,
+                                           node_actions_s::reply_t reply)
+{
+    std::weak_ptr<nodes::node_i> target;
+    {
+        const std::scoped_lock lock(nodes_mutex_);
+        const auto             found = nodes_.find(id);
+        if (found == nodes_.end()) {
+            return error_e::not_found;
+        }
+        target = found->second.node;
+    }
+    // Validation and copying must not hold up the next render snapshot. A weak
+    // target also avoids transferring final node destruction to this thread.
+    return actions_.enqueue(id, std::move(target), name, payload, std::move(reply));
+}
+
 nlohmann::json node_manager_s::get_node_status(std::string_view id) const
 {
     if (status_registry_ == nullptr) {
@@ -431,6 +450,7 @@ void node_manager_s::clear_adapters()
 void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& scheduler)
 {
     status_registry_ = app->status_registry();
+    node_actions_s::batch_t actions;
 
     {
         {
@@ -456,9 +476,8 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
                     "Updated render graph: {} changed, {} removed", dirty_nodes_.size(), removed_nodes_.size());
                 dirty_nodes_.clear();
                 removed_nodes_.clear();
-            } else {
-                lock.unlock();
             }
+            actions = actions_.take_batch();
         }
 
         const auto settings = nodes_copy_.find(nodes::system::SETTINGS_NODE_ID);
@@ -493,6 +512,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
                                           });
         }
 
+        node_actions_s::dispatch(std::move(actions), app, nodes_copy_);
         const auto prepare_start   = utils::flicks_now();
         const auto demanding_nodes = nodes::prepare_all_nodes(app, nodes_copy_);
         const auto prepare_end     = utils::flicks_now();
@@ -554,6 +574,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 
 void node_manager_s::clear_nodes(app_state_s* app)
 {
+    actions_.close();
     app->abort_gpu();
 
     nodes_copy_.clear();

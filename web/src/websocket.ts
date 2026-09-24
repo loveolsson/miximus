@@ -154,8 +154,8 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       return console.warn("Unknown token in response");
     }
 
-    cb(msg, true);
     this.callbacks.delete(msg.token);
+    cb(msg, true);
   }
 
   private send_ping(): void {
@@ -200,8 +200,54 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       console.log("Sent", payload);
     }
 
-    this.ws?.send(JSON.stringify(payload));
+    try {
+      this.ws?.send(JSON.stringify(payload));
+    } catch (error) {
+      if (token !== undefined) this.callbacks.delete(token);
+      throw error;
+    }
     return token ?? true;
+  }
+
+  /** Wait for a correlated reply. Disconnect/timeout never replay the command:
+   * the server may already have handled it even if its reply was lost.
+   * Aborting cancels only the local wait, not an accepted server operation.
+   */
+  public request<T extends message_s, R extends message_s>(
+    message: Omit<T, "token">,
+    signal?: AbortSignal,
+  ): Promise<R | error_s> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(new Error("Request cancelled"));
+      if (this.callbacks.size >= 64) return reject(new Error("Too many pending requests"));
+      let token: string | undefined;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const cleanup = () => {
+        if (timer !== undefined) clearTimeout(timer);
+        if (token !== undefined) this.callbacks.delete(token);
+        this.off("on_disconnected", disconnected);
+        signal?.removeEventListener("abort", aborted);
+      };
+      const fail = (message: string) => {
+        cleanup();
+        reject(new Error(message));
+      };
+      const disconnected = () => fail("Disconnected; action outcome unknown");
+      const aborted = () => fail("Request cancelled; action outcome unknown");
+      this.on("on_disconnected", disconnected);
+      signal?.addEventListener("abort", aborted, { once: true });
+      try {
+        token = this.send<Omit<T, "token">, R>(message, (response) => {
+          cleanup();
+          resolve(response);
+        });
+        if (token === undefined) return fail("Offline");
+        timer = setTimeout(() => fail("Reply timed out; action outcome unknown"), 10000);
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    });
   }
 
   public subscribe<T extends message_s>(topic: topic_e, cb: message_callback_t<T>) {

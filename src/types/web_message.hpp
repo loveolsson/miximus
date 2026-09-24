@@ -29,7 +29,8 @@ BOOST_DESCRIBE_ENUM(topic_e,
                     update_node,
                     font_registry,
                     config,
-                    node_status)
+                    node_status,
+                    node_action)
 BOOST_DESCRIBE_ENUM(error_e,
                     no_error,
                     internal_error,
@@ -39,7 +40,13 @@ BOOST_DESCRIBE_ENUM(error_e,
                     duplicate_id,
                     invalid_options,
                     not_found,
-                    circular_connection)
+                    circular_connection,
+                    unsupported_action,
+                    invalid_payload,
+                    busy,
+                    unavailable,
+                    cancelled,
+                    expired)
 BOOST_DESCRIBE_ENUM(font_registry_command_e, refresh)
 
 } // namespace miximus
@@ -99,6 +106,13 @@ struct result_s
     static constexpr action_e action = action_e::result;
 
     std::string token;
+};
+
+struct node_action_result_s
+{
+    static constexpr action_e action = action_e::result;
+    std::string               token;
+    nlohmann::json            data = nullptr;
 };
 
 struct config_result_s
@@ -195,6 +209,7 @@ BOOST_DESCRIBE_STRUCT(config_s, (), (schema_version, nodes, connections, status)
 BOOST_DESCRIBE_STRUCT(ping_response_s, (), (response))
 BOOST_DESCRIBE_STRUCT(socket_info_s, (), (id, bundle_hash))
 BOOST_DESCRIBE_STRUCT(result_s, (), (token))
+BOOST_DESCRIBE_STRUCT(node_action_result_s, (), (token, data))
 BOOST_DESCRIBE_STRUCT(config_result_s, (), (token, config))
 BOOST_DESCRIBE_STRUCT(node_status_result_s, (), (token, id, status))
 BOOST_DESCRIBE_STRUCT(error_s, (), (token, error, message))

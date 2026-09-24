@@ -11,6 +11,8 @@
 
 namespace miximus::nodes {
 
+struct action_result_s;
+
 class node_i
 {
     friend class interface_i;
@@ -38,6 +40,14 @@ class node_i
      * lightweight one-time setup that does not require the render thread.
      */
     virtual void init(std::string_view id);
+
+    // Transient custom action, called on the render thread before prepare with
+    // this frame's configuration (possibly before this node's first prepare).
+    // Validate payload before side effects. Never block or record GPU work;
+    // schedule background work and report its progress through node status.
+    // Returning success acknowledges handling/admission, not background completion.
+    virtual action_result_s
+    handle_action(core::app_state_s*, const node_state_s&, std::string_view, const nlohmann::json&);
 
     /**
      * Called every tick on the main/render thread. Update lifecycle state,

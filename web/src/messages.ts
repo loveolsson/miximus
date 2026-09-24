@@ -13,6 +13,8 @@ export type {
   font_registry_request_s,
   message_s,
   node_s,
+  node_action_request_s,
+  node_action_result_s,
   node_status_command_s,
   node_status_request_s,
   node_status_result_s,

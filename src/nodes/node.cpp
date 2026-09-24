@@ -1,5 +1,6 @@
 #include "node.hpp"
 
+#include "action.hpp"
 #include "interface.hpp"
 #include "normalize_option.hpp"
 
@@ -15,6 +16,14 @@ void node_i::register_interface(const interface_i& iface)
     if (!inserted) {
         throw std::logic_error(std::format("duplicate interface name {}", iface.name()));
     }
+}
+
+action_result_s node_i::handle_action(core::app_state_s* /* app */,
+                                      const node_state_s& /* state */,
+                                      std::string_view /* name */,
+                                      const nlohmann::json& /* payload */)
+{
+    return {.error = error_e::unsupported_action, .message = "Node does not support this action"};
 }
 
 void node_i::init(std::string_view id) { id_ = id; }

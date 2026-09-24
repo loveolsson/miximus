@@ -89,6 +89,11 @@ template <>
 inline constexpr std::string_view member_type_override<&web_message::config_s::status> =
     "Readonly<Record<string, node_status_s>> | null";
 
+template <>
+inline constexpr std::string_view member_type_override<&web_message::node_action_request_s::payload> = "unknown";
+template <>
+inline constexpr std::string_view member_type_override<&web_message::node_action_result_s::data> = "unknown";
+
 template <typename Member, auto Pointer>
 std::string typescript_member_type()
 {

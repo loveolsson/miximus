@@ -1,4 +1,5 @@
 add_library(nodes
+    action.hpp
     node.hpp
     node_fwd.hpp
     node_definition.hpp

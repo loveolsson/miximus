@@ -248,4 +248,32 @@ TEST(web_message, typed_subscription_rejects_a_mismatched_registered_topic)
     EXPECT_FALSE(implementation.subscription);
 }
 
+TEST(web_message, node_action_preserves_arbitrary_json_and_requires_its_envelope_fields)
+{
+    const nlohmann::json request = {
+        {"token",   "action-1"                                      },
+        {"id",      "browser"                                       },
+        {"name",    "custom"                                        },
+        {"payload", {nullptr, false, 42, "text", {{"nested", true}}}}
+    };
+    const auto decoded = request.get<web_message::node_action_request_s>();
+    EXPECT_EQ(decoded.payload, request.at("payload"));
+    EXPECT_EQ(decoded.name, "custom");
+    for (const auto* key : {"token", "id", "name", "payload"}) {
+        auto malformed = request;
+        malformed.erase(key);
+        EXPECT_THROW((void)malformed.get<web_message::node_action_request_s>(), std::exception);
+    }
+    auto malformed    = request;
+    malformed["name"] = 42;
+    EXPECT_THROW((void)malformed.get<web_message::node_action_request_s>(), std::exception);
+    malformed            = request;
+    malformed["payload"] = std::string(node_action_limits::MAX_PAYLOAD_BYTES, 'x');
+    EXPECT_THROW((void)malformed.get<web_message::node_action_request_s>(), std::exception);
+    const nlohmann::json result = web_message::node_action_result_s{.token = "action-1", .data = decoded.payload};
+    EXPECT_EQ(result.at("token"), "action-1");
+    EXPECT_EQ(result.at("data"), decoded.payload);
+    EXPECT_EQ(result.at("action"), "result");
+}
+
 } // namespace

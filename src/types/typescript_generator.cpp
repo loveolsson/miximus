@@ -122,6 +122,8 @@ std::string generate_typescript()
     EMIT_NAMESPACED_TYPE(web_message, add_connection_request_s);
     EMIT_NAMESPACED_TYPE(web_message, remove_connection_request_s);
     EMIT_NAMESPACED_TYPE(web_message, font_registry_request_s);
+    EMIT_NAMESPACED_TYPE(web_message, node_action_request_s);
+    EMIT_NAMESPACED_TYPE(web_message, node_action_result_s);
     EMIT_NAMESPACED_TYPE(web_message, config_request_s);
     EMIT_NAMESPACED_TYPE(web_message, node_status_request_s);
     EMIT_NAMESPACED_TYPE(web_message, ping_response_s);

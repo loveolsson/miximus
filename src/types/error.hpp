@@ -12,6 +12,12 @@ enum class error_e
     invalid_options,
     not_found,
     circular_connection,
+    unsupported_action,
+    invalid_payload,
+    busy,
+    unavailable,
+    cancelled,
+    expired,
 };
 
 } // namespace miximus

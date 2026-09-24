@@ -43,6 +43,9 @@ class websocket_config_s final : public node_manager_s::adapter_i
     render::font_registry_s& font_registry_;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
+    std::weak_ptr<web_server::server_s> server_lifetime_;
+
+    void handle_node_action(const web_message::node_action_request_s& message, int64_t origin_id);
     void handle_add_node(const web_message::add_node_request_s& message, int64_t origin_id);
     void handle_remove_node(const web_message::remove_node_request_s& message, int64_t origin_id);
     void handle_update_node(const web_message::update_node_request_s& message, int64_t origin_id);
@@ -66,21 +69,24 @@ class websocket_config_s final : public node_manager_s::adapter_i
     void emit_node_status(std::string_view id, const nlohmann::json& status) final;
 
   public:
-    websocket_config_s(node_manager_s&          manager,
-                       configuration_s&         configuration,
-                       web_server::server_s&    server,
-                       render::font_registry_s& font_registry);
+    websocket_config_s(node_manager_s&                              manager,
+                       configuration_s&                             configuration,
+                       const std::shared_ptr<web_server::server_s>& server,
+                       render::font_registry_s&                     font_registry);
 };
 
-websocket_config_s::websocket_config_s(node_manager_s&          manager,
-                                       configuration_s&         configuration,
-                                       web_server::server_s&    server,
-                                       render::font_registry_s& font_registry)
+websocket_config_s::websocket_config_s(node_manager_s&                              manager,
+                                       configuration_s&                             configuration,
+                                       const std::shared_ptr<web_server::server_s>& server,
+                                       render::font_registry_s&                     font_registry)
     : manager_(manager)
     , configuration_(configuration)
-    , server_(server)
+    , server_(*server)
     , font_registry_(font_registry)
+    , server_lifetime_(server)
 {
+    server_.subscribe<web_message::node_action_request_s>(
+        topic_e::node_action, std::bind_front(&websocket_config_s::handle_node_action, this));
     server_.subscribe<web_message::add_node_request_s>(topic_e::add_node,
                                                        std::bind_front(&websocket_config_s::handle_add_node, this));
     server_.subscribe<web_message::remove_node_request_s>(
@@ -97,6 +103,30 @@ websocket_config_s::websocket_config_s(node_manager_s&          manager,
                                                      std::bind_front(&websocket_config_s::handle_config, this));
     server_.subscribe<web_message::node_status_request_s>(
         topic_e::node_status, std::bind_front(&websocket_config_s::handle_node_status, this));
+}
+
+void websocket_config_s::handle_node_action(const web_message::node_action_request_s& message, int64_t origin_id)
+{
+    const auto result = manager_.handle_node_action(
+        message.id,
+        message.name,
+        message.payload,
+        [server = server_lifetime_, token = message.token, origin_id](nodes::action_result_s result) {
+            if (const auto target = server.lock()) {
+                if (result.error == error_e::no_error) {
+                    target->send_message(
+                        web_message::node_action_result_s{.token = token, .data = std::move(result.data)}, origin_id);
+                } else {
+                    target->send_message(web_message::error_s{.token   = token,
+                                                              .error   = result.error,
+                                                              .message = std::move(result.message)},
+                                         origin_id);
+                }
+            }
+        });
+    if (result != error_e::no_error) {
+        server_.send_message_sync(web_message::error_s{.token = message.token, .error = result}, origin_id);
+    }
 }
 
 void websocket_config_s::handle_font_registry(const web_message::font_registry_request_s& message, int64_t origin_id)
@@ -263,9 +293,9 @@ void websocket_config_s::emit_node_status(std::string_view id, const nlohmann::j
 
 } // namespace
 
-std::unique_ptr<node_manager_s::adapter_i> create_websocket_adapter(node_manager_s&          manager,
-                                                                    configuration_s&         configuration,
-                                                                    web_server::server_s&    server,
+std::unique_ptr<node_manager_s::adapter_i> create_websocket_adapter(node_manager_s&  manager,
+                                                                    configuration_s& configuration,
+                                                                    const std::shared_ptr<web_server::server_s>& server,
                                                                     render::font_registry_s& font_registry)
 {
     return std::make_unique<websocket_config_s>(manager, configuration, server, font_registry);

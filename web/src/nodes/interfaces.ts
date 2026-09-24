@@ -1,3 +1,4 @@
+import NodeActionComponent from "./options/NodeActionOption.vue";
 import { markRaw, reactive } from "vue";
 import { NodeInterface } from "@baklavajs/core";
 import type { NodeData } from "./status_store";
@@ -111,6 +112,19 @@ export class FontRegistryRefreshInterface extends NodeInterface<null> {
   constructor() {
     super("Font Registry", null);
     this.setComponent(markRaw(FontRegistryRefreshComponent));
+    this.setPort(false);
+  }
+}
+
+/** Transient node action. The null interface value is never used as configuration. */
+export class NodeActionInterface extends NodeInterface<null> {
+  constructor(
+    label: string,
+    readonly action: string,
+    readonly payload: unknown = {},
+  ) {
+    super(label, null);
+    this.setComponent(markRaw(NodeActionComponent));
     this.setPort(false);
   }
 }

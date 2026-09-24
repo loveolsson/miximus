@@ -2,6 +2,7 @@
 #include "core/app_state_fwd.hpp"
 #include "core/configuration_fwd.hpp"
 #include "core/frame_scheduler_fwd.hpp"
+#include "core/node_actions.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "core/origin_info.hpp"
 #include "nodes/node_fwd.hpp"
@@ -56,6 +57,7 @@ class node_manager_s
 
     using adapter_list_t = std::vector<std::unique_ptr<adapter_i>>;
 
+    node_actions_s                        actions_;
     std::mutex                            nodes_mutex_;
     nodes::node_map_t                     nodes_;
     nodes::node_map_t                     nodes_copy_;
@@ -75,7 +77,7 @@ class node_manager_s
 
   public:
     node_manager_s();
-    ~node_manager_s() = default;
+    ~node_manager_s() { actions_.close(); }
 
     error_e handle_add_node(std::string_view                    type,
                             std::string_view                    id,
@@ -90,6 +92,11 @@ class node_manager_s
     error_e handle_add_connection(connection_s con, const std::optional<origin_info_s>& origin = std::nullopt);
     error_e handle_remove_connection(const connection_s&                 con,
                                      const std::optional<origin_info_s>& origin = std::nullopt);
+
+    error_e handle_node_action(std::string_view        id,
+                               std::string_view        name,
+                               const nlohmann::json&   payload,
+                               node_actions_s::reply_t reply);
 
     nlohmann::json get_node_status(std::string_view id) const;
 

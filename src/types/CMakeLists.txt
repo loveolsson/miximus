@@ -6,6 +6,8 @@ add_library(miximus_types
     frame_rate.cpp
     json_contract_descriptions.hpp
     json_contract.hpp
+    node_action_limits.hpp
+    node_action_limits.cpp
     node_status.hpp
     node_status_json.hpp
     output_buffer_limits.hpp

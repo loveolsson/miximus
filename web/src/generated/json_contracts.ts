@@ -19,6 +19,7 @@ export const enum topic_e {
   font_registry = "font_registry",
   config = "config",
   node_status = "node_status",
+  node_action = "node_action",
 }
 
 export const enum error_e {
@@ -31,6 +32,12 @@ export const enum error_e {
   invalid_options = "invalid_options",
   not_found = "not_found",
   circular_connection = "circular_connection",
+  unsupported_action = "unsupported_action",
+  invalid_payload = "invalid_payload",
+  busy = "busy",
+  unavailable = "unavailable",
+  cancelled = "cancelled",
+  expired = "expired",
 }
 
 export const enum font_registry_command_e {
@@ -143,6 +150,21 @@ export interface font_registry_request_s {
   readonly topic: topic_e.font_registry;
   readonly token?: string | null;
   readonly command: font_registry_command_e;
+}
+
+export interface node_action_request_s {
+  readonly action: action_e.command;
+  readonly topic: topic_e.node_action;
+  readonly token: string;
+  readonly id: string;
+  readonly name: string;
+  readonly payload: unknown;
+}
+
+export interface node_action_result_s {
+  readonly action: action_e.result;
+  readonly token: string;
+  readonly data: unknown;
 }
 
 export interface config_request_s {

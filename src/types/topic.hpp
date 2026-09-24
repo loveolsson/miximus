@@ -13,6 +13,7 @@ enum class topic_e
     font_registry,
     config,
     node_status,
+    node_action,
 };
 
 [[nodiscard]] constexpr std::optional<topic_e> topic_from_string(std::string_view value)
