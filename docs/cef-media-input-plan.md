@@ -24,8 +24,9 @@ or replacement of the qualified browser-output runtime.
   bounds, not a preroll requirement or a promise of N-frame latency. No free slot means a counted drop.
 - Disconnected slots should eventually receive GPU-generated opaque black at a small initial size; choose exact cadence
   during playback qualification. Do not make acquisition wait for connected input or allocate eight full-size pools eagerly.
-- For the first native adapter, compare a GPU-backed JS `VideoFrame` plus the existing track generator against a native
-  push source. Keep page policy in Miximus; expose the smallest runtime operation needed. Do not patch device enumeration.
+- Deliver native `media::VideoFrame`s through Chromium's existing `PushableMediaStreamVideoSource::Broker` and
+  `MediaStreamVideoTrack`. Bind the track to JavaScript once. No per-frame JS `VideoFrame` wrapper, writable stream,
+  or replacement media pipeline is needed. Keep page policy in Miximus. Do not patch device enumeration.
 
 ## Milestones and exit criteria
 
@@ -84,3 +85,34 @@ The production pin remains CEF `1ce985cb23056548b9cc51483bbef4faf68b1cd3` / Chro
   before both initial use and reacquisition. No pixel readback occurs; only aggregate comparison counters reach the CPU.
   This serialized ownership test does **not** establish live throughput, latency or Chromium compatibility.
 - Full native build, 30 GPU tests and 14 transfer GPU tests pass with Vulkan validation after the export changes.
+- Opt-in prototype: all four `ExternalVideoSourceTest` tests pass in the pinned Chromium checkout: eight independent
+  live tracks, unchanged GPU frame delivery to a normal track sink, native stop/clone/destruction behavior, and missing
+  context rejection. The native application and browser probe build successfully. This does not yet qualify the GPU
+  importer/copy/query or page playback; the experimental runtime must pass the end-to-end probe.
+- Reproducible CEF and test-only Chromium patches, exact revisions/digests, isolated staging, and qualification commands
+  live in [the prototype workflow](../src/wrapper/cef/media-input-prototype/README.md). Its ABI remains experimental.
+
+## Reuse decision after capture-path comparison
+
+The Windows Media Foundation capture path already imports/copies GPU textures and uses the normal native media
+pipeline. Its `DeliverTextureToClient()` and renderer `BindVideoFrameOnMediaTaskRunner()` currently require NV12;
+they are not a drop-in RGBA/DMA-BUF entry point. The cross-platform `TextureVirtualDevice` is a separate Chromium
+service that accepts SharedImages and registers an internal camera. Its buffer access notifications are useful but
+its renderer branch still constructs frames with an empty release-mailbox callback in the pinned source.
+
+The selected direct native source reuses `PushableMediaStreamVideoSource::Broker`, `MediaStreamVideoTrack`,
+`MediaStreamSource`, `MediaStreamComponentImpl`, and `MediaStreamTrackImpl`. Frame delivery, sink fan-out, track
+cloning/stopping and IO-thread dispatch therefore stay in Chromium. The only Blink-specific glue creates the track
+and retains its existing broker. This can live in CEF's **existing** `blink_glue.cc`, which its standard patches
+already compile into Blink's controller target; no additional production Blink public API is necessary.
+
+Also inspected `WebGraphicsContext3DVideoFramePool` and `RenderableMappableSharedImageVideoFramePool`. They contain
+useful copy/release-token machinery, but the former always converts to NV12 and permits a shared-memory GMB copy;
+the latter is not an admission bound. Any reuse must explicitly reject CPU-backed ingress and cap total outstanding
+allocations, including old sizes. The existing GPU-only copy and SharedImage primitives remain the intended boundary.
+
+Source references (pinned Chromium):
+[Windows GPU capture](https://github.com/chromium/chromium/blob/152.0.7977.134/media/capture/video/win/video_capture_device_mf_win.cc),
+[renderer capture](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/platform/video_capture/video_capture_impl.cc),
+[virtual-device contract](https://github.com/chromium/chromium/blob/152.0.7977.134/services/video_capture/public/mojom/virtual_device.mojom),
+[native push source](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/modules/breakout_box/pushable_media_stream_video_source.h).

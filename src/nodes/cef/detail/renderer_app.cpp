@@ -3,6 +3,7 @@
 #include "command_messages.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_v8.h"
+#include "media_input_renderer.hpp"
 
 #include <cstdint>
 #include <map>
@@ -132,6 +133,7 @@ class renderer_app_s final
         if (!context->Eval(invoke, "miximus-internal-command", 1, state->invoke, exception)) {
             return;
         }
+        install_media_inputs(frame, context, state->token);
         contexts_[browser->GetIdentifier()] = state;
         send_context(frame, protocol::CONTEXT_READY, state->token);
     }

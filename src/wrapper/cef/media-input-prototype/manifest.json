@@ -1,0 +1,18 @@
+{
+  "revision": 1,
+  "base_source_build_revision": 2,
+  "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
+  "chromium_revision": "066c60fad7c77efe3a81ad78c8109afba848b18d",
+  "patches": [
+    {
+      "repository": "cef",
+      "file": "cef.patch",
+      "sha256": "843ebb3e2ca95b62e593a8942990e0597d9e2d7aac185a7ac60096c034b92356"
+    },
+    {
+      "repository": "chromium",
+      "file": "chromium-tests.patch",
+      "sha256": "09d7ca466fcac614e1d468c58e9fd94e3fe91d45f9159eb508b36d0588505ea8"
+    }
+  ]
+}

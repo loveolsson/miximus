@@ -44,7 +44,7 @@ if(BUILD_TESTING)
 endif()
 
 if(MIXIMUS_ENABLE_CEF)
-    target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/command_protocol.hpp detail/command_messages.hpp)
+    target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/media_input_renderer.hpp detail/media_input_renderer.cpp detail/command_protocol.hpp detail/command_messages.hpp)
     add_library(cef_runtime STATIC detail/runtime.hpp detail/runtime.cpp)
     target_sources(cef_runtime PRIVATE
         session.hpp
@@ -71,6 +71,15 @@ if(MIXIMUS_ENABLE_CEF)
         target_link_libraries(cef_subsystem_probe PRIVATE cef_runtime cef_sdk gpu logger)
         set_target_properties(cef_subsystem_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
         add_sanitizers(cef_subsystem_probe)
+        add_executable(cef_media_input_probe tests/media_input_probe.cpp
+            ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
+        target_link_libraries(cef_media_input_probe PRIVATE cef_runtime cef_sdk gpu logger
+            vulkan_dependencies magic_enum::magic_enum ${CMAKE_DL_LIBS})
+        miximus_compile_shader(cef_media_input_probe ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
+        target_compile_definitions(cef_media_input_probe PRIVATE
+            MIXIMUS_CEF_COMPARE_SHADER="${CMAKE_CURRENT_BINARY_DIR}/shaders/color_compare.comp.spv")
+        set_target_properties(cef_media_input_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
+        add_sanitizers(cef_media_input_probe)
         add_executable(cef_runtime_probe tests/runtime_probe.cpp)
         target_link_libraries(cef_runtime_probe PRIVATE cef_runtime gpu logger ${CMAKE_DL_LIBS})
         set_target_properties(cef_runtime_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)

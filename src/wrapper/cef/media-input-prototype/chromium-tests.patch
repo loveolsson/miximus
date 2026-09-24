@@ -1,0 +1,73 @@
+diff --git a/content/public/test/mock_navigation_throttle_registry.h b/content/public/test/mock_navigation_throttle_registry.h
+--- a/content/public/test/mock_navigation_throttle_registry.h
++++ b/content/public/test/mock_navigation_throttle_registry.h
+@@ -49,7 +49,8 @@
+
+   // Implements NavigationThrottleRegistry:
+   NavigationHandle& GetNavigationHandle() override;
+-  void AddThrottle(std::unique_ptr<NavigationThrottle> throttle) override;
++  void AddThrottle(std::unique_ptr<NavigationThrottle> throttle,
++                   bool first = false) override;
+
+   // Following methods are not supported in this mock, and returns false always.
+   bool HasThrottle(const std::string& name) override;
+diff --git a/content/public/test/mock_navigation_throttle_registry.cc b/content/public/test/mock_navigation_throttle_registry.cc
+--- a/content/public/test/mock_navigation_throttle_registry.cc
++++ b/content/public/test/mock_navigation_throttle_registry.cc
+@@ -25,14 +25,17 @@
+ }
+
+ void MockNavigationThrottleRegistry::AddThrottle(
+-    std::unique_ptr<NavigationThrottle> throttle) {
++    std::unique_ptr<NavigationThrottle> throttle,
++    bool first) {
+   CHECK(throttle);
+   switch (registration_mode_) {
+     case RegistrationMode::kAutoRegistrationForTesting:
++      CHECK(!first) << "Test navigation handle cannot prepend a throttle";
+       GetNavigationHandle().RegisterThrottleForTesting(std::move(throttle));
+       break;
+     case RegistrationMode::kHold:
+-      throttles_.push_back(std::move(throttle));
++      throttles_.insert(first ? throttles_.begin() : throttles_.end(),
++                        std::move(throttle));
+       break;
+   }
+ }
+diff --git a/third_party/blink/renderer/controller/BUILD.gn b/third_party/blink/renderer/controller/BUILD.gn
+--- a/third_party/blink/renderer/controller/BUILD.gn
++++ b/third_party/blink/renderer/controller/BUILD.gn
+@@ -350,3 +350,33 @@
+     outputs = [ "{{bundle_resources_dir}}/content_shell.pak" ]
+   }
+ }
++
++# Local Miximus external-media prototype; not part of the distributed runtime.
++if (enable_cef) {
++  test("cef_external_video_source_unittests") {
++    sources = [
++      "//cef/libcef/renderer/external_video_source_test.cc",
++      "tests/run_all_tests.cc",
++    ]
++    deps = [
++      ":blink_bindings_test_sources",
++      ":controller",
++      "//base/test:test_support",
++      "//content/test:test_support",
++      "//gpu:test_support",
++      "//testing/gmock",
++      "//testing/gtest",
++      "//third_party/blink/renderer/core:testing",
++      "//third_party/blink/renderer/core:unit_test_support",
++      "//third_party/blink/renderer/modules",
++      "//third_party/blink/renderer/modules/exported:test_support",
++      "//third_party/blink/renderer/platform:test_support",
++    ]
++    configs += [
++      "//third_party/blink/renderer:config",
++      "//third_party/blink/renderer:inside_blink",
++      "//third_party/blink/renderer/core:blink_core_pch",
++    ]
++    data_deps = [ "//content/shell:pak" ]
++  }
++}

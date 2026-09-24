@@ -127,7 +127,7 @@ target_compile_definitions(cef_sdk INTERFACE CEF_API_VERSION=${api_version}
 target_link_libraries(cef_sdk INTERFACE libcef_dll_wrapper cef_binary ${CEF_STANDARD_LIBS})
 
 add_executable(miximus_cef_helper helper.cpp)
-target_link_libraries(miximus_cef_helper PRIVATE cef_sdk)
+target_link_libraries(miximus_cef_helper PRIVATE cef_sdk ${CMAKE_DL_LIBS})
 # The wrapper directory exempts external libraries from tidy, but this helper
 # and its renderer callbacks are Miximus code.
 if(MIXIMUS_ENABLE_CLANG_TIDY)
