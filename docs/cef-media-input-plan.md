@@ -218,7 +218,7 @@ Source replacement, disconnect and resize advance a per-input generation. Privat
 identity and supports texture-free generation invalidation. Old copies can finish and acknowledge safe external
 reuse, but cannot enter the native media source once its generation advances. This does not retract frames already
 accepted by Chromium's media pipeline. Document identity separately rejects navigation-stale work. A disconnected
-input receives opaque GPU-generated black at the last known dimensions (16×16 before a source is connected).
+input receives opaque GPU-generated black at the last known dimensions (256×256 before a source is connected; see the disconnected-input correction below).
 Subscriptions currently last until document revocation; stopping all page tracks does not yet remove graph demand.
 
 `cef_media_input_session_probe` exercises the real subsystem/session and accelerated output, with GPU-only pattern
@@ -332,3 +332,23 @@ Verified with `LD_LIBRARY_PATH` removed, isolated graph settings, and the exact 
 `http://127.0.0.1:7351/cef-inputs.html`: the process loaded `build/cef/libcef.so`, the page returned HTTP 200, all four
 inputs subscribed and delivered 124 frames before the check, and shutdown completed without Vulkan validation errors.
 The old revision-2 SDK was separately confirmed to fail normal configuration with explicit upgrade instructions.
+
+## Disconnected-input correction from the user's real graph
+
+The manual page requests four streams, while the user's graph initially connects only inputs 0 and 1. Running that
+unchanged graph reproduced thousands of Chromium `eglCreateImage` / Skia-representation errors in 30 seconds, despite
+normal browser input status and no Vulkan validation failures. An isolated size sweep reproduced EGL import failures
+for 16×16, 32×32, 64×64 and 128×128 exports on this driver; 256×256 succeeded. Vulkan format/allocation acceptance alone
+therefore does not establish Chromium import compatibility for small images.
+
+Previously the disconnected initial extent was 16×16. It is now the qualified 256×256 size, retaining the last known
+source dimensions for later disconnections. The tiny internal black source texture is not exported; the GPU scales it
+into the export allocation. The unchanged current graph then ran for 30 seconds with **zero EGL import errors and zero
+Vulkan validation errors**, four active streams, and normal shutdown. The user's saved settings were not modified.
+
+The session probe now starts all eight inputs disconnected before connecting sources; the graph campaign supports
+`--connected-inputs` and rejects EGL/Skia import failures in its log, not just Vulkan validation errors. Earlier
+post-connection disconnect tests retained a previously qualified large extent, so they missed the tiny initial case.
+Native source delivery counters are not proof of successful image import: Chromium's copy helper can clear a failed
+source to black and set a GL error. General connected-small-texture compatibility and explicit import-error propagation
+remain separate follow-up work; this correction addresses the reproduced disconnected-input failure.

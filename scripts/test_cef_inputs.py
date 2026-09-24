@@ -78,6 +78,7 @@ setInterval(()=>fetch('/report',{method:'POST',body:JSON.stringify({generation,s
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inputs", type=int, choices=range(2, 9), default=8)
+    parser.add_argument("--connected-inputs", type=int, help="Initially connected sources; defaults to --inputs")
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=360)
     parser.add_argument("--browser-width", type=int, default=640)
@@ -85,6 +86,10 @@ def main():
     parser.add_argument("--warmup-seconds", type=float, default=3)
     parser.add_argument("--steady-seconds", type=float, default=0)
     args = parser.parse_args()
+    if args.connected_inputs is None:
+        args.connected_inputs = args.inputs
+    if not 2 <= args.connected_inputs <= args.inputs:
+        parser.error("Connected inputs must be 2..--inputs")
     if not (32 <= args.width <= 4096 and 32 <= args.height <= 4096 and
             32 <= args.browser_width <= 4096 and 32 <= args.browser_height <= 4096 and
             0 <= args.warmup_seconds <= 10 and 0 <= args.steady_seconds <= 30):
@@ -103,9 +108,9 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     connections = [dict(from_node=f"source-{i}", from_interface="texture", to_node="browser",
-                        to_interface=f"input_{i}") for i in range(args.inputs)]
+                        to_interface=f"input_{i}") for i in range(args.connected_inputs)]
     nodes = [dict(id=f"source-{i}", type="test_pattern", options=dict(
-        resolution=[args.width, args.height], pattern=["red_field", "green_field", "blue_field"][i % 3])) for i in range(args.inputs)]
+        resolution=[args.width, args.height], pattern=["red_field", "green_field", "blue_field"][i % 3])) for i in range(args.connected_inputs)]
     nodes.append(dict(id="browser", type="cef_browser", options=dict(
         size=[args.browser_width, args.browser_height], url=f"http://127.0.0.1:{server.server_port}/")))
     settings = work / "settings.json"
@@ -142,7 +147,8 @@ def main():
         try:
             wait(f"{args.inputs} inputs with no output consumer", lambda s, p:
                  s.get("cef_inputs_active") == args.inputs and len(p.get("samples", [])) == args.inputs and
-                 all(v["width"] == args.width and v["presented"] >= 30 for v in p["samples"]))
+                 all(v["width"] == (args.width if i < args.connected_inputs else 256) and v["presented"] >= 30
+                     for i, v in enumerate(p["samples"])))
             if args.steady_seconds:
                 if args.warmup_seconds:
                     time.sleep(args.warmup_seconds)
@@ -158,8 +164,8 @@ def main():
                 rates = [(b["presented"] - a["presented"]) / seconds
                          for a, b in zip(first["page"]["samples"], last["page"]["samples"])]
                 print("Presented frames/s per input:", rates, flush=True)
-            command("update_node", id=f"source-{args.inputs - 1}", options={"resolution": [args.width // 2, args.height // 2]})
-            wait("independent source resize", lambda s, p: p["samples"][-1]["width"] == args.width // 2)
+            command("update_node", id=f"source-{args.connected_inputs - 1}", options={"resolution": [args.width // 2, args.height // 2]})
+            wait("independent source resize", lambda s, p: p["samples"][args.connected_inputs - 1]["width"] == args.width // 2)
             command("remove_connection", connection=connections[1])
             delivered = records[-1]["status"]["cef_inputs_delivered"]
             wait("disconnected stream stays live", lambda s, p: s.get("cef_inputs_delivered", 0) > delivered + 100)
@@ -199,7 +205,9 @@ def main():
         if result:
             raise RuntimeError(f"Application exited: {result}")
     text = (work / "app.log").read_text()
-    if "Validation Error" in text or "VUID-" in text or "Application shutdown complete" not in text:
+    gpu_failures = ("Validation Error", "VUID-", "eglCreateImage failed", "Failed to create EGLImage",
+                    "ProduceSkiaGanesh failed", "Trying to produce a Skia representation from an incompatible backing")
+    if any(error in text for error in gpu_failures) or "Application shutdown complete" not in text:
         raise RuntimeError("Inspect application validation/shutdown log")
     print("Graph demand, input streams, live edits, reload and shutdown passed", flush=True)
 

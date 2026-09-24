@@ -21,7 +21,7 @@ using namespace std::chrono_literals;
 
 std::array<float, 4> color(size_t input, int stage)
 {
-    if (stage == 1 && input == 1)
+    if (stage < 0 || (stage == 1 && input == 1))
         return {0, 0, 0, 1};
     const auto  bits  = ((input + 1) & 7) ^ size_t(stage == 1 ? 3 : stage == 2 ? 5 : 0);
     const float alpha = 0.5F + float(input) / 16;
@@ -58,7 +58,7 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu)
     auto                            context = gpu.create_recording_context(3);
     gpu::detail::color_comparison_s compare(source, MIXIMUS_CEF_COMPARE_SHADER);
     auto                            counters = gpu.create_buffer(8, gpu::host_access_e::read_write);
-    for (int stage = 0; stage < 3; ++stage) {
+    for (int stage = -1; stage < 3; ++stage) {
         bool verified{};
         if (stage == 2 && !request->reload())
             throw std::runtime_error("Session reload was rejected");
@@ -70,7 +70,7 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu)
             for (size_t input = 0; input < 8; ++input) {
                 auto& texture = input == 7 && stage == 1 ? resized : source;
                 record->clear(texture, color(input, stage));
-                const bool disconnected = stage == 1 && input == 1;
+                const bool disconnected = stage < 0 || (stage == 1 && input == 1);
                 auto       publish      = session->record_media_input(input,
                                                            *record,
                                                            disconnected ? nullptr : &texture,
@@ -78,7 +78,7 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu)
                                                                       : stage == 1 && input == 0 ? "replacement"
                                                                                                  : "producer",
                                                            "tex",
-                                                           int64_t(stage * 120 + frame) * 16667);
+                                                           int64_t((stage + 1) * 120 + frame) * 16667);
                 if (publish)
                     record->on_submitted([publish = std::move(publish)](gpu::completion_s) { publish(); });
             }
@@ -119,7 +119,7 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu)
         if (width.wait_for(5s) != std::future_status::ready)
             throw std::runtime_error("Video dimension metadata timed out");
         const auto result = width.get();
-        if (!result.error.empty() || result.json != (stage == 1 ? "320" : "640"))
+        if (!result.error.empty() || result.json != (stage < 0 ? "256" : stage == 1 ? "320" : "640"))
             throw std::runtime_error("Video input resize metadata mismatch: " + result.json + result.error);
         const auto m = session->metrics().inputs;
         std::cout << "Stage " << stage << ": submitted=" << m.submitted << " delivered=" << m.delivered

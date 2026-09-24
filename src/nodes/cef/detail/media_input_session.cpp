@@ -21,7 +21,10 @@ namespace miximus::nodes::cef::detail {
 namespace {
 using namespace std::chrono_literals;
 constexpr size_t INPUTS = 8, MAX_EXPORT_DEPTH = 8;
-size_t           export_depth()
+// Tiny Vulkan exports pass Vulkan format checks but fail Chromium's EGL import
+// on the qualified NVIDIA driver. Use a qualified size before a source connects.
+constexpr gpu::extent_s DISCONNECTED_EXTENT{256, 256};
+size_t                  export_depth()
 {
     size_t depth = 2;
     // Diagnostic native capacity; no page-controlled allocation growth.
@@ -98,7 +101,7 @@ struct media_input_session_s::impl_s
     {
         struct input_s
         {
-            gpu::extent_s wanted{16, 16};
+            gpu::extent_s wanted{DISCONNECTED_EXTENT};
             std::string   source_node, source_interface, error;
             uint64_t      revision{1}, configured{}, sent_generation{};
             bool          invalidation_pending{};
