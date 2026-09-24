@@ -111,7 +111,7 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
  #include "third_party/blink/renderer/core/dom/document.h"
  #include "third_party/blink/renderer/core/dom/element.h"
  #include "third_party/blink/renderer/core/dom/node.h"
-@@ -32,11 +36,19 @@
+@@ -32,11 +36,20 @@
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/script/classic_script.h"
@@ -122,6 +122,7 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +#include "third_party/blink/renderer/platform/bindings/script_state.h"
  #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
 +#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
++#include "third_party/blink/renderer/platform/heap/persistent.h"
  #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
  #include "third_party/blink/renderer/platform/loader/fetch/script_fetch_options.h"
 +#include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
@@ -131,7 +132,7 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
  #undef LOG
 
  #include "base/logging.h"
-@@ -55,6 +67,68 @@
+@@ -55,6 +68,97 @@
  }
 
  }  // namespace
@@ -140,8 +141,9 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +class ExternalVideoSource final : public CefExternalVideoSource {
 + public:
 +  explicit ExternalVideoSource(
-+      scoped_refptr<blink::PushableMediaStreamVideoSource::Broker> broker)
-+      : broker_(std::move(broker)) {}
++      scoped_refptr<blink::PushableMediaStreamVideoSource::Broker> broker,
++      blink::MediaStreamTrack* track)
++      : broker_(std::move(broker)), track_(track) {}
 +  ~ExternalVideoSource() override { Stop(); }
 +  bool PushFrame(scoped_refptr<media::VideoFrame> frame,
 +                 base::TimeTicks capture_time) override {
@@ -151,11 +153,39 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +    broker_->PushFrame(std::move(frame), capture_time);
 +    return true;
 +  }
++  v8::Local<v8::Value> GetTrack(v8::Isolate* isolate) override {
++    if (!isolate || !isolate->InContext() || !broker_->IsRunning()) {
++      return {};
++    }
++    auto* script =
++        blink::ScriptState::MaybeFrom(isolate, isolate->GetCurrentContext());
++    auto* context = GetExecutionContext(isolate->GetCurrentContext());
++    if (!script || !script->ContextIsValid() || !context ||
++        context->IsContextDestroyed() ||
++        track_->GetExecutionContext() != context) {
++      return {};
++    }
++    if (track_->Ended()) {
++      auto* source = track_->Component()->Source();
++      auto native = std::make_unique<blink::MediaStreamVideoTrack>(
++          static_cast<blink::MediaStreamVideoSource*>(
++              source->GetPlatformSource()),
++          blink::MediaStreamVideoSource::ConstraintsOnceCallback(), true);
++      auto* component =
++          blink::MakeGarbageCollected<blink::MediaStreamComponentImpl>(
++              blink::CreateCanonicalUuidString(), source, std::move(native));
++      track_ = blink::MakeGarbageCollected<blink::MediaStreamTrackImpl>(
++          context, component);
++    }
++    return blink::ToV8Traits<blink::MediaStreamTrack>::ToV8(script,
++                                                            track_.Get());
++  }
 +  void Stop() override { broker_->StopSource(); }
 +  bool IsRunning() override { return broker_->IsRunning(); }
 +
 + private:
 +  scoped_refptr<blink::PushableMediaStreamVideoSource::Broker> broker_;
++  blink::Persistent<blink::MediaStreamTrack> track_;
 +};
 +}  // namespace
 +
@@ -180,7 +210,7 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +  }
 +  auto source = std::make_unique<blink::PushableMediaStreamVideoSource>(
 +      context->GetTaskRunner(blink::TaskType::kInternalMediaRealTime));
-+  auto producer = std::make_unique<ExternalVideoSource>(source->GetBroker());
++  auto broker = source->GetBroker();
 +  auto platform_track = std::make_unique<blink::MediaStreamVideoTrack>(
 +      source.get(), blink::MediaStreamVideoSource::ConstraintsOnceCallback(),
 +      true);
@@ -195,7 +225,7 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +      context, component);
 +  *track = blink::ToV8Traits<blink::MediaStreamTrack>::ToV8(script_state,
 +                                                            native_track);
-+  return producer;
++  return std::make_unique<ExternalVideoSource>(std::move(broker), native_track);
 +}
 
  bool CanGoBack(blink::WebView* view) {
@@ -228,20 +258,22 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
    // Called when this frame has been detached from the view. This *will* be
    // called for child frames when a parent frame is detached.
    // The browser may hold the last reference to |this|. Take a reference here to
-@@ -938,3 +945,31 @@
+@@ -938,3 +945,33 @@
  #pragma warning(pop)
  #endif
  #endif
 +
 +CefRefPtr<CefV8Value> CefFrameImpl::CreateMediaInputTrack(
 +    uint32_t input,
-+    const std::string& token) {
++    const std::string& token,
++    uint32_t destination_depth) {
 +  CEF_REQUIRE_RT_RETURN(nullptr);
 +  if (!IsMain() || !frame_) {
 +    return nullptr;
 +  }
 +  if (!media_inputs_) {
-+    media_inputs_ = base::MakeRefCounted<CefMediaInputBridge>();
++    media_inputs_ =
++        base::MakeRefCounted<CefMediaInputBridge>(destination_depth);
 +  }
 +  return media_inputs_->CreateTrack(input, token);
 +}
@@ -271,17 +303,18 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
 
  // Implementation of CefFrame. CefFrameImpl objects are owned by the
  // CefBrowerImpl and will be detached when the browser is notified that the
-@@ -80,6 +81,9 @@
+@@ -80,6 +81,10 @@
    void SendProcessMessage(CefProcessId target_process,
                            CefRefPtr<CefProcessMessage> message) override;
 
 +  CefRefPtr<CefV8Value> CreateMediaInputTrack(uint32_t input,
-+                                              const std::string& token);
++                                              const std::string& token,
++                                              uint32_t destination_depth);
 +
    // Forwarded from CefRenderFrameObserver.
    void OnWasShown();
    void OnDidCommitProvisionalLoad();
-@@ -147,7 +151,15 @@
+@@ -147,7 +152,15 @@
 
    void MaybeInitializeScriptContext();
 
@@ -301,7 +334,7 @@ diff --git a/include/internal/cef_miximus_media_input.h b/include/internal/cef_m
 new file mode 100644
 --- /dev/null
 +++ b/include/internal/cef_miximus_media_input.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,51 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -337,7 +370,8 @@ new file mode 100644
 +// Renderer main thread, inside OnContextCreated's entered main-frame context.
 +// Installs __miximusCreateInputTrack(index); Miximus must capture/remove that
 +// temporary property while installing its public asynchronous stream hook.
-+CEF_EXPORT int cef_miximus_install_media_inputs_v1(const char* document_token);
++CEF_EXPORT int cef_miximus_install_media_inputs_v1(const char* document_token,
++                                                   uint32_t destination_depth);
 +// Browser UI thread. Duplicates fd before returning. Zero = rejected before any
 +// GPU access; callback will not run. One = accepted; callback runs on UI
 +// thread. safe_to_reuse=false includes IPC/context loss and requires
@@ -424,7 +458,7 @@ diff --git a/libcef/renderer/renderer_media_input.cc b/libcef/renderer/renderer_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/renderer_media_input.cc
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,71 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -438,8 +472,12 @@ new file mode 100644
 + public:
 +  CreateInputTrack(CefRefPtr<CefFrameImpl> frame,
 +                   CefRefPtr<CefV8Context> context,
-+                   std::string token)
-+      : frame_(frame), context_(context), token_(std::move(token)) {}
++                   std::string token,
++                   uint32_t depth)
++      : frame_(frame),
++        context_(context),
++        token_(std::move(token)),
++        depth_(depth) {}
 +  bool Execute(const CefString&,
 +               CefRefPtr<CefV8Value>,
 +               const CefV8ValueList& arguments,
@@ -455,7 +493,8 @@ new file mode 100644
 +      exception = "inputIndex must be an integer in [0, 7]";
 +      return true;
 +    }
-+    result = frame_->CreateMediaInputTrack(arguments[0]->GetIntValue(), token_);
++    result = frame_->CreateMediaInputTrack(arguments[0]->GetIntValue(), token_,
++                                           depth_);
 +    if (!result) {
 +      exception = "Native media input source is unavailable";
 +    }
@@ -466,13 +505,16 @@ new file mode 100644
 +  CefRefPtr<CefFrameImpl> frame_;
 +  CefRefPtr<CefV8Context> context_;
 +  std::string token_;
++  uint32_t depth_;
 +  IMPLEMENT_REFCOUNTING(CreateInputTrack);
 +};
 +}  // namespace
 +
-+CEF_EXPORT int cef_miximus_install_media_inputs_v1(const char* document_token) {
++CEF_EXPORT int cef_miximus_install_media_inputs_v1(const char* document_token,
++                                                   uint32_t destination_depth) {
 +  CEF_REQUIRE_RT_RETURN(0);
-+  if (!document_token || !*document_token) {
++  if (!document_token || !*document_token || destination_depth < 1 ||
++      destination_depth > 8) {
 +    return 0;
 +  }
 +  auto context = CefV8Context::GetCurrentContext();
@@ -485,14 +527,14 @@ new file mode 100644
 +          "createInputTrack",
 +          new CreateInputTrack(
 +              static_cast<CefFrameImpl*>(context->GetFrame().get()), context,
-+              document_token)),
++              document_token, destination_depth)),
 +      V8_PROPERTY_ATTRIBUTE_DONTENUM);
 +}
 diff --git a/libcef/renderer/external_video_source.h b/libcef/renderer/external_video_source.h
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/external_video_source.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,49 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -525,6 +567,8 @@ new file mode 100644
 +  virtual ~CefExternalVideoSource() = default;
 +  virtual bool PushFrame(scoped_refptr<media::VideoFrame> frame,
 +                         base::TimeTicks capture_time) = 0;
++  // Return the live cached track or recreate a stopped track on this source.
++  virtual v8::Local<v8::Value> GetTrack(v8::Isolate* isolate) = 0;
 +  virtual void Stop() = 0;
 +  virtual bool IsRunning() = 0;
 +};
@@ -544,7 +588,7 @@ diff --git a/libcef/renderer/external_video_source_test.cc b/libcef/renderer/ext
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/external_video_source_test.cc
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,164 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -675,6 +719,31 @@ new file mode 100644
 +            blink::V8MediaStreamTrackState::Enum::kEnded);
 +}
 +
++TEST_F(ExternalVideoSourceTest, ReacquireStoppedTrackPreservesLiveClone) {
++  blink::V8TestingScope scope;
++  v8::Local<v8::Value> value;
++  auto source = CreateExternalVideoTrack(scope.GetIsolate(), &value);
++  ASSERT_TRUE(source);
++  auto* original =
++      blink::V8MediaStreamTrack::ToWrappable(scope.GetIsolate(), value);
++  auto* clone = original->clone(scope.GetExecutionContext());
++  original->stopTrack(scope.GetExecutionContext());
++  auto replacement_value = source->GetTrack(scope.GetIsolate());
++  ASSERT_FALSE(replacement_value.IsEmpty());
++  auto* replacement = blink::V8MediaStreamTrack::ToWrappable(scope.GetIsolate(),
++                                                             replacement_value);
++  EXPECT_NE(replacement, original);
++  EXPECT_FALSE(replacement->Ended());
++  EXPECT_FALSE(clone->Ended());
++  EXPECT_EQ(replacement->Component()->Source(), clone->Component()->Source());
++  EXPECT_EQ(blink::V8MediaStreamTrack::ToWrappable(
++                scope.GetIsolate(), source->GetTrack(scope.GetIsolate())),
++            replacement);
++  source.reset();
++  EXPECT_TRUE(replacement->Ended());
++  EXPECT_TRUE(clone->Ended());
++}
++
 +TEST_F(ExternalVideoSourceTest, MissingContextIsRejected) {
 +  v8::Local<v8::Value> value;
 +  EXPECT_FALSE(CreateExternalVideoTrack(nullptr, &value));
@@ -688,7 +757,7 @@ diff --git a/libcef/renderer/media_input_bridge.h b/libcef/renderer/media_input_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.h
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,69 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -716,10 +785,10 @@ new file mode 100644
 +class CefMediaInputBridge : public base::RefCounted<CefMediaInputBridge> {
 + public:
 +  static constexpr size_t kInputs = 8;
-+  static constexpr size_t kDepth = 3;
++  static constexpr size_t kMaxDepth = 8;
 +  using Completion =
 +      base::OnceCallback<void(bool safe_to_reuse, bool delivered)>;
-+  CefMediaInputBridge();
++  explicit CefMediaInputBridge(size_t depth);
 +  CefRefPtr<CefV8Value> CreateTrack(size_t input,
 +                                    const std::string& context_token);
 +  void Invalidate();
@@ -741,7 +810,7 @@ new file mode 100644
 +  struct Input {
 +    std::unique_ptr<blink_glue::CefExternalVideoSource> source;
 +    CefRefPtr<CefV8Value> track;
-+    std::array<Destination, kDepth> destinations;
++    std::array<Destination, kMaxDepth> destinations;
 +  };
 +  void CopyFinished(size_t input,
 +                    size_t slot,
@@ -751,6 +820,7 @@ new file mode 100644
 +                    scoped_refptr<media::VideoFrame> frame,
 +                    Completion completion);
 +  void Released(size_t input, size_t slot, const gpu::SyncToken& token);
++  const size_t depth_;
 +  std::string context_token_;
 +  std::array<Input, kInputs> inputs_;
 +  scoped_refptr<viz::RasterContextProvider> context_;
@@ -761,7 +831,7 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,197 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -780,7 +850,10 @@ new file mode 100644
 +#include "media/base/video_frame.h"
 +#include "third_party/blink/public/platform/platform.h"
 +
-+CefMediaInputBridge::CefMediaInputBridge() = default;
++CefMediaInputBridge::CefMediaInputBridge(size_t depth) : depth_(depth) {
++  CHECK_GE(depth_, 1u);
++  CHECK_LE(depth_, kMaxDepth);
++}
 +CefMediaInputBridge::~CefMediaInputBridge() = default;
 +
 +CefRefPtr<CefV8Value> CefMediaInputBridge::CreateTrack(
@@ -796,16 +869,20 @@ new file mode 100644
 +  }
 +  context_token_ = context_token;
 +  auto& entry = inputs_[input];
-+  if (entry.track && entry.track->IsValid() && entry.source->IsRunning()) {
-+    return entry.track;
-+  }
 +  auto* isolate = v8::Isolate::GetCurrent();
 +  v8::Local<v8::Value> track;
-+  auto source = blink_glue::CreateExternalVideoTrack(isolate, &track);
-+  if (!source) {
++  if (entry.source && entry.source->IsRunning()) {
++    track = entry.source->GetTrack(isolate);
++  } else {
++    auto source = blink_glue::CreateExternalVideoTrack(isolate, &track);
++    if (!source) {
++      return nullptr;
++    }
++    entry.source = std::move(source);
++  }
++  if (track.IsEmpty()) {
 +    return nullptr;
 +  }
-+  entry.source = std::move(source);
 +  entry.track =
 +      new CefV8ValueImpl(isolate, isolate->GetCurrentContext(), track);
 +  return entry.track;
@@ -837,10 +914,10 @@ new file mode 100644
 +  }
 +  size_t index = 0;
 +  auto& destinations = inputs_[input].destinations;
-+  while (index < destinations.size() && destinations[index].busy) {
++  while (index < depth_ && destinations[index].busy) {
 +    ++index;
 +  }
-+  if (index == destinations.size()) {
++  if (index == depth_) {
 +    std::move(completion).Run(true, false);
 +    return;
 +  }

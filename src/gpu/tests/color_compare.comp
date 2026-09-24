@@ -2,11 +2,12 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(binding = 0) uniform sampler2D sourceImage;
 layout(std430, binding = 1) buffer Counters { uint mismatches; uint maximumError; } counters;
-layout(push_constant) uniform Parameters { vec4 reference; float tolerance; } parameters;
+layout(push_constant) uniform Parameters { vec4 reference; float tolerance; uint xBegin; uint xEnd; } parameters;
 void main()
 {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixel, textureSize(sourceImage, 0)))) return;
+    if (pixel.x < parameters.xBegin || pixel.x >= parameters.xEnd) return;
     vec4 difference = abs(texelFetch(sourceImage, pixel, 0) - parameters.reference);
     float error = max(max(difference.r, difference.g), max(difference.b, difference.a));
     if (error > parameters.tolerance) atomicAdd(counters.mismatches, 1);

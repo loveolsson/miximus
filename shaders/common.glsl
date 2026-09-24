@@ -48,6 +48,7 @@ const int color_operation_decode_rec709_premultiplied  = 6;
 const int color_operation_decode_rec709_ignore_alpha   = 7;
 const int color_operation_encode_rec709_ignore_alpha   = 8;
 const int color_operation_decode_srgb_premultiplied     = 9;
+const int color_operation_encode_srgb_premultiplied     = 10;
 
 vec4 map_input_channels(vec4 color, uint channel_order)
 {
@@ -123,4 +124,16 @@ vec4 encode_rec709_ignore_alpha(vec4 color)
 {
     // Recover straight RGB before discarding alpha. Zero alpha has no recoverable color.
     return vec4(to_video_straight(color).rgb, 1.0);
+}
+
+vec4 linear_to_srgb_premultiplied(vec4 color)
+{
+    if (!(color.a > 0.0)) {
+        return vec4(0.0);
+    }
+    vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
+    vec3 encoded_rgb = mix(1.055 * pow(straight_rgb, vec3(1.0 / 2.4)) - 0.055,
+                           12.92 * straight_rgb,
+                           lessThanEqual(straight_rgb, vec3(0.0031308)));
+    return vec4(encoded_rgb * color.a, color.a);
 }

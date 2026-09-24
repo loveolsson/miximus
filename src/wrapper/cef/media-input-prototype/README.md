@@ -22,11 +22,16 @@ Use a fresh profile for qualification. Build/test bound both Ninja and LLVM conc
 Do not run the baseline source prepare/package workflow on the experimental tree or label its output as revision 2.
 The stage command removes baseline provenance and records the experimental patch/library digests instead.
 
-Current scope: Linux single-plane RGBA8 sRGB, main document only, eight independent native track sources, three
-Chromium destination slots per source. External Vulkan producer completion precedes send; a completed GPU query
+Current scope: Linux single-plane RGBA8 sRGB with encoded-premultiplied alpha, main document only, eight independent native track sources, three
+Chromium destination slots per source by default. `MIXIMUS_CEF_MEDIA_INPUT_DEPTH=1..8` selects a diagnostic
+capacity before helper startup; this is a native setting, not a page-controlled resource request.
+The probe takes an optional final input count (1–8), with one Vulkan export allocation per input. External Vulkan producer completion precedes send; a completed GPU query
 precedes reuse acknowledgement. Chromium destination reuse waits for the media frame's release SyncToken.
 IPC/context loss never grants external reuse. This is a diagnostic bridge, not yet production node support.
-The initial native source tests pass; actual browser-copy/playback qualification is pending.
-Track reacquisition while a clone remains live also needs qualification before node integration.
+The five native source tests and one/eight-input browser-copy/playback probes pass on the development host.
+See the implementation plan for measured results and limits.
+Stopped-track reacquisition with a live clone is covered by both native and browser checks.
+The probe verifies distinct per-input midtones and alpha on a transparent page, including a fully transparent case.
+Navigation/crash stress and real asynchronous throughput remain.
 Pool-depth tuning, adapter checks, source-generation invalidation, global memory budgets, reconnect/crash recovery,
 alpha/color qualification, node demand/status and platform ports remain qualification/integration work.

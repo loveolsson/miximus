@@ -95,7 +95,7 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
     descriptors.pBindings    = bindings.data();
     check(vk.vkCreateDescriptorSetLayout(device, &descriptors, nullptr, &state_->descriptors),
           "create comparison descriptors");
-    const VkPushConstantRange  constants{VK_SHADER_STAGE_COMPUTE_BIT, 0, 20};
+    const VkPushConstantRange  constants{VK_SHADER_STAGE_COMPUTE_BIT, 0, 28};
     VkPipelineLayoutCreateInfo layout{};
     layout.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layout.setLayoutCount         = 1;
@@ -120,11 +120,17 @@ void color_comparison_s::record(recording_s&         recording,
                                 const texture_s&     source,
                                 const buffer_s&      counters,
                                 std::array<float, 4> reference,
-                                float                tolerance)
+                                float                tolerance,
+                                uint32_t             x_begin,
+                                uint32_t             x_end)
 {
     if (!recording.state_ || !source.state_ || !counters.state_ || counters.size() != 8 || tolerance < 0) {
         throw std::invalid_argument("Invalid color comparison resources");
     }
+    if (!x_end)
+        x_end = source.extent().width;
+    if (x_begin >= x_end || x_end > source.extent().width)
+        throw std::invalid_argument("Invalid comparison horizontal range");
     auto& state = *recording.state_;
     if (state.owner != state_->owner || source.state_->owner != state.owner || counters.state_->owner != state.owner) {
         throw std::invalid_argument("Color comparison resources must share the recording device");
@@ -162,8 +168,10 @@ void color_comparison_s::record(recording_s&         recording,
     {
         std::array<float, 4> reference;
         float                tolerance;
-    } parameters{.reference = reference, .tolerance = tolerance};
-    static_assert(sizeof(parameters) == 20);
+        uint32_t             x_begin;
+        uint32_t             x_end;
+    } parameters{.reference = reference, .tolerance = tolerance, .x_begin = x_begin, .x_end = x_end};
+    static_assert(sizeof(parameters) == 28);
     vk.vkCmdPushConstants(
         state.arena->commands, state_->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(parameters), &parameters);
     const auto extent = source.extent();

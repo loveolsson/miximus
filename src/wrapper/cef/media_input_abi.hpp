@@ -20,7 +20,7 @@ struct media_frame_s
     int64_t  timestamp_us{};
 };
 using media_done_t           = void (*)(void* user, int safe_to_reuse, int delivered);
-using install_media_inputs_t = int (*)(const char* document_token);
+using install_media_inputs_t = int (*)(const char* document_token, uint32_t destination_depth);
 using send_media_frame_t =
     int (*)(int browser_id, const char* document_token, const media_frame_s* frame, media_done_t done, void* user);
 

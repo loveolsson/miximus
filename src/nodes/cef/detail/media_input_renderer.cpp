@@ -3,6 +3,10 @@
 #include "include/cef_process_message.h"
 #include "wrapper/cef/media_input_abi.hpp"
 
+#include <charconv>
+#include <cstdlib>
+#include <string_view>
+
 #ifdef __linux__
 #include <dlfcn.h>
 #endif
@@ -49,7 +53,15 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
 #ifdef __linux__
     const auto install =
         reinterpret_cast<cef_wrapper::install_media_inputs_t>(dlsym(RTLD_DEFAULT, cef_wrapper::INSTALL_MEDIA_INPUTS));
-    if (!install || !install(token.c_str())) {
+    uint32_t depth = 3;
+    // Diagnostic override only; page JavaScript cannot increase pool capacity.
+    if (const auto* configured = std::getenv("MIXIMUS_CEF_MEDIA_INPUT_DEPTH")) {
+        const std::string_view value(configured);
+        const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), depth);
+        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || depth < 1 || depth > 8)
+            return;
+    }
+    if (!install || !install(token.c_str(), depth)) {
         return;
     }
     auto global = context->GetGlobal();

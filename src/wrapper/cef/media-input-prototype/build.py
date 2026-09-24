@@ -73,6 +73,12 @@ def main():
     shutil.copytree(args.baseline_runtime.resolve(), runtime,
                     ignore=shutil.ignore_patterns("libcef.so", "miximus-source-build.json", ".staged"))
     shutil.copy2(output / "libcef.so", runtime / "libcef.so")
+    # Blink/controller changes can regenerate the V8 context snapshot. Keep the
+    # staged data paired with this build rather than the baseline shared library.
+    for path in runtime.iterdir():
+        built = output / path.name
+        if path.suffix in (".bin", ".pak", ".dat") and built.is_file():
+            shutil.copy2(built, path)
     link = destination / "link"
     link.mkdir()
     # Main-process loader search exposes libcef and its data, never ANGLE/Vulkan.

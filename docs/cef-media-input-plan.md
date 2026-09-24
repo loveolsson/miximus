@@ -88,7 +88,7 @@ The production pin remains CEF `1ce985cb23056548b9cc51483bbef4faf68b1cd3` / Chro
 - Opt-in prototype: all four `ExternalVideoSourceTest` tests pass in the pinned Chromium checkout: eight independent
   live tracks, unchanged GPU frame delivery to a normal track sink, native stop/clone/destruction behavior, and missing
   context rejection. The native application and browser probe build successfully. This does not yet qualify the GPU
-  importer/copy/query or page playback; the experimental runtime must pass the end-to-end probe.
+  importer/copy/query or page playback on its own; those require the end-to-end probe.
 - Reproducible CEF and test-only Chromium patches, exact revisions/digests, isolated staging, and qualification commands
   live in [the prototype workflow](../src/wrapper/cef/media-input-prototype/README.md). Its ABI remains experimental.
 
@@ -116,3 +116,45 @@ Source references (pinned Chromium):
 [renderer capture](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/platform/video_capture/video_capture_impl.cc),
 [virtual-device contract](https://github.com/chromium/chromium/blob/152.0.7977.134/services/video_capture/public/mojom/virtual_device.mojom),
 [native push source](https://github.com/chromium/chromium/blob/152.0.7977.134/third_party/blink/renderer/modules/breakout_box/pushable_media_stream_video_source.h).
+
+## Initial browser qualification, 2026-09-24
+
+The isolated prototype runtime compiled and the first real browser probe passed on this machine with Vulkan
+validation enabled. At 640×360, one Vulkan export allocation was reused for 120 frames, all admitted by the native
+push source. GPU comparisons verified both full-frame red and green after the normal `<video>` path and accelerated
+browser output. No CPU pixel ingress/readback was used. Chromium had three bounded copy destinations.
+
+Send-to-safe-reuse wall time was p50 3,457 µs, p95 3,788 µs, maximum 77,732 µs. These are **serialized diagnostic**
+measurements including UI/IPC scheduling and contention with blocking output verification, not GPU-copy timings or
+proof of sustained 60 Hz performance. They demonstrate that the basic path works here and justify continuing
+multi-input and shallow-destination-pool experiments before integrating the render loop.
+
+With eight inputs at the same size and three destinations, the initial uniform-color probe admitted 960/960 frames
+and verified the complete eight-video output (p50 4,069 µs, p95 8,408 µs, maximum 44,548 µs). The probe was then
+strengthened to assign a unique RGB pattern to each input and require two ordered complete output patterns. GPU-only
+comparisons use each panel's exact horizontal region, so missing, duplicated or misrouted inputs cannot pass merely
+because another video is painting.
+
+Destination-depth experiments (one export allocation per input):
+
+| Chromium slots/input | Active inputs | Result |
+| --- | --- | --- |
+| 1 | 1 | Only 1/120 admitted; the video retains its current frame and prevents reuse. Safe drops, no overwrite. |
+| 2 | 1 | 120/120 admitted; both phases displayed. p50 3,409 µs, p95 3,710 µs. |
+| 2 | 8 | 960/960 admitted; both **distinct per-input** patterns verified. p50 3,333 µs, p95 8,257 µs. |
+
+Two destinations are a measured lower working bound for this serialized playback case, not yet the production
+default or a guarantee for retaining consumers, asynchronous 60 Hz operation, HD/UHD, or another driver.
+The comparator change passes all 30 GPU, 14 transfer, five DMA-BUF and one eight-input export/reuse tests with validation.
+The native source suite now passes five tests, including stopped-track reacquisition while a clone remains live.
+
+The browser probe now also encodes linear premultiplied graph colors into sRGB premultiplied RGBA8 before export,
+then decodes accelerated browser output back to linear for comparison. Eight-input midtone, varying-alpha, and
+fully transparent patterns pass at destination depth two (960/960 admitted). A separate GPU test checks the sRGB
+linear branch, midtone reference, premultiplication, and zero-alpha behavior independently of the decoder.
+
+Final runtime check: all eight page streams were acquired twice (same stream identity), their original tracks were
+stopped with live clones, replacement tracks remained live, and both per-input midtone/alpha patterns then passed.
+960/960 frames were admitted at depth two; send-to-reuse p50 3,280 µs, p95 7,028 µs, maximum 73,901 µs. The final
+native build is clean, and 31 GPU + 14 transfer + five DMA-BUF + one export/reuse + eight ownership tests pass with
+validation. This remains a probe: browser graph ports and asynchronous frame-boundary submission are the next milestone.

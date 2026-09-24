@@ -606,6 +606,29 @@ TEST_F(device_test, PremultipliedEncodingAndARGBOrderMatchCPUReference)
     }
 }
 
+TEST_F(device_test, SrgbPremultipliedExportMatchesIndependentReference)
+{
+    auto source = device->create_texture({1, 1}, format_e::rgba_unorm16);
+    auto target = device->create_texture({1, 1}, format_e::rgba_unorm8);
+    auto output = device->create_buffer(4, host_access_e::readback);
+    for (float alpha : {0.5F, 0.0F}) {
+        auto record = device->try_record();
+        record->clear(source, {0.001F, 0.25F, 0.5F, alpha});
+        record->draw(source,
+                     target,
+                     {.compositing = compositing_e::replace, .transfer = color_operation_e::encode_srgb_premultiplied});
+        record->readback(target, output);
+        finish(record);
+        const auto                  actual = output.readable_bytes();
+        const std::array<double, 4> expected{0.002 * 12.92 * double(alpha) * 255,
+                                             (1.055 * std::pow(0.5, 1.0 / 2.4) - 0.055) * double(alpha) * 255,
+                                             double(alpha) * 255,
+                                             double(alpha) * 255};
+        for (size_t channel = 0; channel < 4; ++channel)
+            EXPECT_NEAR(std::to_integer<unsigned>(actual[channel]), expected[channel], 1);
+    }
+}
+
 TEST_F(device_test, ForeignDeviceResourcesAreRejectedBeforeNativeUse)
 {
     device_options_s options;

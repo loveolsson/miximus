@@ -62,6 +62,10 @@ void main()
             color = encode_rec709_ignore_alpha(color);
             break;
 
+        case color_operation_encode_srgb_premultiplied:
+            color = linear_to_srgb_premultiplied(color);
+            break;
+
         case color_operation_decode_srgb_premultiplied:
             color = srgb_to_linear_premultiplied(color);
             break;

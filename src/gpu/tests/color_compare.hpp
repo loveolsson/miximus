@@ -9,7 +9,7 @@
 namespace miximus::gpu::detail {
 
 // Hardware-test helper only. Compare every pixel on GPU against a uniform
-// reference. The host reads two aggregate error counters, never image pixels.
+// reference over an optional horizontal range. The host reads two aggregate error counters, never image pixels.
 class color_comparison_s
 {
     struct state_s;
@@ -22,6 +22,8 @@ class color_comparison_s
                 const texture_s&     source,
                 const buffer_s&      counters,
                 std::array<float, 4> reference,
-                float                tolerance);
+                float                tolerance,
+                uint32_t             x_begin = 0,
+                uint32_t             x_end   = 0);
 };
 } // namespace miximus::gpu::detail
