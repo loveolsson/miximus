@@ -56,7 +56,10 @@ def main():
     parser.add_argument("stage", choices=["sync", "prepare", "build", "test", "package"])
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=6)
+    parser.add_argument("--no-archive", action="store_true", help="Package a local SDK without compressing an archive")
     args = parser.parse_args()
+    if args.no_archive and args.stage != "package":
+        parser.error("--no-archive is only valid for package")
     if sys.platform != "linux" or args.jobs < 1:
         parser.error("Requires Linux and a positive job count")
     work = args.work_dir.resolve()
@@ -166,9 +169,11 @@ def main():
         for patch in MANIFEST.get("test_patches", []):
             apply_once(chromium, ROOT / patch["file"])
         run([depot / "autoninja", "-C", "out/Release_GN_x64", f"-j{args.jobs}",
-             "viz_unittests"], chromium, env)
+             "viz_unittests", "cef_external_video_source_unittests"], chromium, env)
         run([chromium / "out/Release_GN_x64/viz_unittests",
              "--gtest_filter=*FrameSinkVideoCapturerTest*"], chromium, env)
+        run([chromium / "out/Release_GN_x64/cef_external_video_source_unittests",
+             "--gtest_filter=ExternalVideoSourceTest.*", "--test-launcher-jobs=1"], chromium, env)
         return
 
     output = work / "distribution"
@@ -182,6 +187,9 @@ def main():
     provenance = dict(MANIFEST)
     provenance["libcef_sha256"] = digest(sdk / "Release/libcef.so")
     (sdk / "miximus-source-build.json").write_text(json.dumps(provenance, indent=2) + "\n")
+    if args.no_archive:
+        print(f"Created local SDK {sdk}; configure MIXIMUS_CEF_ROOT to this directory.")
+        return
     archive = Path(shutil.make_archive(str(output / name), "bztar", output, name))
     archive_hash = digest(archive)
     (output / (name + ".sha256")).write_text(f"{archive_hash}  {archive.name}\n")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply/build/test/stage the opt-in media-input experiment atop the prepared r2 tree."""
+"""Build/test/stage isolated media-input diagnostics atop the standard prepared tree."""
 import argparse
 import hashlib
 import json

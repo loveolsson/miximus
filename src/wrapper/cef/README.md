@@ -4,6 +4,24 @@ Application builds never download or compile Chromium implicitly. The existing `
 152.0.8 SDK used for baseline qualification; it is **not** a patched artifact. Linux/NVIDIA accelerated capture
 failed with that artifact. Do not claim accelerated support from its successful initialization test.
 
+## Regular application build
+
+CEF-enabled application builds require source-build revision 3, including GPU texture inputs. No library-path override
+or separate runtime is needed. The packaged helper, resources and library are staged together into `build/cef`.
+A missing or outdated SDK is a configure error; `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON` is only for diagnostic probes.
+
+After preparing/building the pinned source tree, package and select the SDK:
+
+```sh
+python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no-archive
+cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
+  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r3"
+cmake --build build -j
+./build/miximus
+```
+
+The manual four-input page is `http://127.0.0.1:7351/cef-inputs.html`.
+
 ## Approved source build
 
 `source-build.json` pins CEF, Chromium, depot_tools, the bootstrap script digest, build arguments and required patch
@@ -35,11 +53,17 @@ platforms retain their existing behavior. Revision 2 builds, passes all 168 capt
 120 accelerated GPU copies at both HD and UHD on the local NVIDIA P2000 with Vulkan validation. Those checks do not
 yet qualify other drivers, pixel color accuracy, browser lifecycle stress or the eventual node integration.
 
+Revision 3 adds `cef-media-input.patch`, previously qualified in the isolated media-input runtime. It imports native
+GPU handles, copies into bounded Chromium-owned SharedImages, and feeds existing native media tracks. The private
+v2 sender carries document/source identities and acknowledges actual copy completion before external buffer reuse.
+The generated public CEF API is unchanged. See [the media-input plan](../../../docs/cef-media-input-plan.md) for
+four-input 1080p60 measurements, ownership tests and remaining qualification limits.
+
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
 `CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility
 patch is applied only by the test stage and changes no production code.
-Their source licenses and upstream attribution are retained. No ABI, renderer scheduling, sandbox policy or Miximus
-render path change is part of these patches. Replace the custom build only after a stock stable SDK contains the
+The test patches also register native media-source tests and update a navigation-throttle mock.
+Source licenses and upstream attribution are retained; sandbox policy is unchanged. Replace the custom build only after a stock stable SDK contains the
 allocation/capture fixes and provides a qualified producer-completion contract for the native-handle callback.
 
 Use a disk-backed directory with sufficient space for Chromium, its toolchain, dependencies and build outputs.
@@ -60,7 +84,7 @@ Stages stop on failure. `sync` explicitly bootstraps the pinned depot_tools Pyth
 and shallow Chromium history; do not resync a prepared
 tree because upstream sync can revert Chromium modifications. `prepare` registers the Chromium patch with CEF's
 own patch manager and generates release projects. `build` is resumable. `test` builds and runs Chromium's frame-sink
-capture tests, including the backported native-handle case. These tests complement, rather than replace, real CEF
+capture tests and native media-source tests, including stop/clone/reacquisition. These tests complement, rather than replace, real CEF
 GPU capture qualification.
 
 The package stage emits a standard-layout release SDK, a `miximus-source-build.json` provenance file with the
@@ -74,14 +98,14 @@ any optimization or change other processes' affinity. Choose the job count with 
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r2.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r3.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r2.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r2.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r3.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r3.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```

@@ -1,5 +1,9 @@
 # CEF media input implementation plan
 
+**Current build:** media inputs are included in the regular revision-3 CEF SDK and normal `./build/miximus` launch.
+No `LD_LIBRARY_PATH` override is required. Earlier isolated-runtime commands below are historical qualification records.
+See [the standard SDK workflow](../src/wrapper/cef/README.md) for packaging/configuration.
+
 Started 2026-09-24 on `feat/cef-media-inputs`. Implements the GPU-only direction in
 [the exploration](cef-media-input-exploration.md). Target: eight independent texture inputs per browser node;
 first qualification: one 640×360 RGBA input. No CPU pixel fallback, codec, virtual webcam, graph lifecycle change,
@@ -315,3 +319,16 @@ MIXIMUS_VULKAN_VALIDATION=0 LD_LIBRARY_PATH="$PWD/build-cef-media-input-r5/link"
   python3 scripts/test_cef_inputs.py --inputs 4 --width 1920 --height 1080 \
   --browser-width 1920 --browser-height 1080 --warmup-seconds 5 --steady-seconds 30
 ```
+
+## Promotion into the regular build
+
+Source-build revision 3 now includes the media-input CEF patch in the standard production manifest. CEF-enabled
+configuration rejects old/stock SDKs unless diagnostic-only admission is explicitly requested. The standard source
+workflow builds and packages the library, resources and provenance; `package --no-archive` makes a local SDK without
+unnecessary archive compression. The application build is configured against that SDK and stages everything into
+its ordinary `build/cef` directory. No environment override is required.
+
+Verified with `LD_LIBRARY_PATH` removed, isolated graph settings, and the exact manual URL
+`http://127.0.0.1:7351/cef-inputs.html`: the process loaded `build/cef/libcef.so`, the page returned HTTP 200, all four
+inputs subscribed and delivered 124 frames before the check, and shutdown completed without Vulkan validation errors.
+The old revision-2 SDK was separately confirmed to fail normal configuration with explicit upgrade instructions.

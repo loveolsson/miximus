@@ -1,6 +1,7 @@
 # Native media-input prototype
 
-Opt-in experiment atop the pinned revision-2 CEF source build. The production SDK/provenance is unchanged.
+The media-input patch is now part of the regular revision-3 CEF source build. Normal application builds include it.
+This directory retains isolated staging and focused test tools for diagnostics; see [the standard workflow](../README.md).
 The CEF patch reuses Chromium's native push source, media tracks, SharedImage importer and GPU raster copies.
 It adds one private versioned C ABI and a native-handle Mojo method; generated public CEF classes are unchanged.
 The separate Chromium patch only registers a focused test target and updates a test mock for CEF's existing
@@ -19,7 +20,7 @@ MIXIMUS_VULKAN_VALIDATION=1 LD_LIBRARY_PATH="$PWD/build-cef-media-input/link" \
 ```
 
 Use a fresh profile for qualification. Build/test bound both Ninja and LLVM concurrency using CPU affinity.
-Do not run the baseline source prepare/package workflow on the experimental tree or label its output as revision 2.
+Use the standard source-build workflow to package the application SDK. Isolated staging below is optional.
 The stage command removes baseline provenance and records the experimental patch/library digests instead.
 
 Current scope: Linux single-plane RGBA8 sRGB with encoded-premultiplied alpha, main document only, eight independent native track sources, three

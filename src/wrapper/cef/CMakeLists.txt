@@ -1,5 +1,6 @@
 option(MIXIMUS_ENABLE_CEF "Build the accelerated CEF browser subsystem" OFF)
 set(MIXIMUS_CEF_ROOT "" CACHE PATH "Extracted pinned CEF standard SDK")
+option(MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK "Allow older/stock CEF SDKs for diagnostic probes only" OFF)
 if(NOT MIXIMUS_ENABLE_CEF)
     return()
 endif()
@@ -42,6 +43,12 @@ if(EXISTS "${CEF_ROOT}/miximus-source-build.json")
             set(CEF_NATIVE_CAPTURE_READY 1)
         endif()
     endif()
+endif()
+if(NOT CEF_NATIVE_CAPTURE_READY AND NOT MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK)
+    message(FATAL_ERROR
+        "CEF requires the current source-built SDK with native capture and GPU media inputs. "
+        "Build/package src/wrapper/cef/source-build.json and set MIXIMUS_CEF_ROOT to that SDK. "
+        "Older/stock SDKs are available for diagnostic probes only via MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON.")
 endif()
 # Scope all upstream settings to this directory and its wrapper child.
 set(USE_SANDBOX ON)

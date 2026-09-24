@@ -1,12 +1,12 @@
 {
   "revision": 3,
-  "base_source_build_revision": 2,
+  "base_source_build_revision": 3,
   "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
   "chromium_revision": "066c60fad7c77efe3a81ad78c8109afba848b18d",
   "patches": [
     {
       "repository": "cef",
-      "file": "cef.patch",
+      "file": "../patches/cef-media-input.patch",
       "sha256": "ad3a8fc24368dbfbb176563b5b779394755669bb936e5ec8862c6a0b4b6a25ec"
     },
     {

@@ -4,8 +4,8 @@
 
 namespace miximus::cef_wrapper {
 
-// Opt-in prototype ABI, versioned independently of stock CEF's generated API.
-// Must match media-input-prototype/cef.patch's cef_miximus_media_input.h.
+// Private media-input ABI, versioned independently of stock CEF's generated API.
+// Must match patches/cef-media-input.patch's cef_miximus_media_input.h.
 struct media_frame_s
 {
     uint32_t size{sizeof(media_frame_s)};

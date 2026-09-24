@@ -1,5 +1,5 @@
 {
-  "revision": 2,
+  "revision": 3,
   "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
   "chromium_revision": "066c60fad7c77efe3a81ad78c8109afba848b18d",
   "chromium_branch": "7977",
@@ -25,6 +25,12 @@
       "registration_name": "miximus_native_handle_completion",
       "sha256": "3d5d8936924e44205b5150ecd7831007a02d742a1b0133a8363877b254b5511c",
       "reason": "Local Linux RGBA blit completion fix: retain Chromium's asynchronous GPU-finished callback before exposing native handles through CEF, which supplies no acquire fence. No CPU pixel access."
+    },
+    {
+      "file": "patches/cef-media-input.patch",
+      "repository": "cef",
+      "sha256": "ad3a8fc24368dbfbb176563b5b779394755669bb936e5ec8862c6a0b4b6a25ec",
+      "reason": "GPU-only browser texture inputs: bounded Chromium-owned copies, native media tracks, and generation-aware completion transport."
     }
   ],
   "siso_version": "git_revision:7bc9a0bfe050ef97e1712ff61c6f11952799e951",
@@ -33,6 +39,11 @@
       "file": "patches/chromium-cef-display-client-test.patch",
       "sha256": "a831b3b358b2a646d0767cd9b9a79303d82d79a6e13ce5d1d8cafc5c9be630c5",
       "reason": "Match MockDisplayClient to CEF's existing cross-platform CreateLayeredWindowUpdater interface; test-only, no runtime changes."
+    },
+    {
+      "file": "media-input-prototype/chromium-tests.patch",
+      "sha256": "09d7ca466fcac614e1d468c58e9fd94e3fe91d45f9159eb508b36d0588505ea8",
+      "reason": "Register native media-source tests and adapt the CEF navigation throttle test mock; no production Chromium changes."
     }
   ]
 }

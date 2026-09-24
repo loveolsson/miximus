@@ -408,6 +408,5 @@ The experimental browser media-input bridge records only subscribed `input_0`…
 frame recording and publishes with `defer_output`. A session worker waits for producer completion, then sends bounded
 native-handle work to CEF. Chromium copies into its own bounded SharedImages before normal native media-track delivery;
 external reuse waits for actual copy completion. Document/source generations revoke delivery without faking retirement.
-Unknown completion quarantines exports and their admission reservation until after CEF shutdown. Default runtimes
-without the private v2 sender report input unavailability. See the [implementation plan](cef-media-input-plan.md) for
+Unknown completion quarantines exports and their admission reservation until after CEF shutdown. Regular CEF-enabled builds require the revision-3 SDK with the private v2 sender; older runtimes are diagnostic-only. See the [implementation plan](cef-media-input-plan.md) for
 pool-depth measurements, memory bounds, opt-in runtime staging and qualification limits.
