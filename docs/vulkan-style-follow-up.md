@@ -1,4 +1,4 @@
-# Vulkan style and containment follow-up
+# Vulkan and CEF style and containment follow-up
 
 ## Decision and scope
 
@@ -17,7 +17,7 @@ and flexible definitions where they serve real consumers. Avoid replacing incide
 additional abstract interfaces, builders, or trivial forwarding layers. Preserve explicit recordings, completion
 and lease ownership, plain typed parameter structs, and the separation of windows from presentation.
 
-All eight items below remain open. The shader-layout item incorporates the subsequent performance discussion and
+All fourteen items below remain open. The shader-layout item incorporates the subsequent performance discussion and
 supersedes the original suggestion to move all packing to the recording boundary.
 
 ## 1. Contain GPU device internals
@@ -157,6 +157,127 @@ Remove unused includes and empty branches. Use forward declarations where the ty
 placing full includes in implementation files. Check CEF consumers for dependencies on transitive includes and give
 those consumers explicit includes rather than retaining unnecessary coupling. Build all affected targets; do not
 add tests that merely mirror these mechanical edits.
+
+## CEF review extension
+
+Items 9–14 were reviewed against `cef-browser` at `1d5f324`, relative to `main` at `78c6a17`, after merging
+`main` into the CEF branch. All six findings were accepted for follow-up. They have the same maintainability scope
+and post-merge scheduling as the original findings. Prioritize session responsibilities, protocol definitions, and
+the consumer/owner boundary; the remaining additions are smaller cleanups.
+
+The CEF review also clarifies the earlier items:
+
+- CEF adds no production consumer for the presenter mailbox or the probe-only RGBA packing/float-texture paths.
+  Items 2 and 3 remain cleanup candidates; recheck usage at implementation time.
+- The JavaScript command bridge and cooperative program-time delivery are intentional internal capabilities.
+  Their current probe-heavy usage is not a reason to remove them or to expose a new public control protocol.
+- Preserve borrowed-image completion waits, the separate ingress recording context, immutable pool generations,
+  and shader-ready parameters. These serve concrete ownership or performance requirements.
+- Keep SDK discovery/build integration in the wrapper and native import mechanics in the GPU implementation.
+  The small, cohesive frame pool does not need a general resource framework.
+
+## 9. Separate browser-session responsibilities
+
+**Code:** [browser session implementation](../src/nodes/cef/detail/browser_session.cpp) and
+[session interface](../src/nodes/cef/detail/browser_session.hpp).
+
+The session combines browser lifecycle, suppressed UI behavior, GPU capture, source timing, JavaScript requests,
+cancellation, deadlines, and program-time delivery. Its shared state mixes command bookkeeping with capture
+counters, lifecycle flags, and the frame queue. The concern is shared responsibility, not file length or CEF's
+required callback boilerplate.
+
+Use small concrete components within the CEF module: command state can own requests, context generations, replies,
+and timeouts; capture can own its pool, recording context, and timestamp tracking. Let the session coordinate those
+responsibilities without adding general frameworks or polymorphic interfaces.
+
+Preserve callback/thread ownership, bounded command admission, navigation cancellation, timing semantics, and full
+GPU completion before returning a borrowed image. Validate browser lifecycle, navigation, command timeout/replies,
+program-time delivery, capture, and shutdown through the existing focused probes and integration checks.
+
+## 10. Define the command message layouts in one place
+
+**Code:** [protocol definitions](../src/nodes/cef/detail/command_protocol.hpp),
+[browser-side transport](../src/nodes/cef/detail/browser_session.cpp), and
+[renderer-side transport](../src/nodes/cef/detail/renderer_app.cpp).
+
+Both endpoints manually agree on numeric list positions for request ID, generation, context, function, payload,
+and request kind. The shared protocol header defines message names and limits, but not those layouts. Understanding
+or changing a message requires matching the indexing logic across implementations.
+
+Introduce small typed message structures and shared encode/decode functions for requests, results, cancellation,
+and context notifications. Retain CEF's list representation and bounded transport; dynamic maps or a serialization
+framework are unnecessary. Keep CEF serialization behind the implementation boundary.
+
+Preserve payload limits, request correlation, context/generation rejection, cancellation acknowledgement, and exact
+integer program-time metadata. Exercise malformed messages and existing command/navigation/timeout scenarios when
+changing decoding; preserve arbitrary JSON payloads where the command contract intentionally permits them.
+
+## 11. Separate session consumers from lifecycle ownership
+
+**Code:** [subsystem interface](../src/nodes/cef/subsystem.hpp),
+[retirement implementation](../src/nodes/cef/subsystem.cpp),
+[session interface](../src/nodes/cef/detail/browser_session.hpp), and [node](../src/nodes/cef/browser.cpp).
+
+The node-facing request returns a shared pointer to the full internal session. That interface exposes render
+consumption alongside starting, closing, waiting, resetting queues, and checking resource retirement. Subsystem
+retirement withdraws publication and waits for shared ownership to become exclusive before resetting frames and
+releasing resources. The rules are documented, but consumers must understand more of the teardown protocol than
+the interface suggests.
+
+Separate consumer access from owner-only lifecycle operations, keeping shutdown and retirement under subsystem
+control. Prefer a narrow concrete handle or restricted operations over a new abstract wrapper hierarchy. This can
+be coordinated with item 9, but the internal responsibility split and external ownership boundary are distinct concerns.
+
+Preserve asynchronous retirement, existing consumer/frame leases, and the requirement that both CPU borrowers and
+GPU uses finish before reclamation. Do not replace the contract with synchronous node destruction. Validate pending
+creation cancellation, node removal, resize/replacement, retained GPU use, and application shutdown.
+
+## 12. Contain the CEF-enabled/disabled implementation choice
+
+**Code:** [browser node](../src/nodes/cef/browser.cpp) and [CEF targets](../src/nodes/cef/CMakeLists.txt).
+
+Conditional compilation surrounds node members, destruction, preparation, submission, execution, and completion.
+Supporting CEF-disabled builds is useful, but switching implementations throughout the node makes its normal
+lifecycle harder to read.
+
+Contain the choice at one implementation boundary, for example with concrete implementations selected by CMake.
+Keep shared option/schema definitions and unavailable-status behavior together so the disabled implementation does
+not become a second node definition to maintain. Avoid introducing a general backend interface for this choice.
+
+Preserve node registration, saved graph compatibility, native/web defaults, and CEF-disabled diagnostics. Build and
+check both configurations and verify that the enabled node retains its existing lifecycle behavior.
+
+## 13. Give the frame pool ownership of its storage estimate
+
+**Code:** [pool allocation](../src/nodes/cef/detail/frame_pool.cpp) and
+[session budget calculation](../src/nodes/cef/detail/browser_session.cpp).
+
+The pool defines its texture format and sampling policy, while session admission independently repeats those
+choices to estimate allocation size. A representation change therefore requires coordinated edits to accounting
+and construction.
+
+Let the pool own a storage-estimation helper, or supply one small allocation description to both paths. Independent
+bounds validation should remain: the duplicated resource definition, rather than validating twice, is the concern.
+
+Preserve UNORM16 precision, sampling, immutable pool generations, per-session and subsystem budgets, and allocation
+on the control worker. Validate capacity admission/rejection and pool generation lifetime when changing accounting.
+
+## 14. Use one small FD ownership primitive
+
+**Code:** [DMA-BUF fence import](../src/gpu/detail/dma_buf_copy.cpp),
+[image import](../src/gpu/detail/dma_buf_image.cpp), and
+[accelerated probe](../src/nodes/cef/tests/accelerated_probe.cpp).
+
+Fence import defines a local owning-FD struct and transfers ownership by assigning `-1`. Image import manually
+closes a duplicated FD on failure, and the accelerated probe defines another owning-FD struct. These are several
+local conventions for the same ownership operation.
+
+Use a small scoped FD type with explicit `release()` semantics. Keep it at an appropriate Linux utility boundary;
+this is not a request to abstract Vulkan import operations or native descriptors generally.
+
+Preserve borrowed versus duplicated descriptors and transfer ownership to Vulkan only after successful import.
+Validate cleanup on import failure and successful fence/image ownership transfer using the relevant DMA-BUF tests
+and accelerated capture probes.
 
 ## Execution and acceptance
 
