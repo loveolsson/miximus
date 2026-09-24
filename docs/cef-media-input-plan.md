@@ -280,3 +280,38 @@ Follow-up validation: all 114 core tests and eight export/ownership GPU tests pa
 and the web build pass. The baseline runtime still passes browser-output replacement, disable/enable and shutdown,
 and explicitly reports media input unavailable with zero input allocations. The next tuning target, selected by the
 user, is **4–6 simultaneous 1080p60 inputs on the current GPU**; eight-port infrastructure remains required.
+
+### Four-to-six-input tuning
+
+The graph campaign now accepts `--inputs 2..8`, independent source/browser dimensions, and warmup/steady intervals.
+`MIXIMUS_CEF_MEDIA_EXPORT_DEPTH=1..8` selects a **diagnostic** native export capacity before session creation; default
+remains two. Pending storage stays bounded at eight slots per input and the reservation estimate includes the selected
+depth. The existing Chromium destination override remains independent; default is three. No depth implies preroll.
+
+Initial 15-second comparisons on the P2000, using 1080p inputs:
+
+| Inputs | Browser viewport | Export / Chromium slots | Validation | Presented frames/s per input | Export allocation |
+| --- | --- | --- | --- | --- | --- |
+| 4 | 640×360 | 2 / 3 | on | 59.7–60.0 | 75 MiB |
+| 6 | 640×360 | 2 / 3 | on | 41.8–42.4 | 112.5 MiB |
+| 6 | 640×360 | 2 / 3 | off | 42.6–43.7 | 112.5 MiB |
+| 6 | 640×360 | 3 / 3 | on | 41.6–42.1 | 168.75 MiB |
+| 4 | 1920×1080 | 2 / 3 | on | 59.1–59.7 | 75 MiB |
+
+Each also passed resize/disconnect/reconnect, reload recovery, disable/enable and shutdown. The third export adds
+56.25 MiB for six inputs without a measured throughput improvement; it is therefore **not** the default. A GPU-utilization
+sample during that experiment was 96%, consistent with GPU work limiting throughput rather than a lack of export slots.
+The captured application scheduler reported no deadline misses or skipped frames during the third-slot and full-HD
+four-input intervals. Input delivery still drops when the bounded transport cannot keep up. This does not establish
+which individual GPU stage dominates; per-stage GPU timing remains a possible follow-up before changing the CEF patch.
+
+A subsequent **30-second** interval after **five seconds of warmup**, with validation off, measured **59.998 frames/s
+on all four 1080p inputs in a 1920×1080 browser viewport**. The complete lifecycle campaign passed afterward. This supports
+four-input 1080p60 for this simple video/CSS workload on the current GPU; it does not extend the result to six inputs,
+more expensive pages or consumers retaining frames. Defaults remain two exports and three Chromium destinations.
+
+```sh
+MIXIMUS_VULKAN_VALIDATION=0 LD_LIBRARY_PATH="$PWD/build-cef-media-input-r5/link" \
+  python3 scripts/test_cef_inputs.py --inputs 4 --width 1920 --height 1080 \
+  --browser-width 1920 --browser-height 1080 --warmup-seconds 5 --steady-seconds 30
+```

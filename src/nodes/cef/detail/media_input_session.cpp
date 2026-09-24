@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <format>
 #include <mutex>
@@ -18,7 +20,21 @@
 namespace miximus::nodes::cef::detail {
 namespace {
 using namespace std::chrono_literals;
-constexpr size_t INPUTS = 8, EXPORT_DEPTH = 2;
+constexpr size_t INPUTS = 8, MAX_EXPORT_DEPTH = 8;
+size_t           export_depth()
+{
+    size_t depth = 2;
+    // Diagnostic native capacity; no page-controlled allocation growth.
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    if (const auto* configured = std::getenv("MIXIMUS_CEF_MEDIA_EXPORT_DEPTH")) {
+        const std::string_view value(configured);
+        const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), depth);
+        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || depth < 1 ||
+            depth > MAX_EXPORT_DEPTH)
+            throw std::invalid_argument("MIXIMUS_CEF_MEDIA_EXPORT_DEPTH must be 1..8");
+    }
+    return depth;
+}
 struct budget_s
 {
     std::mutex              mutex;
@@ -29,9 +45,11 @@ struct reservation_s
 {
     std::shared_ptr<budget_s>  budget;
     std::array<size_t, INPUTS> high_water{};
+    const size_t               depth;
     size_t                     bytes{};
-    explicit reservation_s(std::shared_ptr<budget_s> owner)
+    explicit reservation_s(std::shared_ptr<budget_s> owner, size_t export_slots)
         : budget(std::move(owner))
+        , depth(export_slots)
     {
     }
     ~reservation_s()
@@ -46,7 +64,7 @@ struct reservation_s
         // since a media consumer can retain a destination from an older size.
         const size_t    padded_width  = (size_t(extent.width) + 255) / 256 * 256;
         const size_t    padded_height = (size_t(extent.height) + 63) / 64 * 64;
-        const size_t    amount        = padded_width * padded_height * 4 * (EXPORT_DEPTH + 8);
+        const size_t    amount        = padded_width * padded_height * 4 * (depth + 8);
         std::lock_guard lock(budget->mutex);
         const size_t    delta = std::max(amount, high_water[input]) - high_water[input];
         if (delta > budget_s::LIMIT - budget->used)
@@ -90,19 +108,19 @@ struct media_input_session_s::impl_s
             std::shared_ptr<media_input_exports_s::frame_s> frame;
             std::chrono::steady_clock::time_point           deadline;
         };
-        std::shared_ptr<media_input_runtime_s>       runtime;
-        std::shared_ptr<reservation_s>               reservation;
-        std::unique_ptr<media_input_exports_s>       exports;
-        gpu::texture_s                               black;
-        cef_wrapper::send_media_frame_t              api{};
-        mutable std::mutex                           mutex;
-        std::array<input_s, INPUTS>                  inputs;
-        std::array<pending_s, INPUTS * EXPORT_DEPTH> pending;
-        std::string                                  context, error;
-        int                                          browser_id{};
-        uint32_t                                     subscribed{};
-        uint64_t                                     submitted{}, delivered{}, transport_drops{};
-        bool                                         closing{}, drained{};
+        std::shared_ptr<media_input_runtime_s>           runtime;
+        std::shared_ptr<reservation_s>                   reservation;
+        std::unique_ptr<media_input_exports_s>           exports;
+        gpu::texture_s                                   black;
+        cef_wrapper::send_media_frame_t                  api{};
+        mutable std::mutex                               mutex;
+        std::array<input_s, INPUTS>                      inputs;
+        std::array<pending_s, INPUTS * MAX_EXPORT_DEPTH> pending;
+        std::string                                      context, error;
+        int                                              browser_id{};
+        uint32_t                                         subscribed{};
+        uint64_t                                         submitted{}, delivered{}, transport_drops{};
+        bool                                             closing{}, drained{};
 
         state_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> owner)
             : runtime(std::move(owner))
@@ -112,9 +130,10 @@ struct media_input_session_s::impl_s
                 error = "CEF runtime does not provide GPU media input v2";
                 return;
             }
-            reservation = std::make_shared<reservation_s>(runtime->impl_->budget);
-            exports     = std::make_unique<media_input_exports_s>(
-                device, EXPORT_DEPTH, runtime->impl_->quarantine, 256ULL * 1024 * 1024, reservation);
+            const auto depth = export_depth();
+            reservation      = std::make_shared<reservation_s>(runtime->impl_->budget, depth);
+            exports          = std::make_unique<media_input_exports_s>(
+                device, depth, runtime->impl_->quarantine, 256ULL * 1024 * 1024, reservation);
             black         = device.create_texture({16, 16});
             auto setup    = device.create_recording_context(1);
             auto commands = setup.try_record();
@@ -136,7 +155,7 @@ struct media_input_session_s::impl_s
         {
             {
                 std::lock_guard lock(mutex);
-                auto&           slot = pending[frame->ticket().input * EXPORT_DEPTH + frame->ticket().slot];
+                auto&           slot = pending[frame->ticket().input * MAX_EXPORT_DEPTH + frame->ticket().slot];
                 if (slot.frame != frame)
                     return;
                 slot = {};
@@ -165,9 +184,10 @@ struct media_input_session_s::impl_s
             int                        browser{};
             {
                 std::lock_guard lock(mutex);
-                token                                              = context;
-                browser                                            = browser_id;
-                pending[ticket.input * EXPORT_DEPTH + ticket.slot] = {frame, std::chrono::steady_clock::now() + 10s};
+                token                                                  = context;
+                browser                                                = browser_id;
+                pending[ticket.input * MAX_EXPORT_DEPTH + ticket.slot] = {frame,
+                                                                          std::chrono::steady_clock::now() + 10s};
             }
             auto self = shared_from_this();
             if (!CefPostTask(TID_UI, new task_s([self, frame, packet, token, browser] {
@@ -258,7 +278,7 @@ struct media_input_session_s::impl_s
         {
             try {
                 while (!stop.stop_requested()) {
-                    std::array<std::shared_ptr<media_input_exports_s::frame_s>, INPUTS * EXPORT_DEPTH> expired;
+                    std::array<std::shared_ptr<media_input_exports_s::frame_s>, INPUTS * MAX_EXPORT_DEPTH> expired;
                     {
                         std::lock_guard lock(mutex);
                         for (size_t slot = 0; slot < pending.size(); ++slot)

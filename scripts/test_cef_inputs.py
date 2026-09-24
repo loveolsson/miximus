@@ -35,6 +35,7 @@ def command(topic, **values):
 class Page(BaseHTTPRequestHandler):
     lock = threading.Lock()
     loads = 0
+    inputs = 8
     latest = {}
 
     def log_message(self, *_):
@@ -58,10 +59,10 @@ class Page(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(('''<!doctype html><style>body{margin:0;display:flex}video{width:12.5%;height:100vh}</style><body>
+        self.wfile.write(('''<!doctype html><style>body{margin:0;display:flex}video{width:calc(100% / INPUT_COUNT);height:100vh}</style><body>
 <script>
 const generation = GENERATION, samples = [], errors = [];
-for(let inputIndex=0;inputIndex<8;inputIndex++) {
+for(let inputIndex=0;inputIndex<INPUT_COUNT;inputIndex++) {
     const v=document.createElement('video');v.autoplay=true;v.muted=true;document.body.append(v);
     const sample={width:0,height:0,presented:0};samples.push(sample);
     const observe=(now,m)=>{sample.width=v.videoWidth;sample.height=v.videoHeight;
@@ -71,17 +72,23 @@ for(let inputIndex=0;inputIndex<8;inputIndex++) {
         .catch(e=>errors.push(String(e)));
 }
 setInterval(()=>fetch('/report',{method:'POST',body:JSON.stringify({generation,samples,errors})}),100);
-</script>'''.replace("GENERATION", str(generation))).encode())
+</script>'''.replace("GENERATION", str(generation)).replace("INPUT_COUNT", str(Page.inputs))).encode())
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--inputs", type=int, choices=range(2, 9), default=8)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=360)
+    parser.add_argument("--browser-width", type=int, default=640)
+    parser.add_argument("--browser-height", type=int, default=360)
+    parser.add_argument("--warmup-seconds", type=float, default=3)
     parser.add_argument("--steady-seconds", type=float, default=0)
     args = parser.parse_args()
-    if not (32 <= args.width <= 4096 and 32 <= args.height <= 4096 and 0 <= args.steady_seconds <= 30):
-        parser.error("Dimensions must be 32..4096 and steady interval 0..30 seconds")
+    if not (32 <= args.width <= 4096 and 32 <= args.height <= 4096 and
+            32 <= args.browser_width <= 4096 and 32 <= args.browser_height <= 4096 and
+            0 <= args.warmup_seconds <= 10 and 0 <= args.steady_seconds <= 30):
+        parser.error("Dimensions must be 32..4096, warmup 0..10 and steady interval 0..30 seconds")
     try:
         config()
     except OSError:
@@ -91,15 +98,16 @@ def main():
     work = ROOT / "build/integration-tests" / time.strftime("cef-inputs-%Y%m%d-%H%M%S")
     work.mkdir(parents=True, exist_ok=False)
     print("Artifacts:", work, flush=True)
+    Page.inputs = args.inputs
     server = ThreadingHTTPServer(("127.0.0.1", 0), Page)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     connections = [dict(from_node=f"source-{i}", from_interface="texture", to_node="browser",
-                        to_interface=f"input_{i}") for i in range(8)]
+                        to_interface=f"input_{i}") for i in range(args.inputs)]
     nodes = [dict(id=f"source-{i}", type="test_pattern", options=dict(
-        resolution=[args.width, args.height], pattern=["red_field", "green_field", "blue_field"][i % 3])) for i in range(8)]
+        resolution=[args.width, args.height], pattern=["red_field", "green_field", "blue_field"][i % 3])) for i in range(args.inputs)]
     nodes.append(dict(id="browser", type="cef_browser", options=dict(
-        size=[640, 360], url=f"http://127.0.0.1:{server.server_port}/")))
+        size=[args.browser_width, args.browser_height], url=f"http://127.0.0.1:{server.server_port}/")))
     settings = work / "settings.json"
     settings.write_text(json.dumps(dict(schema_version=1, nodes=nodes, connections=connections)))
     records = []
@@ -115,13 +123,15 @@ def main():
                 with Page.lock:
                     page = Page.latest.copy()
                 try:
-                    status = config().get("status", {}).get("browser", {})
+                    statuses = config().get("status", {})
+                    status = statuses.get("browser", {})
                     if page.get("errors"):
                         raise RuntimeError(str(page))
                     if status.get("cef_inputs_error") and not allow_recovery:
                         raise RuntimeError(str(status))
                     if predicate(status, page):
-                        records.append(dict(label=label, time=time.monotonic(), status=status, page=page))
+                        records.append(dict(label=label, time=time.monotonic(), status=status,
+                                            app=statuses.get("$app", {}), page=page))
                         print(label, "delivered=", status.get("cef_inputs_delivered"),
                               "drops=", status.get("cef_inputs_drops"), flush=True)
                         return
@@ -130,10 +140,15 @@ def main():
                 time.sleep(0.05)
             raise RuntimeError(f"{label}: timeout: {status} {page}")
         try:
-            wait("eight inputs with no output consumer", lambda s, p:
-                 s.get("cef_inputs_active") == 8 and len(p.get("samples", [])) == 8 and
+            wait(f"{args.inputs} inputs with no output consumer", lambda s, p:
+                 s.get("cef_inputs_active") == args.inputs and len(p.get("samples", [])) == args.inputs and
                  all(v["width"] == args.width and v["presented"] >= 30 for v in p["samples"]))
             if args.steady_seconds:
+                if args.warmup_seconds:
+                    time.sleep(args.warmup_seconds)
+                    previous = records[-1]["page"]
+                    wait("warmup complete", lambda s, p: p.get("generation") == previous["generation"] and
+                         all(b["presented"] > a["presented"] for a, b in zip(previous["samples"], p["samples"])))
                 first = records[-1]
                 time.sleep(args.steady_seconds)
                 wait("steady interval", lambda s, p: s.get("cef_inputs_delivered", 0) >
@@ -143,8 +158,8 @@ def main():
                 rates = [(b["presented"] - a["presented"]) / seconds
                          for a, b in zip(first["page"]["samples"], last["page"]["samples"])]
                 print("Presented frames/s per input:", rates, flush=True)
-            command("update_node", id="source-7", options={"resolution": [args.width // 2, args.height // 2]})
-            wait("independent source resize", lambda s, p: p["samples"][7]["width"] == args.width // 2)
+            command("update_node", id=f"source-{args.inputs - 1}", options={"resolution": [args.width // 2, args.height // 2]})
+            wait("independent source resize", lambda s, p: p["samples"][-1]["width"] == args.width // 2)
             command("remove_connection", connection=connections[1])
             delivered = records[-1]["status"]["cef_inputs_delivered"]
             wait("disconnected stream stays live", lambda s, p: s.get("cef_inputs_delivered", 0) > delivered + 100)
@@ -158,7 +173,7 @@ def main():
                 final_load = Page.loads
             wait("rapid reload recovery", lambda s, p: s.get("cef_inputs_state") == "active" and
                  not s.get("cef_inputs_error") and p.get("generation", 0) >= max(loads + 1, final_load) and
-                 len(p.get("samples", [])) == 8 and all(v["presented"] >= 30 for v in p["samples"]),
+                 len(p.get("samples", [])) == args.inputs and all(v["presented"] >= 30 for v in p["samples"]),
                  allow_recovery=True)
             command("update_node", id="browser", options={"enabled": False})
             wait("disabled", lambda s, p: s.get("cef_state") == "stopped")
@@ -166,8 +181,8 @@ def main():
                 loads = Page.loads
             command("update_node", id="browser", options={"enabled": True})
             wait("reenabled", lambda s, p: s.get("cef_inputs_state") == "active" and
-                 s.get("cef_inputs_delivered", 0) >= 240 and p.get("generation", 0) > loads and
-                 len(p.get("samples", [])) == 8 and all(v["presented"] >= 30 for v in p["samples"]))
+                 s.get("cef_inputs_delivered", 0) >= args.inputs * 30 and p.get("generation", 0) > loads and
+                 len(p.get("samples", [])) == args.inputs and all(v["presented"] >= 30 for v in p["samples"]))
         finally:
             if app.poll() is None:
                 app.send_signal(signal.SIGINT)
@@ -186,7 +201,7 @@ def main():
     text = (work / "app.log").read_text()
     if "Validation Error" in text or "VUID-" in text or "Application shutdown complete" not in text:
         raise RuntimeError("Inspect application validation/shutdown log")
-    print("Graph demand, eight input streams, live edits, reload and shutdown passed", flush=True)
+    print("Graph demand, input streams, live edits, reload and shutdown passed", flush=True)
 
 
 if __name__ == "__main__":
