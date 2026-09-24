@@ -38,6 +38,12 @@ constexpr int HTTP_PORT = 7351;
 
 struct exception_shutdown_guard_s
 {
+    exception_shutdown_guard_s()                                             = default;
+    exception_shutdown_guard_s(const exception_shutdown_guard_s&)            = delete;
+    exception_shutdown_guard_s& operator=(const exception_shutdown_guard_s&) = delete;
+    exception_shutdown_guard_s(exception_shutdown_guard_s&&)                 = delete;
+    exception_shutdown_guard_s& operator=(exception_shutdown_guard_s&&)      = delete;
+
     ~exception_shutdown_guard_s()
     {
         if (std::uncaught_exceptions() != 0) {

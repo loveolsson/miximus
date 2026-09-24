@@ -76,6 +76,18 @@ std::string uuid_string(const uint8_t* uuid)
     return result;
 }
 
+int device_type_score(VkPhysicalDeviceType type)
+{
+    switch (type) {
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+            return 3;
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+            return 2;
+        default:
+            return 1;
+    }
+}
+
 uint32_t describe_queue_families(std::span<const VkQueueFamilyProperties> families, nlohmann::json& entry)
 {
     uint32_t selected_queue_family = UINT32_MAX;
@@ -446,17 +458,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
             (!options.presentation || (has_device_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME) && candidate_maintenance));
         entry["supported"] = supported;
         report["devices"].push_back(entry);
-        int score = 1;
-        switch (device_properties.properties.deviceType) {
-            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
-                score = 3;
-                break;
-            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
-                score = 2;
-                break;
-            default:
-                break;
-        }
+        const int score = device_type_score(device_properties.properties.deviceType);
 
         if (!supported || score <= best_score ||
             (!requested_device_uuid.empty() && requested_device_uuid != uuid_string(identity.deviceUUID))) {
