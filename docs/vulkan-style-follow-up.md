@@ -7,18 +7,19 @@ handwritten OpenGL implementation on `main`. These are maintainability findings,
 or evidence of measured performance regressions. None is a merge blocker on its own; the separate correctness and
 hardware acceptance requirements still apply.
 
-Address the structural work in a dedicated pass after both `vulkan-rewrite` and `cef-browser` have merged into
-`main`. GPU ownership, transfer, drawing, and presentation code may be shared with CEF; changing these boundaries now
-would create merge work and duplicate validation. Recheck all usage claims against the combined tree before removing
-an API or implementation. Small mechanical cleanups could be done earlier, but this document changes no runtime code.
+The original plan was to address the structural work after both branches merged into `main`.
+The subsequent instruction to implement all findings on `cef-browser`, including GPU structure, supersedes that
+scheduling decision. The cleanup is implemented on the CEF branch with `main` already merged into it. Usage claims
+were checked against that combined tree before removing APIs. The findings below retain the review rationale;
+see the implementation record for the resulting code boundaries.
 
 The goal is the project's existing simplicity: cohesive concrete classes, readable call sites, clear ownership,
 and flexible definitions where they serve real consumers. Avoid replacing incidental complexity with a framework,
 additional abstract interfaces, builders, or trivial forwarding layers. Preserve explicit recordings, completion
 and lease ownership, plain typed parameter structs, and the separation of windows from presentation.
 
-All fourteen items below remain open. The shader-layout item incorporates the subsequent performance discussion and
-supersedes the original suggestion to move all packing to the recording boundary.
+All fourteen items below have implementation changes; validation results are recorded below. The shader-layout item
+incorporates the subsequent performance discussion and supersedes the original suggestion to move all packing to the recording boundary.
 
 ## 1. Contain GPU device internals
 
@@ -162,8 +163,8 @@ add tests that merely mirror these mechanical edits.
 
 Items 9–14 were reviewed against `cef-browser` at `1d5f324`, relative to `main` at `78c6a17`, after merging
 `main` into the CEF branch. All six findings were accepted for follow-up. They have the same maintainability scope
-and post-merge scheduling as the original findings. Prioritize session responsibilities, protocol definitions, and
-the consumer/owner boundary; the remaining additions are smaller cleanups.
+as the original findings; the scheduling decision is superseded above. Prioritize session responsibilities, protocol
+definitions, and the consumer/owner boundary; the remaining additions are smaller cleanups.
 
 The CEF review also clarifies the earlier items:
 
@@ -279,15 +280,69 @@ Preserve borrowed versus duplicated descriptors and transfer ownership to Vulkan
 Validate cleanup on import failure and successful fence/image ownership transfer using the relevant DMA-BUF tests
 and accelerated capture probes.
 
+## Implementation record
+
+The cleanup preserves finite startup requirements, source selection/timing, transfer backends, shader color
+conventions, and resource retirement. The consumer session interface is deliberately concrete; no general backend
+or command framework was added.
+
+| Finding | Implemented change |
+| --- | --- |
+| 1 | `pipeline_state_s` owns pipeline/layout/sampler construction and destruction; `submission_engine_s` owns queues, timeline and scheduling; `retirement_queue_s` owns deferred release. Resource and recording representations have separate implementation headers. |
+| 2 | Removed production mailbox publication and its drop counter. Display tests supply frames through the production callback contract, including explicit repeats across resize. The screen status contract retains its presentation-drop field as zero. |
+| 3 | Removed RGBA compute packing/unpacking, their shaders and pipelines, and the unused float texture format. Byte/padding and channel-order tests now exercise production upload/draw/readback operations; production format roundtrips remain covered. |
+| 4 | A stream-owned `conversion_texture_s` explicitly allocates/releases its resource against `memory_budget_s`. The shared worker retains scheduling/accounting responsibilities without implicit stream-field requirements. |
+| 5 | `texture_draw_options_s` replaces positional settings; callers name the geometry, conversion, compositing, output order or viewport they need. |
+| 6 | Preserved packed color parameters and configuration-time construction. Matrix packing moved into the GPU implementation; layout assertions remain beside push constants. |
+| 7 | DeckLink has one concrete output renderer and one factory on the output-path base. Distinct SDK frame-creation paths remain. |
+| 8 | Removed unused node window includes and the empty generator branch. The application header forward-declares device/recording types; consumers include their actual dependencies. |
+| 9 | `command_channel_s` owns bounded requests, context generations, deadlines and replies. `capture_stream_s` owns frame storage, GPU capture, source timing and selection. Browser lifecycle coordinates them. |
+| 10 | Typed command messages and shared codecs own CEF list layouts and field-type validation. The subsystem probe covers malformed fields, command kinds and message lengths alongside existing transport tests. |
+| 11 | Nodes receive `session_s`, exposing consumption, status and trusted commands. The internal concrete `browser_session_s` retains creation/closure/retirement authority; subsystem ownership and asynchronous retirement remain intact. |
+| 12 | CMake selects the enabled node or the small unavailable implementation. Both use shared option/default helpers. |
+| 13 | Frame-pool storage estimation and construction share their format/sampling definition; session admission uses the pool estimate. |
+| 14 | DMA-BUF imports and the fence probe use `utils::owned_fd_s` with explicit ownership release after successful Vulkan import. |
+
+Items 1–8 are implemented in `92fa32e` (GPU/media ownership and interfaces). Items 9–13 are implemented in
+`a879d07` (CEF capture, commands and session ownership). Item 14 spans both: the scoped descriptor and native imports
+are in `92fa32e`, and its CEF probe consumer is in `a879d07`.
+
+### Validation
+
+Both CEF-enabled and CEF-disabled native builds passed, along with all 139 registered CTests in each configuration.
+The disabled node also passed a runtime unavailable/stopped/re-enabled status and shutdown check. All touched C++
+files pass clang-format, and `git diff --check` is clean. The disabled implementation passes a standalone clang-tidy
+check using its CEF-off compile configuration without PCH. The four-job enabled clang-tidy build passed with no
+project warnings or errors after the reported warnings were fixed.
+
+Runtime checks used the development machine's NVIDIA GPU and Vulkan validation layer 1.4.357.0:
+
+- Renderer: 30 tests; Vulkan transfer: 14; CUDA transfer: 14, using CUDA without fallback; DMA-BUF: 5;
+  CEF ingress: 5. All passed.
+- CEF subsystem probe passed command admission/cancellation, typed-message validation, exact program-time delivery,
+  GPU color/alpha checks, retained frames, and intentional renderer/GPU-process failure cases.
+- Browser-node lifecycle and screen-output failure integration checks passed.
+- A 30-second run of a private copy of the saved hardware graph exited normally. DeckLink output completed
+  1,692 readbacks and NDI output 1,688, with no transfer failures. Screen output presented 1,678 frames without an
+  error. No Vulkan validation errors were reported. This is an integration check, not a performance benchmark.
+- DeckLink keyer-mode integration passed disabled/V210 and internal/external ARGB modes on hardware, with no
+  transfer failures or Vulkan validation errors and normal shutdown.
+- Display tests: 4 passed; 3 failed only their existing window-position assertions (`x=134` instead of `x=64`).
+  The unchanged baseline reproduced those same failures in this session. The adapted presenter test passed its
+  frame-count and resize assertions, with no Vulkan validation errors.
+
+This runtime evidence covers the current NVIDIA/X11/DeckLink setup. It does not qualify AMD, native Wayland, or all
+DeckLink display modes. ARGB and V210 paths were exercised by both GPU tests and the hardware keyer-mode check.
+No web/protocol field definitions changed.
+
 ## Execution and acceptance
 
-Start the post-merge pass by confirming each finding against the combined tree and recording any real consumers that
-change its disposition. Land small, independently reviewable commits: mechanical cleanup and unused-path removal,
-then drawing/resource boundaries, then larger internal ownership changes. Keep behavior changes separate. Mark items
-resolved with the implementing commit and relevant validation, or explain why a retained abstraction is justified.
+The implementation keeps GPU/media changes and CEF ownership/protocol changes in separate commits, followed by the
+validation record. Future work should continue to preserve these concrete ownership boundaries and keep behavior
+changes separate from structural cleanup.
 
 Follow [the development guide](development.md) and [GPU/media ownership rules](gpu-and-media.md). Format touched C++
 and web files, build affected targets, and run `git diff --check`. Use the relevant renderer, transfer, display, and
 CEF ingestion checks for structural changes. Hardware-sensitive changes require appropriate runtime coverage;
-a successful build alone does not establish DMA, presentation, or shutdown correctness. No runtime validation is
-claimed by this documentation-only change.
+a successful build alone does not establish DMA, presentation, or shutdown correctness. Validation applies to the
+implemented cleanup as recorded above.

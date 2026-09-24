@@ -27,8 +27,9 @@ settings and refuses to run alongside another application instance on the local 
 
 Ordinary nodes use `gpu::drawing.hpp` and `app->commands()` for typed operations. The sole GPU implementation lives
 directly in `src/gpu/`, with Vulkan/VMA state and pipeline internals in `src/gpu/detail/`. Public resource headers
-contain no native Vulkan types; dependency integration remains in `src/wrapper/vulkan/`. No OpenGL context or bridge
-remains. Volk and VMA are pinned submodules; Vulkan headers come from the installed SDK.
+contain no native Vulkan types; dependency integration remains in `src/wrapper/vulkan/`. Internal device ownership
+separates pipeline resources, submission scheduling and deferred retirement into concrete components under
+`src/gpu/detail/`; resource and recording state have their own headers. No OpenGL context or bridge remains. Volk and VMA are pinned submodules; Vulkan headers come from the installed SDK.
 
 The graph, upload service, readback service, and each presenter own independent `recording_context_s` instances.
 Each context has its own command pools and a bounded set of in-flight recordings. A producer holding an unfinished
@@ -75,8 +76,8 @@ mapping. Packed v210 occupies device buffers with SDK row-stride padding, not fi
 There is no framebuffer resource class or Vulkan framebuffer object: dynamic rendering targets textures directly. The
 graph keeps its existing `texture` and `framebuffer` protocol names, represented by `const gpu::texture_s*` and
 `gpu::texture_s*` respectively. This preserves read-only fan-out and ordered mutable-target connections without a GPU
-wrapper. Typed draw/mix parameters describe normalized node geometry, pixel viewport/scissor, opacity, premultiplied
-blending, transfer functions, and component order. Packing/unpacking and color matrices live in the GPU layer.
+wrapper. Named drawing options and typed draw/mix parameters describe normalized node geometry, pixel viewport/scissor,
+opacity, premultiplied blending, transfer functions, and component order. Packing/unpacking and color matrices live in the GPU layer.
 C++/shader matrix rows are explicitly padded; the legacy color conventions are retained. Text and teleprompter surfaces
 still render on the CPU.
 
@@ -387,3 +388,16 @@ Worker/callback rules:
 - `src/render/surface/`
 - `src/media/timed_source_queue.hpp`
 - `src/media/timed_output_queue.hpp`
+
+## CEF implementation boundaries
+
+CEF consumers receive `nodes::cef::session_s` for frame selection, status and trusted-native commands. Browser
+creation, closure and retirement remain on the subsystem-owned internal session. Request destruction withdraws
+publication and schedules retirement; existing consumers and frame leases finish before resources are reclaimed.
+The browser lifecycle coordinates a bounded command channel and a capture stream, each owning its corresponding
+state and synchronization. Shared typed message codecs contain the CEF process-list layout. GPU capture still waits
+for every read of the borrowed native image before the callback returns.
+
+CEF-enabled and unavailable nodes are selected by CMake and share option definitions. Frame-pool storage estimates
+use the same format/sampling definition as actual allocation. Linux native imports use explicit scoped descriptor
+ownership, releasing duplicated descriptors only when Vulkan accepts ownership.

@@ -47,12 +47,12 @@ Use a separate build directory for clang-tidy so normal builds remain unaffected
 
 ```bash
 cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON
-cmake --build build-tidy -j2
+cmake --build build-tidy -j4
 ```
 
-Start tidy builds with two jobs and avoid running another build or tidy pass concurrently. Clang-tidy disables
-precompiled headers and can use considerably more memory than an ordinary compile; increase concurrency only when
-there is enough memory left for the editor and other applications.
+Limit tidy builds to four jobs and avoid running another build or tidy pass concurrently. Clang-tidy disables
+precompiled headers and can use considerably more memory than an ordinary compile. The four-job limit applies to
+tidy builds; ordinary builds use unrestricted `-j`.
 
 The repository-root `.clang-tidy` contains the shared check configuration used by both CMake and supporting IDE
 extensions. CMake also exports `build/compile_commands.json` for clangd and other compilation-database consumers.
