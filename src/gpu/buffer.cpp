@@ -1,6 +1,8 @@
 #include "buffer.hpp"
 
 #include "detail/device.hpp"
+#include "detail/recording.hpp"
+#include "detail/resource.hpp"
 
 #include <stdexcept>
 #include <utility>

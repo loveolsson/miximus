@@ -3,7 +3,6 @@
 #include "detail/input_capture.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
-#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "media/media_clock_sample.hpp"
 #include "nodes/interface.hpp"
@@ -194,10 +193,8 @@ class node_impl : public node_i
             app->commands(),
             rendered_input_frame_->texture(),
             framebuffer_.get(),
-            {},
-            1,
-            gpu::rec709_decode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
-            gpu::compositing_e::replace);
+            {.transfer = gpu::rec709_decode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
+             .compositing = gpu::compositing_e::replace});
 
         auto* output = framebuffer_.get();
         app->commands().generate_mip_maps(*output);

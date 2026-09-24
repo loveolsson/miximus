@@ -4,7 +4,6 @@
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
-#include "gpu/window.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -64,7 +63,7 @@ class node_impl : public node_i
                 const auto texture_draw =
                     gpu::calculate_texture_draw(cell, texture->dimensions(), target_dimensions, fill_mode);
 
-                gpu::draw_texture(app->commands(), texture, fb, texture_draw);
+                gpu::draw_texture(app->commands(), texture, fb, {.geometry = texture_draw});
             }
         }
     }

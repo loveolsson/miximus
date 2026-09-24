@@ -3,6 +3,7 @@
 #include "core/app_state.hpp"
 #include "core/frame_scheduler.hpp"
 #include "core/node_status_registry.hpp"
+#include "gpu/device.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/frame_execution.hpp"

@@ -1,6 +1,7 @@
 #include "app_state.hpp"
 
 #include "core/node_status_registry.hpp"
+#include "gpu/device.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"

@@ -199,7 +199,7 @@ class node_impl : public node_i
                                             texture->dimensions(),
                                             presenter_->output_dimensions(),
                                             state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode"));
-            gpu::draw_texture(app->commands(), texture, target, texture_draw);
+            gpu::draw_texture(app->commands(), texture, target, {.geometry = texture_draw});
         }
 
         auto       pending     = std::make_shared<output_presenter_s::render_frame_s>(std::move(*frame));

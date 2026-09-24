@@ -1,4 +1,6 @@
 #include "device.hpp"
+#include "recording.hpp"
+#include "resource.hpp"
 
 #include <stdexcept>
 
@@ -11,9 +13,7 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
                                 const color_transform_s&                color,
                                 channel_order_e                         order)
 {
-    const bool pack = operation == conversion_operation_e::pack_rgba || operation == conversion_operation_e::pack_v210;
-    const bool v210 =
-        operation == conversion_operation_e::unpack_v210 || operation == conversion_operation_e::pack_v210;
+    const bool pack = operation == conversion_operation_e::pack_v210;
     if (!owner->buffer_conversion) {
         throw std::runtime_error("buffer conversion unsupported on this device");
     }
@@ -22,7 +22,7 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
         throw std::invalid_argument("RGBA buffer conversion requires UNORM16 working storage");
     }
 
-    const size_t minimum_stride = v210 ? ((size_t{image->extent.width} + 5) / 6) * 16 : size_t{image->extent.width} * 4;
+    const size_t minimum_stride = ((size_t{image->extent.width} + 5) / 6) * 16;
     if (stride == 0U) {
         stride = minimum_stride;
     }
@@ -33,7 +33,7 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
         throw std::invalid_argument("invalid conversion buffer/stride");
     }
 
-    const uint32_t dispatch_width = pack && v210 ? static_cast<uint32_t>(stride / 4) : image->extent.width;
+    const uint32_t dispatch_width = pack ? static_cast<uint32_t>(stride / 4) : image->extent.width;
     const uint32_t groups_x       = (dispatch_width + 15) / 16;
     const uint32_t groups_y       = (image->extent.height + 15) / 16;
     if (groups_x > owner->properties.limits.maxComputeWorkGroupCount[0] ||
@@ -50,7 +50,7 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                pack ? VK_ACCESS_2_SHADER_STORAGE_READ_BIT : VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
 
-    const auto descriptor = allocate_descriptor(owner->conversion_layout);
+    const auto descriptor = allocate_descriptor(owner->drawing->conversion_layout);
 
     VkDescriptorBufferInfo              storage{buffer->buffer, 0, buffer->bytes};
     VkDescriptorImageInfo               image_info{VK_NULL_HANDLE, image->view, VK_IMAGE_LAYOUT_GENERAL};
@@ -93,17 +93,17 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
     };
 
     owner->vk.vkCmdBindPipeline(
-        arena->commands, VK_PIPELINE_BIND_POINT_COMPUTE, owner->conversion_pipelines[operation]);
+        arena->commands, VK_PIPELINE_BIND_POINT_COMPUTE, owner->drawing->conversion_pipelines[operation]);
     owner->vk.vkCmdBindDescriptorSets(arena->commands,
                                       VK_PIPELINE_BIND_POINT_COMPUTE,
-                                      owner->conversion_pipeline_layout,
+                                      owner->drawing->conversion_pipeline_layout,
                                       0,
                                       1,
                                       &descriptor,
                                       0,
                                       nullptr);
     owner->vk.vkCmdPushConstants(arena->commands,
-                                 owner->conversion_pipeline_layout,
+                                 owner->drawing->conversion_pipeline_layout,
                                  VK_SHADER_STAGE_COMPUTE_BIT,
                                  0,
                                  sizeof(parameters),
@@ -116,32 +116,6 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
 } // namespace miximus::gpu::detail
 
 namespace miximus::gpu {
-
-void recording_s::unpack_rgba(const buffer_s&  source,
-                              const texture_s& destination,
-                              size_t           row_stride,
-                              channel_order_e  order)
-{
-    if (!state_ || !source || !destination) {
-        throw std::invalid_argument("invalid conversion handles");
-    }
-
-    state_->convert(
-        source.state_, destination.state_, row_stride, detail::conversion_operation_e::unpack_rgba, {}, order);
-}
-
-void recording_s::pack_rgba(const texture_s& source,
-                            const buffer_s&  destination,
-                            size_t           row_stride,
-                            channel_order_e  order)
-{
-    if (!state_ || !source || !destination) {
-        throw std::invalid_argument("invalid conversion handles");
-    }
-
-    state_->convert(
-        destination.state_, source.state_, row_stride, detail::conversion_operation_e::pack_rgba, {}, order);
-}
 
 void recording_s::unpack_v210(const buffer_s&          source,
                               const texture_s&         destination,

@@ -117,8 +117,10 @@ TEST_F(transfer_vulkan, ExactUploadSelectionRetainsOldFrameAndProducesPaddedRead
 
     auto commands = until([&] { return gpu().try_record(); });
     ASSERT_TRUE(commands);
-    draw_texture(
-        *commands, selected->texture(), target->texture(), {}, 1, color_operation_e::none, compositing_e::replace);
+    draw_texture(*commands,
+                 selected->texture(),
+                 target->texture(),
+                 {.transfer = color_operation_e::none, .compositing = compositing_e::replace});
     target->set_program_target_time(utils::flicks{1234});
     target->submit(commands->submit());
     commands.reset();
@@ -381,22 +383,18 @@ TEST_F(transfer_vulkan, SubmittedUploadsChainThroughConversionAndReadbackWithout
         auto commands = until([&] { return gpu().try_record(); });
         ASSERT_TRUE(commands);
         commands->wait_for(frame->upload_completion());
-        draw_texture(
-            *commands, frame->texture(), conversion.get(), {}, 1, color_operation_e::none, compositing_e::replace);
+        draw_texture(*commands,
+                     frame->texture(),
+                     conversion.get(),
+                     {.transfer = color_operation_e::none, .compositing = compositing_e::replace});
         draw_texture(*commands,
                      conversion.get(),
                      target->conversion_texture(),
-                     {},
-                     1,
-                     color_operation_e::none,
-                     compositing_e::replace);
+                     {.transfer = color_operation_e::none, .compositing = compositing_e::replace});
         draw_texture(*commands,
                      target->conversion_texture(),
                      target->texture(),
-                     {},
-                     1,
-                     color_operation_e::none,
-                     compositing_e::replace);
+                     {.transfer = color_operation_e::none, .compositing = compositing_e::replace});
         target->submit(commands->submit());
         target.reset();
         commands.reset();
@@ -611,8 +609,10 @@ TEST_F(transfer_vulkan, FullHdFramesRetainEveryActiveByteAcrossRepeatedTransfers
 
         auto commands = until([&] { return gpu().try_record(); });
         ASSERT_TRUE(commands);
-        draw_texture(
-            *commands, source->texture(), target->texture(), {}, 1, color_operation_e::none, compositing_e::replace);
+        draw_texture(*commands,
+                     source->texture(),
+                     target->texture(),
+                     {.transfer = color_operation_e::none, .compositing = compositing_e::replace});
         target->set_program_target_time(utils::flicks{sequence + 1});
         target->submit(commands->submit());
         target.reset();
@@ -734,11 +734,7 @@ TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers
             draw_texture(*commands,
                          source->texture(),
                          target->texture(),
-                         {},
-                         1,
-                         color_operation_e::none,
-                         compositing_e::replace,
-                         order);
+                         {.transfer = color_operation_e::none, .compositing = compositing_e::replace, .output = order});
             target->submit(commands->submit());
             commands.reset();
             target.reset();

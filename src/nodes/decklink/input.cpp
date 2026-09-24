@@ -7,7 +7,6 @@
 #include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
-#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"

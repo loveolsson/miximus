@@ -1,4 +1,6 @@
 #include "device.hpp"
+#include "recording.hpp"
+#include "resource.hpp"
 #include "static_files/files.hpp"
 
 #include <format>
@@ -51,7 +53,7 @@ struct shader_module_s
 };
 } // namespace
 
-void device_state_s::initialize_pipelines()
+void pipeline_state_s::initialize()
 {
     const std::array<VkDescriptorSetLayoutBinding, 2> bindings{
         {{.binding            = 0,
@@ -70,7 +72,8 @@ void device_state_s::initialize_pipelines()
     layout.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layout.bindingCount = static_cast<uint32_t>(bindings.size());
     layout.pBindings    = bindings.data();
-    check(vk.vkCreateDescriptorSetLayout(device, &layout, nullptr, &texture_layout), "texture descriptor layout");
+    check(owner.vk.vkCreateDescriptorSetLayout(owner.device, &layout, nullptr, &texture_layout),
+          "texture descriptor layout");
 
     const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
 
@@ -80,7 +83,7 @@ void device_state_s::initialize_pipelines()
     pipeline_info.pSetLayouts            = &texture_layout;
     pipeline_info.pushConstantRangeCount = 1;
     pipeline_info.pPushConstantRanges    = &push;
-    check(vk.vkCreatePipelineLayout(device, &pipeline_info, nullptr, &pipeline_layout), "pipeline layout");
+    check(owner.vk.vkCreatePipelineLayout(owner.device, &pipeline_info, nullptr, &pipeline_layout), "pipeline layout");
 
     VkSamplerCreateInfo sampler_info{};
     sampler_info.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -91,13 +94,13 @@ void device_state_s::initialize_pipelines()
     sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    check(vk.vkCreateSampler(device, &sampler_info, nullptr, &sampler), "sampler");
+    check(owner.vk.vkCreateSampler(owner.device, &sampler_info, nullptr, &sampler), "sampler");
     sampler_info.magFilter  = VK_FILTER_NEAREST;
     sampler_info.minFilter  = VK_FILTER_NEAREST;
     sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    check(vk.vkCreateSampler(device, &sampler_info, nullptr, &nearest_sampler), "nearest sampler");
-    const shader_module_s                          vertex(*this, "quad.vert");
-    const shader_module_s                          fragment(*this, "texture.frag");
+    check(owner.vk.vkCreateSampler(owner.device, &sampler_info, nullptr, &nearest_sampler), "nearest sampler");
+    const shader_module_s                          vertex(owner, "quad.vert");
+    const shader_module_s                          fragment(owner, "texture.frag");
     std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
     for (auto& stage : stages) {
         stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -170,42 +173,42 @@ void device_state_s::initialize_pipelines()
     info.pDynamicState       = &dynamic;
     info.layout              = pipeline_layout;
     // Integer storage is a conversion resource, never a graphics attachment here.
-    for (const auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16, format_e::rgba16_float}) {
+    for (const auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16}) {
         const auto         attachment_format = native_format(format);
         VkFormatProperties features{};
-        instance_vk.vkGetPhysicalDeviceFormatProperties(physical, attachment_format, &features);
+        owner.instance_vk.vkGetPhysicalDeviceFormatProperties(owner.physical, attachment_format, &features);
         if ((features.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) == 0U) {
             continue;
         }
         rendering.pColorAttachmentFormats = &attachment_format;
         for (const auto compositing : {compositing_e::replace, compositing_e::source_over}) {
             blend.blendEnable = static_cast<VkBool32>(compositing == compositing_e::source_over);
-            check(vk.vkCreateGraphicsPipelines(
-                      device, VK_NULL_HANDLE, 1, &info, nullptr, &pipelines[format][compositing]),
+            check(owner.vk.vkCreateGraphicsPipelines(
+                      owner.device, VK_NULL_HANDLE, 1, &info, nullptr, &pipelines[format][compositing]),
                   "graphics pipeline");
         }
     }
 
-    const shader_module_s mix_fragment(*this, "mix.frag");
+    const shader_module_s mix_fragment(owner, "mix.frag");
     stages[1].module = mix_fragment.module;
     // Integer storage is a conversion resource, never a graphics attachment here.
-    for (const auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16, format_e::rgba16_float}) {
+    for (const auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16}) {
         const auto         attachment_format = native_format(format);
         VkFormatProperties features{};
-        instance_vk.vkGetPhysicalDeviceFormatProperties(physical, attachment_format, &features);
+        owner.instance_vk.vkGetPhysicalDeviceFormatProperties(owner.physical, attachment_format, &features);
         if ((features.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT) == 0U) {
             continue;
         }
         rendering.pColorAttachmentFormats = &attachment_format;
         for (const auto compositing : {compositing_e::replace, compositing_e::source_over}) {
             blend.blendEnable = static_cast<VkBool32>(compositing == compositing_e::source_over);
-            check(vk.vkCreateGraphicsPipelines(
-                      device, VK_NULL_HANDLE, 1, &info, nullptr, &mix_pipelines[format][compositing]),
+            check(owner.vk.vkCreateGraphicsPipelines(
+                      owner.device, VK_NULL_HANDLE, 1, &info, nullptr, &mix_pipelines[format][compositing]),
                   "graphics pipeline");
         }
     }
 
-    if (buffer_conversion) {
+    if (owner.buffer_conversion) {
         const std::array<VkDescriptorSetLayoutBinding, 2> conversion_bindings{
             {{.binding            = 0,
               .descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -221,23 +224,21 @@ void device_state_s::initialize_pipelines()
 
         layout.bindingCount = static_cast<uint32_t>(conversion_bindings.size());
         layout.pBindings    = conversion_bindings.data();
-        check(vk.vkCreateDescriptorSetLayout(device, &layout, nullptr, &conversion_layout),
+        check(owner.vk.vkCreateDescriptorSetLayout(owner.device, &layout, nullptr, &conversion_layout),
               "conversion descriptor layout");
 
         const VkPushConstantRange conversion_push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 128};
         pipeline_info.pSetLayouts         = &conversion_layout;
         pipeline_info.pPushConstantRanges = &conversion_push;
-        check(vk.vkCreatePipelineLayout(device, &pipeline_info, nullptr, &conversion_pipeline_layout),
+        check(owner.vk.vkCreatePipelineLayout(owner.device, &pipeline_info, nullptr, &conversion_pipeline_layout),
               "conversion pipeline layout");
         constexpr std::array conversions{
-            std::pair{conversion_operation_e::unpack_rgba, "unpack_rgba.comp"},
-            std::pair{conversion_operation_e::pack_rgba,   "pack_rgba.comp"  },
             std::pair{conversion_operation_e::unpack_v210, "unpack_v210.comp"},
             std::pair{conversion_operation_e::pack_v210,   "pack_v210.comp"  },
         };
 
         for (const auto& [operation, name] : conversions) {
-            const shader_module_s shader(*this, name);
+            const shader_module_s shader(owner, name);
 
             VkComputePipelineCreateInfo compute{};
             compute.sType        = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -246,10 +247,59 @@ void device_state_s::initialize_pipelines()
             compute.stage.module = shader.module;
             compute.stage.pName  = "main";
             compute.layout       = conversion_pipeline_layout;
-            check(vk.vkCreateComputePipelines(
-                      device, VK_NULL_HANDLE, 1, &compute, nullptr, &conversion_pipelines[operation]),
+            check(owner.vk.vkCreateComputePipelines(
+                      owner.device, VK_NULL_HANDLE, 1, &compute, nullptr, &conversion_pipelines[operation]),
                   "conversion pipeline");
         }
+    }
+}
+
+pipeline_state_s::~pipeline_state_s()
+{
+    for (const auto& formats : pipelines) {
+        for (auto pipeline : formats) {
+            if (pipeline != nullptr) {
+                owner.vk.vkDestroyPipeline(owner.device, pipeline, nullptr);
+            }
+        }
+    }
+
+    for (const auto& formats : mix_pipelines) {
+        for (auto pipeline : formats) {
+            if (pipeline != nullptr) {
+                owner.vk.vkDestroyPipeline(owner.device, pipeline, nullptr);
+            }
+        }
+    }
+
+    for (auto pipeline : conversion_pipelines) {
+        if (pipeline != nullptr) {
+            owner.vk.vkDestroyPipeline(owner.device, pipeline, nullptr);
+        }
+    }
+
+    if (conversion_pipeline_layout != nullptr) {
+        owner.vk.vkDestroyPipelineLayout(owner.device, conversion_pipeline_layout, nullptr);
+    }
+
+    if (conversion_layout != nullptr) {
+        owner.vk.vkDestroyDescriptorSetLayout(owner.device, conversion_layout, nullptr);
+    }
+
+    if (sampler != nullptr) {
+        owner.vk.vkDestroySampler(owner.device, sampler, nullptr);
+    }
+
+    if (nearest_sampler != nullptr) {
+        owner.vk.vkDestroySampler(owner.device, nearest_sampler, nullptr);
+    }
+
+    if (pipeline_layout != nullptr) {
+        owner.vk.vkDestroyPipelineLayout(owner.device, pipeline_layout, nullptr);
+    }
+
+    if (texture_layout != nullptr) {
+        owner.vk.vkDestroyDescriptorSetLayout(owner.device, texture_layout, nullptr);
     }
 }
 } // namespace miximus::gpu::detail

@@ -10,7 +10,7 @@ add_library(static_files SHARED
 )
 
 # Validated shader binaries use the same bundler and file API as other assets.
-foreach(shader IN ITEMS quad.vert texture.frag unpack_rgba.comp pack_rgba.comp unpack_v210.comp pack_v210.comp mix.frag)
+foreach(shader IN ITEMS quad.vert texture.frag unpack_v210.comp pack_v210.comp mix.frag)
   miximus_compile_shader(static_files "${PROJECT_SOURCE_DIR}/shaders/${shader}")
 endforeach()
 get_target_property(SHADER_FILES static_files MIXIMUS_SPIRV_FILES)

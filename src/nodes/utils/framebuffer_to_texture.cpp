@@ -1,4 +1,5 @@
 #include "core/app_state.hpp"
+#include "gpu/recording.hpp"
 #include "gpu/texture.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"

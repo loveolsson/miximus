@@ -1,6 +1,8 @@
 #include "gpu/detail/device.hpp"
 #include "gpu/detail/dma_buf_copy.hpp"
 #include "gpu/detail/dma_buf_image.hpp"
+#include "gpu/detail/recording.hpp"
+#include "gpu/detail/resource.hpp"
 #include "logger/logger.hpp"
 
 #include <bit>
@@ -45,7 +47,7 @@ class dma_buf_image_test : public testing::Test
     void TearDown() override
     {
         if (producer_pool != VK_NULL_HANDLE) {
-            device->vk.vkQueueWaitIdle(device->queue);
+            device->vk.vkQueueWaitIdle(device->submissions.queue);
             device->vk.vkDestroyCommandPool(device->device, producer_pool, nullptr);
         }
         if (producer_signal != VK_NULL_HANDLE) {
@@ -245,7 +247,7 @@ class dma_buf_image_test : public testing::Test
         submit.pCommandBufferInfos      = &command;
         submit.signalSemaphoreInfoCount = 1;
         submit.pSignalSemaphoreInfos    = &signal;
-        check(device->vk.vkQueueSubmit2(device->queue, 1, &submit, VK_NULL_HANDLE), "submit test producer");
+        check(device->vk.vkQueueSubmit2(device->submissions.queue, 1, &submit, VK_NULL_HANDLE), "submit test producer");
         VkSemaphoreGetFdInfoKHR get{};
         get.sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
         get.semaphore  = producer_signal;

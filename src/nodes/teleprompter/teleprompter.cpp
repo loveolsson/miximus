@@ -5,7 +5,6 @@
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
-#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -330,15 +329,7 @@ class node_impl : public node_i
             const gpu::texture_draw_s geometry{
                 .destination = {.pos = pos, .size = scale}
             };
-            gpu::draw_texture(app->commands(),
-                              frame->texture(),
-                              fb,
-                              geometry,
-                              1,
-                              gpu::color_operation_e::none,
-                              gpu::compositing_e::source_over,
-                              gpu::channel_order_e::rgba,
-                              viewport);
+            gpu::draw_texture(app->commands(), frame->texture(), fb, {.geometry = geometry, .viewport = viewport});
             rendered_line_frames_.emplace_back(std::move(frame));
         }
     }

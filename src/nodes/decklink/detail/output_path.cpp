@@ -70,50 +70,40 @@ auto create_frame_with_buffer(IDeckLinkOutput*                          device,
     return frame;
 }
 
-class output_frame_renderer_s final : public output_frame_renderer_i
-{
-    gpu::color_transform_s             color_;
-    size_t                             stride_;
-    gpu::transfer::host_pixel_format_e pixel_format_;
-
-  public:
-    output_frame_renderer_s(const output_display_mode_s& mode, const gpu::transfer::host_frame_layout_s& layout)
-        : color_(gpu::color_parameters(mode.yuv_conversion,
-                                       mode.gamut_conversion,
-                                       gpu::color_conversion_direction_e::to_yuv))
-        , stride_(layout.row_stride_bytes)
-        , pixel_format_(layout.pixel_format)
-    {
-    }
-
-    void render(gpu::recording_s&                         commands,
-                const gpu::texture_s*                     source,
-                gpu::transfer::texture_readback_target_s& target,
-                gpu::fill_mode_e                          fill_mode) final
-    {
-        auto& scaled = *target.conversion_texture();
-        scaled.clear(commands);
-        if (source != nullptr) {
-            const auto geometry = gpu::calculate_texture_draw({}, source->dimensions(), scaled.dimensions(), fill_mode);
-            gpu::draw_texture(commands, source, &scaled, geometry);
-        }
-
-        if (pixel_format_ == gpu::transfer::host_pixel_format_e::argb_u8) {
-            gpu::draw_texture(commands,
-                              &scaled,
-                              target.texture(),
-                              {},
-                              1,
-                              gpu::color_operation_e::encode_rec709_premultiplied,
-                              gpu::compositing_e::replace,
-                              target.output_order());
-        } else {
-            commands.pack_v210(scaled, target.buffer(), color_, stride_);
-        }
-    }
-};
-
 } // namespace
+
+output_frame_renderer_s::output_frame_renderer_s(const output_display_mode_s&              mode,
+                                                 const gpu::transfer::host_frame_layout_s& layout)
+    : color_(
+          gpu::color_parameters(mode.yuv_conversion, mode.gamut_conversion, gpu::color_conversion_direction_e::to_yuv))
+    , stride_(layout.row_stride_bytes)
+    , pixel_format_(layout.pixel_format)
+{
+}
+
+void output_frame_renderer_s::render(gpu::recording_s&                         commands,
+                                     const gpu::texture_s*                     source,
+                                     gpu::transfer::texture_readback_target_s& target,
+                                     gpu::fill_mode_e                          fill_mode)
+{
+    auto& scaled = *target.conversion_texture();
+    scaled.clear(commands);
+    if (source != nullptr) {
+        const auto geometry = gpu::calculate_texture_draw({}, source->dimensions(), scaled.dimensions(), fill_mode);
+        gpu::draw_texture(commands, source, &scaled, {.geometry = geometry});
+    }
+
+    if (pixel_format_ == gpu::transfer::host_pixel_format_e::argb_u8) {
+        gpu::draw_texture(commands,
+                          &scaled,
+                          target.texture(),
+                          {.transfer    = gpu::color_operation_e::encode_rec709_premultiplied,
+                           .compositing = gpu::compositing_e::replace,
+                           .output      = target.output_order()});
+    } else {
+        commands.pack_v210(scaled, target.buffer(), color_, stride_);
+    }
+}
 
 output_path_i::output_path_i(output_display_mode_s              display_mode,
                              BMDPixelFormat                     decklink_pixel_format,
@@ -158,7 +148,7 @@ auto v210_output_path_s::create_frame(IDeckLinkOutput*      device,
     return frame.query<IDeckLinkVideoFrame>();
 }
 
-auto v210_output_path_s::create_renderer() const -> std::unique_ptr<output_frame_renderer_i>
+auto output_path_i::create_renderer() const -> std::unique_ptr<output_frame_renderer_s>
 {
     return std::make_unique<output_frame_renderer_s>(display_mode(), host_layout());
 }
@@ -190,11 +180,6 @@ auto premultiplied_argb_output_path_s::create_frame(IDeckLinkOutput*      device
 {
     return create_frame_with_buffer(device, buffer, display_mode(), host_layout(), decklink_pixel_format(), device_name)
         .query<IDeckLinkVideoFrame>();
-}
-
-auto premultiplied_argb_output_path_s::create_renderer() const -> std::unique_ptr<output_frame_renderer_i>
-{
-    return std::make_unique<output_frame_renderer_s>(display_mode(), host_layout());
 }
 
 } // namespace miximus::nodes::decklink::detail

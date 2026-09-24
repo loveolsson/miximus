@@ -1,5 +1,6 @@
 #include "texture_upload.hpp"
 
+#include "detail/conversion_texture.hpp"
 #include "gpu/detail/fatal.hpp"
 #include "gpu/transfer/detail/frame_staging.hpp"
 #include "gpu/transfer/detail/transfer_layout.hpp"
@@ -61,8 +62,7 @@ struct texture_upload_stream_state_s
     std::weak_ptr<texture_upload_service_state_s>       service;
     texture_upload_config_s                             config;
     texture_transfer_plan_s                             transfer_plan;
-    std::shared_ptr<texture_s>                          conversion_texture;
-    size_t                                              conversion_reserved_bytes{};
+    conversion_texture_s                                conversion;
     mutable std::mutex                                  mutex;
     std::condition_variable                             slot_cv;
     std::condition_variable                             completion_cv;
@@ -97,7 +97,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
     {
         slot.staging.reset();
         slot.frame.reset();
-        release_memory(slot.reserved_bytes);
+        memory_.release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
     }
 
@@ -108,17 +108,20 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         try {
             const auto sampling = stream->config.generate_mip_maps ? sampling_e::mipmapped_linear : sampling_e::linear;
             reserved_bytes      = estimate_slot_memory_usage(stream->transfer_plan, sampling);
-            if (!reserve_memory(reserved_bytes)) {
+            if (!memory_.reserve_memory(reserved_bytes)) {
                 throw std::bad_alloc();
             }
             memory_reserved = true;
 
-            initialize_conversion_texture(*stream);
+            stream->conversion.initialize(device_,
+                                          stream->transfer_plan.host_layout.image_dimensions,
+                                          stream->config.conversion_sampling,
+                                          memory_);
 
             auto slot            = std::make_shared<texture_upload_slot_s>();
             slot->reserved_bytes = reserved_bytes;
             slot->frame = std::make_shared<texture_frame_s>(device_, stream->transfer_plan.host_layout, sampling);
-            slot->frame->set_conversion_texture(stream->conversion_texture);
+            slot->frame->set_conversion_texture(stream->conversion.texture);
             auto staging  = std::make_unique<frame_staging_s>(device_,
                                                              stream->transfer_plan,
                                                              frame_staging_s::direction_e::cpu_to_gpu,
@@ -128,7 +131,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
 
             const auto actual_reserved =
                 slot_memory_usage(stream->transfer_plan, slot->staging->allocation_bytes(), sampling);
-            if (!resize_memory_reservation(reserved_bytes, actual_reserved)) {
+            if (!memory_.resize_memory_reservation(reserved_bytes, actual_reserved)) {
                 throw std::bad_alloc();
             }
             reserved_bytes       = actual_reserved;
@@ -147,7 +150,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
             stream->slot_cv.notify_all();
         } catch (const std::exception& error) {
             if (memory_reserved) {
-                release_memory(reserved_bytes);
+                memory_.release_memory(reserved_bytes);
             }
             {
                 const std::scoped_lock lock(stream->mutex);
@@ -277,7 +280,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
         for (auto& slot : slots) {
             release_slot_resources(*slot);
         }
-        release_conversion_texture(*stream);
+        stream->conversion.release(memory_);
         return true;
     }
 

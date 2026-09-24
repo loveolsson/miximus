@@ -228,8 +228,6 @@ class node_impl : public node_i
             }
         }
         rendered_frame_ = published_frame_;
-        if (rendered_frame_) {
-        }
         iface_texture_.set_value(rendered_frame_ ? rendered_frame_->texture() : nullptr);
     }
 

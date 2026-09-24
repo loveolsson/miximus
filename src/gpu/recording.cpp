@@ -1,4 +1,7 @@
+#include "detail/recording.hpp"
+
 #include "detail/device.hpp"
+#include "detail/resource.hpp"
 
 #include <algorithm>
 #include <cmath>

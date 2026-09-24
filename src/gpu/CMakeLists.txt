@@ -5,6 +5,8 @@ find_package(glm REQUIRED)
 add_library(gpu
     device.hpp
     device.cpp
+    drawing.hpp
+    drawing.cpp
     resource_types.hpp
     texture.hpp
     texture.cpp
@@ -19,8 +21,14 @@ add_library(gpu
     detail/device.hpp
     detail/external_image_support.hpp
     detail/external_image_support.cpp
+    detail/resource.hpp
+    detail/recording.hpp
+    detail/retirement.hpp
+    detail/retirement.cpp
+    detail/submission.hpp
     detail/submission.cpp
     detail/drawing.cpp
+    detail/pipeline.hpp
     detail/pipeline.cpp
     detail/conversion.cpp
 )

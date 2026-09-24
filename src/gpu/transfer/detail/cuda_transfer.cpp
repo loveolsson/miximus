@@ -2,6 +2,8 @@
 
 #include "gpu/detail/device.hpp"
 #include "gpu/detail/fatal.hpp"
+#include "gpu/detail/recording.hpp"
+#include "gpu/detail/resource.hpp"
 #include "logger/logger.hpp"
 
 #include <magic_enum/magic_enum.hpp>

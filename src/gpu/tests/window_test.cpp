@@ -76,7 +76,7 @@ TEST_F(window_test, MissingFullscreenMonitorFailsInsteadOfOpeningWindow)
                  std::runtime_error);
 }
 
-TEST_F(window_test, PresentsOnlyPublishedFramesAndRedrawsAfterResize)
+TEST_F(window_test, PresentsOnlyRequestedFramesAcrossResize)
 {
     const recti_s initial_rect{
         .pos = on_screen_position(), .size = {320, 180}
@@ -95,8 +95,23 @@ TEST_F(window_test, PresentsOnlyPublishedFramesAndRedrawsAfterResize)
     auto ready = commands->submit();
     commands.reset();
     {
-        presenter_s presenter(device, window.native_window(), {.width = 320, .height = 180});
-        const auto  wait_for_presents = [&](uint64_t count) {
+        std::atomic_uint64_t requested_frames{};
+        presenter_s          presenter(device,
+                              window.native_window(),
+                                       {.width = 320, .height = 180},
+                                       {.next_frame = [&](presentation_pacing_e,
+                                                 const std::stop_token& stop) -> std::optional<presentation_frame_s> {
+                                   while (!stop.stop_requested()) {
+                                       if (requested_frames.load() != 0) {
+                                           --requested_frames;
+                                           return presentation_frame_s{.image = image, .ready = ready, .lease = {}};
+                                       }
+                                       std::this_thread::sleep_for(1ms);
+                                   }
+                                   return {};
+                               },
+                                        .complete = {}});
+        const auto           wait_for_presents = [&](uint64_t count) {
             const auto deadline = std::chrono::steady_clock::now() + 3s;
             while (presenter.metrics().presents < count && presenter.metrics().failure.empty() &&
                    std::chrono::steady_clock::now() < deadline) {
@@ -108,7 +123,7 @@ TEST_F(window_test, PresentsOnlyPublishedFramesAndRedrawsAfterResize)
             EXPECT_EQ(presenter.metrics().presents, count);
         };
 
-        presenter.publish(image, ready);
+        ++requested_frames;
         wait_for_presents(1);
         const auto settle = std::chrono::steady_clock::now() + 150ms;
         while (std::chrono::steady_clock::now() < settle) {
@@ -118,7 +133,7 @@ TEST_F(window_test, PresentsOnlyPublishedFramesAndRedrawsAfterResize)
 
         EXPECT_EQ(presenter.metrics().presents, 1);
         // An intentional repeat must still be submitted.
-        presenter.publish(image, ready);
+        ++requested_frames;
         wait_for_presents(2);
         glfwSetWindowSize(window.native_window(), 480, 270);
         expect_geometry(window,
@@ -126,7 +141,12 @@ TEST_F(window_test, PresentsOnlyPublishedFramesAndRedrawsAfterResize)
                             .pos = on_screen_position(), .size = {480, 270}
         });
         presenter.resize({.width = 480, .height = 270});
+        // The source explicitly supplies repeats; allow one acquired old-size
+        // frame to finish before the worker observes the resize.
+        ++requested_frames;
         wait_for_presents(3);
+        ++requested_frames;
+        wait_for_presents(4);
         EXPECT_GE(presenter.metrics().recreations, 2);
     }
 

@@ -2,7 +2,7 @@
 #include "core/command_line_options.hpp"
 #include "core/frame_context.hpp"
 #include "core/node_status_registry_fwd.hpp"
-#include "gpu/device.hpp"
+#include "gpu/completion.hpp"
 #include "gpu/texture_fwd.hpp"
 #include "gpu/transfer/texture_readback_fwd.hpp"
 #include "gpu/transfer/texture_upload_fwd.hpp"
@@ -24,6 +24,11 @@
 #include <optional>
 #include <thread>
 #include <vector>
+
+namespace miximus::gpu {
+class device_s;
+class recording_s;
+} // namespace miximus::gpu
 
 namespace miximus::core {
 

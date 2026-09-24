@@ -1,6 +1,8 @@
 #include "color_compare.hpp"
 
 #include "gpu/detail/device.hpp"
+#include "gpu/detail/recording.hpp"
+#include "gpu/detail/resource.hpp"
 
 #include <fstream>
 #include <stdexcept>
@@ -138,7 +140,7 @@ void color_comparison_s::record(recording_s&         recording,
                      VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
     const auto                  descriptor = state.allocate_descriptor(state_->descriptors);
     const VkDescriptorImageInfo image{
-        state.owner->nearest_sampler, source.state_->sampled_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        state.owner->drawing->nearest_sampler, source.state_->sampled_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     const VkDescriptorBufferInfo        buffer{counters.state_->buffer, 0, 8};
     std::array<VkWriteDescriptorSet, 2> writes{};
     for (auto& write : writes) {

@@ -1,5 +1,7 @@
 #include "gpu/detail/device.hpp"
 #include "gpu/detail/fatal.hpp"
+#include "gpu/detail/recording.hpp"
+#include "gpu/detail/resource.hpp"
 
 #include <cstdlib>
 #include <gtest/gtest.h>

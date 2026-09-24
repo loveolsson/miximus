@@ -5,7 +5,6 @@
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
-#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -240,7 +239,7 @@ class node_impl : public node_i
         const gpu::texture_draw_s geometry{
             .destination = {.pos = position, .size = scale}
         };
-        gpu::draw_texture(app->commands(), rendered_text_frame_->texture(), fb, geometry);
+        gpu::draw_texture(app->commands(), rendered_text_frame_->texture(), fb, {.geometry = geometry});
     }
 
     void complete(core::app_state_s* /*app*/) final

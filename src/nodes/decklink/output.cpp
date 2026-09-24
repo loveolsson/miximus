@@ -922,7 +922,7 @@ class node_impl : public node_i
     decklink_ptr<callback_s>                  callback_;
     std::optional<callback_s::render_state_s> render_state_;
 
-    std::unique_ptr<output_frame_renderer_i>                  frame_renderer_;
+    std::unique_ptr<output_frame_renderer_s>                  frame_renderer_;
     utils::observed_value_s<selection_t>                      selection_;
     utils::observed_value_s<uint64_t>                         device_version_;
     utils::observed_value_s<std::pair<std::string, uint64_t>> mode_options_version_;

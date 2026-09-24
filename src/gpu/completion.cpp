@@ -1,6 +1,8 @@
 #include "completion.hpp"
 
 #include "detail/device.hpp"
+#include "detail/recording.hpp"
+#include "detail/resource.hpp"
 
 #include <algorithm>
 #include <thread>
@@ -80,7 +82,7 @@ wait_result_e completion_s::wait(std::chrono::milliseconds timeout, const std::s
             VkSemaphoreWaitInfo info{};
             info.sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
             info.semaphoreCount = 1;
-            info.pSemaphores    = &state_->timeline;
+            info.pSemaphores    = &state_->submissions.timeline;
             info.pValues        = &value;
             const auto duration = std::min(std::chrono::duration_cast<std::chrono::nanoseconds>(remaining),
                                            std::chrono::nanoseconds(std::chrono::milliseconds(5)));

@@ -14,7 +14,6 @@ struct presentation_metrics_s
 {
     uint64_t    presents{};
     uint64_t    acquire_misses{};
-    uint64_t    mailbox_drops{};
     uint64_t    recreations{};
     uint64_t    present_call_max_us{};
     std::string failure;
@@ -63,13 +62,10 @@ class presenter_s
     std::unique_ptr<detail::presenter_state_s> state_;
 
   public:
-    presenter_s(device_s& device, GLFWwindow* window, extent_s initial_extent, presentation_source_s source = {});
+    presenter_s(device_s& device, GLFWwindow* window, extent_s initial_extent, presentation_source_s source);
     ~presenter_s();
-    presenter_s(const presenter_s&)            = delete;
-    presenter_s& operator=(const presenter_s&) = delete;
-    // Schedules one presentation (latest wins while busy). Repeats are explicit.
-    // Retains the image for resize; the producer must not overwrite it while retained.
-    void                   publish(texture_s image, completion_s ready, std::shared_ptr<const void> lease = {});
+    presenter_s(const presenter_s&)                      = delete;
+    presenter_s&           operator=(const presenter_s&) = delete;
     void                   resize(extent_s extent);
     void                   request_stop() noexcept;
     presentation_metrics_s metrics() const;

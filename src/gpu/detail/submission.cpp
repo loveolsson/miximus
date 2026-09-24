@@ -1,6 +1,8 @@
 #include "device.hpp"
 #include "fatal.hpp"
 #include "logger/logger.hpp"
+#include "recording.hpp"
+#include "resource.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -18,7 +20,7 @@ completion_s enqueue_recording(std::unique_ptr<recording_state_s>&    recording,
     auto*      arena      = recording->arena;
     // The reserved arena owns this handoff until the worker adopts it into RAII.
     arena->queued.store(recording.release(), std::memory_order_release);
-    owner->wake.notify_one();
+    owner->submissions.wake.notify_one();
     return completion;
 }
 
@@ -61,7 +63,7 @@ recording_context_state_s::~recording_context_state_s()
 
 std::unique_ptr<recording_state_s> recording_context_state_s::try_record()
 {
-    if (owner->submission_failed.load() || owner->stopping.load()) {
+    if (owner->submissions.submission_failed.load() || owner->submissions.stopping.load()) {
         throw std::runtime_error("GPU submission service is unavailable");
     }
 
@@ -159,7 +161,7 @@ void recording_state_s::submit_native()
     if (dependency_value != 0) {
         VkSemaphoreSubmitInfo wait{};
         wait.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait.semaphore = owner->timeline;
+        wait.semaphore = owner->submissions.timeline;
         wait.value     = dependency_value;
         wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         waits.push_back(wait);
@@ -172,10 +174,10 @@ void recording_state_s::submit_native()
     commands[1].sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
     commands[1].commandBuffer = arena->commands;
 
-    const auto            value = owner->last_submitted_timeline_value + 1;
+    const auto            value = owner->submissions.last_submitted_timeline_value + 1;
     VkSemaphoreSubmitInfo timeline{};
     timeline.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    timeline.semaphore = owner->timeline;
+    timeline.semaphore = owner->submissions.timeline;
     timeline.value     = value;
     timeline.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
     signals.push_back(timeline);
@@ -189,11 +191,11 @@ void recording_state_s::submit_native()
     batch.signalSemaphoreInfoCount = static_cast<uint32_t>(signals.size());
     batch.pSignalSemaphoreInfos    = signals.data();
     {
-        const std::scoped_lock lock(owner->queue_mutex);
-        check(owner->vk.vkQueueSubmit2(owner->queue, 1, &batch, VK_NULL_HANDLE), "queue submission");
+        const std::scoped_lock lock(owner->submissions.queue_mutex);
+        check(owner->vk.vkQueueSubmit2(owner->submissions.queue, 1, &batch, VK_NULL_HANDLE), "queue submission");
     }
 
-    owner->last_submitted_timeline_value = value;
+    owner->submissions.last_submitted_timeline_value = value;
     for (const auto& [image, final_layouts] : layouts) {
         for (size_t mip = 0; mip < final_layouts.size(); ++mip) {
             if (final_layouts[mip] != VK_IMAGE_LAYOUT_UNDEFINED) {
@@ -218,12 +220,12 @@ void recording_state_s::submit_native()
     publications.clear();
 }
 
-void device_state_s::start_submission_worker()
+void submission_engine_s::start()
 {
-    submission_worker = std::thread([this] { run_submissions(); });
+    submission_worker = std::thread([this] { run(); });
 }
 
-void device_state_s::stop_submission_worker()
+void submission_engine_s::stop()
 {
     stopping.store(true);
     wake.notify_one();
@@ -269,21 +271,21 @@ std::unique_ptr<recording_state_s> take_next_recording(recording_context_state_s
 void submit_recording(device_state_s& device, recording_state_s& recording)
 {
     try {
-        if (device.submission_failed.load()) {
+        if (device.submissions.submission_failed.load()) {
             recording.submission->failed.store(true);
             return;
         }
         recording.submit_native();
     } catch (const std::exception& error) {
         recording.submission->failed.store(true);
-        device.submission_failed.store(true);
+        device.submissions.submission_failed.store(true);
         fatal_gpu_error(std::format("GPU submission failed: {}", error.what()));
     }
 }
 
 } // namespace
 
-void device_state_s::run_submissions()
+void submission_engine_s::run()
 {
     std::vector<std::unique_ptr<recording_state_s>>         in_flight;
     std::vector<std::shared_ptr<recording_context_state_s>> active;
@@ -311,7 +313,7 @@ void device_state_s::run_submissions()
             // Reserve retirement ownership before calling the driver. Even a
             // publication callback failure cannot destroy an accepted GPU job.
             in_flight.push_back(std::move(record));
-            submit_recording(*this, *in_flight.back());
+            submit_recording(owner, *in_flight.back());
             submitted = true;
 
             // One submission per context per pass prevents a busy producer
@@ -319,7 +321,7 @@ void device_state_s::run_submissions()
         }
 
         uint64_t   completed{};
-        const auto result = vk.vkGetSemaphoreCounterValue(device, timeline, &completed);
+        const auto result = owner.vk.vkGetSemaphoreCounterValue(owner.device, timeline, &completed);
         if (result != VK_SUCCESS) {
             fatal_gpu_error(std::format("GPU completion query failed: Vulkan result {}", static_cast<int>(result)));
         } else {
@@ -329,7 +331,7 @@ void device_state_s::run_submissions()
             // Release CPU recording pins before exposing GPU completion to host readers.
             completed_value.store(completed, std::memory_order_release);
         }
-        collect();
+        owner.collect();
 
         if (stopping.load() && !submitted && in_flight.empty()) {
             break;
@@ -361,9 +363,32 @@ recording_context_s device_s::create_recording_context(uint32_t capacity)
     context->owner = state_;
     context->initialize(capacity);
     {
-        const std::scoped_lock lock(state_->contexts_mutex);
-        state_->contexts.push_back(context);
+        const std::scoped_lock lock(state_->submissions.contexts_mutex);
+        state_->submissions.contexts.push_back(context);
     }
     return recording_context_s(std::move(context));
 }
 } // namespace miximus::gpu
+
+namespace miximus::gpu::detail {
+void submission_engine_s::initialize()
+{
+    // Queue acceptance assigns values; the submission worker publishes completed values.
+    VkSemaphoreTypeCreateInfo timeline_info{};
+    timeline_info.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+
+    VkSemaphoreCreateInfo semaphore{};
+    semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphore.pNext = &timeline_info;
+    check(owner.vk.vkCreateSemaphore(owner.device, &semaphore, nullptr, &timeline), "timeline semaphore");
+}
+
+void submission_engine_s::destroy_timeline()
+{
+    if (timeline != VK_NULL_HANDLE) {
+        owner.vk.vkDestroySemaphore(owner.device, timeline, nullptr);
+        timeline = VK_NULL_HANDLE;
+    }
+}
+} // namespace miximus::gpu::detail

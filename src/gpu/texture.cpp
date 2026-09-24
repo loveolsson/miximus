@@ -1,6 +1,8 @@
 #include "texture.hpp"
 
 #include "detail/device.hpp"
+#include "detail/recording.hpp"
+#include "detail/resource.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -29,7 +31,6 @@ size_t checked_multiply(size_t lhs, size_t rhs)
 texture_s::storage_format_info_s texture_s::storage_format_info(format_e storage_format)
 {
     switch (storage_format) {
-        case format_e::rgba16_float:
         case format_e::rgba_unorm16:
             return {.storage_bytes_per_texel = 8, .integer = false};
         case format_e::rgba_unorm8:

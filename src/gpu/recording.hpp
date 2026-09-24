@@ -106,16 +106,6 @@ class recording_s
     void upload(const buffer_s& source, const texture_s& destination, size_t row_stride = 0);
     void readback(const texture_s& source, const buffer_s& destination, size_t row_stride = 0);
 
-    // Probe candidates preserving RGBA8 bytes through the UNORM16 working image.
-    void unpack_rgba(const buffer_s&  source,
-                     const texture_s& destination,
-                     size_t           row_stride = 0,
-                     channel_order_e  order      = channel_order_e::rgba);
-    void pack_rgba(const texture_s& source,
-                   const buffer_s&  destination,
-                   size_t           row_stride = 0,
-                   channel_order_e  order      = channel_order_e::rgba);
-
     void unpack_v210(const buffer_s&          source,
                      const texture_s&         destination,
                      const color_transform_s& color,

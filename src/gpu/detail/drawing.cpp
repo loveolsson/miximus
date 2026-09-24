@@ -1,4 +1,6 @@
 #include "device.hpp"
+#include "recording.hpp"
+#include "resource.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -54,13 +56,13 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
 
-    const auto descriptor = allocate_descriptor(owner->texture_layout);
+    const auto descriptor = allocate_descriptor(owner->drawing->texture_layout);
 
     const std::array<VkDescriptorImageInfo, 2> sampled{
-        {{.sampler     = a->sampling == sampling_e::nearest ? owner->nearest_sampler : owner->sampler,
+        {{.sampler     = a->sampling == sampling_e::nearest ? owner->drawing->nearest_sampler : owner->drawing->sampler,
           .imageView   = minifying[0] ? a->sampled_view : a->view,
           .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-         {.sampler     = b->sampling == sampling_e::nearest ? owner->nearest_sampler : owner->sampler,
+         {.sampler     = b->sampling == sampling_e::nearest ? owner->drawing->nearest_sampler : owner->drawing->sampler,
           .imageView   = minifying[1] ? b->sampled_view : b->view,
           .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}}
     };
@@ -92,18 +94,25 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
     render.pColorAttachments    = &attachment;
     const auto command_buffer   = arena->commands;
     owner->vk.vkCmdBeginRendering(command_buffer, &render);
-    const auto& pipelines = operation == draw_operation_e::mix ? owner->mix_pipelines : owner->pipelines;
+    const auto& pipelines =
+        operation == draw_operation_e::mix ? owner->drawing->mix_pipelines : owner->drawing->pipelines;
     owner->vk.vkCmdBindPipeline(
         command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines[target->format][compositing]);
-    owner->vk.vkCmdBindDescriptorSets(
-        command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, owner->pipeline_layout, 0, 1, &descriptor, 0, nullptr);
+    owner->vk.vkCmdBindDescriptorSets(command_buffer,
+                                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      owner->drawing->pipeline_layout,
+                                      0,
+                                      1,
+                                      &descriptor,
+                                      0,
+                                      nullptr);
 
     const VkViewport viewport{
         0, 0, static_cast<float>(target->extent.width), static_cast<float>(target->extent.height), 0, 1};
     owner->vk.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     owner->vk.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
     owner->vk.vkCmdPushConstants(command_buffer,
-                                 owner->pipeline_layout,
+                                 owner->drawing->pipeline_layout,
                                  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                  0,
                                  static_cast<uint32_t>(parameters.size()),

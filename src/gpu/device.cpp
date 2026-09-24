@@ -1,6 +1,8 @@
 #include "detail/device.hpp"
 
 #include "detail/external_image_support.hpp"
+#include "detail/recording.hpp"
+#include "detail/resource.hpp"
 #include "logger/logger.hpp"
 #ifdef MIXIMUS_HAS_CUDA
 #include "transfer/detail/cuda_transfer.hpp"
@@ -38,8 +40,6 @@ VkFormat native_format(format_e format)
             return VK_FORMAT_R8G8B8A8_UNORM;
         case format_e::rgba_unorm16:
             return VK_FORMAT_R16G16B16A16_UNORM;
-        case format_e::rgba16_float:
-            return VK_FORMAT_R16G16B16A16_SFLOAT;
         case format_e::r32_uint:
             return VK_FORMAT_R32_UINT;
     }
@@ -47,10 +47,7 @@ VkFormat native_format(format_e format)
     throw std::invalid_argument("unknown image format");
 }
 
-uint32_t texel_bytes(format_e format)
-{
-    return format == format_e::rgba_unorm16 || format == format_e::rgba16_float ? 8 : 4;
-}
+uint32_t texel_bytes(format_e format) { return format == format_e::rgba_unorm16 ? 8 : 4; }
 
 namespace {
 
@@ -111,8 +108,7 @@ uint32_t describe_queue_families(std::span<const VkQueueFamilyProperties> famili
 bool describe_texture_formats(const VolkInstanceTable& instance_vk, VkPhysicalDevice candidate, nlohmann::json& entry)
 {
     bool formats_ok = true;
-    for (const auto format :
-         {format_e::rgba_unorm8, format_e::rgba_unorm16, format_e::rgba16_float, format_e::r32_uint}) {
+    for (const auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16, format_e::r32_uint}) {
         VkFormatProperties format_properties{};
         instance_vk.vkGetPhysicalDeviceFormatProperties(candidate, native_format(format), &format_properties);
         VkFormatFeatureFlags required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
@@ -170,31 +166,6 @@ void describe_extensions(std::span<const VkExtensionProperties>              ext
     }
 }
 
-void destroy_pipelines(device_state_s& state)
-{
-    for (const auto& formats : state.pipelines) {
-        for (auto pipeline : formats) {
-            if (pipeline != nullptr) {
-                state.vk.vkDestroyPipeline(state.device, pipeline, nullptr);
-            }
-        }
-    }
-
-    for (const auto& formats : state.mix_pipelines) {
-        for (auto pipeline : formats) {
-            if (pipeline != nullptr) {
-                state.vk.vkDestroyPipeline(state.device, pipeline, nullptr);
-            }
-        }
-    }
-
-    for (auto pipeline : state.conversion_pipelines) {
-        if (pipeline != nullptr) {
-            state.vk.vkDestroyPipeline(state.device, pipeline, nullptr);
-        }
-    }
-}
-
 } // namespace
 
 void device_state_s::initialize(const device_options_s& configuration)
@@ -209,8 +180,9 @@ void device_state_s::initialize(const device_options_s& configuration)
     const auto device_extensions             = select_physical_device(surface_maintenance_available);
     initialize_logical_device(device_extensions);
     initialize_allocator();
-    initialize_submission_timeline();
-    initialize_pipelines();
+    submissions.initialize();
+    drawing = std::make_unique<pipeline_state_s>(*this);
+    drawing->initialize();
 }
 
 bool device_state_s::initialize_instance()
@@ -499,9 +471,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         }
 
         report["selected_uuid"] = uuid_string(identity.deviceUUID);
-        if (options.external_image_import) {
-            selected_extensions = std::move(extensions);
-        }
+        selected_extensions     = std::move(extensions);
     }
 
     enable_external_image_import(selected_extensions, device_extensions);
@@ -598,8 +568,8 @@ void device_state_s::initialize_logical_device(std::span<const char* const> devi
     device_info.ppEnabledExtensionNames             = device_extensions.data();
     check(instance_vk.vkCreateDevice(physical, &device_info, nullptr, &device), "vkCreateDevice");
     volkLoadDeviceTable(&vk, device);
-    vk.vkGetDeviceQueue(device, queue_family, 0, &queue);
-    vk.vkGetDeviceQueue(device, queue_family, separate_present_queue ? 1 : 0, &present_queue);
+    vk.vkGetDeviceQueue(device, queue_family, 0, &submissions.queue);
+    vk.vkGetDeviceQueue(device, queue_family, separate_present_queue ? 1 : 0, &submissions.present_queue);
 }
 
 void device_state_s::initialize_allocator()
@@ -616,91 +586,24 @@ void device_state_s::initialize_allocator()
     check(vmaCreateAllocator(&allocator_info, &allocator), "VMA allocator");
 }
 
-void device_state_s::initialize_submission_timeline()
-{
-    // Queue acceptance assigns values; the submission worker publishes completed values.
-    VkSemaphoreTypeCreateInfo timeline_info{};
-    timeline_info.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-    timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-
-    VkSemaphoreCreateInfo semaphore{};
-    semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphore.pNext = &timeline_info;
-    check(vk.vkCreateSemaphore(device, &semaphore, nullptr, &timeline), "timeline semaphore");
-}
-
-uint64_t device_state_s::completed() const { return completed_value.load(std::memory_order_acquire); }
+uint64_t device_state_s::completed() const { return submissions.completed_value.load(std::memory_order_acquire); }
 
 void device_state_s::retire(uint64_t after, std::function<void()> destroy)
 {
-    if (after == 0) {
-        destroy();
-        return;
-    }
-
-    const std::scoped_lock guard(retire_mutex);
-    retired.push_back({after, std::move(destroy)});
+    retirement.retire(after, std::move(destroy));
 }
-
-void device_state_s::collect()
-{
-    const auto             value = completed();
-    std::vector<retired_s> ready;
-    {
-        const std::scoped_lock guard(retire_mutex);
-        for (auto it = retired.begin(); it != retired.end();) {
-            if (it->completion <= value) {
-                ready.push_back(std::move(*it));
-                it = retired.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-
-    for (auto& item : ready) {
-        item.destroy();
-    }
-}
+void device_state_s::collect() { retirement.collect(completed()); }
 
 device_state_s::~device_state_s()
 {
     if (device != nullptr) {
         // Only final device teardown waits idle. Recordings never do this.
         vk.vkDeviceWaitIdle(device);
-        for (auto& item : retired) {
-            item.destroy();
-        }
+        retirement.drain();
 
-        destroy_pipelines(*this);
+        drawing.reset();
 
-        if (conversion_pipeline_layout != nullptr) {
-            vk.vkDestroyPipelineLayout(device, conversion_pipeline_layout, nullptr);
-        }
-
-        if (conversion_layout != nullptr) {
-            vk.vkDestroyDescriptorSetLayout(device, conversion_layout, nullptr);
-        }
-
-        if (sampler != nullptr) {
-            vk.vkDestroySampler(device, sampler, nullptr);
-        }
-
-        if (nearest_sampler != nullptr) {
-            vk.vkDestroySampler(device, nearest_sampler, nullptr);
-        }
-
-        if (pipeline_layout != nullptr) {
-            vk.vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
-        }
-
-        if (texture_layout != nullptr) {
-            vk.vkDestroyDescriptorSetLayout(device, texture_layout, nullptr);
-        }
-
-        if (timeline != nullptr) {
-            vk.vkDestroySemaphore(device, timeline, nullptr);
-        }
+        submissions.destroy_timeline();
 
         if (allocator != nullptr) {
             vmaDestroyAllocator(allocator);
@@ -813,12 +716,12 @@ device_s::device_s(const device_options_s& options)
     }
 
     default_context_ = std::make_unique<recording_context_s>(create_recording_context(options.max_recordings));
-    state_->start_submission_worker();
+    state_->submissions.start();
 }
 
 device_s::~device_s()
 {
-    state_->stop_submission_worker();
+    state_->submissions.stop();
     default_context_.reset();
 }
 

@@ -37,40 +37,45 @@ inline color_operation_e rec709_encode_operation(alpha_mode_e alpha)
     throw std::invalid_argument("invalid alpha mode");
 }
 
-// Geometry stays normalized at the node boundary; the recorder receives pixels.
-inline void draw_texture(recording_s&           commands,
-                         const texture_s*       source,
-                         texture_s*             target,
-                         texture_draw_s         geometry    = {},
-                         double                 opacity     = 1,
-                         color_operation_e      transfer    = color_operation_e::none,
-                         compositing_e          compositing = compositing_e::source_over,
-                         channel_order_e        output      = channel_order_e::rgba,
-                         std::optional<recti_s> viewport    = {})
+struct texture_draw_options_s
 {
-    if (!source || !target || geometry.destination.size.x == 0 || geometry.destination.size.y == 0) {
+    texture_draw_s         geometry{};
+    double                 opacity{1};
+    color_operation_e      transfer{color_operation_e::none};
+    compositing_e          compositing{compositing_e::source_over};
+    channel_order_e        output{channel_order_e::rgba};
+    std::optional<recti_s> viewport{};
+};
+
+// Geometry stays normalized at the node boundary; the recorder receives pixels.
+inline void draw_texture(recording_s&                  commands,
+                         const texture_s*              source,
+                         texture_s*                    target,
+                         const texture_draw_options_s& options = {})
+{
+    if (!source || !target || options.geometry.destination.size.x == 0 || options.geometry.destination.size.y == 0) {
         return;
     }
 
-    const auto bounds = viewport.value_or(recti_s{
+    const auto bounds = options.viewport.value_or(recti_s{
         {0, 0},
         target->dimensions()
     });
     draw_s     draw;
-    draw.destination  = {static_cast<float>(bounds.pos.x + geometry.destination.pos.x * bounds.size.x),
-                         static_cast<float>(bounds.pos.y + geometry.destination.pos.y * bounds.size.y),
-                         static_cast<float>(geometry.destination.size.x * bounds.size.x),
-                         static_cast<float>(geometry.destination.size.y * bounds.size.y)};
-    draw.uv           = {static_cast<float>(geometry.source.pos.x),
-                         static_cast<float>(geometry.source.pos.y),
-                         static_cast<float>(geometry.source.size.x),
-                         static_cast<float>(geometry.source.size.y)};
-    draw.opacity      = static_cast<float>(opacity);
-    draw.compositing  = compositing;
-    draw.transfer     = transfer;
+    draw.destination  = {static_cast<float>(bounds.pos.x + options.geometry.destination.pos.x * bounds.size.x),
+                         static_cast<float>(bounds.pos.y + options.geometry.destination.pos.y * bounds.size.y),
+                         static_cast<float>(options.geometry.destination.size.x * bounds.size.x),
+                         static_cast<float>(options.geometry.destination.size.y * bounds.size.y)};
+    draw.uv           = {static_cast<float>(options.geometry.source.pos.x),
+                         static_cast<float>(options.geometry.source.pos.y),
+                         static_cast<float>(options.geometry.source.size.x),
+                         static_cast<float>(options.geometry.source.size.y)};
+    draw.opacity      = static_cast<float>(options.opacity);
+    draw.compositing  = options.compositing;
+    draw.transfer     = options.transfer;
     draw.input_order  = source->channel_order();
-    draw.output_order = output;
-    if (viewport) {
+    draw.output_order = options.output;
+    if (options.viewport) {
         draw.clip = {bounds.pos.x, bounds.pos.y, bounds.size.x, bounds.size.y};
     }
 
@@ -83,24 +88,8 @@ enum class color_conversion_direction_e
     to_yuv,
 };
 
-inline color_transform_s
-color_parameters(const color_conversion_s& conversion, const mat3& gamut, color_conversion_direction_e direction)
-{
-    color_transform_s result;
-    for (int row = 0; row < 3; ++row) {
-        for (int column = 0; column < 3; ++column) {
-            // The original input shader used row-vector multiplication and a
-            // transposed uniform upload. Output and gamut used column vectors.
-            result.matrix[row * 4 + column] = direction == color_conversion_direction_e::to_yuv
-                                                  ? conversion.matrix[row][column]
-                                                  : conversion.matrix[column][row];
-            result.gamut[row * 4 + column]  = gamut[row][column];
-        }
-    }
-
-    result.offset = {conversion.offset.x, conversion.offset.y, conversion.offset.z, 0};
-    return result;
-}
+color_transform_s
+color_parameters(const color_conversion_s& conversion, const mat3& gamut, color_conversion_direction_e direction);
 
 inline void mix_textures(recording_s&          commands,
                          const texture_s*      a,

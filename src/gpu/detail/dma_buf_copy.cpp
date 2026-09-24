@@ -1,6 +1,9 @@
 #include "dma_buf_copy.hpp"
 
 #include "device.hpp"
+#include "recording.hpp"
+#include "resource.hpp"
+#include "utils/owned_fd.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -64,30 +67,13 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
     }
     // Snapshot the fence once and wait only on this private callback/worker.
     // Do not enqueue an unresolved foreign dependency that could stall the graph.
-    struct owned_fd_s
-    {
-        int value;
-        explicit owned_fd_s(int fd)
-            : value(fd)
-        {
-        }
-        owned_fd_s(const owned_fd_s& other)            = delete;
-        owned_fd_s& operator=(const owned_fd_s& other) = delete;
-        owned_fd_s(owned_fd_s&& other)                 = delete;
-        owned_fd_s& operator=(owned_fd_s&& other)      = delete;
-        ~owned_fd_s()
-        {
-            if (value >= 0) {
-                close(value);
-            }
-        }
-    } sync_file{export_fence.fd};
-    const auto start = std::chrono::steady_clock::now();
+    utils::owned_fd_s sync_file{export_fence.fd};
+    const auto        start = std::chrono::steady_clock::now();
     for (;;) {
         const auto elapsed   = std::chrono::steady_clock::now() - start;
         const auto remaining = std::max(std::chrono::milliseconds::zero(),
                                         timeout - std::chrono::duration_cast<std::chrono::milliseconds>(elapsed));
-        pollfd     descriptor{.fd = sync_file.value, .events = POLLIN, .revents = 0};
+        pollfd     descriptor{.fd = sync_file.get(), .events = POLLIN, .revents = 0};
         const int  result = poll(&descriptor, 1, static_cast<int>(std::min<int64_t>(remaining.count(), INT_MAX)));
         if (result < 0 && errno == EINTR) {
             continue;
@@ -113,7 +99,7 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
     if (result != VK_SUCCESS) {
         check(result, "import DMA-BUF write fence");
     }
-    sync_file.value = -1; // Ownership transferred to Vulkan.
+    (void)sync_file.release(); // Ownership transferred to Vulkan.
     return fence;
 }
 

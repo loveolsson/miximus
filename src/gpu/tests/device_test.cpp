@@ -57,7 +57,7 @@ class device_test : public testing::Test
 
 TEST_F(device_test, OddPaddedRoundTripsPreserveEveryActiveByteAndPadding)
 {
-    for (auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16, format_e::rgba16_float, format_e::r32_uint}) {
+    for (auto format : {format_e::rgba_unorm8, format_e::rgba_unorm16, format_e::r32_uint}) {
         const size_t bpp    = format == format_e::rgba_unorm8 || format == format_e::r32_uint ? 4 : 8;
         const size_t stride = 256;
         const size_t bytes  = stride * 5;
@@ -308,7 +308,7 @@ TEST_F(device_test, RejectsInvalidSizesAndStridesBeforeRecordingCommands)
     EXPECT_THROW(record->upload(input, target, 256), std::invalid_argument);
 }
 
-TEST_F(device_test, BufferConversionPreservesOddRowsAndPadding)
+TEST_F(device_test, DrawConversionPreservesOddRowsAndPadding)
 {
     constexpr size_t stride = 256;
     constexpr size_t bytes  = stride * 3;
@@ -324,8 +324,12 @@ TEST_F(device_test, BufferConversionPreservesOddRowsAndPadding)
 
     auto record = device->try_record();
     record->copy(input, output, bytes);
-    record->unpack_rgba(input, image, stride);
-    record->pack_rgba(image, output, stride);
+    auto raw     = device->create_texture({.width = 17, .height = 3}, format_e::rgba_unorm8);
+    auto encoded = device->create_texture({.width = 17, .height = 3}, format_e::rgba_unorm8);
+    record->upload(input, raw, stride);
+    record->draw(raw, image, {.compositing = compositing_e::replace});
+    record->draw(image, encoded, {.compositing = compositing_e::replace});
+    record->readback(encoded, output, stride);
     finish(record);
     EXPECT_TRUE(std::ranges::equal(output.readable_bytes(), expected));
 }
@@ -343,10 +347,17 @@ TEST_F(device_test, ChannelOrdersDecodeToCanonicalRGBAAndEncodeBack)
         auto image     = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm16);
         std::memcpy(input.writable_bytes().data(), stored.at(order).data(), 4);
 
-        auto record = device->try_record();
-        record->unpack_rgba(input, image, 4, static_cast<channel_order_e>(order));
+        auto record  = device->try_record();
+        auto raw     = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm8);
+        auto encoded = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm8);
+        record->upload(input, raw);
+        record->draw(
+            raw, image, {.compositing = compositing_e::replace, .input_order = static_cast<channel_order_e>(order)});
         record->readback(image, canonical);
-        record->pack_rgba(image, output, 4, static_cast<channel_order_e>(order));
+        record->draw(image,
+                     encoded,
+                     {.compositing = compositing_e::replace, .output_order = static_cast<channel_order_e>(order)});
+        record->readback(encoded, output);
         finish(record);
 
         std::array<uint16_t, 4> actual{};

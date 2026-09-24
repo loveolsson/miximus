@@ -34,7 +34,6 @@ enum class format_e
 {
     rgba_unorm8,
     rgba_unorm16,
-    rgba16_float,
     r32_uint
 };
 

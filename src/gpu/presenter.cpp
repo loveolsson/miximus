@@ -1,6 +1,8 @@
 #include "presenter.hpp"
 
 #include "detail/device.hpp"
+#include "detail/recording.hpp"
+#include "detail/resource.hpp"
 #include "logger/logger.hpp"
 
 #define GLFW_INCLUDE_NONE
@@ -51,16 +53,13 @@ struct presenter_state_s
     std::optional<uint32_t> acquired_index;
     bool                    acquire_wait_pending{};
 
-    // Publication, resize requests and metrics cross threads under this mutex.
+    // Resize requests and metrics cross threads under this mutex.
     mutable std::mutex          mutex;
     extent_s                    requested_extent{};
-    texture_s                   pending_image;
-    completion_s                pending_ready;
-    std::shared_ptr<const void> pending_lease;
     std::shared_ptr<const void> last_copy_lease;
     presentation_metrics_s      counters;
 
-    // The source callback and publication mailbox are alternative producer contracts.
+    // The source owns timestamp selection and frame cadence.
     presentation_source_s source;
     std::jthread          worker;
 
@@ -70,6 +69,9 @@ struct presenter_state_s
         , requested_extent(initial_extent)
         , source(std::move(frame_source))
     {
+        if (!source.next_frame) {
+            throw std::invalid_argument("presenter requires a frame source");
+        }
         if (!owner->options.presentation) {
             throw std::invalid_argument("device was created without presentation support");
         }
@@ -114,23 +116,6 @@ struct presenter_state_s
     presenter_state_s& operator=(presenter_state_s&&)      = delete;
 
     std::unique_ptr<recording_s> try_record() { return recording_context.try_record(); }
-
-    void publish(texture_s image, completion_s ready, std::shared_ptr<const void> lease)
-    {
-        if (source.next_frame) {
-            throw std::logic_error("cannot publish to a presenter with a frame source");
-        }
-
-        validate_frame(image, ready);
-        const std::scoped_lock guard(mutex);
-        if (pending_image) {
-            ++counters.mailbox_drops;
-        }
-
-        pending_image = std::move(image);
-        pending_ready = std::move(ready);
-        pending_lease = std::move(lease);
-    }
 
     void validate_frame(const texture_s& image, const completion_s& ready)
     {
@@ -226,7 +211,6 @@ struct presenter_state_s
         }
 
         last_copy_lease.reset();
-        pending_lease.reset();
         if (image_acquired_semaphore != nullptr) {
             owner->vk.vkDestroySemaphore(owner->device, image_acquired_semaphore, nullptr);
         }
@@ -405,7 +389,7 @@ struct presenter_state_s
         // Publication guarantees native submission, not GPU completion. Carry
         // the producer's timeline dependency into the consumer GPU submission.
         waits[1].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waits[1].semaphore = owner->timeline;
+        waits[1].semaphore = owner->submissions.timeline;
         waits[1].value     = ready.submission_->value.load(std::memory_order_acquire);
         waits[1].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
@@ -448,9 +432,9 @@ struct presenter_state_s
         }
         VkResult presented{};
         {
-            const std::scoped_lock queue_lock(owner->separate_present_queue ? owner->present_mutex
-                                                                            : owner->queue_mutex);
-            presented = owner->vk.vkQueuePresentKHR(owner->present_queue, &present);
+            const std::scoped_lock queue_lock(owner->separate_present_queue ? owner->submissions.present_mutex
+                                                                            : owner->submissions.queue_mutex);
+            presented = owner->vk.vkQueuePresentKHR(owner->submissions.present_queue, &present);
         }
 
         image.presented = true;
@@ -537,30 +521,10 @@ struct presenter_state_s
         return frame;
     }
 
-    extent_s take_pending_frame(texture_s&                   current,
-                                completion_s&                current_ready,
-                                std::shared_ptr<const void>& current_lease,
-                                bool&                        needs_present)
+    extent_s requested_size() const
     {
-        extent_s request{};
-        {
-            const std::scoped_lock guard(mutex);
-            request = requested_extent;
-            if (pending_image) {
-                if (needs_present) {
-                    ++counters.mailbox_drops;
-                }
-
-                needs_present = true;
-                current       = std::move(pending_image);
-                current_ready = std::move(pending_ready);
-                current_lease = std::move(pending_lease);
-                pending_image = {};
-                pending_ready = {};
-            }
-        }
-
-        return request;
+        const std::scoped_lock guard(mutex);
+        return requested_extent;
     }
 
     bool complete_presentation(const std::stop_token& stop, bool& rebuild) const
@@ -615,19 +579,11 @@ struct presenter_state_s
         completion_s                current_ready;
         std::shared_ptr<const void> current_lease;
         bool                        rebuild = true;
-        bool                        needs_present{};
         extent_s                    previous_request{};
         while (!stop.stop_requested()) {
-            const auto request = take_pending_frame(current, current_ready, current_lease, needs_present);
+            const auto request = requested_size();
 
-            // The producer owns frame cadence, including intentional
-            // repeats. FIFO backpressure must not become a second producer
-            // that inserts stale frames between scheduled publications.
-            // A retained image is redrawn only for a swapchain change.
-            const bool surface_hidden           = request.width == 0 || request.height == 0;
-            const bool retained_frame_unchanged = !needs_present && !rebuild && request == previous_request;
-            const bool mailbox_waiting          = !source.next_frame && (!current || retained_frame_unchanged);
-            if (surface_hidden || mailbox_waiting) {
+            if (request.width == 0 || request.height == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
@@ -644,23 +600,19 @@ struct presenter_state_s
             }
             const auto index = *acquired;
 
-            if (source.next_frame) {
-                auto frame = next_source_frame(stop);
-                if (!frame) {
-                    break; // Retirement consumes the outstanding acquire semaphore.
-                }
-
-                current       = std::move(frame->image);
-                current_ready = std::move(frame->ready);
-                current_lease = std::move(frame->lease);
+            auto frame = next_source_frame(stop);
+            if (!frame) {
+                break; // Retirement consumes the outstanding acquire semaphore.
             }
+            current       = std::move(frame->image);
+            current_ready = std::move(frame->ready);
+            current_lease = std::move(frame->lease);
 
             if (!wait_for_producer_submission(current_ready, stop)) {
                 break;
             }
 
-            rebuild       = present_frame(current, current_ready, current_lease, index) || rebuild;
-            needs_present = false;
+            rebuild = present_frame(current, current_ready, current_lease, index) || rebuild;
             if (!rebuild && !complete_presentation(stop, rebuild)) {
                 break;
             }
@@ -705,10 +657,6 @@ presenter_s::presenter_s(device_s& device, GLFWwindow* window, extent_s initial_
 presenter_s::~presenter_s() = default;
 
 void presenter_s::request_stop() noexcept { state_->worker.request_stop(); }
-void presenter_s::publish(texture_s image, completion_s ready, std::shared_ptr<const void> lease)
-{
-    state_->publish(std::move(image), std::move(ready), std::move(lease));
-}
 
 void presenter_s::resize(extent_s extent)
 {

@@ -4,7 +4,6 @@
 #include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_readback.hpp"
-#include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -246,11 +245,9 @@ class node_impl : public node_i
             app->commands(),
             texture,
             target->texture(),
-            {},
-            1,
-            gpu::rec709_encode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
-            gpu::compositing_e::replace,
-            target->output_order());
+            {.transfer = gpu::rec709_encode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
+             .compositing = gpu::compositing_e::replace,
+             .output      = target->output_order()});
 
         target->set_program_target_time(app->frame_context().program_target_time);
         auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));

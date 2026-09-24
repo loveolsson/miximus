@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gpu/device.hpp"
+#include "memory_budget.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -28,10 +29,8 @@ class transfer_worker_s : public std::enable_shared_from_this<Derived>
     size_t           outstanding_tasks_{};
     bool             stopping_{};
 
-    std::thread        worker_;
-    std::thread        resource_worker_;
-    const size_t       memory_budget_;
-    std::atomic_size_t memory_usage_{};
+    std::thread worker_;
+    std::thread resource_worker_;
 
     void run(std::deque<Task>& incoming)
     {
@@ -83,64 +82,14 @@ class transfer_worker_s : public std::enable_shared_from_this<Derived>
     }
 
   protected:
+    memory_budget_s     memory_;
     device_s&           device_;
     recording_context_s recording_context_;
     transfer_worker_s(device_s& device, size_t memory_budget)
-        : memory_budget_(memory_budget)
+        : memory_(memory_budget)
         , device_(device)
         , recording_context_(device.create_recording_context())
     {
-    }
-
-    bool reserve_memory(size_t bytes)
-    {
-        auto current = memory_usage_.load(std::memory_order_relaxed);
-        while (bytes <= memory_budget_ && current <= memory_budget_ - bytes) {
-            if (memory_usage_.compare_exchange_weak(current, current + bytes, std::memory_order_relaxed)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void release_memory(size_t bytes) { memory_usage_.fetch_sub(bytes, std::memory_order_relaxed); }
-
-    bool resize_memory_reservation(size_t old_size, size_t new_size)
-    {
-        if (new_size > old_size) {
-            return reserve_memory(new_size - old_size);
-        }
-        release_memory(old_size - new_size);
-        return true;
-    }
-
-    template <typename Stream>
-    void initialize_conversion_texture(Stream& stream)
-    {
-        if (!stream.config.conversion_sampling || stream.conversion_texture) {
-            return;
-        }
-        const auto dimensions = stream.transfer_plan.host_layout.image_dimensions;
-        const auto sampling   = *stream.config.conversion_sampling;
-        const auto bytes      = texture_s::estimate_storage_byte_size(dimensions, format_e::rgba_unorm16, sampling);
-        if (!reserve_memory(bytes)) {
-            throw std::bad_alloc();
-        }
-        try {
-            stream.conversion_texture = std::make_shared<texture_s>(
-                device_, dimensions, format_e::rgba_unorm16, channel_order_e::rgba, sampling);
-            stream.conversion_reserved_bytes = bytes;
-        } catch (...) {
-            release_memory(bytes);
-            throw;
-        }
-    }
-
-    template <typename Stream>
-    void release_conversion_texture(Stream& stream)
-    {
-        stream.conversion_texture.reset();
-        release_memory(std::exchange(stream.conversion_reserved_bytes, 0));
     }
 
   public:
@@ -180,8 +129,8 @@ class transfer_worker_s : public std::enable_shared_from_this<Derived>
         }
     }
 
-    size_t memory_usage() const noexcept { return memory_usage_.load(std::memory_order_relaxed); }
-    size_t memory_budget() const noexcept { return memory_budget_; }
+    size_t memory_usage() const noexcept { return memory_.usage(); }
+    size_t memory_budget() const noexcept { return memory_.limit(); }
 };
 
 } // namespace miximus::gpu::transfer::detail

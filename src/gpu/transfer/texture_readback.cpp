@@ -1,5 +1,6 @@
 #include "texture_readback.hpp"
 
+#include "detail/conversion_texture.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/texture_frame.hpp"
 #include "gpu/transfer/detail/frame_staging.hpp"
@@ -59,8 +60,7 @@ struct texture_readback_stream_state_s
     std::weak_ptr<texture_readback_service_state_s>       service;
     texture_readback_config_s                             config;
     texture_transfer_plan_s                               transfer_plan;
-    std::shared_ptr<texture_s>                            conversion_texture;
-    size_t                                                conversion_reserved_bytes{};
+    conversion_texture_s                                  conversion;
     mutable std::mutex                                    mutex;
     mutable std::condition_variable                       initial_slots_condition;
     std::vector<std::shared_ptr<texture_readback_slot_s>> slots;
@@ -98,7 +98,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
     {
         slot.staging.reset();
         slot.frame.reset();
-        release_memory(slot.reserved_bytes);
+        memory_.release_memory(slot.reserved_bytes);
         slot.reserved_bytes = 0;
     }
 
@@ -117,18 +117,21 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
         bool   reserved_memory{};
         try {
             reserved = estimate_slot_memory_usage(stream->transfer_plan, sampling_e::linear);
-            if (!reserve_memory(reserved)) {
+            if (!memory_.reserve_memory(reserved)) {
                 throw std::bad_alloc();
             }
             reserved_memory = true;
 
-            initialize_conversion_texture(*stream);
+            stream->conversion.initialize(device_,
+                                          stream->transfer_plan.host_layout.image_dimensions,
+                                          stream->config.conversion_sampling,
+                                          memory_);
 
             auto slot            = std::make_shared<texture_readback_slot_s>();
             slot->reserved_bytes = reserved;
             slot->frame =
                 std::make_shared<texture_frame_s>(device_, stream->transfer_plan.host_layout, sampling_e::linear);
-            slot->frame->set_conversion_texture(stream->conversion_texture);
+            slot->frame->set_conversion_texture(stream->conversion.texture);
             auto staging  = std::make_unique<frame_staging_s>(device_,
                                                              stream->transfer_plan,
                                                              frame_staging_s::direction_e::gpu_to_cpu,
@@ -138,7 +141,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
 
             const auto actual_reserved =
                 slot_memory_usage(stream->transfer_plan, slot->staging->allocation_bytes(), sampling_e::linear);
-            if (!resize_memory_reservation(reserved, actual_reserved)) {
+            if (!memory_.resize_memory_reservation(reserved, actual_reserved)) {
                 throw std::bad_alloc();
             }
             reserved             = actual_reserved;
@@ -162,7 +165,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
             }
         } catch (const std::exception& error) {
             if (reserved_memory) {
-                release_memory(reserved);
+                memory_.release_memory(reserved);
             }
             {
                 const std::scoped_lock lock(stream->mutex);
@@ -274,7 +277,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
         for (auto& slot : slots) {
             release_slot(*slot);
         }
-        release_conversion_texture(*stream);
+        stream->conversion.release(memory_);
         return true;
     }
 

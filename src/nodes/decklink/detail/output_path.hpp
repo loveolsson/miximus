@@ -2,6 +2,7 @@
 
 #include "gpu/color_transfer.hpp"
 #include "gpu/geometry.hpp"
+#include "gpu/recording.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
 #include "utils/flicks.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
@@ -42,21 +43,18 @@ struct output_display_mode_s
     BMDColorspace           colorspace{bmdColorspaceRec709};
 };
 
-class output_frame_renderer_i
+class output_frame_renderer_s
 {
+    gpu::color_transform_s             color_;
+    size_t                             stride_;
+    gpu::transfer::host_pixel_format_e pixel_format_;
+
   public:
-    virtual ~output_frame_renderer_i() = default;
-
-    output_frame_renderer_i()                                          = default;
-    output_frame_renderer_i(const output_frame_renderer_i&)            = delete;
-    output_frame_renderer_i& operator=(const output_frame_renderer_i&) = delete;
-    output_frame_renderer_i(output_frame_renderer_i&&)                 = delete;
-    output_frame_renderer_i& operator=(output_frame_renderer_i&&)      = delete;
-
-    virtual void render(gpu::recording_s&                         commands,
-                        const gpu::texture_s*                     source,
-                        gpu::transfer::texture_readback_target_s& target,
-                        gpu::fill_mode_e                          fill_mode) = 0;
+    output_frame_renderer_s(const output_display_mode_s& mode, const gpu::transfer::host_frame_layout_s& layout);
+    void render(gpu::recording_s&                         commands,
+                const gpu::texture_s*                     source,
+                gpu::transfer::texture_readback_target_s& target,
+                gpu::fill_mode_e                          fill_mode);
 };
 
 class output_path_i
@@ -83,8 +81,8 @@ class output_path_i
     const gpu::transfer::host_frame_layout_s& host_layout() const noexcept { return host_layout_; }
 
     virtual auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
-        -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame>                           = 0;
-    virtual auto create_renderer() const -> std::unique_ptr<output_frame_renderer_i> = 0;
+        -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame> = 0;
+    auto create_renderer() const -> std::unique_ptr<output_frame_renderer_s>;
 };
 
 class v210_output_path_s final : public output_path_i
@@ -97,7 +95,6 @@ class v210_output_path_s final : public output_path_i
 
     auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
         -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame> final;
-    auto create_renderer() const -> std::unique_ptr<output_frame_renderer_i> final;
 };
 
 class premultiplied_argb_output_path_s final : public output_path_i
@@ -111,7 +108,6 @@ class premultiplied_argb_output_path_s final : public output_path_i
 
     auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const
         -> decklink_sdk::decklink_ptr<IDeckLinkVideoFrame> final;
-    auto create_renderer() const -> std::unique_ptr<output_frame_renderer_i> final;
 };
 
 struct active_output_s

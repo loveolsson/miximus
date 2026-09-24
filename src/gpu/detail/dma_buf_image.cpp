@@ -1,6 +1,9 @@
 #include "dma_buf_image.hpp"
 
 #include "device.hpp"
+#include "recording.hpp"
+#include "resource.hpp"
+#include "utils/owned_fd.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -131,8 +134,8 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     }
 
     // Only the duplicate is transferred to Vulkan, and only on allocation success.
-    const int duplicate = fcntl(descriptor.fd, F_DUPFD_CLOEXEC, 0);
-    if (duplicate < 0) {
+    utils::owned_fd_s duplicate{fcntl(descriptor.fd, F_DUPFD_CLOEXEC, 0)};
+    if (duplicate.get() < 0) {
         throw std::system_error(errno, std::generic_category(), "duplicate DMA-BUF FD");
     }
     VkMemoryDedicatedAllocateInfo dedicated{};
@@ -142,7 +145,7 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     import.sType      = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
     import.pNext      = &dedicated;
     import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-    import.fd         = duplicate;
+    import.fd         = duplicate.get();
     VkMemoryAllocateInfo allocation{};
     allocation.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocation.pNext           = &import;
@@ -150,9 +153,9 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     allocation.memoryTypeIndex = std::countr_zero(memory_types);
     const auto result = device->vk.vkAllocateMemory(device->device, &allocation, nullptr, &image->external_memory);
     if (result != VK_SUCCESS) {
-        close(duplicate);
         check(result, "import DMA-BUF memory");
     }
+    (void)duplicate.release();
     image->external_allocation_bytes = requirements.size;
     check(device->vk.vkBindImageMemory(device->device, image->image, image->external_memory, 0), "bind DMA-BUF image");
     VkImageViewCreateInfo view{};
