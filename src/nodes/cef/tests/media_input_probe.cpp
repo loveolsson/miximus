@@ -6,6 +6,7 @@
 #include "include/cef_client.h"
 #include "include/cef_parser.h"
 #include "logger/logger.hpp"
+#include "nodes/cef/detail/media_input_exports.hpp"
 #include "nodes/cef/detail/media_input_renderer.hpp"
 #include "nodes/cef/detail/runtime.hpp"
 #include "nodes/cef/detail/task.hpp"
@@ -19,9 +20,11 @@
 #include <cstring>
 #include <dlfcn.h>
 #include <format>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -55,6 +58,7 @@ class client_s final
     std::string                     error_;
     const uint32_t                  input_count_;
     uint32_t                        subscribed_{};
+    bool                            stats_ready_{};
     bool                            closed_{};
     bool                            red_{};
     bool                            green_{};
@@ -92,7 +96,13 @@ class client_s final
                           const CefString& /* source */,
                           int /* line */) override
     {
-        std::cerr << "Page: " << message.ToString() << '\n';
+        const auto text = message.ToString();
+        if (text.starts_with("probe-stats:")) {
+            std::lock_guard lock(mutex_);
+            stats_ready_ = true;
+            changed_.notify_all();
+        }
+        std::cerr << "Page: " << text << '\n';
         return false;
     }
     bool OnProcessMessageReceived(CefRefPtr<CefBrowser> /* browser */,
@@ -219,6 +229,18 @@ class client_s final
         if (!error_.empty())
             throw std::runtime_error(error_);
     }
+    void report_video_frames()
+    {
+        auto [browser, token] = endpoint();
+        if (!CefPostTask(TID_UI, new cef_detail::task_s([browser] {
+                             browser->GetMainFrame()->ExecuteJavaScript(
+                                 "console.log('probe-stats:'+JSON.stringify(globalThis.probeStats))", "probe-stats", 1);
+                         })))
+            throw std::runtime_error("Cannot collect video frame metadata");
+        std::unique_lock lock(mutex_);
+        if (!changed_.wait_for(lock, 2s, [&] { return stats_ready_; }))
+            throw std::runtime_error("Video frame metadata timed out");
+    }
     void close()
     {
         auto [browser, token] = endpoint();
@@ -230,62 +252,182 @@ class client_s final
     }
 };
 
+cef_wrapper::media_frame_s describe(const gpu::detail::dma_buf_export_s& exported, uint32_t input, int64_t timestamp)
+{
+    const auto d = exported.descriptor();
+    return {.input            = input,
+            .fd               = d.fd,
+            .width            = d.extent.width,
+            .height           = d.extent.height,
+            .stride           = static_cast<uint32_t>(d.stride),
+            .offset           = d.offset,
+            .modifier         = d.modifier,
+            .allocation_bytes = exported.allocation_bytes(),
+            .timestamp_us     = timestamp};
+}
+
+std::future<std::pair<int, int>> enqueue(cef_wrapper::send_media_frame_t api,
+                                         const CefRefPtr<client_s>&      client,
+                                         cef_wrapper::media_frame_s      frame,
+                                         std::function<void(bool)>       retire = {})
+{
+    auto result           = std::make_shared<std::promise<std::pair<int, int>>>();
+    auto future           = result->get_future();
+    auto [browser, token] = client->endpoint();
+    if (!CefPostTask(TID_UI, new cef_detail::task_s([api, browser, token, frame, result, retire] {
+                         struct pending_s
+                         {
+                             std::shared_ptr<std::promise<std::pair<int, int>>> result;
+                             std::function<void(bool)>                          retire;
+                         };
+                         auto*      pending = new pending_s{result, retire};
+                         const auto done    = [](void* pointer, int safe, int delivered) {
+                             std::unique_ptr<pending_s> state(static_cast<pending_s*>(pointer));
+                             if (state->retire)
+                                 state->retire(safe != 0);
+                             state->result->set_value({safe, delivered});
+                         };
+                         if (!browser || !api(browser->GetIdentifier(), token.c_str(), &frame, done, pending))
+                             done(pending, 1, 0);
+                     }))) {
+        if (retire)
+            retire(true); // No IPC/native access was started.
+        throw std::runtime_error("Cannot post media input to CEF UI");
+    }
+    return future;
+}
+
 bool send(cef_wrapper::send_media_frame_t      api,
           const CefRefPtr<client_s>&           client,
           const gpu::detail::dma_buf_export_s& exported,
           int64_t                              timestamp,
           uint32_t                             input)
 {
-    const auto                 descriptor = exported.descriptor();
-    cef_wrapper::media_frame_s frame{.input            = input,
-                                     .fd               = descriptor.fd,
-                                     .width            = descriptor.extent.width,
-                                     .height           = descriptor.extent.height,
-                                     .stride           = static_cast<uint32_t>(descriptor.stride),
-                                     .offset           = descriptor.offset,
-                                     .modifier         = descriptor.modifier,
-                                     .allocation_bytes = exported.allocation_bytes(),
-                                     .timestamp_us     = timestamp};
-    auto                       result = std::make_shared<std::promise<std::pair<int, int>>>();
-    auto                       future = result->get_future();
-    auto [browser, token]             = client->endpoint();
-    if (!CefPostTask(TID_UI, new cef_detail::task_s([api, browser, token, frame, result] {
-                         auto*      pending = new std::shared_ptr<std::promise<std::pair<int, int>>>(result);
-                         const auto done    = [](void* pointer, int safe, int delivered) {
-                             std::unique_ptr<std::shared_ptr<std::promise<std::pair<int, int>>>> state(
-                                 static_cast<std::shared_ptr<std::promise<std::pair<int, int>>>*>(pointer));
-                             (*state)->set_value({safe, delivered});
-                         };
-                         if (!api(browser->GetIdentifier(), token.c_str(), &frame, done, pending)) {
-                             delete pending;
-                             result->set_value({1, 0});
-                         }
-                     })))
-        throw std::runtime_error("Cannot post media input to CEF UI");
+    auto future = enqueue(api, client, describe(exported, input, timestamp));
     if (future.wait_for(10s) != std::future_status::ready)
-        throw std::runtime_error(
-            "Input GPU retirement not established; export must remain quarantined until runtime shutdown");
+        throw std::runtime_error("Input GPU retirement not established; export quarantined until runtime shutdown");
     const auto [safe, delivered] = future.get();
     if (!safe)
         throw std::runtime_error("Input GPU retirement failed; export quarantined until runtime shutdown");
     return delivered != 0;
 }
+
+void run_async(cef_detail::media_input_exports_s& queue,
+               gpu::texture_s&                    source,
+               gpu::recording_context_s&          context,
+               cef_wrapper::send_media_frame_t    api,
+               const CefRefPtr<client_s>&         client,
+               uint32_t                           inputs)
+{
+    struct pending_s
+    {
+        std::future<std::pair<int, int>>      result;
+        std::chrono::steady_clock::time_point started;
+    };
+    std::exception_ptr   error;
+    uint64_t             delivered{};
+    std::vector<int64_t> hold_us;
+    std::jthread         transfer([&](std::stop_token stop) {
+        try {
+            std::vector<pending_s>                               pending;
+            std::optional<std::chrono::steady_clock::time_point> drain_started;
+            for (;;) {
+                if (queue.failed())
+                    throw std::runtime_error("Export queue quarantined an unproven GPU read");
+                for (auto it = pending.begin(); it != pending.end();) {
+                    if (it->result.wait_for(0ms) != std::future_status::ready) {
+                        ++it;
+                        continue;
+                    }
+                    const auto [safe, accepted] = it->result.get();
+                    if (!safe)
+                        throw std::runtime_error("Chromium did not establish input GPU retirement");
+                    delivered += accepted != 0;
+                    hold_us.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
+                                          std::chrono::steady_clock::now() - it->started)
+                                          .count());
+                    it = pending.erase(it);
+                }
+                while (auto frame = queue.poll()) {
+                    const auto started = std::chrono::steady_clock::now();
+                    auto       description =
+                        describe(frame->image(), static_cast<uint32_t>(frame->ticket().input), frame->timestamp_us());
+                    pending.push_back(
+                        {enqueue(api, client, description, [frame](bool safe) { frame->retire(safe); }), started});
+                }
+                if (stop.stop_requested()) {
+                    if (!drain_started)
+                        drain_started = std::chrono::steady_clock::now();
+                    if (queue.idle() && pending.empty())
+                        break;
+                    if (std::chrono::steady_clock::now() - *drain_started > 10s)
+                        throw std::runtime_error("Asynchronous input drain timed out");
+                }
+                std::this_thread::sleep_for(1ms);
+            }
+        } catch (...) {
+            error = std::current_exception();
+        }
+    });
+    const auto           start = std::chrono::steady_clock::now();
+    try {
+        for (int frame = 0; frame < 120; ++frame) {
+            if (auto commands = context.try_record()) {
+                for (uint32_t input = 0; input < inputs; ++input) {
+                    commands->clear(source, input_color(input, frame >= 60));
+                    if (auto publication = queue.record(input, *commands, source, int64_t(frame) * 16667))
+                        commands->on_submitted([publication](gpu::completion_s) { publication->commit(); });
+                }
+                (void)commands->submit();
+            }
+            std::this_thread::sleep_until(start + (frame + 1) * 16667us);
+        }
+    } catch (...) {
+        transfer.request_stop();
+        transfer.join();
+        throw;
+    }
+    transfer.request_stop();
+    transfer.join();
+    if (error)
+        std::rethrow_exception(error);
+    uint64_t admitted{}, drops{};
+    for (uint32_t input = 0; input < inputs; ++input) {
+        admitted += queue.metrics(input).admitted;
+        drops += queue.metrics(input).capacity_drops;
+    }
+    std::ranges::sort(hold_us);
+    std::cout << "Async 60 Hz: admitted=" << admitted << " delivered=" << delivered << " capacity_drops=" << drops;
+    if (!hold_us.empty())
+        std::cout << "; send-to-reuse us p50=" << hold_us[(hold_us.size() - 1) / 2]
+                  << " p95=" << hold_us[(hold_us.size() - 1) * 95 / 100] << " max=" << hold_us.back();
+    std::cout << '\n';
+}
 } // namespace
 
 int main(int argc, char** argv)
 {
-    if (argc != 3 && argc != 4) {
-        std::cerr << "Usage: cef_media_input_probe RUNTIME_DIRECTORY PROFILE_DIRECTORY [INPUT_COUNT=1]\n";
+    if (argc < 3 || argc > 5) {
+        std::cerr << "Usage: cef_media_input_probe RUNTIME_DIRECTORY PROFILE_DIRECTORY [INPUT_COUNT=1] "
+                     "[ASYNC_EXPORT_DEPTH=1..8]\n";
         return 2;
     }
     std::cout.setf(std::ios::unitbuf);
     try {
         uint32_t inputs = 1;
-        if (argc == 4) {
+        if (argc >= 4) {
             const std::string_view value(argv[3]);
             const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), inputs);
             if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || inputs < 1 || inputs > 8)
                 throw std::runtime_error("INPUT_COUNT must be 1 through 8");
+        }
+        uint32_t async_depth{};
+        if (argc == 5) {
+            const std::string_view value(argv[4]);
+            const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), async_depth);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || async_depth < 1 ||
+                async_depth > 8)
+                throw std::runtime_error("ASYNC_EXPORT_DEPTH must be 1 through 8");
         }
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
@@ -294,10 +436,18 @@ int main(int argc, char** argv)
         options.external_image_import = true;
         gpu::device_s                                               gpu(options);
         std::vector<std::unique_ptr<gpu::detail::dma_buf_export_s>> exports;
-        for (uint32_t input = 0; input < inputs; ++input)
+        for (uint32_t input = 0; !async_depth && input < inputs; ++input)
             exports.push_back(std::make_unique<gpu::detail::dma_buf_export_s>(gpu, gpu::extent_s{640, 360}));
-        auto source  = gpu.create_texture({640, 360});
-        auto context = gpu.create_recording_context(1);
+        auto                                             source  = gpu.create_texture({640, 360});
+        auto                                             context = gpu.create_recording_context(3);
+        cef_detail::media_input_exports_s::quarantine_s  quarantine;
+        std::optional<cef_detail::media_input_exports_s> export_queue;
+        if (async_depth) {
+            export_queue.emplace(gpu, async_depth, quarantine);
+            for (uint32_t input = 0; input < inputs; ++input)
+                if (!export_queue->configure(input, {640, 360}))
+                    throw std::runtime_error("Cannot configure export queue");
+        }
         // Runtime shuts down before exporter destruction, including failure paths.
         cef_detail::runtime_s runtime(argv[1], argv[2]);
         const auto            api =
@@ -311,7 +461,7 @@ int main(int argc, char** argv)
             page += std::format("<video style=\"flex:none;width:{}px\" muted autoplay playsinline></video>",
                                 640 * (input + 1) / inputs - 640 * input / inputs);
         page +=
-            R"HTML(<script>document.querySelectorAll('video').forEach((v,inputIndex)=>miximus.getInputMediaStream({inputIndex}).then(async s=>{if(await miximus.getInputMediaStream({inputIndex})!==s)throw Error('Stream identity changed');const t=s.getVideoTracks()[0],clone=t.clone();t.stop();const next=await miximus.getInputMediaStream({inputIndex});if(next.getVideoTracks()[0].readyState!=='live'||clone.readyState!=='live')throw Error('Reacquisition stopped a live track');clone.stop();v.srcObject=next;return v.play()}).catch(e=>console.error(String(e))))</script>)HTML";
+            R"HTML(<script>globalThis.probeStats=[];document.querySelectorAll('video').forEach((v,inputIndex)=>miximus.getInputMediaStream({inputIndex}).then(async s=>{if(await miximus.getInputMediaStream({inputIndex})!==s)throw Error('Stream identity changed');const t=s.getVideoTracks()[0],clone=t.clone();t.stop();const next=await miximus.getInputMediaStream({inputIndex});if(next.getVideoTracks()[0].readyState!=='live'||clone.readyState!=='live')throw Error('Reacquisition stopped a live track');clone.stop();const stats={callbacks:0,presented:0,lastMediaTime:0};probeStats[inputIndex]=stats;const observe=(now,m)=>{stats.callbacks++;stats.presented=m.presentedFrames;stats.lastMediaTime=m.mediaTime;v.requestVideoFrameCallback(observe)};v.requestVideoFrameCallback(observe);v.srcObject=next;return v.play()}).catch(e=>console.error(String(e))))</script>)HTML";
         if (!CefPostTask(TID_UI, new cef_detail::task_s([client, page] {
                              CefWindowInfo window;
                              window.SetAsWindowless(0);
@@ -331,36 +481,41 @@ int main(int argc, char** argv)
             throw std::runtime_error("Cannot create probe browser");
         try {
             client->wait_ready();
-            gpu::draw_s conversion;
-            conversion.compositing         = gpu::compositing_e::replace;
-            conversion.transfer            = gpu::color_operation_e::encode_srgb_premultiplied;
-            int                  delivered = 0;
-            std::vector<int64_t> hold_us;
-            for (int frame = 0; frame < 120; ++frame) {
-                auto record = context.try_record();
-                if (!record)
-                    throw std::runtime_error("Export recording unavailable");
-                for (uint32_t input = 0; input < inputs; ++input) {
-                    record->clear(source, input_color(input, frame >= 60));
-                    exports[input]->copy(*record, source, conversion);
+            if (export_queue) {
+                run_async(*export_queue, source, context, api, client, inputs);
+            } else {
+                gpu::draw_s conversion;
+                conversion.compositing         = gpu::compositing_e::replace;
+                conversion.transfer            = gpu::color_operation_e::encode_srgb_premultiplied;
+                int                  delivered = 0;
+                std::vector<int64_t> hold_us;
+                for (int frame = 0; frame < 120; ++frame) {
+                    auto record = context.try_record();
+                    if (!record)
+                        throw std::runtime_error("Export recording unavailable");
+                    for (uint32_t input = 0; input < inputs; ++input) {
+                        record->clear(source, input_color(input, frame >= 60));
+                        exports[input]->copy(*record, source, conversion);
+                    }
+                    if (record->submit().wait(5s) != gpu::wait_result_e::ready)
+                        throw std::runtime_error("Producer GPU completion failed");
+                    record.reset();
+                    for (uint32_t input = 0; input < inputs; ++input) {
+                        const auto started = std::chrono::steady_clock::now();
+                        delivered += send(api, client, *exports[input], int64_t(frame) * 16667, input);
+                        hold_us.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
+                                              std::chrono::steady_clock::now() - started)
+                                              .count());
+                    }
+                    std::this_thread::sleep_for(16ms);
                 }
-                if (record->submit().wait(5s) != gpu::wait_result_e::ready)
-                    throw std::runtime_error("Producer GPU completion failed");
-                record.reset();
-                for (uint32_t input = 0; input < inputs; ++input) {
-                    const auto started = std::chrono::steady_clock::now();
-                    delivered += send(api, client, *exports[input], int64_t(frame) * 16667, input);
-                    hold_us.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
-                                          std::chrono::steady_clock::now() - started)
-                                          .count());
-                }
-                std::this_thread::sleep_for(16ms);
+                std::ranges::sort(hold_us);
+                std::cout << "Delivered " << delivered << "/" << 120 * inputs << " across " << inputs
+                          << " inputs; send-to-reuse us p50=" << hold_us[hold_us.size() / 2 - 1]
+                          << " p95=" << hold_us[hold_us.size() * 95 / 100 - 1] << " max=" << hold_us.back() << '\n';
             }
-            std::ranges::sort(hold_us);
-            std::cout << "Delivered " << delivered << "/" << 120 * inputs << " across " << inputs
-                      << " inputs; send-to-reuse us p50=" << hold_us[hold_us.size() / 2 - 1]
-                      << " p95=" << hold_us[hold_us.size() * 95 / 100 - 1] << " max=" << hold_us.back() << '\n';
             client->wait_colors();
+            client->report_video_frames();
         } catch (...) {
             client->close();
             throw;

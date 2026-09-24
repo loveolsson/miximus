@@ -9,6 +9,11 @@ add_library(cef_media_input STATIC detail/media_input_pool.hpp detail/media_inpu
 target_include_directories(cef_media_input PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(cef_media_input PUBLIC Threads::Threads)
 add_sanitizers(cef_media_input)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(cef_media_exports STATIC detail/media_input_exports.hpp detail/media_input_exports.cpp)
+    target_link_libraries(cef_media_exports PUBLIC cef_media_input gpu)
+    add_sanitizers(cef_media_exports)
+endif()
 
 add_library(cef_ingress STATIC
     detail/frame_pool.hpp
@@ -25,7 +30,7 @@ if(BUILD_TESTING)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(cef_media_input_vulkan_test tests/media_input_vulkan_test.cpp
             ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
-        target_link_libraries(cef_media_input_vulkan_test PRIVATE cef_media_input gpu logger
+        target_link_libraries(cef_media_input_vulkan_test PRIVATE cef_media_exports gpu logger
             vulkan_dependencies magic_enum::magic_enum GTest::gtest_main)
         miximus_compile_shader(cef_media_input_vulkan_test ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
         target_compile_definitions(cef_media_input_vulkan_test PRIVATE
@@ -73,7 +78,7 @@ if(MIXIMUS_ENABLE_CEF)
         add_sanitizers(cef_subsystem_probe)
         add_executable(cef_media_input_probe tests/media_input_probe.cpp
             ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
-        target_link_libraries(cef_media_input_probe PRIVATE cef_runtime cef_sdk gpu logger
+        target_link_libraries(cef_media_input_probe PRIVATE cef_runtime cef_sdk cef_media_exports gpu logger
             vulkan_dependencies magic_enum::magic_enum ${CMAKE_DL_LIBS})
         miximus_compile_shader(cef_media_input_probe ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
         target_compile_definitions(cef_media_input_probe PRIVATE

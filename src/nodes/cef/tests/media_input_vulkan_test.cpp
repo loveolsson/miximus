@@ -3,12 +3,14 @@
 #include "gpu/device.hpp"
 #include "gpu/tests/color_compare.hpp"
 #include "logger/logger.hpp"
+#include "nodes/cef/detail/media_input_exports.hpp"
 #include "nodes/cef/detail/media_input_pool.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <vector>
@@ -115,6 +117,171 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
     }
     EXPECT_EQ(producer.validation_errors(), 0U);
     EXPECT_EQ(consumer.validation_errors(), 0U);
+}
+
+class export_queue_test : public testing::Test
+{
+  protected:
+    std::unique_ptr<gpu::device_s>                       device;
+    std::unique_ptr<media_input_exports_s::quarantine_s> quarantine;
+    std::unique_ptr<media_input_exports_s>               queue;
+    gpu::texture_s                                       source;
+    std::optional<gpu::recording_context_s>              context;
+    void                                                 SetUp() override
+    {
+        if (!spdlog::get("gpu"))
+            logger::init_loggers(spdlog::level::warn);
+        gpu::device_options_s options;
+        // NOLINTNEXTLINE(concurrency-mt-unsafe)
+        options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.external_image_import = true;
+        device                        = std::make_unique<gpu::device_s>(options);
+        quarantine                    = std::make_unique<media_input_exports_s::quarantine_s>();
+        queue                         = std::make_unique<media_input_exports_s>(*device, 1, *quarantine);
+        ASSERT_TRUE(queue->configure(0, {16, 16}));
+        source = device->create_texture({16, 16});
+        context.emplace(device->create_recording_context(1));
+    }
+    void TearDown() override { EXPECT_EQ(device->validation_errors(), 0U); }
+    std::shared_ptr<media_input_exports_s::publication_s> record(std::unique_ptr<gpu::recording_s>& commands)
+    {
+        commands = context->try_record();
+        commands->clear(source, {0.1F, 0.2F, 0.3F, 0.5F});
+        return queue->record(0, *commands, source, 12345);
+    }
+    void finish(std::unique_ptr<gpu::recording_s>& commands)
+    {
+        EXPECT_EQ(commands->submit().wait(5s), gpu::wait_result_e::ready);
+        commands.reset();
+    }
+};
+
+TEST_F(export_queue_test, NativeSubmissionAloneCannotPublishAnIncompleteGraphFrame)
+{
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              publication = record(commands);
+    ASSERT_TRUE(publication);
+    EXPECT_FALSE(queue->poll());
+    finish(commands);
+    EXPECT_FALSE(queue->poll());
+    EXPECT_EQ(queue->metrics(0).occupied, 1U);
+    publication->commit();
+    auto frame = queue->poll();
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(frame->timestamp_us(), 12345);
+    EXPECT_EQ(frame->ticket().input, 0U);
+    auto next = context->try_record();
+    EXPECT_FALSE(queue->record(0, *next, source, 2));
+    next.reset();
+    frame->retire(true); // Transport rejected before external access.
+    EXPECT_TRUE(queue->idle());
+}
+
+TEST_F(export_queue_test, AbandonedRecordingReturnsCapacityWithoutPublishing)
+{
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              publication = record(commands);
+    publication.reset();
+    EXPECT_FALSE(queue->idle());
+    commands.reset();
+    EXPECT_FALSE(queue->poll());
+    EXPECT_TRUE(queue->idle());
+    EXPECT_TRUE(queue->configure(0, {32, 16}));
+}
+
+TEST_F(export_queue_test, SubmittedThenAbortedFrameDrainsProducerWithoutDelivery)
+{
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              publication = record(commands);
+    finish(commands);
+    publication.reset();
+    EXPECT_FALSE(queue->poll());
+    EXPECT_TRUE(queue->idle());
+    EXPECT_FALSE(queue->failed());
+}
+
+TEST_F(export_queue_test, ResizeCannotReplaceAConsumerOrRetainedAllocation)
+{
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              publication = record(commands);
+    finish(commands);
+    publication->commit();
+    auto frame = queue->poll();
+    ASSERT_TRUE(frame);
+    queue->invalidate(0);
+    EXPECT_FALSE(queue->configure(0, {32, 16}));
+    frame->retire(true);
+    EXPECT_FALSE(queue->configure(0, {32, 16})); // The client still holds the allocation.
+    frame.reset();
+    publication.reset();
+    EXPECT_TRUE(queue->configure(0, {32, 16}));
+}
+
+TEST_F(export_queue_test, ForgottenConsumerQuarantinesAcrossQueueDestruction)
+{
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              publication = record(commands);
+    finish(commands);
+    publication->commit();
+    auto frame = queue->poll();
+    ASSERT_TRUE(frame);
+    const int fd = frame->image().descriptor().fd;
+    frame.reset();
+    publication.reset();
+    EXPECT_TRUE(queue->failed());
+    EXPECT_FALSE(queue->configure(0, {16, 16}));
+    queue.reset();
+    EXPECT_NE(fcntl(fd, F_GETFD), -1); // Quarantine outlives the producer queue.
+}
+
+TEST_F(export_queue_test, EightInputsRemainBoundedAndByteBudgetRejectsOversizeBeforeAllocation)
+{
+    for (size_t input = 1; input < 8; ++input)
+        ASSERT_TRUE(queue->configure(input, {16, 16}));
+    auto commands = context->try_record();
+    commands->clear(source, {0, 0, 0, 1});
+    std::vector<std::shared_ptr<media_input_exports_s::publication_s>> publications;
+    for (size_t input = 0; input < 8; ++input) {
+        auto publication = queue->record(input, *commands, source, static_cast<int64_t>(input));
+        ASSERT_TRUE(publication);
+        commands->on_submitted([publication](gpu::completion_s) { publication->commit(); });
+        publications.push_back(publication);
+        EXPECT_FALSE(queue->record(input, *commands, source, 99));
+    }
+    finish(commands);
+    uint32_t received{};
+    while (auto frame = queue->poll()) {
+        received |= 1u << frame->ticket().input;
+        frame->retire(true);
+    }
+    EXPECT_EQ(received, 255U);
+    EXPECT_TRUE(queue->idle());
+    media_input_exports_s limited(*device, 1, *quarantine, 1024);
+    EXPECT_THROW(limited.configure(0, {640, 360}), std::runtime_error);
+    EXPECT_TRUE(limited.idle());
+}
+
+TEST_F(export_queue_test, PendingFrameDecisionCannotBeOvertakenByANewerFrame)
+{
+    queue = std::make_unique<media_input_exports_s>(*device, 2, *quarantine);
+    ASSERT_TRUE(queue->configure(0, {16, 16}));
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              first = record(commands);
+    finish(commands);
+    commands    = context->try_record();
+    auto second = queue->record(0, *commands, source, 23456);
+    finish(commands);
+    second->commit();
+    EXPECT_FALSE(queue->poll());
+    first->commit();
+    auto frame = queue->poll();
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(frame->timestamp_us(), 12345);
+    frame->retire(true);
+    frame = queue->poll();
+    ASSERT_TRUE(frame);
+    EXPECT_EQ(frame->timestamp_us(), 23456);
+    frame->retire(true);
 }
 
 }} // namespace miximus::nodes::cef::detail

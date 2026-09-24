@@ -158,3 +158,38 @@ stopped with live clones, replacement tracks remained live, and both per-input m
 960/960 frames were admitted at depth two; send-to-reuse p50 3,280 µs, p95 7,028 µs, maximum 73,901 µs. The final
 native build is clean, and 31 GPU + 14 transfer + five DMA-BUF + one export/reuse + eight ownership tests pass with
 validation. This remains a probe: browser graph ports and asynchronous frame-boundary submission are the next milestone.
+
+## Asynchronous export ownership and first cadence experiment
+
+`media_input_exports_s` now owns fixed export slots for eight inputs, with separate native-submission and graph-frame
+commit decisions. The intended node call records through `app->commands()` and commits through `app->defer_output()`;
+`complete()` is not a GPU fence. A transfer worker polls actual producer completion outside metadata locks. Per-input
+serial order is preserved, and polling rotates between inputs. Configuration allocates off the render thread, waits
+for old leases and retained allocations, and never revives an input revoked during allocation. Export storage has a
+per-queue byte budget (128 MiB provisional); the largest single attempted allocation can temporarily exceed the
+remaining budget before its actual dedicated-allocation size is known. The total configured allocation stays within it.
+Session-level admission still needs to account for Chromium destination memory and quarantined generations.
+
+Unproven consumer retirement disables the queue and retains its allocations in a runtime-owned quarantine. That owner
+must outlive Chromium shutdown. A cancelled frame whose native work was already submitted still drains its producer;
+an unsubmitted recording can release its reservation without claiming GPU completion. Eight GPU tests pass, including
+aborted evaluation, held consumer/resize, stale allocation retention, unknown completion, eight-input bounds, and a
+newer frame whose commit must not overtake an older undecided frame.
+
+The probe's optional `ASYNC_EXPORT_DEPTH` argument runs a 60 Hz producer with a separate transfer worker. All cases
+below used eight 640×360 inputs, 120 scheduled ticks, validation, distinct per-input midtone/alpha patterns, and the
+normal accelerated browser output. These short runs include cold startup and expensive GPU output verification.
+
+| Vulkan exports/input | Chromium destinations/input | Producer admitted / 960 | Native source admitted | Producer capacity drops |
+| --- | --- | --- | --- | --- |
+| 1 | 2 | 920 | 558 | 40 |
+| 1 | 3 | 919 | 918 | 41 |
+| 2 | 3 | 928 | 926 | 32 |
+| 2 | 3, final rerun | 936 | 931 | 24 |
+
+Every run passed the pixel checks. Three Chromium destinations are therefore the provisional asynchronous default;
+two only proved sufficient for serialized delivery. Two Vulkan exports give some scheduling slack, with no preroll.
+The final rerun reported HTML `presentedFrames` of 114–117 per input; rVFC callback counts are reported separately and
+can be lower. Send-to-retirement observation was p50 4,277 µs, p95 10,794 µs, max 70,457 µs, including worker polling.
+No sustained HD/UHD or clean steady-state benchmark is claimed. The default application still uses the original
+qualified runtime; graph input ports and session integration remain the next step.

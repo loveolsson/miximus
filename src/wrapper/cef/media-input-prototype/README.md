@@ -25,7 +25,10 @@ The stage command removes baseline provenance and records the experimental patch
 Current scope: Linux single-plane RGBA8 sRGB with encoded-premultiplied alpha, main document only, eight independent native track sources, three
 Chromium destination slots per source by default. `MIXIMUS_CEF_MEDIA_INPUT_DEPTH=1..8` selects a diagnostic
 capacity before helper startup; this is a native setting, not a page-controlled resource request.
-The probe takes an optional final input count (1–8), with one Vulkan export allocation per input. External Vulkan producer completion precedes send; a completed GPU query
+The probe takes an optional input count (1–8). Without another argument it serializes one Vulkan export per input.
+An additional `ASYNC_EXPORT_DEPTH` argument (1–8) runs a 60 Hz producer and separate transfer worker, for example
+`.../cef_media_input_probe RUNTIME FRESH_PROFILE 8 2`. Three Chromium destinations are the provisional asynchronous
+default; the two-slot serialized result does not generalize to the asynchronous case. External Vulkan producer completion precedes send; a completed GPU query
 precedes reuse acknowledgement. Chromium destination reuse waits for the media frame's release SyncToken.
 IPC/context loss never grants external reuse. This is a diagnostic bridge, not yet production node support.
 The five native source tests and one/eight-input browser-copy/playback probes pass on the development host.
