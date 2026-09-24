@@ -1,5 +1,7 @@
 #include "core/app_state.hpp"
+#include "nodes/action.hpp"
 #include "nodes/node.hpp"
+#include "nodes/node_map.hpp"
 #include "nodes/system/register.hpp"
 #include "types/error.hpp"
 #include "types/frame_rate.hpp"
@@ -219,3 +221,12 @@ TEST(SettingsNode, RejectsInvalidUpdatesAtomically)
 }
 
 } // namespace
+
+TEST(SettingsNode, CacheClearValidatesBeforeAccessingTheRuntime)
+{
+    auto node = create_settings_node();
+    EXPECT_EQ(node->handle_action(nullptr, {}, "unknown", {}).error, error_e::unsupported_action);
+    for (const auto& payload : {nlohmann::json(nullptr), nlohmann::json::array(), nlohmann::json{{"extra", true}}}) {
+        EXPECT_EQ(node->handle_action(nullptr, {}, "clear_browser_cache", payload).error, error_e::invalid_payload);
+    }
+}

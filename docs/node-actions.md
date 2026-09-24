@@ -76,16 +76,20 @@ Include `nodes/action.hpp` and override `node_i::handle_action(app, state, name,
 - Return `nodes::action_result_s`, optionally with JSON `data`. Preserve ordinary configuration changes through
   `update_node`; do not mutate the snapshot or use actions as a second configuration store.
 
-The reusable `NodeActionInterface` supplies a non-port button:
+The reusable `NodeActionInterface` supplies a row of non-port buttons:
 
 ```ts
-reload: () => new NodeActionInterface("Reload", "reload"),
+reload: () => new NodeActionInterface("Reload", [
+  { label: "Reload ↻", action: "reload" },
+  { label: "Force ↻", action: "reload", payload: { ignore_cache: true } },
+]),
 ```
 
-Its optional third constructor argument supplies a JSON payload. Custom controls can call
+Each button can supply an optional JSON payload. Custom controls can call
 `ws.request<node_action_request_s, node_action_result_s>(message, abortSignal)` directly. The helper adds the token,
 limits outstanding waits, and cleans up on replies, disconnect, a ten-second timeout, or abort. Aborting cancels
-only the local reply wait. The button aborts that wait on unmount, reports errors, and labels success “Accepted”.
+only the local reply wait. The control aborts that wait on unmount and disables its buttons while waiting. Labels remain unchanged;
+errors are logged to the console without inline feedback.
 Neither path changes an interface value or writes an option.
 
 ## Browser reload
@@ -101,6 +105,18 @@ handling. Completed frames remain available during loading. Normal browser statu
 frames and failures. The action does not increment automatic restart counts, change options, or recreate a failed
 session. CEF-disabled builds explicitly reject reload as unavailable.
 
+## Global settings actions
+
+Refresh Fonts is available in Global Settings and uses the existing application-wide font registry command.
+It is no longer repeated on individual text and teleprompter nodes.
+
+Clear Browser Cache sends `clear_browser_cache` with `{}` to the application settings node (`$app`). It clears
+CEF's shared HTTP cache for all browser nodes, without reloading pages or deleting cookies, local storage, or
+service-worker storage. It also works with no active browser nodes. CEF-disabled/unavailable runtimes return
+`unavailable`; concurrent clearing returns `busy`. The action acknowledges scheduling, and the settings node's
+`browser_cache_clearing` status reports whether the asynchronous operation is still pending. SDK work and completion
+run on CEF's UI thread, with no render-thread waiting.
+
 ## Validation
 
 `core_test` covers payload ownership, dispatch thread/order/snapshot state, target removal/replacement, queue and
@@ -109,11 +125,12 @@ batch limits, expiry, shutdown/abandoned-batch cancellation, exception isolation
 and serialization failures using the real WebSocket wrapper with a controlled transport.
 
 Run `node scripts/test_node_actions.mjs` for an isolated WebSocket/CEF integration check. It serves a local page and
-checks both reload variants, errors, unchanged options/restart count, removal and shutdown. For a disabled build,
+checks both reload variants, font refresh, shared cache eviction without reloading, errors, unchanged
+options/restart count, removal and shutdown. For a disabled build,
 run `node scripts/test_node_actions.mjs build-cef-off/miximus --cef-disabled`. The script refuses to run alongside
 an existing application on port 7351. Use the normal Vulkan validation environment for hardware runs.
 
-Validation on the development machine:
+Initial node-action validation on the development machine:
 
 - CEF-enabled and CEF-disabled native builds passed, with all 146 CTests passing in each build.
 - The four-job tidy build passed without warnings, with all 146 CTests passing.
@@ -121,3 +138,7 @@ Validation on the development machine:
 - Both WebSocket integration variants passed with Vulkan validation enabled, with no validation errors.
 - The CEF subsystem probe verified that reload cancels old page commands and creates a fresh page context;
   its existing pixel, resource-lifetime and subprocess-recovery checks also passed.
+
+The global-settings controls were additionally checked with CEF-enabled and CEF-disabled native builds (147 tests
+passing in each), the web production build and five frontend tests. Both WebSocket integration variants passed
+under Vulkan validation, including font refresh, cache eviction without navigation and CEF-disabled rejection.

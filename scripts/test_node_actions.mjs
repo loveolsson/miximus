@@ -28,7 +28,17 @@ try {
 }
 const work = await mkdtemp(path.join(tmpdir(), "miximus-node-actions-"));
 let loads = 0;
+let cacheLoads = 0;
 const page = createServer((request, response) => {
+  if (request.url === "/cached") {
+    ++cacheLoads;
+    response.writeHead(200, {
+      "Content-Type": "text/plain",
+      "Cache-Control": "public, max-age=3600",
+    });
+    response.end(`Cached resource ${cacheLoads}`);
+    return;
+  }
   if (request.url !== "/") {
     response.writeHead(404);
     response.end();
@@ -39,7 +49,9 @@ const page = createServer((request, response) => {
     "Content-Type": "text/html",
     "Cache-Control": "no-store",
   });
-  response.end(`<body style="background:red">Load ${loads}</body>`);
+  response.end(`<body style="background:red">Load ${loads}<script>
+    setInterval(() => fetch('/cached').then(r => r.text()).catch(() => {}), 100);
+  </script></body>`);
 });
 page.listen(0, "127.0.0.1");
 await once(page, "listening");
@@ -143,6 +155,29 @@ try {
     "malformed_payload",
   );
   assert.equal((await action("reload")).error, "unavailable");
+  assert.equal(
+    (await request({ topic: "font_registry", command: "refresh" })).action,
+    "result",
+  );
+  assert.equal(
+    (await action("clear_browser_cache", { unexpected: true }, "$app")).error,
+    "invalid_payload",
+  );
+  if (cefDisabled) {
+    assert.equal(
+      (await action("clear_browser_cache", {}, "$app")).error,
+      "unavailable",
+    );
+  } else {
+    // Clearing is available even with no active browser session.
+    assert.equal(
+      (await action("clear_browser_cache", {}, "$app")).action,
+      "result",
+    );
+    await until(
+      async () => (await config()).status.$app.browser_cache_clearing === false,
+    );
+  }
   if (!cefDisabled) {
     assert.equal(
       (await action("reload", { ignore_cache: "yes" })).error,
@@ -167,6 +202,30 @@ try {
           (await config()).status.browser.cef_state === "ready",
       );
     }
+    await until(() => cacheLoads > 0);
+    await delay(500);
+    const cached = cacheLoads;
+    await delay(500);
+    assert.equal(
+      cacheLoads,
+      cached,
+      "Repeated fetches should use the HTTP cache",
+    );
+    const loadsBeforeClear = loads;
+    assert.equal(
+      (await action("clear_browser_cache", {}, "$app")).action,
+      "result",
+    );
+    await until(
+      async () =>
+        cacheLoads > cached &&
+        (await config()).status.$app.browser_cache_clearing === false,
+    );
+    assert.equal(
+      loads,
+      loadsBeforeClear,
+      "Cache clearing must not reload the page",
+    );
     const after = await config();
     assert.deepEqual(
       after.nodes.find((node) => node.id === "browser").options,
@@ -188,7 +247,7 @@ try {
   );
   assert.equal((await action("reload")).error, "not_found");
   console.log(
-    `Node action routing, errors${cefDisabled ? " and CEF-disabled rejection" : ", reload and cache-bypass reload"} passed. Artifacts: ${work}`,
+    `Node action routing, errors${cefDisabled ? " and CEF-disabled rejection" : ", reload, cache-bypass reload and shared cache clearing"} passed. Artifacts: ${work}`,
   );
 } finally {
   for (const waiter of pending.values()) {

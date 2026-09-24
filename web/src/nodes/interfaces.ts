@@ -107,7 +107,7 @@ export class NodeStatusInterface extends NodeInterface<null> {
   }
 }
 
-/** Application-wide font registry refresh control shown on font-using nodes. */
+/** Application-wide font registry refresh control shown in global settings. */
 export class FontRegistryRefreshInterface extends NodeInterface<null> {
   constructor() {
     super("Font Registry", null);
@@ -116,12 +116,17 @@ export class FontRegistryRefreshInterface extends NodeInterface<null> {
   }
 }
 
-/** Transient node action. The null interface value is never used as configuration. */
+export interface NodeActionButton {
+  label: string;
+  action: string;
+  payload?: unknown;
+}
+
+/** Transient node actions. The null interface value is never used as configuration. */
 export class NodeActionInterface extends NodeInterface<null> {
   constructor(
     label: string,
-    readonly action: string,
-    readonly payload: unknown = {},
+    readonly actions: readonly NodeActionButton[],
   ) {
     super(label, null);
     this.setComponent(markRaw(NodeActionComponent));

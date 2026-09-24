@@ -60,6 +60,8 @@ const sectionDefinitions = [
   },
   { title: "NDI Output", keys: ["ndi_output_buffer_frames"] },
   { title: "Screen Output", keys: ["screen_output_buffer_frames"] },
+  { title: "Fonts", keys: ["refresh_fonts"] },
+  { title: "Browser", keys: ["clear_browser_cache"] },
 ] as const;
 
 interface SettingsField {

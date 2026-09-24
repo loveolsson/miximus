@@ -1,8 +1,11 @@
 #include "runtime.hpp"
 
 #include "include/cef_app.h"
+#include "include/cef_request_context.h"
+#include "task.hpp"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -42,6 +45,19 @@ class preserved_signals_s
             }
         }
     }
+};
+
+class cache_clear_callback_s final : public CefCompletionCallback
+{
+    std::shared_ptr<std::atomic_bool> pending_;
+    IMPLEMENT_REFCOUNTING(cache_clear_callback_s);
+
+  public:
+    explicit cache_clear_callback_s(std::shared_ptr<std::atomic_bool> pending)
+        : pending_(std::move(pending))
+    {
+    }
+    void OnComplete() override { *pending_ = false; }
 };
 
 class browser_app_s final
@@ -89,8 +105,9 @@ class browser_app_s final
 
 struct runtime_s::state_s
 {
-    CefRefPtr<browser_app_s> app   = new browser_app_s;
-    std::thread::id          owner = std::this_thread::get_id();
+    std::shared_ptr<std::atomic_bool> cache_clear_pending = std::make_shared<std::atomic_bool>(false);
+    CefRefPtr<browser_app_s>          app                 = new browser_app_s;
+    std::thread::id                   owner               = std::this_thread::get_id();
 };
 
 runtime_s::runtime_s(const std::filesystem::path& runtime_directory, const std::filesystem::path& profile_directory)
@@ -122,6 +139,23 @@ runtime_s::runtime_s(const std::filesystem::path& runtime_directory, const std::
         throw std::runtime_error("CEF context initialization timed out");
     }
 }
+
+bool runtime_s::clear_http_cache()
+{
+    const auto pending = state_->cache_clear_pending;
+    if (pending->exchange(true)) {
+        return false;
+    }
+    if (!CefPostTask(TID_UI, new task_s([pending] {
+                         CefRequestContext::GetGlobalContext()->ClearHttpCache(new cache_clear_callback_s(pending));
+                     }))) {
+        *pending = false;
+        throw std::runtime_error("Cannot dispatch CEF cache clearing");
+    }
+    return true;
+}
+
+bool runtime_s::cache_clear_pending() const { return *state_->cache_clear_pending; }
 
 runtime_s::~runtime_s()
 {

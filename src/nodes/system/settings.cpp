@@ -1,9 +1,15 @@
 #include "core/app_state.hpp"
+#include "core/node_status_registry.hpp"
+#include "nodes/action.hpp"
+#if MIXIMUS_ENABLE_CEF
+#include "nodes/cef/subsystem.hpp"
+#endif
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "register.hpp"
 #include "types/frame_rate.hpp"
+#include "types/node_status_json.hpp"
 #include "types/output_buffer_limits.hpp"
 
 #include <nlohmann/json.hpp>
@@ -92,6 +98,41 @@ class node_impl final : public node_i
     std::string_view type() const final { return miximus::nodes::system::SETTINGS_NODE_TYPE; }
 
     void execute(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final {}
+
+    action_result_s handle_action(core::app_state_s* app,
+                                  const node_state_s& /* state */,
+                                  std::string_view      name,
+                                  const nlohmann::json& payload) final
+    {
+        if (name != "clear_browser_cache") {
+            return {.error = error_e::unsupported_action, .message = "Unknown application action"};
+        }
+        if (!payload.is_object() || !payload.empty()) {
+            return {.error = error_e::invalid_payload, .message = "Clear browser cache expects an empty object"};
+        }
+#if MIXIMUS_ENABLE_CEF
+        if (auto* cef = app->cef_subsystem()) {
+            if (!cef->clear_http_cache()) {
+                return {.error = error_e::busy, .message = "Browser cache clearing is already pending"};
+            }
+            return {};
+        }
+#endif
+        return {.error = error_e::unavailable, .message = app->cef_error()};
+    }
+
+    void prepare(core::app_state_s* app, const node_state_s& /* state */, prepare_result_s* /* result */) final
+    {
+        bool pending = false;
+#if MIXIMUS_ENABLE_CEF
+        if (const auto* cef = app->cef_subsystem()) {
+            pending = cef->cache_clear_pending();
+        }
+#endif
+        if (auto* registry = app->status_registry()) {
+            registry->write(id_, status::browser_cache_status_s{.browser_cache_clearing = pending});
+        }
+    }
 
     nlohmann::json get_default_options() const final
     {

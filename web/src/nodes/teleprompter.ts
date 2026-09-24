@@ -3,11 +3,7 @@ import { TextInputInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_framebuffer, t_f64, t_rect } from "./interface_types";
 import { node_type_e } from "./node_type";
-import {
-  FontRegistryRefreshInterface,
-  NumericInterface,
-  StatusDropdownInterface,
-} from "./interfaces";
+import { NumericInterface, StatusDropdownInterface } from "./interfaces";
 
 export const TeleprompterNode = defineNode({
   type: node_type_e.teleprompter,
@@ -27,7 +23,6 @@ export const TeleprompterNode = defineNode({
       new NumericInterface("Font Size", 100, { precision: 0, step: 1, min: 10, max: 100 }).setPort(
         false,
       ),
-    refresh_fonts: () => new FontRegistryRefreshInterface(),
   },
   outputs: {
     fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),

@@ -4,7 +4,6 @@ import { t_framebuffer, t_vec2 } from "./interface_types";
 import { node_type_e } from "./node_type";
 import {
   FocusTrackingStringInterface,
-  FontRegistryRefreshInterface,
   NumericInterface,
   StatusDropdownInterface,
   Vec2Interface,
@@ -22,7 +21,6 @@ const TextNode = defineNode({
     font_variant: () => new StatusDropdownInterface("Variant", "font_variants", "Regular"),
     font_size: () =>
       new NumericInterface("Size", 48, { precision: 0, step: 1, min: 1 }).setPort(false),
-    refresh_fonts: () => new FontRegistryRefreshInterface(),
   },
   outputs: {
     fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),

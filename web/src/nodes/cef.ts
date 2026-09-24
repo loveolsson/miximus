@@ -42,13 +42,17 @@ export const CefBrowserNode = defineNode({
   title: "Browser",
   inputs: {
     status: () => new NodeStatusInterface(browserStatus),
-    reload: () => new NodeActionInterface("Reload", "reload"),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
     url: () => new FocusTrackingStringInterface("URL", "about:blank"),
     size: () =>
       new Vec2Interface("Size", [1920, 1080], { precision: 0, step: 1, min: 1, max: 4096 })
         .use(setType, t_vec2)
         .setPort(false),
+    reload: () =>
+      new NodeActionInterface("Reload", [
+        { label: "Reload ↻", action: "reload" },
+        { label: "Force ↻", action: "reload", payload: { ignore_cache: true } },
+      ]),
   },
   outputs: {
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),

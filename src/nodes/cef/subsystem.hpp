@@ -40,6 +40,9 @@ class subsystem_s
     subsystem_s(gpu::device_s&               device,
                 const std::filesystem::path& profile_directory,
                 const std::filesystem::path& runtime_directory);
+    // Asynchronous shared HTTP-cache eviction. False means already pending.
+    bool clear_http_cache();
+    bool cache_clear_pending() const;
     ~subsystem_s();
     subsystem_s(const subsystem_s& other)            = delete;
     subsystem_s& operator=(const subsystem_s& other) = delete;

@@ -21,6 +21,11 @@ struct connected_status_s
     bool connected{};
 };
 
+struct browser_cache_status_s
+{
+    bool browser_cache_clearing{};
+};
+
 struct cef_browser_status_s
 {
     std::string cef_state;
@@ -294,6 +299,7 @@ struct screen_output_metrics_status_s
 };
 
 BOOST_DESCRIBE_STRUCT(connected_status_s, (), (connected))
+BOOST_DESCRIBE_STRUCT(browser_cache_status_s, (), (browser_cache_clearing))
 BOOST_DESCRIBE_STRUCT(cef_browser_status_s,
                       (),
                       (cef_state,
@@ -509,6 +515,7 @@ struct contract_s
     contract_s<type> { #type }
 inline constexpr auto contracts = std::tuple{
     STATUS_CONTRACT(connected_status_s),
+    STATUS_CONTRACT(browser_cache_status_s),
     STATUS_CONTRACT(cef_browser_status_s),
     STATUS_CONTRACT(device_names_status_s),
     STATUS_CONTRACT(display_modes_status_s),

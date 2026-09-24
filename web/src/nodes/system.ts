@@ -1,7 +1,12 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
 import { markRaw } from "vue";
 import { node_type_e } from "./node_type";
-import { NumericInterface, Vec2Interface } from "./interfaces";
+import {
+  NumericInterface,
+  Vec2Interface,
+  FontRegistryRefreshInterface,
+  NodeActionInterface,
+} from "./interfaces";
 import FrameRateOption from "./options/FrameRateOption.vue";
 import type { frame_rate_s } from "@/generated/json_contracts";
 
@@ -37,6 +42,11 @@ export const ApplicationSettingsNode = defineNode({
   type: node_type_e.application_settings,
   title: "Application Settings",
   inputs: {
+    refresh_fonts: () => new FontRegistryRefreshInterface(),
+    clear_browser_cache: () =>
+      new NodeActionInterface("Browser cache", [
+        { label: "Clear Browser Cache", action: "clear_browser_cache" },
+      ]),
     frame_rate: () => new FrameRateInterface(),
     default_framebuffer_size: () =>
       new Vec2Interface("Default size", [1920, 1080], {
