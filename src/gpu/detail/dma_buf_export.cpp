@@ -122,6 +122,15 @@ struct dma_buf_export_s::state_s
             allocation.pNext           = &export_memory;
             allocation.allocationSize  = requirements.size;
             allocation.memoryTypeIndex = std::countr_zero(requirements.memoryTypeBits);
+            // Driver memory-type order does not express a performance preference.
+            // NVIDIA exposes compatible system memory before device-local VRAM.
+            for (uint32_t index = 0; index < device->memory.memoryTypeCount; ++index) {
+                if ((requirements.memoryTypeBits & (uint32_t{1} << index)) != 0U &&
+                    (device->memory.memoryTypes[index].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0U) {
+                    allocation.memoryTypeIndex = index;
+                    break;
+                }
+            }
             check(device->vk.vkAllocateMemory(device->device, &allocation, nullptr, &exported->external_memory),
                   "allocate DMA-BUF export image");
             check(device->vk.vkBindImageMemory(device->device, exported->image, exported->external_memory, 0),

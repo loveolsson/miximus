@@ -352,3 +352,55 @@ post-connection disconnect tests retained a previously qualified large extent, s
 Native source delivery counters are not proof of successful image import: Chromium's copy helper can clear a failed
 source to black and set a GL error. General connected-small-texture compatibility and explicit import-error propagation
 remain separate follow-up work; this correction addresses the reproduced disconnected-input failure.
+
+## Full-graph NDI loopback investigation (2026-09-24)
+
+The user's updated graph connects a static 1080p pattern and a 1080p NDI loopback receiver to the four-video page;
+inputs 2 and 3 remain disconnected. The graph also runs another NDI receiver, NDI output, DeckLink input/output,
+a multiviewer and screen output. All measurements use isolated copies of the saved settings and the normal packaged
+CEF runtime. Performance runs disable validation, last 45 seconds and compare seconds 10–40. A visually unchanged
+copy of the page reports `requestVideoFrameCallback` metadata; no pixel readback is used. GPU utilization is the
+whole-device `nvidia-smi` counter, including the desktop (about 28% with Miximus stopped), not per-node GPU time.
+
+Before correction, both NDI receivers and the NDI/DeckLink outputs sustained approximately 60 fps with no receiver,
+upload or output drops. The application scheduler had no new missed deadlines or skipped frames. Nevertheless,
+**all four browser videos presented about 30 fps**, including static and black inputs, while browser paints were
+near 60 fps. Aggregate delivery/paint counters alone therefore obscure the visible problem.
+
+Controlled variants isolated the load:
+
+- Disabling the browser reduced median whole-device GPU utilization from 99% to 75%.
+- Replacing the browser's NDI connection with the static pattern still used 99% and delivered only about 133 frames/s
+  across four inputs, versus 122 frames/s originally. This was not an NDI-specific loss.
+- Disabling browser and screen reduced utilization to about 70%.
+- Disabling DeckLink output raised aggregate browser delivery to about 179 frames/s but still saturated the GPU.
+
+The v210 output packer separately recomputed shared pixels across divergent per-word branches. It now converts
+six pixels once per four-word group, retaining the same transfer function, chroma averaging, rounding, final-pixel
+replication and row-padding behavior. Browser-disabled utilization measured 72% afterward, versus 75% before; this
+small change alone did not solve browser cadence (about 31–32 fps with the full graph).
+
+Temporary Vulkan timestamp instrumentation then identified unusually slow browser-export rendering: a median of
+**1.34 ms per 1920×1080 export**, versus roughly 0.1–0.25 ms for individual measured media conversions. Allocation
+inspection found the export selected memory type 1, flags 0, on the system-memory heap. The allocator used the first
+compatible bit without considering memory locality. On this NVIDIA driver, compatible device-local VRAM is later
+in the memory-type list (type 7). The export allocator now prefers compatible `DEVICE_LOCAL` memory, retaining the
+compatible fallback on devices without such a type. DMA-BUF layout, Chromium-owned destination copies, completion
+requirements and bounded pool depths are unchanged; no CEF/Chromium patch is needed.
+
+With VRAM allocation, the same instrumented export took **0.15 ms**, and the two connected browser videos reached
+about 59–60 fps while whole-device utilization fell to about 83%. These timestamps include the scoped Vulkan work
+and synchronization, not Chromium's separate GPU work; the temporary profiler was removed before final validation.
+
+Validation: full native build; 32 Vulkan device tests, 14 transfer tests and eight media-export tests under validation;
+the real eight-input CEF session probe, including initially disconnected inputs, source replacement, resize, reload
+and shutdown. The v210 tests include independent color references and a new two-row, non-16-byte-aligned padding
+regression. All passed. The user's saved graph remains unchanged.
+
+Final **uninstrumented normal-build** measurement (`build/integration-tests/ndi-loopback-observe-20260924-171321`):
+all four videos presented **60.0, 60.0, 60.0 and 59.97 fps**; median whole-device GPU utilization was **81.5%**
+(maximum 85%). There was one browser transport drop during the approximately 30-second steady interval, versus
+roughly 3,500 originally. There were no new graph deadline misses/skips, NDI receiver/upload drops, or DeckLink output
+drops; screen output recorded one repeat and one skipped interval. No EGL import errors were logged. High remaining
+whole-device utilization includes the rest of the graph and desktop and is not evidence that every GPU cost has
+been optimized.
