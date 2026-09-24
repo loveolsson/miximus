@@ -180,6 +180,10 @@ before asynchronous posting. The base `server.hpp` remains lightweight, while pr
 `web_server/typed_server.hpp` for typed subscription parsing. HTTP responses use the same typed contracts, including the
 configuration envelope; heterogeneous option and node-status values remain JSON inside those envelopes.
 
+Transient per-node commands use the bounded [node action system](node-actions.md). Requests are bound to a node
+instance and delivered on the render thread before `prepare()`, with typed result/error replies and arbitrary JSON
+payloads. They do not change saved options or broadcast graph mutations.
+
 The browser graph is never authoritative. Update native validation/defaults first, then mirror the accepted shape in TypeScript.
 
 ## Runtime status and registry versions

@@ -486,6 +486,21 @@ int main(int argc, char** argv)
             exercise_message_contracts();
             exercise_commands(*session);
             exercise_color(device, *session);
+            (void)command_result(session->request("() => { window.reloadMarker = true; }", "null"));
+            auto reload_command = session->request("() => new Promise(() => {})", "null");
+            std::this_thread::sleep_for(20ms);
+            if (!request->reload()) {
+                throw std::runtime_error("Ready session rejected reload");
+            }
+            const auto reload_cancelled = command_result(std::move(reload_command));
+            if (reload_cancelled.error.empty() || reload_cancelled.error.find("timed out") != std::string::npos) {
+                throw std::runtime_error("Reload did not cancel its old page command");
+            }
+            await_context(*session);
+            if (command_result(session->request("() => window.reloadMarker === undefined", "null")).json != "true") {
+                throw std::runtime_error("Reload did not create a fresh JavaScript context");
+            }
+            std::cout << "Reload cancelled old commands and created a fresh page context\n";
             auto closing_command = session->request("() => new Promise(() => {})", "null");
             std::this_thread::sleep_for(20ms);
             session.reset();

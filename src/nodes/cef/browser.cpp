@@ -1,6 +1,7 @@
 #include "browser_options.hpp"
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
+#include "nodes/action.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -29,6 +30,20 @@ class node_impl final : public node_i
     std::chrono::steady_clock::time_point   next_metrics_;
     uint64_t                                restarts_{};
     std::string                             error_;
+
+    static session_t::options_s session_options(core::app_state_s* app, const node_state_s& state)
+    {
+        const auto url  = state.get_option<std::string>("url");
+        const auto rate = app->frame_settings().frame_rate;
+        const auto size = state.get_option<gpu::vec2_t>("size");
+        return {
+            .url        = url,
+            .dimensions = {static_cast<int>(size.x), static_cast<int>(size.y)},
+            // CEF's public cadence is integer. The existing timed queue handles
+            // fractional program rates; capture never skips received paints.
+            .frame_rate = static_cast<int>((rate.numerator + uint64_t(rate.denominator) - 1) / rate.denominator),
+        };
+    }
 
     void stop()
     {
@@ -146,6 +161,30 @@ class node_impl final : public node_i
 
     ~node_impl() override { stop(); }
 
+    action_result_s handle_action(core::app_state_s*    app,
+                                  const node_state_s&   state,
+                                  std::string_view      name,
+                                  const nlohmann::json& payload) final
+    {
+        if (name != "reload") {
+            return {.error = error_e::unsupported_action, .message = "Unknown browser action"};
+        }
+        if (!payload.is_object() || payload.size() > 1 ||
+            (payload.size() == 1 && (!payload.contains("ignore_cache") || !payload.at("ignore_cache").is_boolean()))) {
+            return {.error   = error_e::invalid_payload,
+                    .message = "Reload expects an object with optional boolean ignore_cache"};
+        }
+        if (!state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty() || !request_ ||
+            !session_ || !selection_ || *selection_ != session_options(app, state)) {
+            return {.error = error_e::unavailable, .message = "Browser has no active session to reload"};
+        }
+        if (!request_->reload(payload.value("ignore_cache", false))) {
+            return {.error = error_e::busy, .message = "Browser is not ready to reload"};
+        }
+        next_metrics_ = {};
+        return {};
+    }
+
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
     {
         auto*      status  = app->status_registry();
@@ -162,15 +201,7 @@ class node_impl final : public node_i
                           });
             return;
         }
-        const auto                 rate = app->frame_settings().frame_rate;
-        const auto                 size = state.get_option<gpu::vec2_t>("size");
-        const session_t::options_s selection{
-            .url        = url,
-            .dimensions = {static_cast<int>(size.x), static_cast<int>(size.y)},
-            // CEF's public cadence is integer. The existing timed queue handles
-            // fractional program rates; capture never skips received paints.
-            .frame_rate = static_cast<int>((rate.numerator + uint64_t(rate.denominator) - 1) / rate.denominator),
-        };
+        const auto selection = session_options(app, state);
         if (selection_ != selection) {
             stop();
             selection_ = selection;

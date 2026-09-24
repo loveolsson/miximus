@@ -7,6 +7,7 @@ import {
   FocusTrackingStringInterface,
   Vec2Interface,
   NodeStatusInterface,
+  NodeActionInterface,
   type NodeStatusSection,
 } from "./interfaces";
 
@@ -41,6 +42,7 @@ export const CefBrowserNode = defineNode({
   title: "Browser",
   inputs: {
     status: () => new NodeStatusInterface(browserStatus),
+    reload: () => new NodeActionInterface("Reload", "reload"),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
     url: () => new FocusTrackingStringInterface("URL", "about:blank"),
     size: () =>

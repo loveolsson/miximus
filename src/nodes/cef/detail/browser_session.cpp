@@ -26,6 +26,7 @@ struct shared_state_s
     std::shared_ptr<command_channel_s> commands = std::make_shared<command_channel_s>();
     std::atomic<phase_e>               phase{phase_e::starting};
     std::atomic_bool                   started;
+    std::atomic_bool                   reload_pending;
     std::atomic_bool                   close_requested;
     std::atomic_bool                   closed;
     mutable std::mutex                 mutex;
@@ -121,6 +122,20 @@ class client_s final
         } else if (!creation_pending_) {
             state_->mark_closed();
         }
+    }
+
+    void reload(bool ignore_cache)
+    {
+        if (browser_ && !state_->close_requested && state_->phase != phase_e::failed) {
+            state_->commands->cancel_commands("Browser is reloading");
+            state_->phase = phase_e::loading;
+            if (ignore_cache) {
+                browser_->ReloadIgnoreCache();
+            } else {
+                browser_->Reload();
+            }
+        }
+        state_->reload_pending = false;
     }
 
     void GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
@@ -370,6 +385,20 @@ void detail::browser_session_s::start_async()
         impl_->state->fail("Cannot dispatch CEF browser creation");
         impl_->state->mark_closed();
     }
+}
+
+bool detail::browser_session_s::reload_async(bool ignore_cache)
+{
+    if (impl_->state->close_requested || impl_->state->phase != phase_e::ready ||
+        impl_->state->reload_pending.exchange(true)) {
+        return false;
+    }
+    if (!CefPostTask(TID_UI, new task_s([client = impl_->client, ignore_cache] { client->reload(ignore_cache); }))) {
+        impl_->state->reload_pending = false;
+        impl_->state->fail("Cannot dispatch CEF browser reload");
+        throw std::runtime_error("Cannot dispatch CEF browser reload");
+    }
+    return true;
 }
 
 void detail::browser_session_s::close_async()

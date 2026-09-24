@@ -17,6 +17,7 @@ class browser_session_s final : public session_s
     browser_session_s& operator=(browser_session_s&&)      = delete;
     void               start_async();
     void               close_async();
+    bool               reload_async(bool ignore_cache);
     bool               closed() const noexcept;
     bool               wait_closed(std::chrono::milliseconds timeout) const;
     static size_t      texture_budget(const options_s& options);

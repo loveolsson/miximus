@@ -457,3 +457,9 @@ Each boundary is announced before teardown starts and logged again when complete
 subsystem currently stalled.
 Internal tasks, executors, SDK calls, and individual resources must not report progress; they are implementation details
 of the subsystem whose completed shutdown is being monitored. Do not casually reorder these lifetimes.
+
+## Node action controls
+
+Use the [node action contract](node-actions.md) for transient controls such as browser reload. Add an action handler
+to the native node and a `NodeActionInterface` or custom web control; action names and payload schemas belong to the
+node, not a central enum. Run `npm test` in `web/` when changing WebSocket reply handling.

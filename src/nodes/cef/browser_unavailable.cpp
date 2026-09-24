@@ -1,6 +1,7 @@
 #include "browser_options.hpp"
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
+#include "nodes/action.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -14,6 +15,17 @@ class unavailable_browser_s final : public node_i
     output_interface_s<const gpu::texture_s*> texture_{*this, "tex"};
 
   public:
+    action_result_s handle_action(core::app_state_s* /* app */,
+                                  const node_state_s& /* state */,
+                                  std::string_view name,
+                                  const nlohmann::json& /* payload */) final
+    {
+        return name == "reload"
+                   ? action_result_s{.error   = error_e::unavailable,
+                                     .message = "CEF support is not enabled in this build"}
+                   : action_result_s{.error = error_e::unsupported_action, .message = "Unknown browser action"};
+    }
+
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
     {
         const bool stopped = !state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty();

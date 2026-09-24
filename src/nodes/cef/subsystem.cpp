@@ -45,7 +45,7 @@ struct session_request_s::state_s : std::enable_shared_from_this<state_s>
 {
     mutable std::mutex                      mutex;
     std::weak_ptr<utils::serial_executor_s> executor;
-    std::shared_ptr<session_s>              published;
+    std::shared_ptr<session_t>              published;
     // Only the serial control worker touches owned.
     std::shared_ptr<session_t> owned;
     std::string                failure;
@@ -128,6 +128,19 @@ std::shared_ptr<session_s> session_request_s::session() const
 {
     const std::scoped_lock lock(state_->mutex);
     return state_->published;
+}
+
+bool session_request_s::reload(bool ignore_cache)
+{
+    std::shared_ptr<session_t> session;
+    {
+        const std::scoped_lock lock(state_->mutex);
+        if (state_->cancelled) {
+            return false;
+        }
+        session = state_->published;
+    }
+    return session && session->reload_async(ignore_cache);
 }
 
 std::string session_request_s::error() const

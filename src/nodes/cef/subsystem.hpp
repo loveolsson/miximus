@@ -24,6 +24,7 @@ class session_request_s
 
     std::shared_ptr<session_s> session() const;
     std::string                error() const;
+    bool                       reload(bool ignore_cache = false);
 };
 
 // Construct/destroy on the app startup/shutdown thread, with the GPU alive.
