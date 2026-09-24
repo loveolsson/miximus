@@ -352,6 +352,7 @@ void run_async(cef_detail::media_input_exports_s& queue,
                     const auto started = std::chrono::steady_clock::now();
                     auto       description =
                         describe(frame->image(), static_cast<uint32_t>(frame->ticket().input), frame->timestamp_us());
+                    description.source_generation = frame->ticket().generation;
                     pending.push_back(
                         {enqueue(api, client, description, [frame](bool safe) { frame->retire(safe); }), started});
                 }

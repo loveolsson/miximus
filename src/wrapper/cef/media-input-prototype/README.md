@@ -30,11 +30,14 @@ An additional `ASYNC_EXPORT_DEPTH` argument (1–8) runs a 60 Hz producer and se
 `.../cef_media_input_probe RUNTIME FRESH_PROFILE 8 2`. Three Chromium destinations are the provisional asynchronous
 default; the two-slot serialized result does not generalize to the asynchronous case. External Vulkan producer completion precedes send; a completed GPU query
 precedes reuse acknowledgement. Chromium destination reuse waits for the media frame's release SyncToken.
-IPC/context loss never grants external reuse. This is a diagnostic bridge, not yet production node support.
+IPC/context loss never grants external reuse. The browser node integrates this bridge when the private v2 sender is present;
+stock runtimes retain browser output and report input unavailability.
 The five native source tests and one/eight-input browser-copy/playback probes pass on the development host.
 See the implementation plan for measured results and limits.
 Stopped-track reacquisition with a live clone is covered by both native and browser checks.
 The probe verifies distinct per-input midtones and alpha on a transparent page, including a fully transparent case.
-Navigation/crash stress and real asynchronous throughput remain.
-Pool-depth tuning, adapter checks, source-generation invalidation, global memory budgets, reconnect/crash recovery,
-alpha/color qualification, node demand/status and platform ports remain qualification/integration work.
+The real-session probe `cef_media_input_session_probe RUNTIME FRESH_PROFILE` covers eight inputs, source replacement,
+disconnect-to-black, independent resize, reload and shutdown. Private send ABI v2 includes a monotonic source generation
+and a metadata-only invalidation packet. Superseded GPU copies still retire safely but cannot push into the native source.
+Node/session integration includes bounded workers, shared admission reservations, quarantine, demand and status.
+Navigation/crash stress, adapter checks, HD/UHD cadence measurements and platform ports remain qualification work.

@@ -15,7 +15,7 @@ diff --git a/BUILD.gn b/BUILD.gn
 diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.cc
 --- a/libcef/browser/frame_host_impl.cc
 +++ b/libcef/browser/frame_host_impl.cc
-@@ -767,3 +767,21 @@
+@@ -767,3 +767,23 @@
      impl->ExecuteJavaScriptWithUserGestureForTests(javascript);
    }
  }
@@ -23,7 +23,8 @@ diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.
 +bool CefFrameHostImpl::SendMediaInput(
 +    const std::string& token,
 +    uint32_t input,
-+    gfx::GpuMemoryBufferHandle handle,
++    uint64_t source_generation,
++    std::optional<gfx::GpuMemoryBufferHandle> handle,
 +    const gfx::Size& size,
 +    int64_t timestamp_us,
 +    cef::mojom::RenderFrame::SubmitMediaInputCallback callback) {
@@ -33,21 +34,23 @@ diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.
 +    std::move(callback).Run(true, false);
 +    return true;
 +  }
-+  render_frame_->SubmitMediaInput(token, input, std::move(handle), size,
-+                                  timestamp_us, std::move(callback));
++  render_frame_->SubmitMediaInput(token, input, source_generation,
++                                  std::move(handle), size, timestamp_us,
++                                  std::move(callback));
 +  return true;
 +}
 diff --git a/libcef/browser/frame_host_impl.h b/libcef/browser/frame_host_impl.h
 --- a/libcef/browser/frame_host_impl.h
 +++ b/libcef/browser/frame_host_impl.h
-@@ -82,6 +82,14 @@
+@@ -82,6 +82,15 @@
    void SendProcessMessage(CefProcessId target_process,
                            CefRefPtr<CefProcessMessage> message) override;
 
 +  bool SendMediaInput(
 +      const std::string& token,
 +      uint32_t input,
-+      gfx::GpuMemoryBufferHandle handle,
++      uint64_t source_generation,
++      std::optional<gfx::GpuMemoryBufferHandle> handle,
 +      const gfx::Size& size,
 +      int64_t timestamp_us,
 +      cef::mojom::RenderFrame::SubmitMediaInputCallback callback);
@@ -82,8 +85,8 @@ diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
  // Interface for communicating with a frame in the renderer process.
  interface RenderFrame {
 +  // Private bounded external-media prototype. Actual OS handles cross Mojo.
-+  SubmitMediaInput(string document_token, uint32 input,
-+                   gfx.mojom.GpuMemoryBufferHandle buffer, gfx.mojom.Size size,
++  SubmitMediaInput(string document_token, uint32 input, uint64 source_generation,
++                   gfx.mojom.GpuMemoryBufferHandle? buffer, gfx.mojom.Size size,
 +                   int64 timestamp_us) => (bool safe_to_reuse, bool delivered);
 +
    // Browser process has received the FrameAttached() message.
@@ -258,7 +261,7 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
    // Called when this frame has been detached from the view. This *will* be
    // called for child frames when a parent frame is detached.
    // The browser may hold the last reference to |this|. Take a reference here to
-@@ -938,3 +945,33 @@
+@@ -938,3 +945,40 @@
  #pragma warning(pop)
  #endif
  #endif
@@ -278,19 +281,26 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
 +  return media_inputs_->CreateTrack(input, token);
 +}
 +
-+void CefFrameImpl::SubmitMediaInput(const std::string& token,
-+                                    uint32_t input,
-+                                    gfx::GpuMemoryBufferHandle handle,
-+                                    const gfx::Size& size,
-+                                    int64_t timestamp_us,
-+                                    SubmitMediaInputCallback callback) {
++void CefFrameImpl::SubmitMediaInput(
++    const std::string& token,
++    uint32_t input,
++    uint64_t source_generation,
++    std::optional<gfx::GpuMemoryBufferHandle> handle,
++    const gfx::Size& size,
++    int64_t timestamp_us,
++    SubmitMediaInputCallback callback) {
 +  CEF_REQUIRE_RT();
 +  if (!media_inputs_ || !IsMain() || !frame_) {
 +    std::move(callback).Run(true, false);
 +    return;
 +  }
-+  media_inputs_->Submit(token, input, std::move(handle), size, timestamp_us,
-+                        std::move(callback));
++  if (!handle) {
++    media_inputs_->AdvanceGeneration(token, input, source_generation);
++    std::move(callback).Run(true, false);
++    return;
++  }
++  media_inputs_->Submit(token, input, source_generation, std::move(*handle),
++                        size, timestamp_us, std::move(callback));
 +}
 diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
 --- a/libcef/renderer/frame_impl.h
@@ -314,7 +324,7 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
    // Forwarded from CefRenderFrameObserver.
    void OnWasShown();
    void OnDidCommitProvisionalLoad();
-@@ -147,7 +152,15 @@
+@@ -147,7 +152,16 @@
 
    void MaybeInitializeScriptContext();
 
@@ -323,7 +333,8 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
    // cef::mojom::RenderFrame methods:
 +  void SubmitMediaInput(const std::string& document_token,
 +                        uint32_t input,
-+                        gfx::GpuMemoryBufferHandle handle,
++                        uint64_t source_generation,
++                        std::optional<gfx::GpuMemoryBufferHandle> handle,
 +                        const gfx::Size& size,
 +                        int64_t timestamp_us,
 +                        SubmitMediaInputCallback callback) override;
@@ -334,7 +345,7 @@ diff --git a/include/internal/cef_miximus_media_input.h b/include/internal/cef_m
 new file mode 100644
 --- /dev/null
 +++ b/include/internal/cef_miximus_media_input.h
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,53 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -362,6 +373,8 @@ new file mode 100644
 +  uint64_t modifier;
 +  uint64_t allocation_bytes;
 +  int64_t timestamp_us;
++  uint64_t source_generation;
++  uint32_t invalidate_only;
 +} cef_miximus_media_frame_t;
 +
 +typedef void (*cef_miximus_media_done_t)(void* user,
@@ -376,7 +389,7 @@ new file mode 100644
 +// GPU access; callback will not run. One = accepted; callback runs on UI
 +// thread. safe_to_reuse=false includes IPC/context loss and requires
 +// quarantine, not reuse.
-+CEF_EXPORT int cef_miximus_send_media_frame_v1(
++CEF_EXPORT int cef_miximus_send_media_frame_v2(
 +    int browser_id,
 +    const char* document_token,
 +    const cef_miximus_media_frame_t* frame,
@@ -390,7 +403,7 @@ diff --git a/libcef/browser/browser_media_input.cc b/libcef/browser/browser_medi
 new file mode 100644
 --- /dev/null
 +++ b/libcef/browser/browser_media_input.cc
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,75 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -414,7 +427,7 @@ new file mode 100644
 +  done(user, safe, delivered);
 +}
 +}  // namespace
-+CEF_EXPORT int cef_miximus_send_media_frame_v1(
++CEF_EXPORT int cef_miximus_send_media_frame_v2(
 +    int browser_id,
 +    const char* token,
 +    const cef_miximus_media_frame_t* frame,
@@ -422,12 +435,21 @@ new file mode 100644
 +    void* user) {
 +  CEF_REQUIRE_UIT_RETURN(0);
 +  if (!token || !*token || !frame || !done || frame->size != sizeof(*frame) ||
-+      frame->input >= 8 || frame->fd < 0 || !frame->width || !frame->height ||
-+      frame->width > 4096 || frame->height > 4096 ||
-+      frame->stride < frame->width * 4 ||
-+      frame->offset > frame->allocation_bytes ||
-+      uint64_t(frame->stride) * frame->height >
-+          frame->allocation_bytes - frame->offset) {
++      frame->input >= 8 || !frame->source_generation ||
++      frame->invalidate_only > 1) {
++    return 0;
++  }
++  if (!frame->invalidate_only &&
++      (frame->fd < 0 || !frame->width || !frame->height ||
++       frame->width > 4096 || frame->height > 4096 ||
++       frame->stride < frame->width * 4 ||
++       frame->offset > frame->allocation_bytes ||
++       uint64_t(frame->stride) * frame->height >
++           frame->allocation_bytes - frame->offset)) {
++    return 0;
++  }
++  if (frame->invalidate_only &&
++      (frame->fd != -1 || frame->width || frame->height)) {
 +    return 0;
 +  }
 +  auto browser = CefBrowserHostBase::GetBrowserForBrowserId(browser_id);
@@ -438,18 +460,21 @@ new file mode 100644
 +  if (!main) {
 +    return 0;
 +  }
-+  base::ScopedFD fd(fcntl(frame->fd, F_DUPFD_CLOEXEC, 0));
-+  if (!fd.is_valid()) {
-+    return 0;
++  std::optional<gfx::GpuMemoryBufferHandle> handle;
++  if (!frame->invalidate_only) {
++    base::ScopedFD fd(fcntl(frame->fd, F_DUPFD_CLOEXEC, 0));
++    if (!fd.is_valid()) {
++      return 0;
++    }
++    gfx::NativePixmapHandle pixmap;
++    pixmap.modifier = frame->modifier;
++    pixmap.planes.emplace_back(frame->stride, frame->offset,
++                               frame->allocation_bytes, std::move(fd));
++    handle.emplace(std::move(pixmap));
 +  }
-+  gfx::NativePixmapHandle pixmap;
-+  pixmap.modifier = frame->modifier;
-+  pixmap.planes.emplace_back(frame->stride, frame->offset,
-+                             frame->allocation_bytes, std::move(fd));
-+  gfx::GpuMemoryBufferHandle handle(std::move(pixmap));
 +  return static_cast<CefFrameHostImpl*>(main.get())
 +      ->SendMediaInput(
-+          token, frame->input, std::move(handle),
++          token, frame->input, frame->source_generation, std::move(handle),
 +          gfx::Size(frame->width, frame->height), frame->timestamp_us,
 +          mojo::WrapCallbackWithDefaultInvokeIfNotRun(
 +              base::BindOnce(&Complete, done, user), false, false));
@@ -757,7 +782,7 @@ diff --git a/libcef/renderer/media_input_bridge.h b/libcef/renderer/media_input_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.h
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,75 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -792,8 +817,12 @@ new file mode 100644
 +  CefRefPtr<CefV8Value> CreateTrack(size_t input,
 +                                    const std::string& context_token);
 +  void Invalidate();
++  void AdvanceGeneration(const std::string& context_token,
++                         uint32_t input,
++                         uint64_t generation);
 +  void Submit(const std::string& context_token,
 +              uint32_t input,
++              uint64_t source_generation,
 +              gfx::GpuMemoryBufferHandle handle,
 +              const gfx::Size& size,
 +              int64_t timestamp_us,
@@ -808,6 +837,7 @@ new file mode 100644
 +    bool busy = false;
 +  };
 +  struct Input {
++    uint64_t generation = 0;
 +    std::unique_ptr<blink_glue::CefExternalVideoSource> source;
 +    CefRefPtr<CefV8Value> track;
 +    std::array<Destination, kMaxDepth> destinations;
@@ -816,6 +846,7 @@ new file mode 100644
 +                    size_t slot,
 +                    unsigned query,
 +                    std::string context_token,
++                    uint64_t source_generation,
 +                    scoped_refptr<gpu::ClientSharedImage> imported,
 +                    scoped_refptr<media::VideoFrame> frame,
 +                    Completion completion);
@@ -831,7 +862,7 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,197 @@
+@@ -0,0 +1,216 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -894,11 +925,23 @@ new file mode 100644
 +  for (auto& input : inputs_) {
 +    input.source.reset();
 +    input.track = nullptr;
++    input.generation = 0;
++  }
++}
++
++void CefMediaInputBridge::AdvanceGeneration(const std::string& token,
++                                            uint32_t input,
++                                            uint64_t generation) {
++  CEF_REQUIRE_RT();
++  if (!failed_ && input < kInputs && token == context_token_ &&
++      generation > inputs_[input].generation) {
++    inputs_[input].generation = generation;
 +  }
 +}
 +
 +void CefMediaInputBridge::Submit(const std::string& context_token,
 +                                 uint32_t input,
++                                 uint64_t source_generation,
 +                                 gfx::GpuMemoryBufferHandle handle,
 +                                 const gfx::Size& size,
 +                                 int64_t timestamp_us,
@@ -912,6 +955,11 @@ new file mode 100644
 +    std::move(completion).Run(true, false);
 +    return;
 +  }
++  if (!source_generation || source_generation < inputs_[input].generation) {
++    std::move(completion).Run(true, false);
++    return;
++  }
++  inputs_[input].generation = source_generation;
 +  size_t index = 0;
 +  auto& destinations = inputs_[input].destinations;
 +  while (index < depth_ && destinations[index].busy) {
@@ -985,10 +1033,10 @@ new file mode 100644
 +  ri->BeginQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM, query);
 +  ri->EndQueryEXT(GL_COMMANDS_COMPLETED_CHROMIUM);
 +  context_->ContextSupport()->SignalQuery(
-+      query, base::BindOnce(&CefMediaInputBridge::CopyFinished,
-+                            base::WrapRefCounted(this), input, index, query,
-+                            context_token, std::move(imported),
-+                            std::move(frame), std::move(completion)));
++      query, base::BindOnce(
++                 &CefMediaInputBridge::CopyFinished, base::WrapRefCounted(this),
++                 input, index, query, context_token, source_generation,
++                 std::move(imported), std::move(frame), std::move(completion)));
 +  ri->Flush();
 +}
 +
@@ -997,6 +1045,7 @@ new file mode 100644
 +    size_t /* slot */,
 +    unsigned query,
 +    std::string context_token,
++    uint64_t source_generation,
 +    scoped_refptr<gpu::ClientSharedImage> /* imported */,
 +    scoped_refptr<media::VideoFrame> frame,
 +    Completion completion) {
@@ -1010,7 +1059,8 @@ new file mode 100644
 +    return;
 +  }
 +  bool delivered = false;
-+  if (context_token == context_token_ && inputs_[input].source) {
++  if (context_token == context_token_ &&
++      inputs_[input].generation == source_generation && inputs_[input].source) {
 +    delivered = inputs_[input].source->PushFrame(std::move(frame),
 +                                                 base::TimeTicks::Now());
 +  }

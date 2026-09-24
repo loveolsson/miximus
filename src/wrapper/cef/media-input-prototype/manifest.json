@@ -1,5 +1,5 @@
 {
-  "revision": 2,
+  "revision": 3,
   "base_source_build_revision": 2,
   "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
   "chromium_revision": "066c60fad7c77efe3a81ad78c8109afba848b18d",
@@ -7,7 +7,7 @@
     {
       "repository": "cef",
       "file": "cef.patch",
-      "sha256": "2446c2b93644087b98ae3f3c34d66d49cabb5aafdea25dfeb7baef9a58bb8052"
+      "sha256": "ad3a8fc24368dbfbb176563b5b779394755669bb936e5ec8862c6a0b4b6a25ec"
     },
     {
       "repository": "chromium",

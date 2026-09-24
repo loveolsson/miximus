@@ -293,6 +293,14 @@ export interface cef_browser_status_s {
   readonly cef_capture_max_us: number;
   readonly cef_completion_wait_p95_upper_us: number;
   readonly cef_completion_wait_max_us: number;
+  readonly cef_inputs_state: string;
+  readonly cef_inputs_error: string;
+  readonly cef_inputs_active: number;
+  readonly cef_inputs_submitted: number;
+  readonly cef_inputs_delivered: number;
+  readonly cef_inputs_drops: number;
+  readonly cef_inputs_held: number;
+  readonly cef_inputs_reserved_bytes: number;
 }
 
 export interface device_names_status_s {

@@ -1,3 +1,5 @@
+#include "nodes/cef/media_input_types.hpp"
+#include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/register_all.hpp"
@@ -89,4 +91,22 @@ TEST(NodeOptions, CefBrowserUsesOnePixelSizeAndAlwaysSupportsTransparency)
     EXPECT_EQ(node->normalize_option("size", &malformed), nodes::option_result_e::invalid);
     auto transparent = nlohmann::json(false);
     EXPECT_EQ(node->normalize_option("transparent", &transparent), nodes::option_result_e::invalid);
+}
+
+TEST(NodeOptions, CefBrowserExposesEightStableTextureInputsInEveryBuild)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::register_all_nodes(&definitions);
+    const auto node = definitions.at("cef_browser").constructor();
+    EXPECT_EQ(node->get_interfaces().size(), 9U);
+    for (const auto name : nodes::cef::MEDIA_INPUT_NAMES) {
+        const auto* input = node->find_interface(name);
+        ASSERT_NE(input, nullptr);
+        EXPECT_EQ(input->direction(), nodes::interface_i::dir_e::input);
+        EXPECT_EQ(input->type(), nodes::interface_type_e::texture);
+        EXPECT_TRUE(input->accepts(nodes::interface_type_e::framebuffer));
+    }
+    ASSERT_NE(node->find_interface("tex"), nullptr);
+    EXPECT_EQ(node->find_interface("tex")->direction(), nodes::interface_i::dir_e::output);
+    EXPECT_EQ(node->find_interface("input_8"), nullptr);
 }

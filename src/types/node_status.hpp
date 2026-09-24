@@ -42,6 +42,10 @@ struct cef_browser_status_s
     uint64_t    cef_capture_max_us{};
     uint64_t    cef_completion_wait_p95_upper_us{};
     uint64_t    cef_completion_wait_max_us{};
+    std::string cef_inputs_state{"unavailable"};
+    std::string cef_inputs_error;
+    uint64_t cef_inputs_active{}, cef_inputs_submitted{}, cef_inputs_delivered{}, cef_inputs_drops{}, cef_inputs_held{},
+        cef_inputs_reserved_bytes{};
 };
 
 struct device_names_status_s
@@ -315,7 +319,15 @@ BOOST_DESCRIBE_STRUCT(cef_browser_status_s,
                        cef_capture_p99_upper_us,
                        cef_capture_max_us,
                        cef_completion_wait_p95_upper_us,
-                       cef_completion_wait_max_us))
+                       cef_completion_wait_max_us,
+                       cef_inputs_state,
+                       cef_inputs_error,
+                       cef_inputs_active,
+                       cef_inputs_submitted,
+                       cef_inputs_delivered,
+                       cef_inputs_drops,
+                       cef_inputs_held,
+                       cef_inputs_reserved_bytes))
 BOOST_DESCRIBE_STRUCT(device_names_status_s, (), (device_names))
 BOOST_DESCRIBE_STRUCT(display_modes_status_s, (), (display_modes))
 BOOST_DESCRIBE_STRUCT(source_names_status_s, (), (source_names))

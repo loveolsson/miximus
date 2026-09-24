@@ -4,13 +4,16 @@
 #include "detail/capture_timing.hpp"
 #include "detail/frame_pool.hpp"
 #include "media/timed_source_queue.hpp"
+#include "media_input_types.hpp"
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace miximus::nodes::cef {
 
@@ -51,6 +54,7 @@ class session_s
         detail::capture_timing_s::snapshot_s capture;
         detail::capture_timing_s::snapshot_s completion_wait;
         media::timed_source_queue_metrics_s  source_queue;
+        media_input_metrics_s                inputs;
     };
 
     using frame_ptr_t = std::shared_ptr<const detail::frame_pool_s::frame_s>;
@@ -65,7 +69,7 @@ class session_s
   protected:
     struct impl_s;
     std::unique_ptr<impl_s> impl_;
-    session_s(gpu::device_s& device, options_s options);
+    session_s(gpu::device_s& device, options_s options, std::shared_ptr<detail::media_input_runtime_s> inputs = {});
     void reset_frames();
 
   public:
@@ -85,11 +89,18 @@ class session_s
     void                          send_program_time(core::frame_context_s time);
 
     // Render-thread methods, matching the existing media input lifecycle.
-    void        advance_frames(utils::flicks pts, utils::flicks target_time, bool discontinuity);
-    bool        submit_frame(utils::flicks pts);
-    frame_ptr_t resolve_frame();
-    void        release_prepared_frame();
-    metrics_s   metrics() const;
+    void                  advance_frames(utils::flicks pts, utils::flicks target_time, bool discontinuity);
+    bool                  submit_frame(utils::flicks pts);
+    frame_ptr_t           resolve_frame();
+    void                  release_prepared_frame();
+    metrics_s             metrics() const;
+    uint32_t              media_input_demand() const;
+    std::function<void()> record_media_input(size_t                input,
+                                             gpu::recording_s&     commands,
+                                             const gpu::texture_s* source,
+                                             std::string_view      source_node,
+                                             std::string_view      source_interface,
+                                             int64_t               timestamp_us);
 };
 
 } // namespace miximus::nodes::cef

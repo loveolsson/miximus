@@ -1,3 +1,4 @@
+#include "browser_inputs.hpp"
 #include "browser_options.hpp"
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
@@ -8,6 +9,7 @@
 #include "subsystem.hpp"
 #include "types/node_status_json.hpp"
 
+#include <bit>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -21,6 +23,8 @@ using namespace std::chrono_literals;
 class node_impl final : public node_i
 {
     output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    cef::browser_inputs_s                     inputs_{*this};
+    uint32_t                                  input_mask_{};
     using session_t = cef::session_s;
     std::unique_ptr<cef::session_request_s> request_;
     std::shared_ptr<session_t>              session_;
@@ -53,6 +57,7 @@ class node_impl final : public node_i
         session_.reset();
         request_.reset();
         browser_status_ = {};
+        input_mask_     = 0;
     }
 
     void fail(std::string error)
@@ -99,6 +104,18 @@ class node_impl final : public node_i
             return;
         }
         if (metrics) {
+            const auto& inputs                              = metrics->inputs;
+            browser_status.cef_inputs_state                 = !inputs.available   ? "unavailable"
+                                                              : inputs.failed     ? "failed"
+                                                              : inputs.subscribed ? "active"
+                                                                                  : "idle";
+            browser_status.cef_inputs_error                 = inputs.error;
+            browser_status.cef_inputs_active                = std::popcount(inputs.subscribed);
+            browser_status.cef_inputs_submitted             = inputs.submitted;
+            browser_status.cef_inputs_delivered             = inputs.delivered;
+            browser_status.cef_inputs_drops                 = inputs.drops;
+            browser_status.cef_inputs_held                  = inputs.occupied;
+            browser_status.cef_inputs_reserved_bytes        = inputs.reserved_bytes;
             browser_status.cef_paints                       = metrics->received;
             browser_status.cef_copies                       = metrics->copied;
             browser_status.cef_capacity_drops               = metrics->dropped;
@@ -190,7 +207,7 @@ class node_impl final : public node_i
         return {};
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
+    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
     {
         auto*      status  = app->status_registry();
         const bool enabled = state.get_option<bool>("enabled");
@@ -232,20 +249,45 @@ class node_impl final : public node_i
                       status::connected_status_s{
                           .connected = metrics && metrics->phase == session_t::phase_e::ready,
                       });
+        input_mask_               = session_ ? session_->media_input_demand() : 0;
+        result->demands_execution = input_mask_ != 0;
         publish_metrics(status, metrics, now);
     }
 
-    void submit(core::app_state_s* app, const node_map_t& /* nodes */, const node_state_s& /* state */) final
+    void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         if (session_) {
             (void)session_->submit_frame(app->frame_context().program_pts);
+            for (size_t input = 0; input < inputs_.ports.size(); ++input)
+                if (input_mask_ & (1u << input))
+                    interface_i::submit_dependencies(app, nodes, inputs_.ports[input].connections(state));
         }
     }
 
-    void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& /* state */) final
+    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         output_ = session_ ? session_->resolve_frame() : nullptr;
         iface_tex_.set_value(output_ ? &output_->texture() : nullptr);
+        if (session_)
+            for (size_t input = 0; input < inputs_.ports.size(); ++input) {
+                if (!(input_mask_ & (1u << input)))
+                    continue;
+                const auto*            source      = inputs_.ports[input].resolve_value(app, nodes, state);
+                const auto             connections = inputs_.ports[input].connections(state);
+                const std::string_view source_node =
+                    connections.empty() ? std::string_view{} : connections.front().from_node;
+                const std::string_view source_interface =
+                    connections.empty() ? std::string_view{} : connections.front().from_interface;
+                if (auto publish = session_->record_media_input(
+                        input,
+                        app->commands(),
+                        source,
+                        source_node,
+                        source_interface,
+                        std::chrono::duration_cast<std::chrono::microseconds>(app->frame_context().program_pts)
+                            .count()))
+                    app->defer_output([publish = std::move(publish)](gpu::completion_s) { publish(); });
+            }
     }
 
     void complete(core::app_state_s* /* app */) final

@@ -193,3 +193,49 @@ The final rerun reported HTML `presentedFrames` of 114–117 per input; rVFC cal
 can be lower. Send-to-retirement observation was p50 4,277 µs, p95 10,794 µs, max 70,457 µs, including worker polling.
 No sustained HD/UHD or clean steady-state benchmark is claimed. The default application still uses the original
 qualified runtime; graph input ports and session integration remain the next step.
+
+## Node/session integration and qualification
+
+The browser node now exposes `input_0`…`input_7` in both native and web definitions, including CEF-disabled builds.
+Only page-subscribed inputs demand graph execution. The node records through the existing frame recording and
+publishes via `defer_output`, after successful submission. Native/web status reports availability, subscriptions,
+committed frames, deliveries, drops, held export slots, reservation bytes and failures. A stock runtime reports the
+input feature unavailable; browser output remains usable.
+
+The session owns a transfer worker, two Vulkan exports per active input, and a runtime-wide admission reservation.
+Allocation and producer-fence polling stay off the render thread. The 128 MiB export limit is supplemented by a
+separate 2 GiB shared input reservation, conservatively allowing eight Chromium destinations per input at padded
+high-water dimensions. This is an admission estimate, not measured driver memory. Actual export allocation bytes
+remain bounded separately. Reservations survive unknown-retirement quarantine until CEF shutdown. Chromium slot
+reuse still waits for release tokens, including destinations retained across resize.
+
+Source replacement, disconnect and resize advance a per-input generation. Private send ABI **v2** transports this
+identity and supports texture-free generation invalidation. Old copies can finish and acknowledge safe external
+reuse, but cannot enter the native media source once its generation advances. This does not retract frames already
+accepted by Chromium's media pipeline. Document identity separately rejects navigation-stale work. A disconnected
+input receives opaque GPU-generated black at the last known dimensions (16×16 before a source is connected).
+Subscriptions currently last until document revocation; stopping all page tracks does not yet remove graph demand.
+
+`cef_media_input_session_probe` exercises the real subsystem/session and accelerated output, with GPU-only pattern
+checks across eight 640×360 inputs and three 120-tick stages. The first validation run delivered 2,855 of 2,858 committed
+frames with three transport drops. It verified source replacement, disconnect-to-black, independent resize to
+320×180, page reload, and drained shutdown without Vulkan validation errors. Reservations stayed at 94,371,840 bytes.
+The test checks native video dimensions as well as unique per-input midtone/alpha patterns. This is short functional
+qualification, not an HD/UHD performance claim or exhaustive crash testing.
+
+For the isolated artifact currently staged on the development host:
+
+```sh
+LD_LIBRARY_PATH="$PWD/build-cef-media-input-r5/link" build/miximus
+# Standalone integration qualification; use a fresh profile directory:
+VK_LAYER_PATH="$PWD/build/tools/vulkan-validation/1.4.357.0/x86_64/share/vulkan/explicit_layer.d" \
+MIXIMUS_VULKAN_VALIDATION=1 LD_LIBRARY_PATH="$PWD/build-cef-media-input-r5/link" \
+  build/src/nodes/cef/cef_media_input_session_probe \
+  "$PWD/build-cef-media-input-r5/runtime" /tmp/miximus-media-session-new-profile
+```
+
+The default application runtime remains unchanged. The experimental artifact must contain the matching helper,
+CEF library and generated resources; do not mix a new library with old `.pak`/snapshot files. Reproduction uses the
+prototype build script and patches, not this machine-specific directory name. Remaining qualification includes
+rapid navigation/renderer failure with work in flight, retaining consumers, adapter mismatch, longer cadence runs,
+and HD/UHD memory/throughput tuning. Windows/native platform transports remain outside this Linux implementation.

@@ -61,7 +61,7 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
         if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || depth < 1 || depth > 8)
             return;
     }
-    if (!install || !install(token.c_str(), depth)) {
+    if (!install || !dlsym(RTLD_DEFAULT, cef_wrapper::SEND_MEDIA_FRAME) || !install(token.c_str(), depth)) {
         return;
     }
     auto global = context->GetGlobal();

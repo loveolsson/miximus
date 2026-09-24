@@ -67,19 +67,22 @@ class media_input_exports_s
         // Only the transport's proven GPU-copy completion permits true.
         // False/destruction quarantines; it never manufactures completion.
         void retire(bool safe);
+        bool current() const;
     };
 
-    media_input_exports_s(gpu::device_s& device,
-                          size_t         depth,
-                          quarantine_s&  quarantine,
-                          size_t         byte_budget = 128ULL * 1024 * 1024);
+    media_input_exports_s(gpu::device_s&        device,
+                          size_t                depth,
+                          quarantine_s&         quarantine,
+                          size_t                byte_budget  = 128ULL * 1024 * 1024,
+                          std::shared_ptr<void> budget_lease = {});
     ~media_input_exports_s();
     media_input_exports_s(const media_input_exports_s&)            = delete;
     media_input_exports_s& operator=(const media_input_exports_s&) = delete;
     // Worker-only, allocation is outside the metadata lock. False means old
     // leases must drain first. No overlapping old/new allocation generations.
-    bool configure(size_t input, gpu::extent_s extent);
-    void invalidate(size_t input);
+    bool     configure(size_t input, gpu::extent_s extent);
+    void     invalidate(size_t input);
+    uint64_t generation(size_t input) const;
     std::shared_ptr<publication_s>
     record(size_t input, gpu::recording_s& recording, const gpu::texture_s& source, int64_t timestamp_us);
     // Poll actual producer completion and return at most one consumable lease.

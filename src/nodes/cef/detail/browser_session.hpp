@@ -6,8 +6,8 @@ namespace miximus::nodes::cef::detail {
 class browser_session_s final : public session_s
 {
   public:
-    browser_session_s(gpu::device_s& device, options_s options)
-        : session_s(device, std::move(options))
+    browser_session_s(gpu::device_s& device, options_s options, std::shared_ptr<media_input_runtime_s> inputs = {})
+        : session_s(device, std::move(options), std::move(inputs))
     {
     }
     ~browser_session_s();

@@ -208,7 +208,11 @@ TEST_F(export_queue_test, ResizeCannotReplaceAConsumerOrRetainedAllocation)
     publication->commit();
     auto frame = queue->poll();
     ASSERT_TRUE(frame);
+    EXPECT_TRUE(frame->current());
+    EXPECT_EQ(frame->ticket().generation, queue->generation(0));
     queue->invalidate(0);
+    EXPECT_FALSE(frame->current());
+    EXPECT_GT(queue->generation(0), frame->ticket().generation);
     EXPECT_FALSE(queue->configure(0, {32, 16}));
     frame->retire(true);
     EXPECT_FALSE(queue->configure(0, {32, 16})); // The client still holds the allocation.
@@ -219,6 +223,11 @@ TEST_F(export_queue_test, ResizeCannotReplaceAConsumerOrRetainedAllocation)
 
 TEST_F(export_queue_test, ForgottenConsumerQuarantinesAcrossQueueDestruction)
 {
+    auto               lease    = std::make_shared<int>(1);
+    std::weak_ptr<int> retained = lease;
+    queue = std::make_unique<media_input_exports_s>(*device, 1, *quarantine, 128ULL * 1024 * 1024, lease);
+    lease.reset();
+    ASSERT_TRUE(queue->configure(0, {16, 16}));
     std::unique_ptr<gpu::recording_s> commands;
     auto                              publication = record(commands);
     finish(commands);
@@ -232,6 +241,9 @@ TEST_F(export_queue_test, ForgottenConsumerQuarantinesAcrossQueueDestruction)
     EXPECT_FALSE(queue->configure(0, {16, 16}));
     queue.reset();
     EXPECT_NE(fcntl(fd, F_GETFD), -1); // Quarantine outlives the producer queue.
+    EXPECT_FALSE(retained.expired());  // Its shared admission charge must survive too.
+    quarantine.reset();
+    EXPECT_TRUE(retained.expired());
 }
 
 TEST_F(export_queue_test, EightInputsRemainBoundedAndByteBudgetRejectsOversizeBeforeAllocation)

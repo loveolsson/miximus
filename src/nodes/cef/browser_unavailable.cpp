@@ -1,3 +1,4 @@
+#include "browser_inputs.hpp"
 #include "browser_options.hpp"
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
@@ -13,6 +14,7 @@ namespace {
 class unavailable_browser_s final : public node_i
 {
     output_interface_s<const gpu::texture_s*> texture_{*this, "tex"};
+    browser_inputs_s                          inputs_{*this};
 
   public:
     action_result_s handle_action(core::app_state_s* /* app */,

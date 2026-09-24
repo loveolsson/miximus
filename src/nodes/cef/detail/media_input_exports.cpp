@@ -48,17 +48,19 @@ struct media_input_exports_s::state_s
     quarantine_s&               quarantine;
     std::mutex                  configure_mutex;
     const size_t                byte_budget;
+    std::shared_ptr<void>       budget_lease;
     mutable std::mutex          mutex;
     media_input_pool_s          pool;
     std::array<input_s, INPUTS> inputs;
     bool                        failed{};
     size_t                      next_input{};
 
-    state_s(gpu::device_s& gpu, size_t count, quarantine_s& owner, size_t budget)
+    state_s(gpu::device_s& gpu, size_t count, quarantine_s& owner, size_t budget, std::shared_ptr<void> lease)
         : device(gpu)
         , depth(count)
         , quarantine(owner)
         , byte_budget(budget)
+        , budget_lease(std::move(lease))
         , pool(count)
     {
     }
@@ -117,11 +119,7 @@ media_input_exports_s::frame_s::frame_s(std::shared_ptr<state_s> state, std::sha
     , pending_(std::move(pending))
 {
 }
-media_input_exports_s::frame_s::~frame_s()
-{
-    if (!retired_)
-        retire(false);
-}
+media_input_exports_s::frame_s::~frame_s() { retire(false); }
 media_input_pool_s::ticket_s         media_input_exports_s::frame_s::ticket() const { return pending_->ticket; }
 const gpu::detail::dma_buf_export_s& media_input_exports_s::frame_s::image() const
 {
@@ -130,27 +128,41 @@ const gpu::detail::dma_buf_export_s& media_input_exports_s::frame_s::image() con
     return *pending_->image;
 }
 int64_t media_input_exports_s::frame_s::timestamp_us() const { return pending_->timestamp; }
-void    media_input_exports_s::frame_s::retire(bool safe)
+bool    media_input_exports_s::frame_s::current() const
 {
-    if (retired_)
-        return;
-    if (!safe) {
-        state_s::quarantine_state(state_);
-    } else {
+    std::lock_guard lock(state_->mutex);
+    return !retired_ && !pending_->cancelled && !state_->failed;
+}
+uint64_t media_input_exports_s::generation(size_t input) const
+{
+    state_s::validate(input);
+    std::lock_guard lock(state_->mutex);
+    return state_->inputs[input].revision + 1;
+}
+void media_input_exports_s::frame_s::retire(bool safe)
+{
+    {
         std::lock_guard lock(state_->mutex);
-        state_->pool.consumer_finished(pending_->ticket);
-        auto& entry = state_->inputs[pending_->ticket.input].pending[pending_->ticket.slot];
-        if (entry == pending_)
-            entry.reset();
+        if (retired_)
+            return;
+        retired_ = true;
+        if (safe) {
+            state_->pool.consumer_finished(pending_->ticket);
+            auto& entry = state_->inputs[pending_->ticket.input].pending[pending_->ticket.slot];
+            if (entry == pending_)
+                entry.reset();
+        }
     }
-    retired_ = true;
+    if (!safe)
+        state_s::quarantine_state(state_);
 }
 
-media_input_exports_s::media_input_exports_s(gpu::device_s& device,
-                                             size_t         depth,
-                                             quarantine_s&  quarantine,
-                                             size_t         byte_budget)
-    : state_(std::make_shared<state_s>(device, depth, quarantine, byte_budget))
+media_input_exports_s::media_input_exports_s(gpu::device_s&        device,
+                                             size_t                depth,
+                                             quarantine_s&         quarantine,
+                                             size_t                byte_budget,
+                                             std::shared_ptr<void> budget_lease)
+    : state_(std::make_shared<state_s>(device, depth, quarantine, byte_budget, std::move(budget_lease)))
 {
 }
 media_input_exports_s::~media_input_exports_s() = default;
@@ -179,6 +191,11 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
         for (size_t slot = 0; slot < state.depth; ++slot)
             if (entry.pending[slot] || (entry.images[slot] && entry.images[slot].use_count() != 1))
                 return false;
+        if (entry.extent == extent && entry.images[0]) {
+            state.revoke(input);
+            entry.active = true;
+            return true;
+        }
         size_t other_bytes{};
         for (size_t other = 0; other < INPUTS; ++other)
             if (other != input)
@@ -254,7 +271,7 @@ std::shared_ptr<media_input_exports_s::publication_s> media_input_exports_s::rec
     {
         std::lock_guard lock(state->mutex);
         auto&           entry = state->inputs[input];
-        if (state->failed || !entry.active || entry.configuring || source.extent() != entry.extent)
+        if (state->failed || !entry.active || entry.configuring)
             return nullptr;
         const auto ticket = state->pool.acquire(input);
         if (!ticket)

@@ -5,6 +5,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_jsdialog_handler.h"
+#include "media_input_session.hpp"
 #include "task.hpp"
 
 #include <atomic>
@@ -23,16 +24,17 @@ using phase_e = browser_session_s::phase_e;
 
 struct shared_state_s
 {
-    std::shared_ptr<command_channel_s> commands = std::make_shared<command_channel_s>();
-    std::atomic<phase_e>               phase{phase_e::starting};
-    std::atomic_bool                   started;
-    std::atomic_bool                   reload_pending;
-    std::atomic_bool                   close_requested;
-    std::atomic_bool                   closed;
-    mutable std::mutex                 mutex;
-    mutable std::condition_variable    changed;
-    std::string                        error;
-    void                               fail(std::string message)
+    std::shared_ptr<media_input_session_s> inputs;
+    std::shared_ptr<command_channel_s>     commands = std::make_shared<command_channel_s>();
+    std::atomic<phase_e>                   phase{phase_e::starting};
+    std::atomic_bool                       started;
+    std::atomic_bool                       reload_pending;
+    std::atomic_bool                       close_requested;
+    std::atomic_bool                       closed;
+    mutable std::mutex                     mutex;
+    mutable std::condition_variable        changed;
+    std::string                            error;
+    void                                   fail(std::string message)
     {
         std::scoped_lock lock(mutex);
         if (error.empty()) {
@@ -44,6 +46,7 @@ struct shared_state_s
     void mark_closed()
     {
         commands->close();
+        inputs->close();
         {
             std::scoped_lock lock(mutex);
             closed = true;
@@ -117,6 +120,7 @@ class client_s final
     void close()
     {
         state_->commands->cancel_commands("Browser is closing");
+        state_->inputs->close();
         if (browser_) {
             browser_->GetHost()->CloseBrowser(true);
         } else if (!creation_pending_) {
@@ -128,6 +132,7 @@ class client_s final
     {
         if (browser_ && !state_->close_requested && state_->phase != phase_e::failed) {
             state_->commands->cancel_commands("Browser is reloading");
+            state_->inputs->revoke_context();
             state_->phase = phase_e::loading;
             if (ignore_cache) {
                 browser_->ReloadIgnoreCache();
@@ -148,6 +153,7 @@ class client_s final
         creation_pending_ = false;
         browser_          = browser;
         state_->commands->attach(browser);
+        state_->inputs->attach(browser->GetIdentifier());
         browser_->GetHost()->SetAudioMuted(true);
         if (state_->close_requested) {
             close();
@@ -281,6 +287,7 @@ class client_s final
     {
         if (frame->IsMain() && !state_->close_requested) {
             state_->commands->cancel_commands("Browser navigated");
+            state_->inputs->revoke_context();
             capture_.new_epoch();
             state_->phase = phase_e::loading;
         }
@@ -303,6 +310,7 @@ class client_s final
                                    const CefString& text) override
     {
         state_->commands->cancel_commands("Browser renderer terminated");
+        state_->inputs->revoke_context();
         state_->fail(std::format("CEF renderer terminated {}: {}", code, text.ToString()));
     }
 
@@ -311,7 +319,8 @@ class client_s final
                                   CefProcessId                 source,
                                   CefRefPtr<CefProcessMessage> message) override
     {
-        return state_->commands->receive(frame, source, message);
+        const bool control = state_->commands->receive(frame, source, message);
+        return state_->inputs->receive(browser_, frame, source, message) || control;
     }
 
     void OnPaint(CefRefPtr<CefBrowser> /* browser */,
@@ -357,7 +366,7 @@ struct session_s::impl_s
     CefRefPtr<client_s>             client;
 };
 
-session_s::session_s(gpu::device_s& device, options_s options)
+session_s::session_s(gpu::device_s& device, options_s options, std::shared_ptr<media_input_runtime_s> inputs)
     : impl_(std::make_unique<impl_s>())
 {
     if (!MIXIMUS_CEF_NATIVE_CAPTURE_READY) {
@@ -369,7 +378,8 @@ session_s::session_s(gpu::device_s& device, options_s options)
         options.dimensions.y > 8192 || options.frame_rate < 1 || options.frame_rate > 1'000'000) {
         throw std::invalid_argument("Invalid CEF session options");
     }
-    impl_->client = new client_s(device, std::move(options), impl_->state);
+    impl_->state->inputs = std::make_shared<media_input_session_s>(device, std::move(inputs));
+    impl_->client        = new client_s(device, std::move(options), impl_->state);
 }
 
 session_s::~session_s() = default;
@@ -407,6 +417,7 @@ void detail::browser_session_s::close_async()
         return;
     }
     impl_->state->commands->close();
+    impl_->state->inputs->close();
     impl_->state->phase = phase_e::closing;
     if (!CefPostTask(TID_UI, new task_s([client = impl_->client] { client->close(); }))) {
         impl_->state->fail("Cannot dispatch CEF browser closure");
@@ -420,7 +431,10 @@ size_t detail::browser_session_s::texture_budget(const options_s& options)
     return capture_stream_s::texture_budget(options.dimensions);
 }
 
-bool detail::browser_session_s::resources_idle() const { return impl_->client->capture().idle(); }
+bool detail::browser_session_s::resources_idle() const
+{
+    return impl_->client->capture().idle() && impl_->state->inputs->idle();
+}
 
 bool session_s::context_ready() const noexcept { return impl_->state->commands->ready(); }
 
@@ -468,7 +482,19 @@ session_s::metrics_s session_s::metrics() const
     result.error             = impl_->state->error;
     result.timing_rejections = commands.rejections;
     result.timing_error      = commands.error;
+    result.inputs            = impl_->state->inputs->metrics();
     return result;
+}
+
+uint32_t              session_s::media_input_demand() const { return impl_->state->inputs->demand(); }
+std::function<void()> session_s::record_media_input(size_t                input,
+                                                    gpu::recording_s&     commands,
+                                                    const gpu::texture_s* source,
+                                                    std::string_view      source_node,
+                                                    std::string_view      source_interface,
+                                                    int64_t               timestamp_us)
+{
+    return impl_->state->inputs->record(input, commands, source, source_node, source_interface, timestamp_us);
 }
 
 } // namespace miximus::nodes::cef

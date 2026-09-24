@@ -1,4 +1,4 @@
-target_sources(nodes PRIVATE register.hpp register.cpp subsystem_fwd.hpp browser_options.hpp)
+target_sources(nodes PRIVATE register.hpp register.cpp subsystem_fwd.hpp browser_options.hpp browser_inputs.hpp media_input_types.hpp)
 if(MIXIMUS_ENABLE_CEF)
     target_sources(nodes PRIVATE browser.cpp)
 else()
@@ -52,7 +52,8 @@ if(MIXIMUS_ENABLE_CEF)
     target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/media_input_renderer.hpp detail/media_input_renderer.cpp detail/command_protocol.hpp detail/command_messages.hpp)
     add_library(cef_runtime STATIC detail/runtime.hpp detail/runtime.cpp)
     target_sources(cef_runtime PRIVATE
-        session.hpp
+        session.hpp media_input_types.hpp
+        detail/media_input_session.hpp detail/media_input_session.cpp
         detail/task.hpp
         detail/capture_timing.hpp
         detail/browser_session.hpp detail/browser_session.cpp
@@ -60,7 +61,7 @@ if(MIXIMUS_ENABLE_CEF)
         detail/capture_stream.hpp detail/capture_stream.cpp
     )
     target_sources(cef_runtime PRIVATE subsystem.hpp subsystem.cpp)
-    target_link_libraries(cef_runtime PUBLIC cef_ingress media)
+    target_link_libraries(cef_runtime PUBLIC cef_media_exports cef_ingress media)
     target_link_libraries(cef_runtime PRIVATE cef_sdk Threads::Threads ${CMAKE_DL_LIBS})
     target_include_directories(cef_runtime PUBLIC ${PROJECT_SOURCE_DIR}/src)
     add_dependencies(cef_runtime miximus_cef_helper)
@@ -85,6 +86,15 @@ if(MIXIMUS_ENABLE_CEF)
             MIXIMUS_CEF_COMPARE_SHADER="${CMAKE_CURRENT_BINARY_DIR}/shaders/color_compare.comp.spv")
         set_target_properties(cef_media_input_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
         add_sanitizers(cef_media_input_probe)
+        add_executable(cef_media_input_session_probe tests/media_input_session_probe.cpp
+            ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
+        target_link_libraries(cef_media_input_session_probe PRIVATE cef_runtime cef_sdk gpu logger
+            vulkan_dependencies magic_enum::magic_enum)
+        miximus_compile_shader(cef_media_input_session_probe ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
+        target_compile_definitions(cef_media_input_session_probe PRIVATE
+            MIXIMUS_CEF_COMPARE_SHADER="${CMAKE_CURRENT_BINARY_DIR}/shaders/color_compare.comp.spv")
+        set_target_properties(cef_media_input_session_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
+        add_sanitizers(cef_media_input_session_probe)
         add_executable(cef_runtime_probe tests/runtime_probe.cpp)
         target_link_libraries(cef_runtime_probe PRIVATE cef_runtime gpu logger ${CMAKE_DL_LIBS})
         set_target_properties(cef_runtime_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)

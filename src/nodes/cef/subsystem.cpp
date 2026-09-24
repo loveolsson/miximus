@@ -1,6 +1,7 @@
 #include "subsystem.hpp"
 
 #include "detail/browser_session.hpp"
+#include "detail/media_input_session.hpp"
 #include "detail/runtime.hpp"
 #include "include/cef_version_info.h"
 #include "utils/serial_executor.hpp"
@@ -88,9 +89,10 @@ struct session_request_s::state_s : std::enable_shared_from_this<state_s>
 
 struct subsystem_s::impl_s
 {
-    gpu::device_s&                            device;
-    detail::runtime_s                         runtime;
-    std::shared_ptr<utils::serial_executor_s> executor = std::make_shared<utils::serial_executor_s>();
+    gpu::device_s&                                 device;
+    std::shared_ptr<detail::media_input_runtime_s> inputs = std::make_shared<detail::media_input_runtime_s>();
+    detail::runtime_s                              runtime;
+    std::shared_ptr<utils::serial_executor_s>      executor = std::make_shared<utils::serial_executor_s>();
     // Admission is render-thread owned. Weak entries expire only after both
     // the node request and its queued allocation/retirement work have ended.
     std::vector<std::weak_ptr<session_request_s::state_s>> requests;
@@ -188,25 +190,26 @@ std::unique_ptr<session_request_s> subsystem_s::create_session(session_t::option
     }
     state->executor = impl_->executor;
     impl_->requests.push_back(state);
-    impl_->executor->post([state, device = &impl_->device, options = std::move(options)]() mutable {
-        {
-            const std::scoped_lock lock(state->mutex);
-            if (state->cancelled) {
-                return;
+    impl_->executor->post(
+        [state, device = &impl_->device, inputs = impl_->inputs, options = std::move(options)]() mutable {
+            {
+                const std::scoped_lock lock(state->mutex);
+                if (state->cancelled) {
+                    return;
+                }
             }
-        }
-        try {
-            state->owned = std::make_shared<session_t>(*device, std::move(options));
-            state->owned->start_async();
-            const std::scoped_lock lock(state->mutex);
-            if (!state->cancelled) {
-                state->published = state->owned;
+            try {
+                state->owned = std::make_shared<session_t>(*device, std::move(options), inputs);
+                state->owned->start_async();
+                const std::scoped_lock lock(state->mutex);
+                if (!state->cancelled) {
+                    state->published = state->owned;
+                }
+            } catch (const std::exception& failure) {
+                const std::scoped_lock lock(state->mutex);
+                state->failure = failure.what();
             }
-        } catch (const std::exception& failure) {
-            const std::scoped_lock lock(state->mutex);
-            state->failure = failure.what();
-        }
-    });
+        });
     return result;
 }
 
