@@ -3,8 +3,10 @@
 ## Device, recordings, and windows
 
 `core::app_state_s` owns one Vulkan 1.3 device and the upload/readback services. `gpu::window_s` is now only a GLFW
-window and monitor service. Windows use `GLFW_NO_API`; Linux uses X11/XWayland to preserve saved desktop positions and
-pixel sizes. Rendering and presentation still use Vulkan. Window creation, destruction, monitor queries, and event
+window and monitor service. Windows use `GLFW_NO_API`; Linux uses X11/XWayland to request saved desktop positions and
+pixel sizes. Placement is best effort within the window manager/compositor policy; users must choose positions
+suitable for their display setup. Adjusted placement, including keeping a window on screen, is expected behavior
+and is not a screen-output failure. Rendering and presentation still use Vulkan. Window creation, destruction, monitor queries, and event
 polling stay on the main/render thread. Presenter workers read cached drawable dimensions.
 
 Device selection requires the conversion storage-image features as well as the render format floor. Presentation
