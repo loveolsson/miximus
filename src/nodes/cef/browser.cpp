@@ -30,6 +30,7 @@ class node_impl final : public node_i
     std::chrono::steady_clock::time_point   next_metrics_;
     uint64_t                                restarts_{};
     std::string                             error_;
+    status::cef_browser_status_s            browser_status_;
 
     static session_t::options_s session_options(core::app_state_s* app, const node_state_s& state)
     {
@@ -51,6 +52,7 @@ class node_impl final : public node_i
         output_.reset();
         session_.reset();
         request_.reset();
+        browser_status_ = {};
     }
 
     void fail(std::string error)
@@ -82,15 +84,21 @@ class node_impl final : public node_i
                          const std::optional<session_t::metrics_s>& metrics,
                          std::chrono::steady_clock::time_point      now)
     {
-        // Lifecycle/error deltas are immediate; high-frequency counters are not.
+        auto& browser_status = browser_status_;
+        if (metrics) {
+            browser_status.cef_state = phase_name(metrics->phase);
+            browser_status.cef_error = metrics->error;
+        } else {
+            browser_status.cef_state = request_ ? "starting" : "failed";
+            browser_status.cef_error = error_;
+        }
+        browser_status.cef_restarts = restarts_;
+        // Publish lifecycle changes every frame while retaining the last counter snapshot.
         if (now < next_metrics_ && metrics) {
+            status->write(id_, browser_status);
             return;
         }
-        status::cef_browser_status_s browser_status;
-        browser_status.cef_restarts = restarts_;
         if (metrics) {
-            browser_status.cef_state                        = phase_name(metrics->phase);
-            browser_status.cef_error                        = metrics->error;
             browser_status.cef_paints                       = metrics->received;
             browser_status.cef_copies                       = metrics->copied;
             browser_status.cef_capacity_drops               = metrics->dropped;
@@ -102,9 +110,6 @@ class node_impl final : public node_i
             browser_status.cef_capture_max_us               = metrics->capture.maximum_us;
             browser_status.cef_completion_wait_p95_upper_us = metrics->completion_wait.p95_upper_us;
             browser_status.cef_completion_wait_max_us       = metrics->completion_wait.maximum_us;
-        } else {
-            browser_status.cef_state = request_ ? "starting" : "failed";
-            browser_status.cef_error = error_;
         }
         status->write(id_, browser_status);
         if (metrics) {

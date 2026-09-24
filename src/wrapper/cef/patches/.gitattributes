@@ -1,2 +1,2 @@
-# Unified-diff context for an empty line is a single space. Preserve upstream patches.
-*.patch whitespace=-blank-at-eol
+# Unified-diff empty context lines can also end a patch. Preserve pinned patch bytes.
+*.patch whitespace=-blank-at-eol,-blank-at-eof

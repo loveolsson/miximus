@@ -189,9 +189,9 @@ Slot acquisition uses a short metadata lock; temporary lock contention does not 
 The worker retires GPU/WSI uses before reporting stopped, so the node's asynchronous replacement path does not move
 retirement waits onto the render thread.
 
-The separate publication API exercised by window tests remains latest-wins and submits each publication once, redrawing retained
-content only for swapchain changes. `presentation_drops` exposes mailbox replacements independently of timed selection
-drops. The screen's callback path does not publish through this mailbox.
+Presenters obtain frames through the source callback, which owns timestamp selection and cadence, including explicit
+repeats across resize. Display tests exercise this same contract. The former publication mailbox is removed;
+`presentation_drops` remains in the screen status contract as zero.
 
 Swapchains use sRGB attachments; the final blit performs display encoding exactly once. Acquisition semaphores
 retire after their GPU wait; per-image present semaphores retire using swapchain-maintenance presentation fences. A
