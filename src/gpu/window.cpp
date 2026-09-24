@@ -177,8 +177,14 @@ auto window_s::resolve_window_target(const window_settings_s& settings) -> windo
             target.monitor = glfwGetPrimaryMonitor();
         }
 
+        if (target.monitor == nullptr) {
+            throw std::runtime_error(std::format("Fullscreen monitor is unavailable: {}", settings.monitor_id));
+        }
         if (target.monitor != nullptr) {
             target.mode = glfwGetVideoMode(target.monitor);
+            if (target.mode == nullptr) {
+                throw std::runtime_error(std::format("Fullscreen monitor has no video mode: {}", settings.monitor_id));
+            }
             if (target.mode != nullptr) {
                 glfwWindowHint(GLFW_RED_BITS, target.mode->redBits);
                 glfwWindowHint(GLFW_GREEN_BITS, target.mode->greenBits);

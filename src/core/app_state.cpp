@@ -16,6 +16,7 @@
 #include "utils/shutdown_watchdog.hpp"
 
 #include <cstdlib>
+#include <exception>
 #include <memory>
 #include <utility>
 
@@ -146,6 +147,9 @@ app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s com
 
 app_state_s::~app_state_s()
 {
+    if (std::uncaught_exceptions() != 0) {
+        utils::start_shutdown_watchdog();
+    }
     if (!window_system_) {
         return;
     }

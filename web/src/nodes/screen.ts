@@ -16,6 +16,7 @@ const screenStatus: readonly NodeStatusSection[] = [
     title: "Screen",
     fields: [
       { key: "connected", label: "Connection" },
+      { key: "screen_error", label: "Error" },
       { key: "clock_quality", label: "Clock quality" },
       { key: "measured_refresh_hz", label: "Measured refresh (Hz)", precision: 3 },
       { key: "swaps_completed", label: "Swaps", format: "integer" },

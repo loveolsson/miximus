@@ -23,6 +23,9 @@ namespace miximus::gpu::detail {
 
 void check(VkResult result, const char* operation)
 {
+    if (result == VK_ERROR_DEVICE_LOST) {
+        fatal_gpu_error(std::format("{}: Vulkan device lost", operation));
+    }
     if (result != VK_SUCCESS) {
         throw std::runtime_error(std::format("{} failed: Vulkan result {}", operation, static_cast<int>(result)));
     }
@@ -64,7 +67,17 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback(VkDebugUtilsMessageSeverityFlagBit
     return VK_FALSE;
 }
 
-int device_score(VkPhysicalDeviceType type)
+std::string uuid_string(const uint8_t* uuid)
+{
+    std::string result;
+    for (size_t i = 0; i < VK_UUID_SIZE; ++i) {
+        result += std::format("{:02x}", uuid[i]);
+    }
+
+    return result;
+}
+
+int device_type_score(VkPhysicalDeviceType type)
 {
     switch (type) {
         case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
@@ -74,16 +87,6 @@ int device_score(VkPhysicalDeviceType type)
         default:
             return 1;
     }
-}
-
-std::string uuid_string(const uint8_t* uuid)
-{
-    std::string result;
-    for (size_t i = 0; i < VK_UUID_SIZE; ++i) {
-        result += std::format("{:02x}", uuid[i]);
-    }
-
-    return result;
 }
 
 uint32_t describe_queue_families(std::span<const VkQueueFamilyProperties> families, nlohmann::json& entry)
@@ -438,14 +441,26 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         instance_vk.vkGetPhysicalDeviceMemoryProperties(candidate, &memory_properties);
         describe_memory_types(memory_properties, entry);
 
+        VkFormatProperties working_features{};
+        instance_vk.vkGetPhysicalDeviceFormatProperties(candidate, VK_FORMAT_R16G16B16A16_UNORM, &working_features);
+        const bool candidate_conversion =
+            (features.features.shaderStorageImageExtendedFormats != 0U) &&
+            ((working_features.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0U);
+        const bool candidate_maintenance = (maintenance.swapchainMaintenance1 != 0U) &&
+                                           has_device_extension(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) &&
+                                           surface_maintenance_available;
+        entry["buffer_conversion"]     = candidate_conversion;
+        entry["swapchain_maintenance"] = candidate_maintenance;
+
         const bool supported =
             device_properties.properties.apiVersion >= VK_API_VERSION_1_3 &&
             (vulkan13_features.dynamicRendering != 0U) && (vulkan13_features.synchronization2 != 0U) &&
             (vulkan12_features.timelineSemaphore != 0U) && selected_queue_family != UINT32_MAX && formats_ok &&
-            (!options.presentation || has_device_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME));
+            candidate_conversion &&
+            (!options.presentation || (has_device_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME) && candidate_maintenance));
         entry["supported"] = supported;
         report["devices"].push_back(entry);
-        const int score = device_score(device_properties.properties.deviceType);
+        const int score = device_type_score(device_properties.properties.deviceType);
 
         if (!supported || score <= best_score ||
             (!requested_device_uuid.empty() && requested_device_uuid != uuid_string(identity.deviceUUID))) {
@@ -457,16 +472,11 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         memory       = memory_properties;
         queue_family = selected_queue_family;
 
-        VkFormatProperties working_features{};
-        instance_vk.vkGetPhysicalDeviceFormatProperties(candidate, VK_FORMAT_R16G16B16A16_UNORM, &working_features);
-        buffer_conversion = (features.features.shaderStorageImageExtendedFormats != 0U) &&
-                            ((working_features.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0U);
+        buffer_conversion      = candidate_conversion;
         best_score             = score;
         separate_present_queue = options.presentation && families[selected_queue_family].queueCount > 1;
-        swapchain_maintenance  = options.presentation && (maintenance.swapchainMaintenance1 != 0U) &&
-                                has_device_extension(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) &&
-                                surface_maintenance_available;
-        present_wait = options.presentation && present_wait_features.presentWait != 0U &&
+        swapchain_maintenance  = options.presentation && candidate_maintenance;
+        present_wait           = options.presentation && present_wait_features.presentWait != 0U &&
                        present_id_features.presentId != 0U &&
                        has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
                        has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);

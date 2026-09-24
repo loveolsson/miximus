@@ -116,12 +116,13 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(gpu_test
+        tests/fatal_test.cpp
         tests/geometry_test.cpp
         tests/texture_test.cpp
         tests/transfer_layout_test.cpp
         tests/external_image_support_test.cpp
     )
-    target_link_libraries(gpu_test PRIVATE gpu GTest::gtest_main)
+    target_link_libraries(gpu_test PRIVATE gpu vulkan_dependencies magic_enum::magic_enum GTest::gtest_main)
     add_sanitizers(gpu_test)
     gtest_discover_tests(gpu_test)
 endif()

@@ -26,6 +26,8 @@ is tracked in [frame-timing-and-synchronization.md](frame-timing-and-synchroniza
 The proposed Vulkan/MoltenVK migration, platform transfer strategy, and hardware acceptance gates are documented in
 [vulkan-migration.md](vulkan-migration.md). [Implementation progress](vulkan-progress.md) documents the Vulkan
 implementation and local results, including the application cutover.
+The deferred style and containment cleanup, to follow the Vulkan and CEF branch merges, is tracked in
+[vulkan-style-follow-up.md](vulkan-style-follow-up.md).
 
 ## Building and running
 

@@ -295,11 +295,12 @@ struct presenter_state_s
         info.imageArrayLayers = 1;
         info.imageUsage       = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         info.preTransform     = capabilities.currentTransform;
-        info.compositeAlpha   = ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) != 0U)
-                                    ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR
-                                    : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
-        info.presentMode      = VK_PRESENT_MODE_FIFO_KHR;
-        info.clipped          = VK_TRUE;
+        if ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) == 0U) {
+            throw std::runtime_error("Screen surface does not support required opaque presentation");
+        }
+        info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        info.presentMode    = VK_PRESENT_MODE_FIFO_KHR;
+        info.clipped        = VK_TRUE;
         check(owner->vk.vkCreateSwapchainKHR(owner->device, &info, nullptr, &swapchain), "swapchain creation");
         check(owner->vk.vkGetSwapchainImagesKHR(owner->device, swapchain, &count, nullptr), "swapchain images");
         std::vector<VkImage> handles(count);

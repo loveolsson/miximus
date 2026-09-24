@@ -23,6 +23,7 @@ struct shutdown_watchdog_state_s
     std::thread                           thread;
     std::string                           current_step{"shutdown startup"};
     std::chrono::steady_clock::time_point deadline;
+    std::chrono::seconds                  timeout{NO_PROGRESS_TIMEOUT};
     uint64_t                              generation{};
     bool                                  active{};
     bool                                  finished{};
@@ -49,10 +50,10 @@ void watchdog_loop()
         }
 
         const auto current_step = state.current_step;
+        const auto timeout      = state.timeout;
         lock.unlock();
-        const auto message = std::format("Shutdown made no progress for {} seconds during {}, forcing exit\n",
-                                         NO_PROGRESS_TIMEOUT.count(),
-                                         current_step);
+        const auto message = std::format(
+            "Shutdown made no progress for {} seconds during {}, forcing exit\n", timeout.count(), current_step);
         std::fwrite(message.data(), sizeof(char), message.size(), stderr);
         std::fflush(stderr);
         std::_Exit(1);
@@ -61,7 +62,7 @@ void watchdog_loop()
 
 } // namespace
 
-void start_shutdown_watchdog()
+void start_shutdown_watchdog(std::chrono::seconds timeout)
 {
     auto& state = watchdog_state();
     {
@@ -72,7 +73,8 @@ void start_shutdown_watchdog()
         state.active       = true;
         state.finished     = false;
         state.current_step = "shutdown startup";
-        state.deadline     = std::chrono::steady_clock::now() + NO_PROGRESS_TIMEOUT;
+        state.timeout      = timeout > std::chrono::seconds::zero() ? timeout : NO_PROGRESS_TIMEOUT;
+        state.deadline     = std::chrono::steady_clock::now() + state.timeout;
         ++state.generation;
     }
     state.thread = std::thread(watchdog_loop);
@@ -101,7 +103,7 @@ void report_shutdown_step_completed()
             return;
         }
         completed_step = state.current_step;
-        state.deadline = std::chrono::steady_clock::now() + NO_PROGRESS_TIMEOUT;
+        state.deadline = std::chrono::steady_clock::now() + state.timeout;
         ++state.generation;
     }
     state.condition.notify_one();
