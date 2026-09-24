@@ -35,6 +35,8 @@ class frame_pool_s
         const gpu::texture_s& texture() const noexcept;
     };
 
+    static size_t storage_bytes(gpu::vec2i_t dimensions);
+
     frame_pool_s(gpu::device_s& device, gpu::vec2i_t dimensions, size_t capacity, size_t memory_budget_bytes);
     frame_pool_s(const frame_pool_s& other)            = delete;
     frame_pool_s& operator=(const frame_pool_s& other) = delete;

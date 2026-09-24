@@ -1,6 +1,6 @@
 #pragma once
 
-#include "detail/browser_session.hpp"
+#include "session.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -22,8 +22,8 @@ class session_request_s
     session_request_s(const session_request_s& other)            = delete;
     session_request_s& operator=(const session_request_s& other) = delete;
 
-    std::shared_ptr<detail::browser_session_s> session() const;
-    std::string                                error() const;
+    std::shared_ptr<session_s> session() const;
+    std::string                error() const;
 };
 
 // Construct/destroy on the app startup/shutdown thread, with the GPU alive.
@@ -43,7 +43,7 @@ class subsystem_s
     subsystem_s(const subsystem_s& other)            = delete;
     subsystem_s& operator=(const subsystem_s& other) = delete;
 
-    std::unique_ptr<session_request_s> create_session(detail::browser_session_s::options_s options);
+    std::unique_ptr<session_request_s> create_session(session_s::options_s options);
 };
 
 } // namespace miximus::nodes::cef

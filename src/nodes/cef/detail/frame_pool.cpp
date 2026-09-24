@@ -6,6 +6,14 @@
 #include <vector>
 
 namespace miximus::nodes::cef::detail {
+namespace {
+constexpr auto frame_format   = gpu::format_e::rgba_unorm16;
+constexpr auto frame_sampling = gpu::sampling_e::linear;
+} // namespace
+size_t frame_pool_s::storage_bytes(gpu::vec2i_t dimensions)
+{
+    return gpu::texture_s::estimate_storage_byte_size(dimensions, frame_format, frame_sampling);
+}
 
 struct frame_pool_s::state_s
 {
@@ -23,17 +31,15 @@ struct frame_pool_s::state_s
         if (dimensions.x <= 0 || dimensions.y <= 0 || capacity == 0) {
             throw std::invalid_argument("CEF frame pool dimensions and capacity must be positive");
         }
-        constexpr auto format   = gpu::format_e::rgba_unorm16;
-        constexpr auto sampling = gpu::sampling_e::linear;
-        const auto     bytes    = gpu::texture_s::estimate_storage_byte_size(dimensions, format, sampling);
+        const auto bytes = storage_bytes(dimensions);
         if (bytes == 0 || capacity > memory_budget_bytes / bytes) {
             throw std::invalid_argument("CEF frame pool exceeds its texture memory budget");
         }
 
         slots.reserve(capacity);
         for (size_t index = 0; index < capacity; ++index) {
-            slots.push_back(
-                {.texture = gpu::texture_s(device, dimensions, format, gpu::channel_order_e::rgba, sampling)});
+            slots.push_back({.texture = gpu::texture_s(
+                                 device, dimensions, frame_format, gpu::channel_order_e::rgba, frame_sampling)});
         }
     }
 };

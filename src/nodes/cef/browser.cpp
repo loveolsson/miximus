@@ -1,16 +1,13 @@
+#include "browser_options.hpp"
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
-#include "nodes/normalize_option.hpp"
-#include "types/node_status_json.hpp"
-#if MIXIMUS_ENABLE_CEF
 #include "subsystem.hpp"
-#endif
+#include "types/node_status_json.hpp"
 
 #include <chrono>
-#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,8 +20,7 @@ using namespace std::chrono_literals;
 class node_impl final : public node_i
 {
     output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
-#if MIXIMUS_ENABLE_CEF
-    using session_t = cef::detail::browser_session_s;
+    using session_t = cef::session_s;
     std::unique_ptr<cef::session_request_s> request_;
     std::shared_ptr<session_t>              session_;
     session_t::frame_ptr_t                  output_;
@@ -38,9 +34,6 @@ class node_impl final : public node_i
     {
         iface_tex_.set_value(nullptr);
         output_.reset();
-        if (session_) {
-            session_->reset_frames();
-        }
         session_.reset();
         request_.reset();
     }
@@ -143,7 +136,6 @@ class node_impl final : public node_i
             }
         }
     }
-#endif
 
   public:
     node_impl()                                  = default;
@@ -152,12 +144,7 @@ class node_impl final : public node_i
     node_impl(node_impl&& other)                 = delete;
     node_impl& operator=(node_impl&& other)      = delete;
 
-    ~node_impl() override
-    {
-#if MIXIMUS_ENABLE_CEF
-        stop();
-#endif
-    }
+    ~node_impl() override { stop(); }
 
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
     {
@@ -165,10 +152,8 @@ class node_impl final : public node_i
         const bool enabled = state.get_option<bool>("enabled");
         const auto url     = state.get_option<std::string>("url");
         if (app->cef_subsystem() == nullptr || !enabled || url.empty()) {
-#if MIXIMUS_ENABLE_CEF
             stop();
             selection_.reset();
-#endif
             status->write(id_, status::connected_status_s{.connected = false});
             status->write(id_,
                           status::cef_browser_status_s{
@@ -177,7 +162,6 @@ class node_impl final : public node_i
                           });
             return;
         }
-#if MIXIMUS_ENABLE_CEF
         const auto                 rate = app->frame_settings().frame_rate;
         const auto                 size = state.get_option<gpu::vec2_t>("size");
         const session_t::options_s selection{
@@ -213,76 +197,34 @@ class node_impl final : public node_i
                           .connected = metrics && metrics->phase == session_t::phase_e::ready,
                       });
         publish_metrics(status, metrics, now);
-#endif
     }
 
     void submit(core::app_state_s* app, const node_map_t& /* nodes */, const node_state_s& /* state */) final
     {
-#if MIXIMUS_ENABLE_CEF
         if (session_) {
             (void)session_->submit_frame(app->frame_context().program_pts);
         }
-#endif
     }
 
     void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& /* state */) final
     {
-#if MIXIMUS_ENABLE_CEF
         output_ = session_ ? session_->resolve_frame() : nullptr;
         iface_tex_.set_value(output_ ? &output_->texture() : nullptr);
-#else
-        iface_tex_.set_value(nullptr);
-#endif
     }
 
     void complete(core::app_state_s* /* app */) final
     {
-#if MIXIMUS_ENABLE_CEF
         iface_tex_.set_value(nullptr);
         output_.reset();
         if (session_) {
             session_->release_prepared_frame();
         }
-#endif
     }
 
-    nlohmann::json get_default_options() const final
-    {
-        return {
-            {"name",    "Browser"              },
-            {"enabled", true                   },
-            {"url",     "about:blank"          },
-            {"size",    gpu::vec2_t{1920, 1080}},
-        };
-    }
-
+    nlohmann::json  get_default_options() const final { return cef::browser_default_options(); }
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
-        if (name == "enabled") {
-            return normalize_option_value<bool>(value);
-        }
-        if (name == "size") {
-            auto result = normalize_option_value<gpu::vec2_t>(value, gpu::vec2_t{1, 1}, gpu::vec2_t{4096, 4096});
-            if (result == option_result_e::invalid) {
-                return result;
-            }
-            for (auto& component : *value) {
-                const auto rounded = std::round(component.get<double>());
-                if (component != rounded) {
-                    component = rounded;
-                    result    = option_result_e::corrected;
-                }
-            }
-            return result;
-        }
-        if (name == "url") {
-            const auto result = normalize_option_value<std::string_view>(value);
-            if (result == option_result_e::invalid || value->get_ref<const std::string&>().size() > 65536) {
-                return option_result_e::invalid;
-            }
-            return result;
-        }
-        return option_result_e::invalid;
+        return cef::normalize_browser_option(name, value);
     }
     std::string_view type() const final { return "cef_browser"; }
 };

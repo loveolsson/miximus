@@ -1,5 +1,6 @@
 #include "subsystem.hpp"
 
+#include "detail/browser_session.hpp"
 #include "detail/runtime.hpp"
 #include "include/cef_version_info.h"
 #include "utils/serial_executor.hpp"
@@ -44,7 +45,7 @@ struct session_request_s::state_s : std::enable_shared_from_this<state_s>
 {
     mutable std::mutex                      mutex;
     std::weak_ptr<utils::serial_executor_s> executor;
-    std::shared_ptr<session_t>              published;
+    std::shared_ptr<session_s>              published;
     // Only the serial control worker touches owned.
     std::shared_ptr<session_t> owned;
     std::string                failure;
@@ -123,7 +124,7 @@ session_request_s::session_request_s(std::shared_ptr<state_s> state)
 }
 session_request_s::~session_request_s() { state_->stop(); }
 
-std::shared_ptr<session_t> session_request_s::session() const
+std::shared_ptr<session_s> session_request_s::session() const
 {
     const std::scoped_lock lock(state_->mutex);
     return state_->published;

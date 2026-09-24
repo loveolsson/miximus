@@ -1,4 +1,9 @@
-target_sources(nodes PRIVATE browser.cpp register.hpp register.cpp subsystem_fwd.hpp)
+target_sources(nodes PRIVATE register.hpp register.cpp subsystem_fwd.hpp browser_options.hpp)
+if(MIXIMUS_ENABLE_CEF)
+    target_sources(nodes PRIVATE browser.cpp)
+else()
+    target_sources(nodes PRIVATE browser_unavailable.cpp)
+endif()
 target_compile_definitions(nodes PUBLIC MIXIMUS_ENABLE_CEF=$<BOOL:${MIXIMUS_ENABLE_CEF}>)
 add_library(cef_ingress STATIC
     detail/frame_pool.hpp
@@ -17,9 +22,16 @@ if(BUILD_TESTING)
 endif()
 
 if(MIXIMUS_ENABLE_CEF)
-    target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/command_protocol.hpp)
+    target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/command_protocol.hpp detail/command_messages.hpp)
     add_library(cef_runtime STATIC detail/runtime.hpp detail/runtime.cpp)
-    target_sources(cef_runtime PRIVATE detail/capture_timing.hpp detail/browser_session.hpp detail/browser_session.cpp)
+    target_sources(cef_runtime PRIVATE
+        session.hpp
+        detail/task.hpp
+        detail/capture_timing.hpp
+        detail/browser_session.hpp detail/browser_session.cpp
+        detail/command_channel.hpp detail/command_channel.cpp
+        detail/capture_stream.hpp detail/capture_stream.cpp
+    )
     target_sources(cef_runtime PRIVATE subsystem.hpp subsystem.cpp)
     target_link_libraries(cef_runtime PUBLIC cef_ingress media)
     target_link_libraries(cef_runtime PRIVATE cef_sdk Threads::Threads ${CMAKE_DL_LIBS})

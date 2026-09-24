@@ -5,6 +5,7 @@
 #include "include/cef_task.h"
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/runtime.hpp"
+#include "utils/owned_fd.hpp"
 
 #include <cerrno>
 #include <charconv>
@@ -35,21 +36,9 @@ void log_producer_fence(int dma_buf)
     if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF producer fence");
     }
-    struct owned_fd_s
-    {
-        int value;
-        explicit owned_fd_s(int fd)
-            : value(fd)
-        {
-        }
-        owned_fd_s(const owned_fd_s& other)            = delete;
-        owned_fd_s& operator=(const owned_fd_s& other) = delete;
-        owned_fd_s(owned_fd_s&& other)                 = delete;
-        owned_fd_s& operator=(owned_fd_s&& other)      = delete;
-        ~owned_fd_s() { close(value); }
-    } fence{exported.fd};
-    sync_file_info info{};
-    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0) {
+    utils::owned_fd_s fence{exported.fd};
+    sync_file_info    info{};
+    if (ioctl(fence.get(), SYNC_IOC_FILE_INFO, &info) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF sync-file metadata");
     }
     // Metadata only: this does not map or read any image memory. A signalled
@@ -60,7 +49,7 @@ void log_producer_fence(int dma_buf)
     }
     std::vector<sync_fence_info> fences(info.num_fences);
     info.sync_fence_info = reinterpret_cast<uintptr_t>(fences.data());
-    if (ioctl(fence.value, SYNC_IOC_FILE_INFO, &info) < 0) {
+    if (ioctl(fence.get(), SYNC_IOC_FILE_INFO, &info) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF fence identities");
     }
     for (const auto& entry : fences) {

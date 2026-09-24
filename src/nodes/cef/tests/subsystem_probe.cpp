@@ -3,6 +3,7 @@
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_task.h"
 #include "logger/logger.hpp"
+#include "nodes/cef/detail/command_messages.hpp"
 #include "nodes/cef/subsystem.hpp"
 
 #include <nlohmann/json.hpp>
@@ -39,7 +40,7 @@ auto await_session(session_request_s& request)
     throw std::runtime_error("Session creation timed out");
 }
 
-auto await_frame(detail::browser_session_s& session)
+auto await_frame(session_s& session)
 {
     const auto deadline = std::chrono::steady_clock::now() + 10s;
     while (std::chrono::steady_clock::now() < deadline) {
@@ -58,7 +59,7 @@ auto await_frame(detail::browser_session_s& session)
     }
     throw std::runtime_error("Session capture timed out");
 }
-void await_context(detail::browser_session_s& session)
+void await_context(session_s& session)
 {
     const auto deadline = std::chrono::steady_clock::now() + 5s;
     while (!session.context_ready() && std::chrono::steady_clock::now() < deadline) {
@@ -69,7 +70,7 @@ void await_context(detail::browser_session_s& session)
     }
 }
 
-auto command_result(std::future<detail::browser_session_s::command_result_s> result)
+auto command_result(std::future<session_s::command_result_s> result)
 {
     if (result.wait_for(5s) != std::future_status::ready) {
         throw std::runtime_error("Command future did not settle");
@@ -77,7 +78,51 @@ auto command_result(std::future<detail::browser_session_s::command_result_s> res
     return result.get();
 }
 
-void exercise_program_time(detail::browser_session_s& session)
+void exercise_message_contracts()
+{
+    namespace protocol = detail::command_protocol;
+    const protocol::request_s request{.id         = "17",
+                                      .generation = "2",
+                                      .context    = "frame:3",
+                                      .source     = "value => value",
+                                      .json       = "null",
+                                      .kind       = protocol::request_kind_e::custom};
+    auto                      message = protocol::encode(request);
+    auto                      decoded = protocol::decode_request(message->GetArgumentList());
+    if (!decoded || decoded->id != request.id || decoded->context != request.context || decoded->json != request.json) {
+        throw std::runtime_error("Command message roundtrip failed");
+    }
+    message->GetArgumentList()->SetInt(2, 3);
+    if (protocol::decode_request(message->GetArgumentList())) {
+        throw std::runtime_error("Non-string context accepted");
+    }
+    message = protocol::encode(request);
+    message->GetArgumentList()->SetInt(5, 99);
+    if (protocol::decode_request(message->GetArgumentList())) {
+        throw std::runtime_error("Unknown command kind accepted");
+    }
+    auto reply = protocol::encode(
+        protocol::result_s{.id = "17", .generation = "2", .context = "frame:3", .success = true, .payload = "null"});
+    if (!protocol::decode_result(reply->GetArgumentList())) {
+        throw std::runtime_error("Valid reply rejected");
+    }
+    reply->GetArgumentList()->SetString(3, "true");
+    if (protocol::decode_result(reply->GetArgumentList())) {
+        throw std::runtime_error("Non-boolean result accepted");
+    }
+    auto cancellation = protocol::encode(protocol::cancel_s{.id = "17", .context = "frame:3"});
+    cancellation->GetArgumentList()->SetSize(1);
+    if (protocol::decode_cancel(cancellation->GetArgumentList())) {
+        throw std::runtime_error("Truncated cancellation accepted");
+    }
+    auto context = protocol::encode(protocol::context_s{.token = "frame:3"}, protocol::CONTEXT_READY);
+    context->GetArgumentList()->SetSize(2);
+    if (protocol::decode_context(context->GetArgumentList())) {
+        throw std::runtime_error("Oversized context message accepted");
+    }
+}
+
+void exercise_program_time(session_s& session)
 {
     const auto installed = command_result(session.set_program_time_handler(
         "time => { if (!window.testProgramTimes) window.testProgramTimes=[]; window.testProgramTimes.push(time); }"));
@@ -108,7 +153,7 @@ void exercise_program_time(detail::browser_session_s& session)
     std::cout << "Cooperative program-time delivery preserves adjacent frames and exact integer metadata\n";
 }
 
-void exercise_commands(detail::browser_session_s& session)
+void exercise_commands(session_s& session)
 {
     await_context(session);
     const auto dialogs = command_result(session.request(
@@ -144,7 +189,7 @@ void exercise_commands(detail::browser_session_s& session)
     if (command_result(session.request("x => x", "not json")).error.empty()) {
         throw std::runtime_error("Invalid request JSON was accepted");
     }
-    std::vector<std::future<detail::browser_session_s::command_result_s>> pending;
+    std::vector<std::future<session_s::command_result_s>> pending;
     pending.reserve(64);
     for (int index = 0; index < 64; ++index) {
         pending.push_back(session.request("() => new Promise(() => {})", "null", 500ms));
@@ -231,7 +276,7 @@ class crash_task_s final : public CefTask
     }
 };
 
-void exercise_renderer_failure(detail::browser_session_s& session)
+void exercise_renderer_failure(session_s& session)
 {
     await_context(session);
     auto                                     pending = session.request("() => new Promise(() => {})", "null");
@@ -249,13 +294,11 @@ void exercise_renderer_failure(detail::browser_session_s& session)
         throw std::runtime_error("Cannot observe renderer crash");
     }
     const auto deadline = std::chrono::steady_clock::now() + 45s;
-    while (session.metrics().phase != detail::browser_session_s::phase_e::failed &&
-           std::chrono::steady_clock::now() < deadline) {
+    while (session.metrics().phase != session_s::phase_e::failed && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(10ms);
     }
     const auto metrics = session.metrics();
-    if (metrics.phase != detail::browser_session_s::phase_e::failed ||
-        metrics.error.find("renderer terminated") == std::string::npos) {
+    if (metrics.phase != session_s::phase_e::failed || metrics.error.find("renderer terminated") == std::string::npos) {
         throw std::runtime_error("Renderer termination did not fail its session: phase=" +
                                  std::to_string(static_cast<int>(metrics.phase)) + " error=" + metrics.error);
     }
@@ -266,7 +309,7 @@ void exercise_renderer_failure(detail::browser_session_s& session)
     std::cout << "Renderer crash reported and pending commands cancelled: " << metrics.error << '\n';
 }
 
-void exercise_gpu_failure(gpu::device_s& device, detail::browser_session_s& session)
+void exercise_gpu_failure(gpu::device_s& device, session_s& session)
 {
     await_context(session);
     auto                                     retained = await_frame(session);
@@ -310,7 +353,7 @@ void exercise_gpu_failure(gpu::device_s& device, detail::browser_session_s& sess
     std::cout << "Owned frame survived CEF GPU subprocess loss and accelerated capture resumed\n";
 }
 
-void exercise_color(gpu::device_s& device, detail::browser_session_s& session)
+void exercise_color(gpu::device_s& device, session_s& session)
 {
     await_context(session);
     auto                            frame = await_frame(session);
@@ -440,6 +483,7 @@ int main(int argc, char** argv)
             }
             auto session = await_session(*request);
             auto frame   = await_frame(*session);
+            exercise_message_contracts();
             exercise_commands(*session);
             exercise_color(device, *session);
             auto closing_command = session->request("() => new Promise(() => {})", "null");

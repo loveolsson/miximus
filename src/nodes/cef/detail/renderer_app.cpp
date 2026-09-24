@@ -1,6 +1,6 @@
 #include "renderer_app.hpp"
 
-#include "command_protocol.hpp"
+#include "command_messages.hpp"
 #include "include/cef_process_message.h"
 #include "include/cef_v8.h"
 
@@ -15,8 +15,7 @@ namespace protocol = command_protocol;
 
 void send_context(const CefRefPtr<CefFrame>& frame, const char* message_name, const std::string& token)
 {
-    auto message = CefProcessMessage::Create(message_name);
-    message->GetArgumentList()->SetString(0, token);
+    auto message = protocol::encode(protocol::context_s{.token = token}, message_name);
     frame->SendProcessMessage(PID_BROWSER, message);
 }
 
@@ -59,13 +58,11 @@ class result_handler_s final : public CefV8Handler
             success = false;
             json    = "JavaScript result exceeds the JSON response limit";
         }
-        auto message = CefProcessMessage::Create(protocol::RESULT);
-        auto args    = message->GetArgumentList();
-        args->SetString(0, request_);
-        args->SetString(1, generation_);
-        args->SetString(2, context->token);
-        args->SetBool(3, success);
-        args->SetString(4, json);
+        auto message = protocol::encode(protocol::result_s{.id         = request_,
+                                                           .generation = generation_,
+                                                           .context    = context->token,
+                                                           .success    = success,
+                                                           .payload    = std::move(json)});
         context->context->GetFrame()->SendProcessMessage(PID_BROWSER, message);
         context->pending.erase(request_);
     }
@@ -167,27 +164,28 @@ class renderer_app_s final
         const auto args  = message->GetArgumentList();
         const auto found = contexts_.find(browser->GetIdentifier());
         if (message->GetName() == protocol::CANCEL) {
-            if (args->GetSize() == 2 && found != contexts_.end() && args->GetString(1) == found->second->token) {
-                cancel_command(found->second, args->GetString(0).ToString());
+            const auto cancel = protocol::decode_cancel(args);
+            if (cancel && found != contexts_.end() && cancel->context == found->second->token) {
+                cancel_command(found->second, cancel->id);
             }
             return true;
         }
-        if (args->GetSize() != 6) {
+        const auto request = protocol::decode_request(args);
+        if (!request) {
             return true;
         }
-        if (found == contexts_.end() || args->GetString(2) != found->second->token) {
+        if (found == contexts_.end() || request->context != found->second->token) {
             return true; // Browser-side navigation cancellation/timeout owns settlement.
         }
-        const auto                  state = found->second;
-        CefRefPtr<result_handler_s> result =
-            new result_handler_s(state, args->GetString(0).ToString(), args->GetString(1).ToString());
+        const auto                  state  = found->second;
+        CefRefPtr<result_handler_s> result = new result_handler_s(state, request->id, request->generation);
         if (state->pending.size() >= protocol::MAX_PENDING) {
             result->deliver(false, "Renderer command capacity exhausted");
             return true;
         }
-        state->pending.emplace(args->GetString(0).ToString(), result);
-        const auto function_source = args->GetString(3).ToString();
-        const auto payload         = args->GetString(4).ToString();
+        state->pending.emplace(request->id, result);
+        const auto function_source = request->source;
+        const auto payload         = request->json;
         if (function_source.size() > protocol::MAX_SOURCE_BYTES || payload.size() > protocol::MAX_JSON_BYTES) {
             result->deliver(false, "Command exceeds the payload limit");
             return true;
@@ -198,7 +196,7 @@ class renderer_app_s final
         }
         CefRefPtr<CefV8Value>     function;
         CefRefPtr<CefV8Exception> exception;
-        const auto                kind = static_cast<protocol::request_kind_e>(args->GetInt(5));
+        const auto                kind = request->kind;
         if (kind == protocol::request_kind_e::program_time) {
             function = state->timing_handler;
         }
