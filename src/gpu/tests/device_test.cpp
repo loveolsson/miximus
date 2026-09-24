@@ -541,6 +541,36 @@ TEST_F(device_test, V210PackingMatchesIndependentRec709PrimaryColorReference)
     }
 }
 
+TEST_F(device_test, V210PackingZerosPartialPaddingGroupsAcrossRows)
+{
+    // Width seven needs two packing groups; the ninth word is row padding.
+    // A second row detects writes past a non-16-byte-aligned row boundary.
+    auto              working = device->create_texture({.width = 7, .height = 2}, format_e::rgba_unorm16);
+    auto              output  = device->create_buffer(72, host_access_e::readback);
+    color_transform_s encode;
+    encode.matrix = {};
+    encode.offset = {64.F / 1023.F, 512.F / 1023.F, 512.F / 1023.F, 0};
+    auto record   = device->try_record();
+    record->clear(working, {0, 0, 0, 1});
+    record->pack_v210(working, output, encode, 36);
+    finish(record);
+
+    std::array<uint32_t, 18> words{};
+    std::memcpy(words.data(), output.readable_bytes().data(), sizeof(words));
+    const std::array<uint32_t, 4> black{
+        512U | (64U << 10) | (512U << 20),
+        64U | (512U << 10) | (64U << 20),
+        512U | (64U << 10) | (512U << 20),
+        64U | (512U << 10) | (64U << 20),
+    };
+    for (size_t row = 0; row < 2; ++row) {
+        for (size_t word = 0; word < 8; ++word) {
+            EXPECT_EQ(words.at(row * 9 + word), black.at(word % 4));
+        }
+        EXPECT_EQ(words.at(row * 9 + 8), 0U);
+    }
+}
+
 TEST_F(device_test, EmptyHandlesAndRepeatedSubmissionAreRejected)
 {
     buffer_s  buffer;

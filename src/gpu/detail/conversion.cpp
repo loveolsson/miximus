@@ -33,7 +33,7 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
         throw std::invalid_argument("invalid conversion buffer/stride");
     }
 
-    const uint32_t dispatch_width = pack ? static_cast<uint32_t>(stride / 4) : image->extent.width;
+    const uint32_t dispatch_width = pack ? static_cast<uint32_t>((stride / 4 + 3) / 4) : image->extent.width;
     const uint32_t groups_x       = (dispatch_width + 15) / 16;
     const uint32_t groups_y       = (image->extent.height + 15) / 16;
     if (groups_x > owner->properties.limits.maxComputeWorkGroupCount[0] ||
