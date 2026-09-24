@@ -404,3 +404,10 @@ roughly 3,500 originally. There were no new graph deadline misses/skips, NDI rec
 drops; screen output recorded one repeat and one skipped interval. No EGL import errors were logged. High remaining
 whole-device utilization includes the rest of the graph and desktop and is not evidence that every GPU cost has
 been optimized.
+
+The earlier six-input result was also limited by system-memory exports. Repeating the isolated graph campaign with
+**six 1920×1080 inputs and a 1920×1080 browser viewport**, five seconds of warmup and a 30-second steady interval,
+now presented **59.998 fps on five inputs and 59.932 fps on the sixth**. Only two additional transport drops occurred
+in the steady interval. Resize, live disconnect, six reloads, disable/enable and shutdown passed afterward
+(`build/integration-tests/cef-inputs-20260924-171427`). This supersedes the earlier 42–43 fps six-input measurement;
+it does not establish six-input 60 fps for every full hardware graph. Export/Chromium depths remain 2/3.
