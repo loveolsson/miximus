@@ -7,6 +7,7 @@
 
 #include <boost/asio/post.hpp>
 #include <nlohmann/json.hpp>
+#include <websocketpp/utilities.hpp>
 
 #include <exception>
 #include <string>
@@ -166,7 +167,24 @@ void web_server_impl::on_fail(const con_hdl_t& hdl)
 
     // Avoid get_remote_endpoint() on a never-accepted socket; websocketpp logs
     // another EBADF while trying to retrieve it.
-    log->warn("Connection failed: {} ({})", connection_error.value(), connection_error.message());
+    const auto& request = connection->get_request();
+    if (request.get_method().empty()) {
+        log->warn("Connection failed before an HTTP request could be parsed: {} ({})",
+                  connection_error.value(),
+                  connection_error.message());
+        return;
+    }
+
+    // Inspect the Upgrade header even if the rest of the handshake is invalid.
+    const auto& upgrade = request.get_header("Upgrade");
+    const bool  websocket_upgrade =
+        websocketpp::utility::ci_find_substr(upgrade, "websocket", sizeof("websocket") - 1) != upgrade.end();
+    log->warn("{} failed for {} {}: {} ({})",
+              websocket_upgrade ? "WebSocket upgrade" : "HTTP request",
+              request.get_method(),
+              request.get_uri(),
+              connection_error.value(),
+              connection_error.message());
 }
 
 void web_server_impl::on_close(const con_hdl_t& hdl)
