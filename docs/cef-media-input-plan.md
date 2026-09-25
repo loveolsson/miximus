@@ -519,3 +519,37 @@ may still be held. A worker allocation that races a stop/source change is revoke
 The source qualification suite now includes last-clone retirement exactly once, abandoned-track collection,
 and transparent refresh after the original frame was sent before a sink attached. All eight source tests
 and the 168 existing capture tests passed before packaging the runtime. Real-GPU qualification follows below.
+
+### Revision-5 qualification
+
+The regular build now uses `miximus_cef_linux64_native_handle_r5`, staged into `build/cef`; these checks used
+no `LD_LIBRARY_PATH` override. The full native build completed without warnings, and `git diff --check` passed.
+With Vulkan synchronization validation enabled, 32 device tests, 14 transfer tests, nine export tests, and
+eight ownership tests passed. The standalone eight-input native probe delivered all 960/960 frames, verified
+both GPU pixel patterns, and rejected an invalidated source generation before accepting its replacement.
+
+The eight-input session probe verified transparent output pixels for disconnected inputs, with **zero submitted
+frames, zero export bytes, and zero reserved bytes** for eight initially disconnected live streams. Connection,
+source replacement, disconnect, resize and reload passed. A surviving clone retained only its input's demand;
+stopping it cleared demand, export bytes, occupied slots and reservations. The observed stop/release transitions
+completed within 5 ms after the script reply. Reacquiring a disconnected stream allocated no native export buffers.
+
+A four-stream graph with two connected sources also passed under validation. Its connected streams resumed in
+about 52 ms and its disconnected streams in about 2 ms. The graph harness now stops all tracks, verifies that
+input buffers/reservations are released and **demanding/submitted/executed node counts reach zero**, checks that
+submission counters stay fixed, and reacquires the streams before testing resize, disconnect, reload and disable.
+
+Performance checks used five seconds of warmup and 30 seconds measured, a 1920×1080 browser viewport and 1080p
+sources, with Vulkan validation disabled. Four inputs presented **59.83–60.00 fps**, with seven additional transport
+drops; reacquisition took **31–32 ms**. Six inputs on the repeat run presented **59.93–59.96 fps**, with 12 additional
+transport drops; reacquisition took **49–50 ms**. Neither measured interval had graph deadline misses or skipped
+frames. Capacities remain two exports and three Chromium destinations per input.
+
+The first six-input run was slower: **56.86–59.46 fps**, with 405 additional transport drops, despite no graph
+deadline misses. The unchanged-code repeat above was substantially better. This remains observed run-to-run
+variation, not proof of unconditional six-input 60 fps; no larger buffers were introduced to conceal it. All runs
+passed stop/free/reacquire, resize, disconnect, rapid reload, disable/enable, and shutdown.
+
+Artifacts: `build/integration-tests/cef-lifetime-20260925`; mixed graph `cef-inputs-20260925-092543`;
+six-input runs `cef-inputs-20260925-092636` and `cef-inputs-20260925-092843`;
+four-input run `cef-inputs-20260925-093005` (all graph directories under `build/integration-tests`).

@@ -149,7 +149,7 @@ def main():
     with (work / "app.log").open("w") as log:
         app = subprocess.Popen([str(ROOT / "build/miximus"), "--settings", str(settings),
                                 "--stop-after", "90"], cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
-        def wait(label, predicate, allow_recovery=False):
+        def wait(label, predicate, allow_recovery=False, idle_graph=False):
             deadline = time.monotonic() + 20
             status, page = {}, {}
             while time.monotonic() < deadline:
@@ -164,7 +164,9 @@ def main():
                         raise RuntimeError(str(page))
                     if status.get("cef_inputs_error") and not allow_recovery:
                         raise RuntimeError(str(status))
-                    if predicate(status, page):
+                    idle = all(statuses.get("$app", {}).get(key) == 0 for key in
+                               ("demanding_node_count", "submitted_node_count", "executed_node_count"))
+                    if predicate(status, page) and (not idle_graph or idle):
                         records.append(dict(label=label, time=time.monotonic(), status=status,
                                             app=statuses.get("$app", {}), page=page))
                         print(label, "delivered=", status.get("cef_inputs_delivered"),
@@ -198,7 +200,7 @@ def main():
                 Page.control = "stop"
             wait("all tracks stopped and exports freed", lambda s, p:
                  s.get("cef_inputs_active") == 0 and s.get("cef_inputs_export_bytes") == 0 and
-                 s.get("cef_inputs_held") == 0 and s.get("cef_inputs_reserved_bytes") == 0)
+                 s.get("cef_inputs_held") == 0 and s.get("cef_inputs_reserved_bytes") == 0, idle_graph=True)
             stopped = records[-1]["status"]["cef_inputs_submitted"]
             time.sleep(0.3)
             wait("idle inputs submit no frames", lambda s, p: s.get("cef_inputs_submitted") == stopped)

@@ -55,12 +55,7 @@ yet qualify other drivers, pixel color accuracy, browser lifecycle stress or the
 
 Revision 3 adds `cef-media-input.patch`, previously qualified in the isolated media-input runtime. It imports native
 GPU handles, copies into bounded Chromium-owned SharedImages, and feeds existing native media tracks. The private
-v3 sender carries document/source identities and acknowledges actual copy completion before external buffer reuse.
-It also carries transparent-content control messages, with no exported allocation. Live native tracks drive input
-demand; stopping the last clone or collecting an abandoned source releases that demand. Idle export pools drain
-before destruction, and Chromium destinations keep their release sync tokens. Weak stream/track caches do not
-keep abandoned inputs alive. A small Chromium-owned transparent frame initializes disconnected live streams and
-serves refresh requests without recurring Vulkan copies.
+v2 sender carries document/source identities and acknowledges actual copy completion before external buffer reuse.
 The generated public CEF API is unchanged. See [the media-input plan](../../../docs/cef-media-input-plan.md) for
 four-input 1080p60 measurements, ownership tests and remaining qualification limits.
 
@@ -68,6 +63,13 @@ Revision 4 reuses Chromium's native track factory, removes redundant renderer wr
 errors after GPU-copy completion before delivering frames. A raster error fails the bridge closed until navigation;
 GPU-safe retirement remains separate from successful delivery. The package now includes the authoritative private
 `include/internal/cef_miximus_media_input.h`; Miximus aliases those ABI types instead of duplicating their layout.
+
+Revision 5 adds native track-lifetime demand and a private v3 sender with transparent-content control messages.
+Stopping the last clone or collecting an abandoned source releases input demand. Idle export pools drain before
+destruction, and Chromium destinations keep their release sync tokens. Weak stream/track caches do not keep
+abandoned inputs alive. A small Chromium-owned transparent frame initializes disconnected live streams and
+serves refresh requests without recurring Vulkan copies or a dummy export allocation.
+
 This header is required even when unqualified provenance is explicitly allowed for diagnostics.
 
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
