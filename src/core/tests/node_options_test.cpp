@@ -64,6 +64,10 @@ TEST(NodeOptions, NdiAlphaModesAreValidatedOnBothNodes)
             EXPECT_EQ(state.at("alpha_mode"), mode);
         }
 
+        nlohmann::json over_black = "straight_over_black";
+        EXPECT_EQ(node->normalize_option("alpha_mode", &over_black),
+                  std::string_view(type) == "ndi_input" ? nodes::option_result_e::ok : nodes::option_result_e::invalid);
+
         for (const nlohmann::json& invalid : {nlohmann::json("unknown"), nlohmann::json(true), nlohmann::json(1)}) {
             auto value = invalid;
             EXPECT_EQ(node->normalize_option("alpha_mode", &value), nodes::option_result_e::invalid);

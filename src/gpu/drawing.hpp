@@ -9,28 +9,30 @@
 
 namespace miximus::gpu {
 
-inline color_operation_e rec709_decode_operation(alpha_mode_e alpha)
+inline color_operation_e rec709_decode_operation(input_alpha_mode_e alpha)
 {
     switch (alpha) {
-        case alpha_mode_e::ignore:
+        case input_alpha_mode_e::ignore:
             return color_operation_e::decode_rec709_ignore_alpha;
-        case alpha_mode_e::straight:
+        case input_alpha_mode_e::straight:
             return color_operation_e::decode_rec709_straight_alpha;
-        case alpha_mode_e::premultiplied:
+        case input_alpha_mode_e::premultiplied:
             return color_operation_e::decode_rec709_premultiplied;
+        case input_alpha_mode_e::straight_over_black:
+            return color_operation_e::decode_rec709_straight_alpha_over_black;
     }
 
     throw std::invalid_argument("invalid alpha mode");
 }
 
-inline color_operation_e rec709_encode_operation(alpha_mode_e alpha)
+inline color_operation_e rec709_encode_operation(output_alpha_mode_e alpha)
 {
     switch (alpha) {
-        case alpha_mode_e::ignore:
+        case output_alpha_mode_e::ignore:
             return color_operation_e::encode_rec709_ignore_alpha;
-        case alpha_mode_e::straight:
+        case output_alpha_mode_e::straight:
             return color_operation_e::encode_rec709_straight_alpha;
-        case alpha_mode_e::premultiplied:
+        case output_alpha_mode_e::premultiplied:
             return color_operation_e::encode_rec709_premultiplied;
     }
 

@@ -189,12 +189,12 @@ class node_impl : public node_i
         // premultiplied working RGB before downstream filtering/compositing.
 
         framebuffer_->clear(app->commands());
-        gpu::draw_texture(
-            app->commands(),
-            rendered_input_frame_->texture(),
-            framebuffer_.get(),
-            {.transfer = gpu::rec709_decode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
-             .compositing = gpu::compositing_e::replace});
+        gpu::draw_texture(app->commands(),
+                          rendered_input_frame_->texture(),
+                          framebuffer_.get(),
+                          {.transfer = gpu::rec709_decode_operation(
+                               state.get_enum_option_unchecked<gpu::input_alpha_mode_e>("alpha_mode")),
+                           .compositing = gpu::compositing_e::replace});
 
         auto* output = framebuffer_.get();
         app->commands().generate_mip_maps(*output);
@@ -214,17 +214,17 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",        "NDI Input"                                },
-            {"alpha_mode",  enum_to_string(gpu::alpha_mode_e::straight)},
-            {"enabled",     true                                       },
-            {"source_name", ""                                         },
+            {"name",        "NDI Input"                                      },
+            {"alpha_mode",  enum_to_string(gpu::input_alpha_mode_e::straight)},
+            {"enabled",     true                                             },
+            {"source_name", ""                                               },
         };
     }
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "alpha_mode") {
-            return normalize_enum_option_value<gpu::alpha_mode_e>(value);
+            return normalize_enum_option_value<gpu::input_alpha_mode_e>(value);
         }
 
         if (name == "source_name") {

@@ -241,13 +241,13 @@ class node_impl : public node_i
         // representation before RGBA8 quantization. Row order stays top-to-bottom.
 
         target->texture()->clear(app->commands());
-        gpu::draw_texture(
-            app->commands(),
-            texture,
-            target->texture(),
-            {.transfer = gpu::rec709_encode_operation(state.get_enum_option_unchecked<gpu::alpha_mode_e>("alpha_mode")),
-             .compositing = gpu::compositing_e::replace,
-             .output      = target->output_order()});
+        gpu::draw_texture(app->commands(),
+                          texture,
+                          target->texture(),
+                          {.transfer = gpu::rec709_encode_operation(
+                               state.get_enum_option_unchecked<gpu::output_alpha_mode_e>("alpha_mode")),
+                           .compositing = gpu::compositing_e::replace,
+                           .output      = target->output_order()});
 
         target->set_program_target_time(app->frame_context().program_target_time);
         auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
@@ -260,17 +260,17 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",        "NDI Output"                               },
-            {"alpha_mode",  enum_to_string(gpu::alpha_mode_e::straight)},
-            {"enabled",     true                                       },
-            {"source_name", id_                                        },
+            {"name",        "NDI Output"                                      },
+            {"alpha_mode",  enum_to_string(gpu::output_alpha_mode_e::straight)},
+            {"enabled",     true                                              },
+            {"source_name", id_                                               },
         };
     }
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name == "alpha_mode") {
-            return normalize_enum_option_value<gpu::alpha_mode_e>(value);
+            return normalize_enum_option_value<gpu::output_alpha_mode_e>(value);
         }
 
         if (name == "source_name") {

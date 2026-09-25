@@ -122,12 +122,13 @@ const ndiOutputStatus: readonly NodeStatusSection[] = [
   },
 ];
 
-const createAlphaModeInterface = () =>
-  new DropdownInterface("Alpha mode", "straight", [
-    { id: "ignore", label: "Ignore alpha" },
-    { id: "straight", label: "Straight" },
-    { id: "premultiplied", label: "Premultiplied" },
-  ]);
+const alphaModes = [
+  { id: "ignore", label: "Ignore alpha" },
+  { id: "straight", label: "Straight alpha" },
+  { id: "premultiplied", label: "Premultiplied alpha" },
+];
+
+const createAlphaModeInterface = () => new DropdownInterface("Alpha mode", "straight", alphaModes);
 
 export const NdiInputNode = defineNode({
   type: node_type_e.ndi_input,
@@ -135,7 +136,11 @@ export const NdiInputNode = defineNode({
   inputs: {
     status: () => new NodeStatusInterface(ndiInputStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
-    alpha_mode: createAlphaModeInterface,
+    alpha_mode: () =>
+      new DropdownInterface("Alpha mode", "straight", [
+        ...alphaModes,
+        { id: "straight_over_black", label: "Straight alpha over black" },
+      ]),
     source_name: () => new StatusDropdownInterface("Source", "source_names"),
   },
   outputs: {

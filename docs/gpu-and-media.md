@@ -305,7 +305,9 @@ timing path.
 Both NDI nodes expose `alpha_mode`: `ignore`, `straight` (default), or `premultiplied`. On input, ignore treats RGB
 as opaque regardless of the received alpha; straight decodes Rec.709 RGB and then premultiplies in linear light;
 premultiplied first unpremultiplies the received video-space RGB, decodes it, then premultiplies in linear light.
-All three produce UNORM16 linear premultiplied working images before downstream filtering/compositing. BGRX
+Input also offers `straight_over_black`: decode and premultiply exactly as straight, then force alpha to one to
+composite onto opaque black. All input modes produce UNORM16 linear premultiplied working images before downstream
+filtering/compositing. BGRX
 sources are always opaque.
 
 On output, straight unpremultiplies the working RGB before Rec.709 encoding. Premultiplied additionally multiplies

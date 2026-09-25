@@ -28,16 +28,25 @@ enum class color_operation_e : int32_t
     encode_rec709_premultiplied = 3,
 
     // External alpha representations convert to/from linear premultiplied RGB.
-    decode_rec709_straight_alpha = 4,
-    encode_rec709_straight_alpha = 5,
-    decode_rec709_premultiplied  = 6,
-    decode_rec709_ignore_alpha   = 7,
-    encode_rec709_ignore_alpha   = 8,
-    decode_srgb_premultiplied    = 9,
-    encode_srgb_premultiplied    = 10,
+    decode_rec709_straight_alpha            = 4,
+    encode_rec709_straight_alpha            = 5,
+    decode_rec709_premultiplied             = 6,
+    decode_rec709_ignore_alpha              = 7,
+    encode_rec709_ignore_alpha              = 8,
+    decode_srgb_premultiplied               = 9,
+    encode_srgb_premultiplied               = 10,
+    decode_rec709_straight_alpha_over_black = 11,
 };
 
-enum class alpha_mode_e
+enum class input_alpha_mode_e
+{
+    ignore,
+    straight,
+    premultiplied,
+    straight_over_black,
+};
+
+enum class output_alpha_mode_e
 {
     ignore,
     straight,

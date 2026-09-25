@@ -38,17 +38,18 @@ const uint channel_order_bgra = 1;
 const uint channel_order_bgrx = 2;
 const uint channel_order_argb = 3;
 
-const int color_operation_none                         = 0;
-const int color_operation_decode_rec709                = 1;
-const int color_operation_encode_rec709                = 2;
-const int color_operation_encode_rec709_premultiplied  = 3;
-const int color_operation_decode_rec709_straight_alpha = 4;
-const int color_operation_encode_rec709_straight_alpha = 5;
-const int color_operation_decode_rec709_premultiplied  = 6;
-const int color_operation_decode_rec709_ignore_alpha   = 7;
-const int color_operation_encode_rec709_ignore_alpha   = 8;
-const int color_operation_decode_srgb_premultiplied     = 9;
-const int color_operation_encode_srgb_premultiplied     = 10;
+const int color_operation_none                                    = 0;
+const int color_operation_decode_rec709                           = 1;
+const int color_operation_encode_rec709                           = 2;
+const int color_operation_encode_rec709_premultiplied             = 3;
+const int color_operation_decode_rec709_straight_alpha            = 4;
+const int color_operation_encode_rec709_straight_alpha            = 5;
+const int color_operation_decode_rec709_premultiplied             = 6;
+const int color_operation_decode_rec709_ignore_alpha              = 7;
+const int color_operation_encode_rec709_ignore_alpha              = 8;
+const int color_operation_decode_srgb_premultiplied               = 9;
+const int color_operation_encode_srgb_premultiplied               = 10;
+const int color_operation_decode_rec709_straight_alpha_over_black = 11;
 
 vec4 map_input_channels(vec4 color, uint channel_order)
 {
@@ -105,7 +106,7 @@ vec4 srgb_to_linear_premultiplied(vec4 color)
     // Decode straight sRGB, then premultiply in the working linear space.
     // Alpha is coverage and must not undergo the RGB transfer function.
     vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
-    vec3 linear_rgb = mix(pow((straight_rgb + 0.055) / 1.055, vec3(2.4)),
+    vec3 linear_rgb   = mix(pow((straight_rgb + 0.055) / 1.055, vec3(2.4)),
                           straight_rgb / 12.92,
                           lessThanEqual(straight_rgb, vec3(0.04045)));
     return vec4(linear_rgb * color.a, color.a);
@@ -133,7 +134,7 @@ vec4 linear_to_srgb_premultiplied(vec4 color)
     }
 
     vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
-    vec3 encoded_rgb = mix(1.055 * pow(straight_rgb, vec3(1.0 / 2.4)) - 0.055,
+    vec3 encoded_rgb  = mix(1.055 * pow(straight_rgb, vec3(1.0 / 2.4)) - 0.055,
                            12.92 * straight_rgb,
                            lessThanEqual(straight_rgb, vec3(0.0031308)));
     return vec4(encoded_rgb * color.a, color.a);

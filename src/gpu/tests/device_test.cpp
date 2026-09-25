@@ -11,6 +11,7 @@
 #include <semaphore>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 namespace miximus::gpu { namespace {
 
@@ -785,7 +786,10 @@ TEST_F(device_test, FirstDrawInitializesNewTargetsAndLaterRecordingsPreserveCont
     EXPECT_TRUE(std::ranges::equal(output.readable_bytes(), expected));
 }
 
-void fill_ndi_bgra_input(std::span<std::byte> bytes, uint32_t width, std::span<const uint8_t> alphas, alpha_mode_e mode)
+void fill_ndi_bgra_input(std::span<std::byte>     bytes,
+                         uint32_t                 width,
+                         std::span<const uint8_t> alphas,
+                         input_alpha_mode_e       mode)
 {
     for (size_t y = 0; y < alphas.size(); ++y) {
         for (size_t x = 0; x < width; ++x) {
@@ -795,7 +799,7 @@ void fill_ndi_bgra_input(std::span<std::byte> bytes, uint32_t width, std::span<c
             bytes[at + 1] = std::byte{static_cast<uint8_t>((x * 13) % 256)};
             bytes[at + 2] = std::byte{static_cast<uint8_t>(x)};
             bytes[at + 3] = std::byte{alphas[y]};
-            if (mode == alpha_mode_e::premultiplied && alphas[y] != 0) {
+            if (mode == input_alpha_mode_e::premultiplied && alphas[y] != 0) {
                 for (size_t channel = 0; channel < 3; ++channel) {
                     bytes[at + channel] =
                         std::byte((std::to_integer<unsigned>(bytes[at + channel]) * alphas[y] + 127) / 255);
@@ -805,7 +809,7 @@ void fill_ndi_bgra_input(std::span<std::byte> bytes, uint32_t width, std::span<c
     }
 }
 
-void expect_ndi_round_trip(alpha_mode_e               mode,
+void expect_ndi_round_trip(input_alpha_mode_e         mode,
                            uint32_t                   width,
                            uint32_t                   height,
                            std::span<const std::byte> original,
@@ -815,26 +819,26 @@ void expect_ndi_round_trip(alpha_mode_e               mode,
     for (size_t pixel = 0; pixel < size_t{width} * height; ++pixel) {
         const size_t at    = pixel * 4;
         const auto   alpha = std::to_integer<unsigned>(original[at + 3]);
-        EXPECT_EQ(actual[at + 3], mode == alpha_mode_e::ignore ? std::byte{255} : original[at + 3]);
+        EXPECT_EQ(actual[at + 3], mode == input_alpha_mode_e::ignore ? std::byte{255} : original[at + 3]);
         for (size_t channel = 0; channel < 3; ++channel) {
             const auto   encoded_value = std::to_integer<unsigned>(original[at + 2 - channel]);
-            const double opacity       = mode == alpha_mode_e::ignore ? 1.0 : alpha / 255.0;
+            const double opacity       = mode == input_alpha_mode_e::ignore ? 1.0 : alpha / 255.0;
             double       video         = encoded_value / 255.0;
-            if (mode == alpha_mode_e::premultiplied) {
+            if (mode == input_alpha_mode_e::premultiplied) {
                 video = alpha != 0 ? static_cast<double>(encoded_value) / alpha : 0.0;
             }
             const double decoded = video < .081 ? video / 4.5 : std::pow((video + .099) / 1.099, 1 / .45);
             uint16_t     stored{};
             std::memcpy(&stored, linear_bytes.data() + ((at + channel) * 2), sizeof(stored));
             EXPECT_NEAR(stored, decoded * opacity * 65535.0, 2);
-            if (alpha == 0 && mode != alpha_mode_e::ignore) {
+            if (alpha == 0 && mode != input_alpha_mode_e::ignore) {
                 EXPECT_EQ(actual[at + channel], std::byte{0});
             } else {
                 // At alpha 1/255, UNORM16 premultiplication has at most two
                 // encoded code values of error. Opaque RGB must round-trip exactly.
                 EXPECT_NEAR(std::to_integer<unsigned>(actual[at + channel]),
                             encoded_value,
-                            mode == alpha_mode_e::ignore || alpha == 255 ? 0 : 2);
+                            mode == input_alpha_mode_e::ignore || alpha == 255 ? 0 : 2);
             }
         }
     }
@@ -842,8 +846,12 @@ void expect_ndi_round_trip(alpha_mode_e               mode,
 
 TEST_F(device_test, NdiAlphaModesDecodeAndRoundTripAgainstIndependentReferences)
 {
-    for (const auto mode : {alpha_mode_e::ignore, alpha_mode_e::straight, alpha_mode_e::premultiplied}) {
-        SCOPED_TRACE(static_cast<int>(mode));
+    for (const auto [input_mode, output_mode] : {
+             std::pair{input_alpha_mode_e::ignore,        output_alpha_mode_e::ignore       },
+             std::pair{input_alpha_mode_e::straight,      output_alpha_mode_e::straight     },
+             std::pair{input_alpha_mode_e::premultiplied, output_alpha_mode_e::premultiplied}
+    }) {
+        SCOPED_TRACE(static_cast<int>(output_mode));
         constexpr std::array<uint8_t, 7> alphas{0, 1, 17, 64, 128, 254, 255};
         constexpr uint32_t               width      = 256;
         constexpr uint32_t               height     = alphas.size();
@@ -855,7 +863,7 @@ TEST_F(device_test, NdiAlphaModesDecodeAndRoundTripAgainstIndependentReferences)
         auto working = device->create_buffer(components * 2, host_access_e::readback);
         auto output  = device->create_buffer(components, host_access_e::readback);
         auto bytes   = input.writable_bytes();
-        fill_ndi_bgra_input(bytes, width, alphas, mode);
+        fill_ndi_bgra_input(bytes, width, alphas, input_mode);
 
         const std::vector<std::byte> original(bytes.begin(), bytes.end());
 
@@ -864,17 +872,61 @@ TEST_F(device_test, NdiAlphaModesDecodeAndRoundTripAgainstIndependentReferences)
         record->draw(source,
                      linear,
                      {.compositing = compositing_e::replace,
-                      .transfer    = rec709_decode_operation(mode),
+                      .transfer    = rec709_decode_operation(input_mode),
                       .input_order = channel_order_e::bgra});
         record->readback(linear, working);
         record->draw(
-            linear, encoded, {.compositing = compositing_e::replace, .transfer = rec709_encode_operation(mode)});
+            linear, encoded, {.compositing = compositing_e::replace, .transfer = rec709_encode_operation(output_mode)});
         record->readback(encoded, output);
         finish(record);
 
         const auto actual       = output.readable_bytes();
         const auto linear_bytes = working.readable_bytes();
-        expect_ndi_round_trip(mode, width, height, original, actual, linear_bytes);
+        expect_ndi_round_trip(input_mode, width, height, original, actual, linear_bytes);
+    }
+}
+
+TEST_F(device_test, NdiStraightAlphaOverBlackIsOpaqueAndMatchesLinearReference)
+{
+    constexpr std::array<uint8_t, 7> alphas{0, 1, 17, 64, 128, 254, 255};
+    constexpr uint32_t               width      = 256;
+    constexpr uint32_t               height     = alphas.size();
+    constexpr size_t                 components = size_t{width} * height * 4;
+    auto source = device->create_texture({.width = width, .height = height}, format_e::rgba_unorm8);
+    auto target = device->create_texture({.width = width, .height = height}, format_e::rgba_unorm16);
+    auto input  = device->create_buffer(components, host_access_e::sequential_write);
+    auto output = device->create_buffer(components * 2, host_access_e::readback);
+    fill_ndi_bgra_input(input.writable_bytes(), width, alphas, input_alpha_mode_e::straight);
+    const std::vector<std::byte> original(input.writable_bytes().begin(), input.writable_bytes().end());
+
+    for (const auto order : {channel_order_e::bgra, channel_order_e::bgrx}) {
+        SCOPED_TRACE(static_cast<int>(order));
+        auto record = device->try_record();
+        record->upload(input, source);
+        record->draw(source,
+                     target,
+                     {.compositing = compositing_e::replace,
+                      .transfer    = rec709_decode_operation(input_alpha_mode_e::straight_over_black),
+                      .input_order = order});
+        record->readback(target, output);
+        finish(record);
+        const auto actual = output.readable_bytes();
+        for (size_t pixel = 0; pixel < size_t{width} * height; ++pixel) {
+            const size_t at = pixel * 4;
+            const double alpha =
+                order == channel_order_e::bgrx ? 1.0 : std::to_integer<unsigned>(original[at + 3]) / 255.0;
+            for (size_t channel = 0; channel < 4; ++channel) {
+                uint16_t stored{};
+                std::memcpy(&stored, actual.data() + ((at + channel) * 2), sizeof(stored));
+                if (channel == 3) {
+                    EXPECT_EQ(stored, 65535);
+                } else {
+                    const double video   = std::to_integer<unsigned>(original[at + 2 - channel]) / 255.0;
+                    const double decoded = video < .081 ? video / 4.5 : std::pow((video + .099) / 1.099, 1 / .45);
+                    EXPECT_NEAR(stored, decoded * alpha * 65535.0, 2);
+                }
+            }
+        }
     }
 }
 
@@ -902,7 +954,8 @@ TEST_F(device_test, NdiOutputAlphaModesMatchIndependentLinearInputIncludingIgnor
     auto record = device->try_record();
     record->upload(input, source);
     finish(record);
-    for (const auto mode : {alpha_mode_e::ignore, alpha_mode_e::straight, alpha_mode_e::premultiplied}) {
+    for (const auto mode :
+         {output_alpha_mode_e::ignore, output_alpha_mode_e::straight, output_alpha_mode_e::premultiplied}) {
         SCOPED_TRACE(static_cast<int>(mode));
         record = device->try_record();
         record->draw(
@@ -913,12 +966,13 @@ TEST_F(device_test, NdiOutputAlphaModesMatchIndependentLinearInputIncludingIgnor
         const auto actual = output.readable_bytes();
         for (size_t i = 0; i < alphas.size(); ++i) {
             const double alpha = alphas.at(i) / 65535.0;
-            EXPECT_NEAR(
-                std::to_integer<unsigned>(actual[(i * 4) + 3]), mode == alpha_mode_e::ignore ? 255.0 : alpha * 255, 1);
+            EXPECT_NEAR(std::to_integer<unsigned>(actual[(i * 4) + 3]),
+                        mode == output_alpha_mode_e::ignore ? 255.0 : alpha * 255,
+                        1);
             for (size_t channel = 0; channel < 3; ++channel) {
                 const double linear   = (alphas.at(i) != 0U) ? double(pixels.at((i * 4) + channel)) / alphas.at(i) : 0;
                 const double encoded  = linear < .018 ? linear * 4.5 : (1.099 * std::pow(linear, .45)) - .099;
-                const double expected = encoded * (mode == alpha_mode_e::premultiplied ? alpha : 1.0) * 255;
+                const double expected = encoded * (mode == output_alpha_mode_e::premultiplied ? alpha : 1.0) * 255;
                 EXPECT_NEAR(std::to_integer<unsigned>(actual[(i * 4) + channel]), expected, 1);
             }
         }

@@ -22,7 +22,8 @@ layout(push_constant) uniform Parameters
 
     // Unused tail bytes preserve the matching 64-byte C++ push-constant layout.
     int memory_layout_padding;
-} parameters;
+}
+parameters;
 
 void main()
 {
@@ -44,6 +45,10 @@ void main()
 
         case color_operation_decode_rec709_straight_alpha:
             color = vec4(to_linear(color.rgb) * color.a, color.a);
+            break;
+
+        case color_operation_decode_rec709_straight_alpha_over_black:
+            color = vec4(to_linear(color.rgb) * color.a, 1.0);
             break;
 
         case color_operation_encode_rec709_straight_alpha:
