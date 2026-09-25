@@ -13,6 +13,7 @@
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <thread>
 
@@ -250,28 +251,46 @@ void wait_demand(const std::shared_ptr<session_s>& session, uint32_t wanted, boo
                     m.reserved_bytes));
 }
 
-void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>& session)
+class large_input_probe_s
 {
-    auto       source  = gpu.create_texture({4096, 4096});
-    auto       context = gpu.create_recording_context(3);
-    int64_t    timestamp{};
-    const auto feed = [&] {
+    gpu::texture_s           source_;
+    gpu::recording_context_s context_;
+    int64_t                  timestamp_{};
+
+  public:
+    explicit large_input_probe_s(gpu::device_s& gpu)
+        : source_(gpu.create_texture({.width = 4096, .height = 4096}))
+        , context_(gpu.create_recording_context(3))
+    {
+    }
+
+    void feed(std::span<const std::shared_ptr<session_s>> sessions, size_t input_count)
+    {
         for (int frame = 0; frame < 180; ++frame) {
-            timestamp += 16667;
-            if (auto record = context.try_record()) {
-                record->clear(source, {0.5F, 0, 0, 1});
-                for (size_t input = 0; input < 8; ++input) {
-                    auto publish = session->record_media_input(input, *record, &source, "producer", "tex", timestamp);
-                    if (publish) {
-                        record->on_submitted([publish](const gpu::completion_s&) { publish(); });
+            timestamp_ += 16667;
+            if (auto record = context_.try_record()) {
+                record->clear(source_, {0.5F, 0, 0, 1});
+                for (const auto& session : sessions) {
+                    for (size_t input = 0; input < input_count; ++input) {
+                        auto publish =
+                            session->record_media_input(input, *record, &source_, "producer", "tex", timestamp_);
+                        if (publish) {
+                            record->on_submitted([publish](const gpu::completion_s&) { publish(); });
+                        }
                     }
                 }
                 (void)record->submit();
             }
             std::this_thread::sleep_for(16667us);
         }
-    };
-    feed();
+    }
+};
+
+void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>& session)
+{
+    large_input_probe_s probe(gpu);
+    const std::array    sessions{session};
+    probe.feed(sessions, 8);
     const auto       initial          = session->metrics().inputs;
     constexpr size_t two_input_charge = 2ULL * 4096 * 4096 * 4 * 10;
     if (initial.reserved_bytes != two_input_charge || initial.delivered == 0 || initial.error.empty()) {
@@ -285,7 +304,7 @@ void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>&
         wait_demand(session, 255U & ~((1U << stopped) - 1U), stopped == 8);
         if (stopped != 8) {
             const auto before = session->metrics().inputs.delivered;
-            feed();
+            probe.feed(sessions, 8);
             const auto after = session->metrics().inputs;
             if (after.delivered <= before || after.reserved_bytes != two_input_charge) {
                 throw std::runtime_error("Demanded inputs did not recover after export capacity was released");
@@ -330,26 +349,8 @@ void check_shared_budget_recovery(subsystem_s& subsystem, gpu::device_s& gpu)
 
         wait_demand(sessions.at(index), 1, false);
     }
-    auto       source  = gpu.create_texture({4096, 4096});
-    auto       context = gpu.create_recording_context(3);
-    int64_t    timestamp{};
-    const auto feed = [&] {
-        for (int frame = 0; frame < 180; ++frame) {
-            timestamp += 16667;
-            if (auto record = context.try_record()) {
-                record->clear(source, {0.5F, 0, 0, 1});
-                for (const auto& session : sessions) {
-                    auto publish = session->record_media_input(0, *record, &source, "producer", "tex", timestamp);
-                    if (publish) {
-                        record->on_submitted([publish](const gpu::completion_s&) { publish(); });
-                    }
-                }
-                (void)record->submit();
-            }
-            std::this_thread::sleep_for(16667us);
-        }
-    };
-    feed();
+    large_input_probe_s probe(gpu);
+    probe.feed(sessions, 1);
     size_t reserved{};
     size_t active{};
     size_t blocked = sessions.size();
@@ -373,7 +374,7 @@ void check_shared_budget_recovery(subsystem_s& subsystem, gpu::device_s& gpu)
     const std::string stop = "() => { document.querySelector('video').srcObject.getTracks().forEach(t => t.stop()); }";
     run_script(sessions.at(donor), stop);
     wait_demand(sessions.at(donor), 0, true);
-    feed();
+    probe.feed(sessions, 1);
     if (sessions.at(blocked)->metrics().inputs.delivered == 0 ||
         !sessions.at(blocked)->metrics().inputs.error.empty()) {
         throw std::runtime_error("Waiting browser session did not recover released shared admission");
@@ -383,6 +384,44 @@ void check_shared_budget_recovery(subsystem_s& subsystem, gpu::device_s& gpu)
         wait_demand(session, 0, true);
     }
     std::cout << "Shared admission recovered between independent browser sessions\n";
+}
+
+void check_navigation(frame_probe_s&                    probe,
+                      const std::shared_ptr<session_s>& session,
+                      const std::string&                navigation_url)
+{
+    const auto navigate_back = [&] {
+        auto       other_origin = navigation_url;
+        const auto host         = other_origin.find("127.0.0.1");
+        if (host == std::string::npos) {
+            throw std::runtime_error("Navigation origin must use 127.0.0.1");
+        }
+        other_origin.replace(host, 9, "localhost");
+        run_script(session, "() => { setTimeout(() => location.href = '" + other_origin + "/blank.html', 50); }");
+        wait_demand(session, 0, true);
+        const auto navigation_deadline = std::chrono::steady_clock::now() + 10s;
+        while (!session->context_ready() && std::chrono::steady_clock::now() < navigation_deadline) {
+            std::this_thread::sleep_for(10ms);
+        }
+        run_script(session, "() => { setTimeout(() => history.back(), 50); }");
+        wait_demand(session, 255, false);
+    };
+    // Exercise process IDs beyond 9 before any real input allocation.
+    // Decimal prefix validation used to leak retired document tokens here,
+    // silently preventing later delivery even though all byte counts were zero.
+    for (int cycle = 0; cycle < 30; ++cycle) {
+        navigate_back();
+    }
+    probe.run_stage(0);
+    // Also require retirement of real allocations at the higher process IDs.
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        navigate_back();
+        probe.run_stage(0);
+    }
+    run_script(session,
+               "() => { document.querySelectorAll('video').forEach(v => v.srcObject.getTracks().forEach(t => "
+               "t.stop())); }");
+    wait_demand(session, 0, true);
 }
 
 void run(subsystem_s&       subsystem,
@@ -475,38 +514,7 @@ void run(subsystem_s&       subsystem,
     }
     frame_probe_s probe(gpu, session, small_inputs);
     if (!navigation_url.empty()) {
-        const auto navigate_back = [&] {
-            auto       other_origin = navigation_url;
-            const auto host         = other_origin.find("127.0.0.1");
-            if (host == std::string::npos) {
-                throw std::runtime_error("Navigation origin must use 127.0.0.1");
-            }
-            other_origin.replace(host, 9, "localhost");
-            run_script(session, "() => { setTimeout(() => location.href = '" + other_origin + "/blank.html', 50); }");
-            wait_demand(session, 0, true);
-            const auto navigation_deadline = std::chrono::steady_clock::now() + 10s;
-            while (!session->context_ready() && std::chrono::steady_clock::now() < navigation_deadline) {
-                std::this_thread::sleep_for(10ms);
-            }
-            run_script(session, "() => { setTimeout(() => history.back(), 50); }");
-            wait_demand(session, 255, false);
-        };
-        // Exercise process IDs beyond 9 before any real input allocation.
-        // Decimal prefix validation used to leak retired document tokens here,
-        // silently preventing later delivery even though all byte counts were zero.
-        for (int cycle = 0; cycle < 30; ++cycle) {
-            navigate_back();
-        }
-        probe.run_stage(0);
-        // Also require retirement of real allocations at the higher process IDs.
-        for (int cycle = 0; cycle < 3; ++cycle) {
-            navigate_back();
-            probe.run_stage(0);
-        }
-        run_script(session,
-                   "() => { document.querySelectorAll('video').forEach(v => v.srcObject.getTracks().forEach(t => "
-                   "t.stop())); }");
-        wait_demand(session, 0, true);
+        check_navigation(probe, session, navigation_url);
         return;
     }
     for (int stage = -1; stage < 3; ++stage) {

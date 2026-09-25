@@ -155,7 +155,7 @@ struct media_input_session_s::impl_s
             uint64_t                              configured{};
             uint64_t                              sent_generation{};
             int64_t                               timestamp_us{};
-            std::chrono::steady_clock::time_point retry_after{};
+            std::chrono::steady_clock::time_point retry_after;
 
             bool invalidation_pending{};
             bool transparent_pending{};
@@ -221,6 +221,39 @@ struct media_input_session_s::impl_s
                     inputs.at(input).source_node.clear();
                     inputs.at(input).source_interface.clear();
                 }
+            }
+        }
+
+        void receive_activity_locked(const CefRefPtr<CefListValue>& args)
+        {
+            if (exports && !closing && args->GetSize() == 4 && args->GetType(0) == VTYPE_STRING && !context.empty() &&
+                args->GetString(0).ToString() == context && args->GetType(1) == VTYPE_INT && args->GetInt(1) >= 0 &&
+                args->GetInt(1) < 8 && args->GetType(2) == VTYPE_BOOL && args->GetType(3) == VTYPE_BOOL) {
+                const auto input    = static_cast<size_t>(args->GetInt(1));
+                auto&      contexts = inputs.at(input).renderer_contexts;
+                if (args->GetBool(2)) {
+                    contexts.insert(context);
+                } else if (args->GetBool(3)) {
+                    contexts.erase(context);
+                }
+
+                if (!args->GetBool(2) && ((subscribed & (1U << input)) == 0U)) {
+                    return; // Destination retirement acknowledgement, not a new activation.
+                }
+
+                exports->invalidate(input);
+                if (args->GetBool(2)) {
+                    subscribed |= 1U << input;
+                } else {
+                    subscribed &= ~(1U << input);
+                }
+
+                inputs.at(input).transparent = true;
+                inputs.at(input).wanted      = DISCONNECTED_EXTENT;
+                inputs.at(input).source_node.clear();
+                inputs.at(input).source_interface.clear();
+                ++inputs.at(input).revision;
+                inputs.at(input).error.clear();
             }
         }
 
@@ -642,36 +675,7 @@ bool media_input_session_s::receive(const CefRefPtr<CefBrowser>&        browser,
         return false;
     }
 
-    if (state.exports && !state.closing && args->GetSize() == 4 && args->GetType(0) == VTYPE_STRING &&
-        !state.context.empty() && args->GetString(0).ToString() == state.context && args->GetType(1) == VTYPE_INT &&
-        args->GetInt(1) >= 0 && args->GetInt(1) < 8 && args->GetType(2) == VTYPE_BOOL &&
-        args->GetType(3) == VTYPE_BOOL) {
-        const auto input    = static_cast<size_t>(args->GetInt(1));
-        auto&      contexts = state.inputs.at(input).renderer_contexts;
-        if (args->GetBool(2)) {
-            contexts.insert(state.context);
-        } else if (args->GetBool(3)) {
-            contexts.erase(state.context);
-        }
-
-        if (!args->GetBool(2) && ((state.subscribed & (1U << input)) == 0U)) {
-            return true; // Destination retirement acknowledgement, not a new activation.
-        }
-
-        state.exports->invalidate(input);
-        if (args->GetBool(2)) {
-            state.subscribed |= 1U << input;
-        } else {
-            state.subscribed &= ~(1U << input);
-        }
-
-        state.inputs.at(input).transparent = true;
-        state.inputs.at(input).wanted      = DISCONNECTED_EXTENT;
-        state.inputs.at(input).source_node.clear();
-        state.inputs.at(input).source_interface.clear();
-        ++state.inputs.at(input).revision;
-        state.inputs.at(input).error.clear();
-    }
+    state.receive_activity_locked(args);
 
     return true;
 }
