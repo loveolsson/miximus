@@ -458,3 +458,10 @@ The eight-input session probe passed from eight initially disconnected streams t
 disconnect, resize, reload and shutdown. Initial eight-input budget reservation fell from 20 MiB to 5 MiB. The graph
 campaign with four requested streams and two connected sources also passed with Vulkan validation and no EGL errors.
 Later disconnections still retain their source's last dimensions.
+
+Final revision-4 performance check: six 1920×1080 inputs in a 1920×1080 browser viewport, five seconds of warmup and
+30 seconds measured, presented **59.998 fps on all six inputs**, with **zero additional transport drops** in the
+steady interval. Resize, disconnect, reload, disable/enable and shutdown also passed. This uses the normal staged
+runtime, without `LD_LIBRARY_PATH`, with Vulkan validation off for performance
+(`build/integration-tests/cef-inputs-20260925-082547`). The post-completion error check therefore preserved the
+qualified six-input 1080p60 workload on this GPU.
