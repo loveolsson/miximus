@@ -56,8 +56,8 @@ TEST(node_status_registry, cef_states_serialize_as_existing_wire_names)
         EXPECT_EQ(nlohmann::json(name).get<cef_input_state_e>(), state);
     }
 
-    payload.cef_state = static_cast<cef_state_e>(255);
-    EXPECT_THROW(registry.write("browser", payload), std::invalid_argument);
+    EXPECT_THROW(nlohmann::json("invalid").get<cef_state_e>(), std::invalid_argument);
+    EXPECT_THROW(nlohmann::json("invalid").get<cef_input_state_e>(), std::invalid_argument);
 }
 
 TEST(node_status_registry, described_status_is_serialized_and_delta_filtered)
