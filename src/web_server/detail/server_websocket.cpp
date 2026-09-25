@@ -2,12 +2,12 @@
 #include "static_files/files.hpp"
 #include "types/web_message_json.hpp"
 #include "types/web_message_request.hpp"
+#include "utils/string_view.hpp"
 #include "web_server/detail/server_impl.hpp"
 #include "web_server/payload_parse.hpp"
 
 #include <boost/asio/post.hpp>
 #include <nlohmann/json.hpp>
-#include <websocketpp/utilities.hpp>
 
 #include <exception>
 #include <string>
@@ -176,9 +176,8 @@ void web_server_impl::on_fail(const con_hdl_t& hdl)
     }
 
     // Inspect the Upgrade header even if the rest of the handshake is invalid.
-    const auto& upgrade = request.get_header("Upgrade");
-    const bool  websocket_upgrade =
-        websocketpp::utility::ci_find_substr(upgrade, "websocket", sizeof("websocket") - 1) != upgrade.end();
+    const auto& upgrade           = request.get_header("Upgrade");
+    const bool  websocket_upgrade = utils::ascii_icontains_view(upgrade, "websocket");
     log->warn("{} failed for {} {}: {} ({})",
               websocket_upgrade ? "WebSocket upgrade" : "HTTP request",
               request.get_method(),

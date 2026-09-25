@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <string_view>
 
 namespace miximus::utils {
@@ -92,5 +93,28 @@ template <size_t S>
     }
 
     return true;
+}
+/**
+ * Case insensitive substring search for an ASCII string_view.
+ * An empty token matches any text. Bytes outside ASCII are compared unchanged.
+ */
+[[nodiscard]] constexpr bool ascii_icontains_view(std::string_view text, std::string_view token) noexcept
+{
+    if (token.empty()) {
+        return true;
+    }
+    return std::search(text.begin(), text.end(), token.begin(), token.end(), [](char a, char b) {
+               return ascii_to_lower(a) == ascii_to_lower(b);
+           }) != text.end();
+}
+
+/**
+ * Case insensitive substring search for a static ASCII token.
+ * Preserve the token length without scanning for a null terminator.
+ */
+template <size_t S>
+[[nodiscard]] constexpr bool ascii_icontains_view(std::string_view text, const char (&token)[S]) noexcept
+{
+    return ascii_icontains_view(text, std::string_view(token, S - 1));
 }
 } // namespace miximus::utils
