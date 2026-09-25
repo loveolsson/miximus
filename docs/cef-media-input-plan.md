@@ -491,6 +491,31 @@ Implement in these steps:
 5. Rebuild and stage the patched runtime for the regular build, run native/source tests and real-GPU
    lifecycle checks, then repeat the six-input 1080p60 performance campaign. Commit coherent milestones.
 
-The reservation remains conservative while consumers may retain old Chromium frames. Releasing GPU
-allocations and releasing accounting reservations are distinct operations; unproven foreign GPU access
-must retain both its allocation and its reservation through quarantine.
+The reservation remains conservative while consumers may retain old Chromium frames. An inactive input
+releases its reservation only after Chromium reports all destinations released and the native exports
+have drained. Unproven foreign GPU access retains both allocation and reservation through quarantine.
+
+### Implementation
+
+Revision 5 replaces one-way subscription with document-scoped native activity/retirement messages. A small
+subclass of Chromium's existing pushable source reports stop/destruction and services refresh requests;
+Chromium still owns track fanout, clones, and ordinary media delivery. Activation epochs ignore a delayed
+old-source callback after immediate reacquisition. Both the JavaScript stream cache and Blink track/source
+references are weak. The existing browser-node demand mask already gates upstream submission, so no new
+scheduler mechanism is needed.
+
+The private v3 sender distinguishes GPU frames, generation invalidation, and transparent-content control.
+Disconnected live inputs use Chromium's stock 16×16 transparent I420A frame and refresh requests. This
+synthetic neutral frame uses Chromium's normal media upload path; actual source pixels still stay on the
+GPU. There is no Vulkan placeholder texture, startup GPU wait, disconnected export pool, or recurring
+placeholder copy. Source changes and disconnects invalidate older in-flight deliveries.
+
+Inactive export pools release allocations only after native completion and external leases drain. Idle
+Chromium destinations are destroyed with their release sync tokens; consumer-held destinations remain
+bounded and retire when released. An inactive input's reservation is returned after destination retirement
+and export drainage. Context revocation remains conservative about reservations while old document frames
+may still be held. A worker allocation that races a stop/source change is revoked before it can stay active.
+
+The source qualification suite now includes last-clone retirement exactly once, abandoned-track collection,
+and transparent refresh after the original frame was sent before a sink attached. All eight source tests
+and the 168 existing capture tests passed before packaging the runtime. Real-GPU qualification follows below.

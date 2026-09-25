@@ -1,6 +1,5 @@
 #include "media_input_renderer.hpp"
 
-#include "include/cef_process_message.h"
 #include "wrapper/cef/media_input_abi.hpp"
 
 #include <charconv>
@@ -12,40 +11,6 @@
 #endif
 
 namespace miximus::nodes::cef::detail {
-namespace {
-
-class subscribe_s final : public CefV8Handler
-{
-    CefRefPtr<CefFrame> frame_;
-    std::string         token_;
-    IMPLEMENT_REFCOUNTING(subscribe_s);
-
-  public:
-    subscribe_s(CefRefPtr<CefFrame> frame, std::string token)
-        : frame_(std::move(frame))
-        , token_(std::move(token))
-    {
-    }
-    bool Execute(const CefString& /* name */,
-                 CefRefPtr<CefV8Value> /* object */,
-                 const CefV8ValueList& arguments,
-                 CefRefPtr<CefV8Value>& /* retval */,
-                 CefString& /* exception */) override
-    {
-        if (arguments.size() == 1 && arguments[0]->IsInt() && arguments[0]->GetIntValue() >= 0 &&
-            arguments[0]->GetIntValue() < 8 && frame_->IsValid()) {
-            auto message = CefProcessMessage::Create(MEDIA_INPUT_SUBSCRIBE);
-            auto values  = message->GetArgumentList();
-            values->SetString(0, token_);
-            values->SetInt(1, arguments[0]->GetIntValue());
-            frame_->SendProcessMessage(PID_BROWSER, message);
-        }
-        return true;
-    }
-};
-
-} // namespace
-
 void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
                           const CefRefPtr<CefV8Context>& context,
                           const std::string&             token)
@@ -64,24 +29,24 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
     if (!install || !dlsym(RTLD_DEFAULT, cef_wrapper::SEND_MEDIA_FRAME) || !install(token.c_str(), depth)) {
         return;
     }
+    (void)frame;
     auto global = context->GetGlobal();
     auto create = global->GetValue("__miximusCreateInputTrack");
     global->DeleteValue("__miximusCreateInputTrack");
     if (!create || !create->IsFunction()) {
         return;
     }
-    constexpr auto*           script = R"JS((function(create, subscribe) {
+    constexpr auto*           script = R"JS((function(create) {
         const streams = new Array(8);
         const api = globalThis.miximus || {};
         Object.defineProperty(api, 'getInputMediaStream', {value: async options => {
             const index = options?.inputIndex;
             if (!Number.isInteger(index) || index < 0 || index >= 8)
                 throw new RangeError('inputIndex must be an integer in [0, 7]');
-            let stream = streams[index];
+            let stream = streams[index]?.deref();
             if (!stream || stream.getVideoTracks()[0].readyState === 'ended') {
                 stream = new MediaStream([create(index)]);
-                streams[index] = stream;
-                subscribe(index);
+                streams[index] = new WeakRef(stream);
             }
             return stream;
         }, enumerable: true});
@@ -90,8 +55,7 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
     CefRefPtr<CefV8Value>     setup;
     CefRefPtr<CefV8Exception> exception;
     if (context->Eval(script, "miximus-media-input", 1, setup, exception)) {
-        setup->ExecuteFunction(nullptr,
-                               {create, CefV8Value::CreateFunction("subscribe", new subscribe_s(frame, token))});
+        setup->ExecuteFunction(nullptr, {create});
     }
 #else
     (void)frame;

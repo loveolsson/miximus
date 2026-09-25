@@ -156,6 +156,29 @@ class export_queue_test : public testing::Test
     }
 };
 
+TEST_F(export_queue_test, InactiveExportsAreFreedOnlyAfterAllLeasesRetire)
+{
+    std::unique_ptr<gpu::recording_s> commands;
+    auto                              publication = record(commands);
+    publication->commit();
+    EXPECT_FALSE(queue->release(0));
+    finish(commands);
+    auto frame = queue->poll();
+    ASSERT_TRUE(frame);
+    queue->invalidate(0);
+    EXPECT_FALSE(queue->release(0));
+    EXPECT_GT(queue->allocated_bytes(), 0U);
+    frame->retire(true);
+    // Retired frame/publication handles still own their backing allocation.
+    EXPECT_FALSE(queue->release(0));
+    frame.reset();
+    publication.reset();
+    ASSERT_TRUE(queue->release(0));
+    EXPECT_EQ(queue->allocated_bytes(), 0U);
+    ASSERT_TRUE(queue->configure(0, {32, 16}));
+    EXPECT_GT(queue->allocated_bytes(), 0U);
+}
+
 TEST_F(export_queue_test, NativeSubmissionAloneCannotPublishAnIncompleteGraphFrame)
 {
     std::unique_ptr<gpu::recording_s> commands;

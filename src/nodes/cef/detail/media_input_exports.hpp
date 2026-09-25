@@ -80,8 +80,10 @@ class media_input_exports_s
     media_input_exports_s& operator=(const media_input_exports_s&) = delete;
     // Worker-only, allocation is outside the metadata lock. False means old
     // leases must drain first. No overlapping old/new allocation generations.
-    bool     configure(size_t input, gpu::extent_s extent);
-    void     invalidate(size_t input);
+    bool configure(size_t input, gpu::extent_s extent);
+    void invalidate(size_t input);
+    // Worker-only: release revoked allocations after producer/consumer retirement.
+    bool     release(size_t input);
     uint64_t generation(size_t input) const;
     size_t   allocated_bytes() const;
     std::shared_ptr<publication_s>

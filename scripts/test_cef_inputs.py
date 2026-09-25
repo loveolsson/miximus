@@ -37,6 +37,7 @@ class Page(BaseHTTPRequestHandler):
     loads = 0
     inputs = 8
     latest = {}
+    control = "run"
 
     def log_message(self, *_):
         pass
@@ -49,6 +50,14 @@ class Page(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if self.path == "/control":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            with self.lock:
+                self.wfile.write(json.dumps(Page.control).encode())
+            return
         if self.path != "/":
             self.send_error(404)
             return
@@ -66,11 +75,32 @@ for(let inputIndex=0;inputIndex<INPUT_COUNT;inputIndex++) {
     const v=document.createElement('video');v.autoplay=true;v.muted=true;document.body.append(v);
     const sample={width:0,height:0,presented:0};samples.push(sample);
     const observe=(now,m)=>{sample.width=v.videoWidth;sample.height=v.videoHeight;
-        sample.presented=m.presentedFrames;v.requestVideoFrameCallback(observe)};
+        sample.presented=m.presentedFrames;
+        if(sample.resumeAt!==undefined && sample.width===sample.resumeWidth && sample.resumeMs===null)
+            sample.resumeMs=now-sample.resumeAt;
+        v.requestVideoFrameCallback(observe)};
     v.requestVideoFrameCallback(observe);
     miximus.getInputMediaStream({inputIndex}).then(s=>{v.srcObject=s;return v.play()})
         .catch(e=>errors.push(String(e)));
 }
+let control='run', applying=false;
+setInterval(async()=>{
+    if(applying)return;
+    applying=true;
+    try {
+        const next=await (await fetch('/control')).json();
+        if(next!==control) {
+            for(const [inputIndex,v] of [...document.querySelectorAll('video')].entries()) {
+                if(next==='stop') {v.srcObject?.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+                else {
+                    Object.assign(samples[inputIndex],{resumeAt:performance.now(),resumeWidth:samples[inputIndex].width,resumeMs:null});
+                    v.srcObject=await miximus.getInputMediaStream({inputIndex});v.play().catch(e=>errors.push(String(e)));
+                }
+            }
+            control=next;
+        }
+    } finally {applying=false;}
+},50);
 setInterval(()=>fetch('/report',{method:'POST',body:JSON.stringify({generation,samples,errors})}),100);
 </script>'''.replace("GENERATION", str(generation)).replace("INPUT_COUNT", str(Page.inputs))).encode())
 
@@ -147,14 +177,14 @@ def main():
         try:
             wait(f"{args.inputs} inputs with no output consumer", lambda s, p:
                  s.get("cef_inputs_active") == args.inputs and len(p.get("samples", [])) == args.inputs and
-                 all(v["width"] == (args.width if i < args.connected_inputs else 16) and v["presented"] >= 30
+                 all(v["width"] == (args.width if i < args.connected_inputs else 16) and v["presented"] >= (30 if i < args.connected_inputs else 1)
                      for i, v in enumerate(p["samples"])))
             if args.steady_seconds:
                 if args.warmup_seconds:
                     time.sleep(args.warmup_seconds)
                     previous = records[-1]["page"]
                     wait("warmup complete", lambda s, p: p.get("generation") == previous["generation"] and
-                         all(b["presented"] > a["presented"] for a, b in zip(previous["samples"], p["samples"])))
+                         all(b["presented"] > a["presented"] for a, b in zip(previous["samples"][:args.connected_inputs], p["samples"][:args.connected_inputs])))
                 first = records[-1]
                 time.sleep(args.steady_seconds)
                 wait("steady interval", lambda s, p: s.get("cef_inputs_delivered", 0) >
@@ -164,11 +194,25 @@ def main():
                 rates = [(b["presented"] - a["presented"]) / seconds
                          for a, b in zip(first["page"]["samples"], last["page"]["samples"])]
                 print("Presented frames/s per input:", rates, flush=True)
+            with Page.lock:
+                Page.control = "stop"
+            wait("all tracks stopped and exports freed", lambda s, p:
+                 s.get("cef_inputs_active") == 0 and s.get("cef_inputs_export_bytes") == 0 and
+                 s.get("cef_inputs_held") == 0 and s.get("cef_inputs_reserved_bytes") == 0)
+            stopped = records[-1]["status"]["cef_inputs_submitted"]
+            time.sleep(0.3)
+            wait("idle inputs submit no frames", lambda s, p: s.get("cef_inputs_submitted") == stopped)
+            with Page.lock:
+                Page.control = "run"
+            wait("live tracks reacquired", lambda s, p: s.get("cef_inputs_active") == args.inputs and
+                 s.get("cef_inputs_submitted", 0) > stopped + args.connected_inputs * 10 and
+                 all(v.get("resumeMs") is not None for v in p["samples"]))
+            print("Reacquisition milliseconds per input:",
+                  [v["resumeMs"] for v in records[-1]["page"]["samples"]], flush=True)
             command("update_node", id=f"source-{args.connected_inputs - 1}", options={"resolution": [args.width // 2, args.height // 2]})
             wait("independent source resize", lambda s, p: p["samples"][args.connected_inputs - 1]["width"] == args.width // 2)
             command("remove_connection", connection=connections[1])
-            delivered = records[-1]["status"]["cef_inputs_delivered"]
-            wait("disconnected stream stays live", lambda s, p: s.get("cef_inputs_delivered", 0) > delivered + 100)
+            wait("disconnected stream becomes transparent", lambda s, p: p["samples"][1]["width"] == 16)
             command("add_connection", connection=connections[1])
             with Page.lock:
                 loads = Page.loads
@@ -179,7 +223,7 @@ def main():
                 final_load = Page.loads
             wait("rapid reload recovery", lambda s, p: s.get("cef_inputs_state") == "active" and
                  not s.get("cef_inputs_error") and p.get("generation", 0) >= max(loads + 1, final_load) and
-                 len(p.get("samples", [])) == args.inputs and all(v["presented"] >= 30 for v in p["samples"]),
+                 len(p.get("samples", [])) == args.inputs and all(v["presented"] >= (30 if i < args.connected_inputs else 1) for i, v in enumerate(p["samples"])),
                  allow_recovery=True)
             command("update_node", id="browser", options={"enabled": False})
             wait("disabled", lambda s, p: s.get("cef_state") == "stopped")
@@ -188,7 +232,7 @@ def main():
             command("update_node", id="browser", options={"enabled": True})
             wait("reenabled", lambda s, p: s.get("cef_inputs_state") == "active" and
                  s.get("cef_inputs_delivered", 0) >= args.inputs * 30 and p.get("generation", 0) > loads and
-                 len(p.get("samples", [])) == args.inputs and all(v["presented"] >= 30 for v in p["samples"]))
+                 len(p.get("samples", [])) == args.inputs and all(v["presented"] >= (30 if i < args.connected_inputs else 1) for i, v in enumerate(p["samples"])))
         finally:
             if app.poll() is None:
                 app.send_signal(signal.SIGINT)

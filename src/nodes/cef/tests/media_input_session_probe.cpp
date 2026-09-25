@@ -22,7 +22,7 @@ using namespace std::chrono_literals;
 std::array<float, 4> color(size_t input, int stage)
 {
     if (stage < 0 || (stage == 1 && input == 1))
-        return {0, 0, 0, 1};
+        return {0, 0, 0, 0};
     const auto  bits  = ((input + 1) & 7) ^ size_t(stage == 1 ? 3 : stage == 2 ? 5 : 0);
     const float alpha = 0.5F + float(input) / 16;
     return {
@@ -122,9 +122,59 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu)
         if (!result.error.empty() || result.json != (stage < 0 ? "16" : stage == 1 ? "320" : "640"))
             throw std::runtime_error("Video input resize metadata mismatch: " + result.json + result.error);
         const auto m = session->metrics().inputs;
+        if (stage < 0 && (m.submitted || m.export_bytes || m.reserved_bytes))
+            throw std::runtime_error("Disconnected streams allocated or exported dummy GPU frames");
         std::cout << "Stage " << stage << ": submitted=" << m.submitted << " delivered=" << m.delivered
                   << " drops=" << m.drops << " held=" << m.occupied << " reserved=" << m.reserved_bytes << '\n';
     }
+    auto script = [&](const std::string& body) {
+        auto result = session->request("async () => { await (" + body + ")(null); return true; }", "null");
+        if (result.wait_for(5s) != std::future_status::ready)
+            throw std::runtime_error("Lifecycle script timed out");
+        const auto reply = result.get();
+        if (!reply.error.empty())
+            throw std::runtime_error(reply.error);
+    };
+    auto wait_demand = [&](uint32_t wanted, bool released) {
+        const auto start = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start < 5s) {
+            const auto now = utils::flicks_now();
+            session->advance_frames(now, now, false);
+            (void)session->submit_frame(now);
+            session->release_prepared_frame();
+            const auto m = session->metrics().inputs;
+            if (session->media_input_demand() == wanted &&
+                (!released || (!m.export_bytes && !m.occupied && !m.reserved_bytes))) {
+                std::cout << "Demand " << wanted << " after "
+                          << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                                   start)
+                                 .count()
+                          << "ms, export bytes=" << m.export_bytes << '\n';
+                return;
+            }
+            std::this_thread::sleep_for(5ms);
+        }
+        throw std::runtime_error("Track demand/resources did not retire");
+    };
+    script(R"JS(() => {
+        const videos = [...document.querySelectorAll('video')];
+        globalThis.survivor = videos[0].srcObject.clone();
+        for (const v of videos) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject=null; }
+    })JS");
+    wait_demand(1, false);
+    script("() => { survivor.getTracks().forEach(t => t.stop()); globalThis.survivor=null; }");
+    wait_demand(0, true);
+    const auto stopped_submissions = session->metrics().inputs.submitted;
+    script(R"JS(async () => {
+        const stream = await miximus.getInputMediaStream({inputIndex:0});
+        const video = document.querySelector('video'); video.srcObject=stream;
+        video.play().catch(console.error);
+    })JS");
+    wait_demand(1, true);
+    if (session->metrics().inputs.submitted != stopped_submissions)
+        throw std::runtime_error("Reacquired disconnected stream exported dummy frames");
+    script("() => { document.querySelector('video').srcObject.getTracks().forEach(t => t.stop()); }");
+    wait_demand(0, true);
     session.reset();
     request.reset();
 }

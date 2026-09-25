@@ -40,7 +40,7 @@ class media_input_session_s
     bool                  idle() const;
     media_input_metrics_s metrics() const;
     // Render thread: stage a source selection/extent and record only when its
-    // worker-owned generation is ready. Null source produces opaque black.
+    // worker-owned generation is ready. Null source requests Chromium-owned transparent content without a GPU export.
     std::function<void()> record(size_t                input,
                                  gpu::recording_s&     commands,
                                  const gpu::texture_s* source,

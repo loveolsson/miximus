@@ -234,6 +234,26 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
     return entry.active;
 }
 
+bool media_input_exports_s::release(size_t input)
+{
+    state_s::validate(input);
+    auto&                                                             state = *state_;
+    std::lock_guard                                                   configuration_lock(state.configure_mutex);
+    std::array<std::shared_ptr<gpu::detail::dma_buf_export_s>, SLOTS> images;
+    {
+        std::lock_guard lock(state.mutex);
+        auto&           entry = state.inputs[input];
+        if (state.failed || entry.active || entry.configuring || state.pool.metrics(input).occupied)
+            return false;
+        for (size_t slot = 0; slot < state.depth; ++slot)
+            if (entry.pending[slot] || (entry.images[slot] && entry.images[slot].use_count() != 1))
+                return false;
+        images.swap(entry.images);
+        entry.extent = {};
+    }
+    return true;
+}
+
 void media_input_exports_s::invalidate(size_t input)
 {
     state_s::validate(input);

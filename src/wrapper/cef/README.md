@@ -6,7 +6,7 @@ failed with that artifact. Do not claim accelerated support from its successful 
 
 ## Regular application build
 
-CEF-enabled application builds require source-build revision 4, including GPU texture inputs. No library-path override
+CEF-enabled application builds require source-build revision 5, including GPU texture inputs. No library-path override
 or separate runtime is needed. The packaged helper, resources and library are staged together into `build/cef`.
 A missing or outdated SDK is a configure error; `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON` is only for diagnostic probes.
 
@@ -15,7 +15,7 @@ After preparing/building the pinned source tree, package and select the SDK:
 ```sh
 python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no-archive
 cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
-  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r4"
+  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r5"
 cmake --build build -j
 ./build/miximus
 ```
@@ -55,7 +55,12 @@ yet qualify other drivers, pixel color accuracy, browser lifecycle stress or the
 
 Revision 3 adds `cef-media-input.patch`, previously qualified in the isolated media-input runtime. It imports native
 GPU handles, copies into bounded Chromium-owned SharedImages, and feeds existing native media tracks. The private
-v2 sender carries document/source identities and acknowledges actual copy completion before external buffer reuse.
+v3 sender carries document/source identities and acknowledges actual copy completion before external buffer reuse.
+It also carries transparent-content control messages, with no exported allocation. Live native tracks drive input
+demand; stopping the last clone or collecting an abandoned source releases that demand. Idle export pools drain
+before destruction, and Chromium destinations keep their release sync tokens. Weak stream/track caches do not
+keep abandoned inputs alive. A small Chromium-owned transparent frame initializes disconnected live streams and
+serves refresh requests without recurring Vulkan copies.
 The generated public CEF API is unchanged. See [the media-input plan](../../../docs/cef-media-input-plan.md) for
 four-input 1080p60 measurements, ownership tests and remaining qualification limits.
 
@@ -104,14 +109,14 @@ any optimization or change other processes' affinity. Choose the job count with 
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r4.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r5.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r4.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r4.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r5.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r5.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```

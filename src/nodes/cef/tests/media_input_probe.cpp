@@ -110,14 +110,18 @@ class client_s final
                                   CefProcessId                 source,
                                   CefRefPtr<CefProcessMessage> message) override
     {
-        if (source != PID_RENDERER || !frame->IsMain() || message->GetName() != cef_detail::MEDIA_INPUT_SUBSCRIBE)
+        if (source != PID_RENDERER || !frame->IsMain() || message->GetName() != cef_detail::MEDIA_INPUT_ACTIVITY)
             return false;
         const auto values = message->GetArgumentList();
-        if (values->GetSize() == 2 && values->GetType(0) == VTYPE_STRING && values->GetType(1) == VTYPE_INT &&
-            values->GetInt(1) >= 0 && static_cast<uint32_t>(values->GetInt(1)) < input_count_) {
+        if (values->GetSize() == 4 && values->GetType(0) == VTYPE_STRING && values->GetType(1) == VTYPE_INT &&
+            values->GetType(2) == VTYPE_BOOL && values->GetInt(1) >= 0 &&
+            static_cast<uint32_t>(values->GetInt(1)) < input_count_) {
             std::lock_guard lock(mutex_);
             token_ = values->GetString(0).ToString();
-            subscribed_ |= 1u << values->GetInt(1);
+            if (values->GetBool(2))
+                subscribed_ |= 1u << values->GetInt(1);
+            else
+                subscribed_ &= ~(1u << values->GetInt(1));
             changed_.notify_all();
         }
         return true;
@@ -546,7 +550,7 @@ int main(int argc, char** argv)
                 };
                 auto invalidation              = cef_wrapper::make_media_frame();
                 invalidation.source_generation = 2;
-                invalidation.invalidate_only   = 1;
+                invalidation.operation         = 1;
                 if (await(enqueue(api, client, invalidation)))
                     throw std::runtime_error("Metadata invalidation delivered a video frame");
                 auto packet = describe(*exports[0], 0, 2'100'000);

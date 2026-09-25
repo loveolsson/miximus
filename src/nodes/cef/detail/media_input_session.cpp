@@ -21,8 +21,7 @@ namespace miximus::nodes::cef::detail {
 namespace {
 using namespace std::chrono_literals;
 constexpr size_t INPUTS = 8, MAX_EXPORT_DEPTH = 8;
-// Qualified through Chromium with device-local exports. Other small extents
-// are not interchangeable: the current driver still rejects 128x128 imports.
+// Metadata for Chromium-owned transparent content; no Vulkan export is allocated.
 constexpr gpu::extent_s DISCONNECTED_EXTENT{16, 16};
 size_t                  export_depth()
 {
@@ -77,6 +76,13 @@ struct reservation_s
         high_water[input] += delta;
         return true;
     }
+    void release(size_t input)
+    {
+        std::lock_guard lock(budget->mutex);
+        budget->used -= high_water[input];
+        bytes -= high_water[input];
+        high_water[input] = 0;
+    }
     size_t reserved() const
     {
         std::lock_guard lock(budget->mutex);
@@ -104,7 +110,9 @@ struct media_input_session_s::impl_s
             gpu::extent_s wanted{DISCONNECTED_EXTENT};
             std::string   source_node, source_interface, error;
             uint64_t      revision{1}, configured{}, sent_generation{};
-            bool          invalidation_pending{};
+            bool          invalidation_pending{}, transparent_pending{};
+            bool          transparent{true};
+            bool          renderer_idle{};
         };
         struct pending_s
         {
@@ -114,7 +122,6 @@ struct media_input_session_s::impl_s
         std::shared_ptr<media_input_runtime_s>           runtime;
         std::shared_ptr<reservation_s>                   reservation;
         std::unique_ptr<media_input_exports_s>           exports;
-        gpu::texture_s                                   black;
         cef_wrapper::send_media_frame_t                  api{};
         mutable std::mutex                               mutex;
         std::array<input_s, INPUTS>                      inputs;
@@ -130,19 +137,13 @@ struct media_input_session_s::impl_s
         {
             api = reinterpret_cast<cef_wrapper::send_media_frame_t>(dlsym(RTLD_DEFAULT, cef_wrapper::SEND_MEDIA_FRAME));
             if (!runtime || !api) {
-                error = "CEF runtime does not provide GPU media input v2";
+                error = "CEF runtime does not provide GPU media input v3";
                 return;
             }
             const auto depth = export_depth();
             reservation      = std::make_shared<reservation_s>(runtime->impl_->budget, depth);
             exports          = std::make_unique<media_input_exports_s>(
                 device, depth, runtime->impl_->quarantine, 256ULL * 1024 * 1024, reservation);
-            black         = device.create_texture(DISCONNECTED_EXTENT);
-            auto setup    = device.create_recording_context(1);
-            auto commands = setup.try_record();
-            commands->clear(black, {0, 0, 0, 1});
-            if (commands->submit().wait(5s) != gpu::wait_result_e::ready)
-                throw std::runtime_error("Cannot initialize disconnected browser input");
         }
         void revoke_locked()
         {
@@ -152,6 +153,11 @@ struct media_input_session_s::impl_s
                 for (size_t input = 0; input < INPUTS; ++input) {
                     exports->invalidate(input);
                     ++inputs[input].revision;
+                    inputs[input].transparent   = true;
+                    inputs[input].renderer_idle = false;
+                    inputs[input].wanted        = DISCONNECTED_EXTENT;
+                    inputs[input].source_node.clear();
+                    inputs[input].source_interface.clear();
                 }
         }
         void complete(const std::shared_ptr<media_input_exports_s::frame_s>& frame, bool safe, bool accepted)
@@ -229,9 +235,9 @@ struct media_input_session_s::impl_s
             inputs[input].invalidation_pending = true;
             auto self                          = shared_from_this();
             if (!CefPostTask(TID_UI, new task_s([self, input] {
-                                 auto packet            = cef_wrapper::make_media_frame();
-                                 packet.input           = static_cast<uint32_t>(input);
-                                 packet.invalidate_only = 1;
+                                 auto packet      = cef_wrapper::make_media_frame();
+                                 packet.input     = static_cast<uint32_t>(input);
+                                 packet.operation = 1;
                                  std::string token;
                                  int         browser{};
                                  {
@@ -251,6 +257,50 @@ struct media_input_session_s::impl_s
                              })))
                 inputs[input].invalidation_pending = false;
         }
+        void transparent_frame(size_t input)
+        {
+            std::lock_guard lock(mutex);
+            auto&           entry = inputs[input];
+            if (closing || context.empty() || !(subscribed & (1u << input)) || !entry.transparent ||
+                entry.configured == entry.revision || entry.transparent_pending)
+                return;
+            entry.transparent_pending = true;
+            auto       self           = shared_from_this();
+            const auto revision       = entry.revision;
+            const auto token          = context;
+            if (!CefPostTask(TID_UI, new task_s([self, input, revision, token] {
+                                 auto packet      = cef_wrapper::make_media_frame();
+                                 packet.input     = static_cast<uint32_t>(input);
+                                 packet.operation = 2;
+                                 int browser{};
+                                 {
+                                     std::lock_guard lock(self->mutex);
+                                     auto&           entry = self->inputs[input];
+                                     if (self->closing || self->context != token || entry.revision != revision) {
+                                         entry.transparent_pending = false;
+                                         return;
+                                     }
+                                     browser                  = self->browser_id;
+                                     packet.source_generation = self->exports->generation(input);
+                                 }
+                                 auto finish = [self, input, revision, token](bool delivered) {
+                                     std::lock_guard lock(self->mutex);
+                                     auto&           entry     = self->inputs[input];
+                                     entry.transparent_pending = false;
+                                     if (delivered && self->context == token && entry.revision == revision)
+                                         entry.configured = revision;
+                                 };
+                                 using callback_s    = decltype(finish);
+                                 auto*      callback = new callback_s(std::move(finish));
+                                 const auto done     = [](void* user, int, int delivered) {
+                                     std::unique_ptr<callback_s> callback(static_cast<callback_s*>(user));
+                                     (*callback)(delivered != 0);
+                                 };
+                                 if (!self->api(browser, token.c_str(), &packet, done, callback))
+                                     done(callback, 1, 0);
+                             })))
+                entry.transparent_pending = false;
+        }
         void configure(size_t input)
         {
             gpu::extent_s wanted;
@@ -258,8 +308,8 @@ struct media_input_session_s::impl_s
             {
                 std::lock_guard lock(mutex);
                 auto&           entry = inputs[input];
-                if (closing || !(subscribed & (1u << input)) || entry.configured == entry.revision ||
-                    !entry.error.empty())
+                if (closing || !(subscribed & (1u << input)) || entry.transparent ||
+                    entry.configured == entry.revision || !entry.error.empty())
                     return;
                 wanted   = entry.wanted;
                 revision = entry.revision;
@@ -272,6 +322,8 @@ struct media_input_session_s::impl_s
                 std::lock_guard lock(mutex);
                 if (inputs[input].revision == revision)
                     inputs[input].configured = revision;
+                else
+                    exports->invalidate(input); // Stop/source change raced worker allocation.
             } catch (const std::exception& failure) {
                 std::lock_guard lock(mutex);
                 if (inputs[input].revision == revision)
@@ -302,7 +354,14 @@ struct media_input_session_s::impl_s
                         post_frame(std::move(frame));
                     for (size_t input = 0; input < INPUTS; ++input) {
                         invalidate_renderer(input);
+                        transparent_frame(input);
                         configure(input);
+                        // release() only frees revoked, fully retired allocations.
+                        if (exports->release(input)) {
+                            std::lock_guard lock(mutex);
+                            if (!(subscribed & (1u << input)) && inputs[input].renderer_idle)
+                                reservation->release(input);
+                        }
                     }
                     {
                         std::lock_guard lock(mutex);
@@ -390,14 +449,24 @@ bool media_input_session_s::receive(const CefRefPtr<CefBrowser>&        browser,
             state.revoke_locked();
         return true;
     }
-    if (name != MEDIA_INPUT_SUBSCRIBE)
+    if (name != MEDIA_INPUT_ACTIVITY)
         return false;
-    if (state.exports && !state.closing && args->GetSize() == 2 && args->GetType(0) == VTYPE_STRING &&
+    if (state.exports && !state.closing && args->GetSize() == 4 && args->GetType(0) == VTYPE_STRING &&
         args->GetString(0).ToString() == state.context && args->GetType(1) == VTYPE_INT && args->GetInt(1) >= 0 &&
-        args->GetInt(1) < 8) {
-        const auto input = static_cast<size_t>(args->GetInt(1));
+        args->GetInt(1) < 8 && args->GetType(2) == VTYPE_BOOL && args->GetType(3) == VTYPE_BOOL) {
+        const auto input                  = static_cast<size_t>(args->GetInt(1));
+        state.inputs[input].renderer_idle = !args->GetBool(2) && args->GetBool(3);
+        if (!args->GetBool(2) && !(state.subscribed & (1u << input)))
+            return true; // Destination retirement acknowledgement, not a new activation.
         state.exports->invalidate(input);
-        state.subscribed |= 1u << input;
+        if (args->GetBool(2))
+            state.subscribed |= 1u << input;
+        else
+            state.subscribed &= ~(1u << input);
+        state.inputs[input].transparent = true;
+        state.inputs[input].wanted      = DISCONNECTED_EXTENT;
+        state.inputs[input].source_node.clear();
+        state.inputs[input].source_interface.clear();
         ++state.inputs[input].revision;
         state.inputs[input].error.clear();
     }
@@ -418,19 +487,21 @@ std::function<void()> media_input_session_s::record(size_t                input,
         if (!state.exports || state.closing || state.drained || !(state.subscribed & (1u << input)))
             return {};
         auto&      entry  = state.inputs[input];
-        const auto extent = source ? source->extent() : entry.wanted;
-        if (entry.wanted != extent || entry.source_node != source_node || entry.source_interface != source_interface) {
+        const auto extent = source ? source->extent() : DISCONNECTED_EXTENT;
+        if (entry.transparent != !source || entry.wanted != extent || entry.source_node != source_node ||
+            entry.source_interface != source_interface) {
             state.exports->invalidate(input);
+            entry.transparent      = !source;
             entry.wanted           = extent;
             entry.source_node      = source_node;
             entry.source_interface = source_interface;
             entry.error.clear();
             ++entry.revision;
         }
-        if (entry.configured != entry.revision || !entry.error.empty())
+        if (!source || entry.configured != entry.revision || !entry.error.empty())
             return {};
     }
-    auto publication = state.exports->record(input, commands, source ? *source : state.black, timestamp_us);
+    auto publication = state.exports->record(input, commands, *source, timestamp_us);
     if (!publication)
         return {};
     return [publication, owner = impl_->state] {
