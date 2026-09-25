@@ -11,7 +11,7 @@ diff --git a/BUILD.gn b/BUILD.gn
 +    "libcef/renderer/media_input_bridge.h",
      "libcef/renderer/v8_impl.cc",
      "libcef/renderer/v8_impl.h",
-
+ 
 diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.cc
 --- a/libcef/browser/frame_host_impl.cc
 +++ b/libcef/browser/frame_host_impl.cc
@@ -45,7 +45,7 @@ diff --git a/libcef/browser/frame_host_impl.h b/libcef/browser/frame_host_impl.h
 @@ -82,6 +82,15 @@
    void SendProcessMessage(CefProcessId target_process,
                            CefRefPtr<CefProcessMessage> message) override;
-
+ 
 +  bool SendMediaInput(
 +      const std::string& token,
 +      uint32_t input,
@@ -57,7 +57,7 @@ diff --git a/libcef/browser/frame_host_impl.h b/libcef/browser/frame_host_impl.h
 +
    void SetFocused(bool focused);
    void RefreshAttributes();
-
+ 
 diff --git a/libcef/common/mojom/BUILD.gn b/libcef/common/mojom/BUILD.gn
 --- a/libcef/common/mojom/BUILD.gn
 +++ b/libcef/common/mojom/BUILD.gn
@@ -68,7 +68,7 @@ diff --git a/libcef/common/mojom/BUILD.gn b/libcef/common/mojom/BUILD.gn
 +    "//ui/gfx/mojom",
      "//url/mojom:url_mojom_gurl",
    ]
-
+ 
 diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
 --- a/libcef/common/mojom/cef.mojom
 +++ b/libcef/common/mojom/cef.mojom
@@ -78,10 +78,10 @@ diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
  import "ui/gfx/geometry/mojom/geometry.mojom";
 +import "ui/gfx/mojom/buffer_types.mojom";
  import "url/mojom/url.mojom";
-
+ 
  // Structure passed to UpdateDraggableRegions().
 @@ -50,6 +51,11 @@
-
+ 
  // Interface for communicating with a frame in the renderer process.
  interface RenderFrame {
 +  // Private bounded external-media prototype. Actual OS handles cross Mojo.
@@ -95,16 +95,18 @@ diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
 diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 --- a/libcef/renderer/blink_glue.cc
 +++ b/libcef/renderer/blink_glue.cc
-@@ -5,6 +5,8 @@
-
+@@ -5,7 +5,10 @@
+ 
  #include "cef/libcef/renderer/blink_glue.h"
-
+ 
 +#include "cef/libcef/renderer/external_video_source.h"
 +#include "media/base/video_frame.h"
  #include "third_party/blink/public/mojom/v8_cache_options.mojom-blink.h"
++#include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
  #include "third_party/blink/public/platform/web_string.h"
  #include "third_party/blink/public/platform/web_url_response.h"
-@@ -15,7 +17,9 @@
+ #include "third_party/blink/public/web/web_document.h"
+@@ -15,7 +18,9 @@
  #include "third_party/blink/public/web/web_view_client.h"
  #include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_evaluation_result.h"
@@ -114,7 +116,7 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
  #include "third_party/blink/renderer/core/dom/document.h"
  #include "third_party/blink/renderer/core/dom/element.h"
  #include "third_party/blink/renderer/core/dom/node.h"
-@@ -32,11 +36,20 @@
+@@ -32,11 +37,19 @@
  #include "third_party/blink/renderer/core/page/chrome_client.h"
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/script/classic_script.h"
@@ -128,16 +130,15 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +#include "third_party/blink/renderer/platform/heap/persistent.h"
  #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
  #include "third_party/blink/renderer/platform/loader/fetch/script_fetch_options.h"
-+#include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
 +#include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 +#include "third_party/blink/renderer/platform/wtf/uuid.h"
  #undef LOG
-
+ 
  #include "base/logging.h"
-@@ -55,6 +68,97 @@
+@@ -55,6 +68,91 @@
  }
-
+ 
  }  // namespace
 +
 +namespace {
@@ -170,15 +171,12 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +    }
 +    if (track_->Ended()) {
 +      auto* source = track_->Component()->Source();
-+      auto native = std::make_unique<blink::MediaStreamVideoTrack>(
++      auto track = blink::MediaStreamVideoTrack::CreateVideoTrack(
 +          static_cast<blink::MediaStreamVideoSource*>(
 +              source->GetPlatformSource()),
 +          blink::MediaStreamVideoSource::ConstraintsOnceCallback(), true);
-+      auto* component =
-+          blink::MakeGarbageCollected<blink::MediaStreamComponentImpl>(
-+              blink::CreateCanonicalUuidString(), source, std::move(native));
-+      track_ = blink::MakeGarbageCollected<blink::MediaStreamTrackImpl>(
-+          context, component);
++      track_ = blink::MakeGarbageCollected<blink::MediaStreamTrackImpl>(context,
++                                                                        track);
 +    }
 +    return blink::ToV8Traits<blink::MediaStreamTrack>::ToV8(script,
 +                                                            track_.Get());
@@ -214,23 +212,20 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +  auto source = std::make_unique<blink::PushableMediaStreamVideoSource>(
 +      context->GetTaskRunner(blink::TaskType::kInternalMediaRealTime));
 +  auto broker = source->GetBroker();
-+  auto platform_track = std::make_unique<blink::MediaStreamVideoTrack>(
-+      source.get(), blink::MediaStreamVideoSource::ConstraintsOnceCallback(),
-+      true);
++  auto* platform_source = source.get();
 +  const auto id = blink::CreateCanonicalUuidString();
-+  auto* component =
-+      blink::MakeGarbageCollected<blink::MediaStreamComponentImpl>(
-+          blink::MakeGarbageCollected<blink::MediaStreamSource>(
-+              id, blink::MediaStreamSource::kTypeVideo, id, false,
-+              std::move(source)),
-+          std::move(platform_track));
++  blink::MakeGarbageCollected<blink::MediaStreamSource>(
++      id, blink::MediaStreamSource::kTypeVideo, id, false, std::move(source));
++  auto platform_track = blink::MediaStreamVideoTrack::CreateVideoTrack(
++      platform_source, blink::MediaStreamVideoSource::ConstraintsOnceCallback(),
++      true);
 +  auto* native_track = blink::MakeGarbageCollected<blink::MediaStreamTrackImpl>(
-+      context, component);
++      context, platform_track);
 +  *track = blink::ToV8Traits<blink::MediaStreamTrack>::ToV8(script_state,
 +                                                            native_track);
 +  return std::make_unique<ExternalVideoSource>(std::move(broker), native_track);
 +}
-
+ 
  bool CanGoBack(blink::WebView* view) {
    if (!view) {
 diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
@@ -246,14 +241,14 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
  #include "cef/libcef/renderer/v8_impl.h"
 @@ -416,10 +417,16 @@
  }
-
+ 
  void CefFrameImpl::OnContextReleased() {
 +  if (media_inputs_) {
 +    media_inputs_->Invalidate();
 +  }
    execution_context_lifecycle_state_observer_.reset();
  }
-
+ 
  void CefFrameImpl::OnDetached() {
 +  if (media_inputs_) {
 +    media_inputs_->Invalidate();
@@ -307,16 +302,16 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
 +++ b/libcef/renderer/frame_impl.h
 @@ -31,6 +31,7 @@
  class GURL;
-
+ 
  class CefBrowserImpl;
 +class CefMediaInputBridge;
-
+ 
  // Implementation of CefFrame. CefFrameImpl objects are owned by the
  // CefBrowerImpl and will be detached when the browser is notified that the
 @@ -80,6 +81,10 @@
    void SendProcessMessage(CefProcessId target_process,
                            CefRefPtr<CefProcessMessage> message) override;
-
+ 
 +  CefRefPtr<CefV8Value> CreateMediaInputTrack(uint32_t input,
 +                                              const std::string& token,
 +                                              uint32_t destination_depth);
@@ -325,9 +320,9 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
    void OnWasShown();
    void OnDidCommitProvisionalLoad();
 @@ -147,7 +152,16 @@
-
+ 
    void MaybeInitializeScriptContext();
-
+ 
 +  scoped_refptr<CefMediaInputBridge> media_inputs_;
 +
    // cef::mojom::RenderFrame methods:
@@ -357,7 +352,7 @@ new file mode 100644
 +#ifdef __cplusplus
 +extern "C" {
 +#endif
-+// Private, opt-in Linux prototype ABI. No stock CEF API structures are
++// Private Linux media-input ABI. No stock CEF API structures are
 +// extended. Metadata only; pixels remain in the GPU allocation. RGBA8 sRGB,
 +// top-to-bottom. The caller guarantees producer completion and FOREIGN/GENERAL
 +// ownership before sending, then retains the backing allocation until a safe
@@ -782,7 +777,7 @@ diff --git a/libcef/renderer/media_input_bridge.h b/libcef/renderer/media_input_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.h
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,73 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -839,11 +834,9 @@ new file mode 100644
 +  struct Input {
 +    uint64_t generation = 0;
 +    std::unique_ptr<blink_glue::CefExternalVideoSource> source;
-+    CefRefPtr<CefV8Value> track;
 +    std::array<Destination, kMaxDepth> destinations;
 +  };
 +  void CopyFinished(size_t input,
-+                    size_t slot,
 +                    unsigned query,
 +                    std::string context_token,
 +                    uint64_t source_generation,
@@ -862,7 +855,7 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,224 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -914,9 +907,7 @@ new file mode 100644
 +  if (track.IsEmpty()) {
 +    return nullptr;
 +  }
-+  entry.track =
-+      new CefV8ValueImpl(isolate, isolate->GetCurrentContext(), track);
-+  return entry.track;
++  return new CefV8ValueImpl(isolate, isolate->GetCurrentContext(), track);
 +}
 +
 +void CefMediaInputBridge::Invalidate() {
@@ -924,7 +915,6 @@ new file mode 100644
 +  context_token_.clear();
 +  for (auto& input : inputs_) {
 +    input.source.reset();
-+    input.track = nullptr;
 +    input.generation = 0;
 +  }
 +}
@@ -1035,14 +1025,13 @@ new file mode 100644
 +  context_->ContextSupport()->SignalQuery(
 +      query, base::BindOnce(
 +                 &CefMediaInputBridge::CopyFinished, base::WrapRefCounted(this),
-+                 input, index, query, context_token, source_generation,
++                 input, query, context_token, source_generation,
 +                 std::move(imported), std::move(frame), std::move(completion)));
 +  ri->Flush();
 +}
 +
 +void CefMediaInputBridge::CopyFinished(
 +    size_t input,
-+    size_t /* slot */,
 +    unsigned query,
 +    std::string context_token,
 +    uint64_t source_generation,
@@ -1058,8 +1047,20 @@ new file mode 100644
 +    std::move(completion).Run(false, false);
 +    return;
 +  }
++  // A completed query proves safe retirement, not successful image import.
++  // The shared raster context reports errors at context scope, so fail closed
++  // for this bridge and all its pending frames rather than attributing an error
++  // to a particular copy. Navigation creates a fresh bridge. Check only after
++  // the GPU completion callback, never synchronously in the submission path.
++  if (!failed_) {
++    const auto error = ri->GetError();
++    if (error != GL_NO_ERROR) {
++      LOG(ERROR) << "CEF media input import/copy failed: GL error " << error;
++      failed_ = true;
++    }
++  }
 +  bool delivered = false;
-+  if (context_token == context_token_ &&
++  if (!failed_ && context_token == context_token_ &&
 +      inputs_[input].generation == source_generation && inputs_[input].source) {
 +    delivered = inputs_[input].source->PushFrame(std::move(frame),
 +                                                 base::TimeTicks::Now());

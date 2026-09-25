@@ -254,16 +254,18 @@ class client_s final
 
 cef_wrapper::media_frame_s describe(const gpu::detail::dma_buf_export_s& exported, uint32_t input, int64_t timestamp)
 {
-    const auto d = exported.descriptor();
-    return {.input            = input,
-            .fd               = d.fd,
-            .width            = d.extent.width,
-            .height           = d.extent.height,
-            .stride           = static_cast<uint32_t>(d.stride),
-            .offset           = d.offset,
-            .modifier         = d.modifier,
-            .allocation_bytes = exported.allocation_bytes(),
-            .timestamp_us     = timestamp};
+    const auto d            = exported.descriptor();
+    auto       packet       = cef_wrapper::make_media_frame();
+    packet.input            = input;
+    packet.fd               = d.fd;
+    packet.width            = d.extent.width;
+    packet.height           = d.extent.height;
+    packet.stride           = static_cast<uint32_t>(d.stride);
+    packet.offset           = d.offset;
+    packet.modifier         = d.modifier;
+    packet.allocation_bytes = exported.allocation_bytes();
+    packet.timestamp_us     = timestamp;
+    return packet;
 }
 
 std::future<std::pair<int, int>> enqueue(cef_wrapper::send_media_frame_t api,
@@ -410,7 +412,7 @@ int main(int argc, char** argv)
 {
     if (argc < 3 || argc > 5) {
         std::cerr << "Usage: cef_media_input_probe RUNTIME_DIRECTORY PROFILE_DIRECTORY [INPUT_COUNT=1] "
-                     "[ASYNC_EXPORT_DEPTH=1..8]\n";
+                     "[ASYNC_EXPORT_DEPTH=1..8 | --reject-invalid-import | --size=N]\n";
         return 2;
     }
     std::cout.setf(std::ios::unitbuf);
@@ -423,22 +425,36 @@ int main(int argc, char** argv)
                 throw std::runtime_error("INPUT_COUNT must be 1 through 8");
         }
         uint32_t async_depth{};
+        uint32_t square_size{};
+        bool     reject_invalid_import{};
         if (argc == 5) {
             const std::string_view value(argv[4]);
-            const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), async_depth);
-            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || async_depth < 1 ||
-                async_depth > 8)
-                throw std::runtime_error("ASYNC_EXPORT_DEPTH must be 1 through 8");
+            if (value == "--reject-invalid-import") {
+                reject_invalid_import = true;
+            } else if (value.starts_with("--size=")) {
+                const auto size   = value.substr(7);
+                const auto parsed = std::from_chars(size.data(), size.data() + size.size(), square_size);
+                if (parsed.ec != std::errc{} || parsed.ptr != size.data() + size.size() || square_size < 1 ||
+                    square_size > 4096)
+                    throw std::runtime_error("Size must be 1 through 4096");
+            } else {
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), async_depth);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || async_depth < 1 ||
+                    async_depth > 8)
+                    throw std::runtime_error("ASYNC_EXPORT_DEPTH must be 1 through 8");
+            }
         }
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
         options.external_image_import = true;
-        gpu::device_s                                               gpu(options);
+        gpu::device_s       gpu(options);
+        const gpu::extent_s export_size =
+            square_size ? gpu::extent_s{square_size, square_size} : gpu::extent_s{640, 360};
         std::vector<std::unique_ptr<gpu::detail::dma_buf_export_s>> exports;
         for (uint32_t input = 0; !async_depth && input < inputs; ++input)
-            exports.push_back(std::make_unique<gpu::detail::dma_buf_export_s>(gpu, gpu::extent_s{640, 360}));
+            exports.push_back(std::make_unique<gpu::detail::dma_buf_export_s>(gpu, export_size));
         auto                                             source  = gpu.create_texture({640, 360});
         auto                                             context = gpu.create_recording_context(3);
         cef_detail::media_input_exports_s::quarantine_s  quarantine;
@@ -528,7 +544,10 @@ int main(int argc, char** argv)
                         throw std::runtime_error("Generation qualification did not establish safe retirement");
                     return response.second;
                 };
-                if (await(enqueue(api, client, {.source_generation = 2, .invalidate_only = 1})))
+                auto invalidation              = cef_wrapper::make_media_frame();
+                invalidation.source_generation = 2;
+                invalidation.invalidate_only   = 1;
+                if (await(enqueue(api, client, invalidation)))
                     throw std::runtime_error("Metadata invalidation delivered a video frame");
                 auto packet = describe(*exports[0], 0, 2'100'000);
                 if (await(enqueue(api, client, packet)))
@@ -537,6 +556,21 @@ int main(int argc, char** argv)
                 if (!await(enqueue(api, client, packet)))
                     throw std::runtime_error("Current source generation was not admitted");
                 std::cout << "Metadata invalidation rejected the old generation and admitted its replacement\n";
+                if (reject_invalid_import) {
+                    packet.modifier = UINT64_MAX;
+                    auto rejected   = enqueue(api, client, packet);
+                    if (rejected.wait_for(5s) == std::future_status::ready) {
+                        const auto [safe, accepted] = rejected.get();
+                        if (accepted)
+                            throw std::runtime_error("Failed image import was reported as delivered");
+                        std::cout << "Invalid import rejected; safe retirement=" << safe << '\n';
+                    } else {
+                        // Some drivers reject backing creation by losing the GPU
+                        // channel. No query callback means no safe retirement.
+                        // The exporter outlives runtime shutdown; never reuse it.
+                        std::cout << "Invalid import lost completion; exporter retained until runtime shutdown\n";
+                    }
+                }
             }
         } catch (...) {
             client->close();

@@ -171,20 +171,21 @@ struct media_input_session_s::impl_s
         }
         void post_frame(std::shared_ptr<media_input_exports_s::frame_s> frame)
         {
-            const auto                 d      = frame->image().descriptor();
-            const auto                 ticket = frame->ticket();
-            cef_wrapper::media_frame_s packet{.input             = static_cast<uint32_t>(ticket.input),
-                                              .fd                = d.fd,
-                                              .width             = d.extent.width,
-                                              .height            = d.extent.height,
-                                              .stride            = static_cast<uint32_t>(d.stride),
-                                              .offset            = d.offset,
-                                              .modifier          = d.modifier,
-                                              .allocation_bytes  = frame->image().allocation_bytes(),
-                                              .timestamp_us      = frame->timestamp_us(),
-                                              .source_generation = ticket.generation};
-            std::string                token;
-            int                        browser{};
+            const auto d             = frame->image().descriptor();
+            const auto ticket        = frame->ticket();
+            auto       packet        = cef_wrapper::make_media_frame();
+            packet.input             = static_cast<uint32_t>(ticket.input);
+            packet.fd                = d.fd;
+            packet.width             = d.extent.width;
+            packet.height            = d.extent.height;
+            packet.stride            = static_cast<uint32_t>(d.stride);
+            packet.offset            = d.offset;
+            packet.modifier          = d.modifier;
+            packet.allocation_bytes  = frame->image().allocation_bytes();
+            packet.timestamp_us      = frame->timestamp_us();
+            packet.source_generation = ticket.generation;
+            std::string token;
+            int         browser{};
             {
                 std::lock_guard lock(mutex);
                 token                                                  = context;
@@ -228,11 +229,11 @@ struct media_input_session_s::impl_s
             inputs[input].invalidation_pending = true;
             auto self                          = shared_from_this();
             if (!CefPostTask(TID_UI, new task_s([self, input] {
-                                 cef_wrapper::media_frame_s packet{.input             = static_cast<uint32_t>(input),
-                                                                   .source_generation = 1,
-                                                                   .invalidate_only   = 1};
-                                 std::string                token;
-                                 int                        browser{};
+                                 auto packet            = cef_wrapper::make_media_frame();
+                                 packet.input           = static_cast<uint32_t>(input);
+                                 packet.invalidate_only = 1;
+                                 std::string token;
+                                 int         browser{};
                                  {
                                      std::lock_guard lock(self->mutex);
                                      token                    = self->context;

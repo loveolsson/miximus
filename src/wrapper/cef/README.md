@@ -6,7 +6,7 @@ failed with that artifact. Do not claim accelerated support from its successful 
 
 ## Regular application build
 
-CEF-enabled application builds require source-build revision 3, including GPU texture inputs. No library-path override
+CEF-enabled application builds require source-build revision 4, including GPU texture inputs. No library-path override
 or separate runtime is needed. The packaged helper, resources and library are staged together into `build/cef`.
 A missing or outdated SDK is a configure error; `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON` is only for diagnostic probes.
 
@@ -15,7 +15,7 @@ After preparing/building the pinned source tree, package and select the SDK:
 ```sh
 python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no-archive
 cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
-  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r3"
+  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r4"
 cmake --build build -j
 ./build/miximus
 ```
@@ -59,6 +59,12 @@ v2 sender carries document/source identities and acknowledges actual copy comple
 The generated public CEF API is unchanged. See [the media-input plan](../../../docs/cef-media-input-plan.md) for
 four-input 1080p60 measurements, ownership tests and remaining qualification limits.
 
+Revision 4 reuses Chromium's native track factory, removes redundant renderer wrapper state, and checks raster
+errors after GPU-copy completion before delivering frames. A raster error fails the bridge closed until navigation;
+GPU-safe retirement remains separate from successful delivery. The package now includes the authoritative private
+`include/internal/cef_miximus_media_input.h`; Miximus aliases those ABI types instead of duplicating their layout.
+This header is required even when unqualified provenance is explicitly allowed for diagnostics.
+
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
 `CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility
 patch is applied only by the test stage and changes no production code.
@@ -98,14 +104,14 @@ any optimization or change other processes' affinity. Choose the job count with 
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r3.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r4.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r3.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r3.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r4.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r4.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```

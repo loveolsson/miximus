@@ -184,6 +184,10 @@ def main():
          f"--distrib-subdir={name}", "--ninja-build", "--x64-build", "--allow-partial",
          "--no-symbols", "--no-docs", "--no-archive"], cef, env)
     sdk = output / name
+    # Our private ABI is deliberately outside CEF's generated public API list.
+    # Package its authoritative header so consumers never duplicate its layout.
+    shutil.copy2(cef / "include/internal/cef_miximus_media_input.h",
+                 sdk / "include/internal/cef_miximus_media_input.h")
     provenance = dict(MANIFEST)
     provenance["libcef_sha256"] = digest(sdk / "Release/libcef.so")
     (sdk / "miximus-source-build.json").write_text(json.dumps(provenance, indent=2) + "\n")

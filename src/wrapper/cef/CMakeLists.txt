@@ -50,6 +50,9 @@ if(NOT CEF_NATIVE_CAPTURE_READY AND NOT MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK)
         "Build/package src/wrapper/cef/source-build.json and set MIXIMUS_CEF_ROOT to that SDK. "
         "Older/stock SDKs are available for diagnostic probes only via MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON.")
 endif()
+if(NOT EXISTS "${CEF_ROOT}/include/internal/cef_miximus_media_input.h")
+    message(FATAL_ERROR "CEF SDK must package include/internal/cef_miximus_media_input.h; use source-build revision 4 or newer.")
+endif()
 # Scope all upstream settings to this directory and its wrapper child.
 set(USE_SANDBOX ON)
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")

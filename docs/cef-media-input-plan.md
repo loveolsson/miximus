@@ -1,6 +1,6 @@
 # CEF media input implementation plan
 
-**Current build:** media inputs are included in the regular revision-3 CEF SDK and normal `./build/miximus` launch.
+**Current build:** media inputs are included in the regular revision-4 CEF SDK and normal `./build/miximus` launch.
 No `LD_LIBRARY_PATH` override is required. Earlier isolated-runtime commands below are historical qualification records.
 See [the standard SDK workflow](../src/wrapper/cef/README.md) for packaging/configuration.
 
@@ -411,3 +411,42 @@ now presented **59.998 fps on five inputs and 59.932 fps on the sixth**. Only tw
 in the steady interval. Resize, live disconnect, six reloads, disable/enable and shutdown passed afterward
 (`build/integration-tests/cef-inputs-20260924-171427`). This supersedes the earlier 42–43 fps six-input measurement;
 it does not establish six-input 60 fps for every full hardware graph. Export/Chromium depths remain 2/3.
+
+## Cleanup after performance qualification (2026-09-25)
+
+Source-build revision 4 keeps the proven GPU-copy transport, export/destination capacities, generation checks and
+quarantine lifetimes. It reduces the custom integration at the following boundaries:
+
+- Blink track creation and stopped-track reacquisition use `MediaStreamVideoTrack::CreateVideoTrack`, so Chromium
+  owns the platform-track/component construction. The existing pushable-source broker still delivers native frames.
+- The renderer bridge no longer caches a redundant `CefV8Value`: the source retains the Blink track, and callers get
+  a wrapper on acquisition. The unused copy-completion slot argument is removed.
+- Packaging includes the authoritative private C ABI header. Miximus uses aliases and `decltype` from that header;
+  a small initializer supplies packet size, invalidation FD and source-generation defaults. The v2 wire contract
+  is unchanged. Headerless old SDKs no longer build these input integrations, even with diagnostic provenance override.
+- The copy-completion callback checks ordinary raster errors as well as context loss. An import/copy error logs a
+  diagnostic and stops this bridge delivering frames until navigation creates a new bridge. Raster errors belong to
+  the shared context, so this intentionally fails the entire bridge closed rather than claiming per-frame attribution.
+  GPU-completed work can still acknowledge safe export retirement without claiming successful delivery. Error queries
+  occur after the asynchronous GPU completion callback, not in the frame submission path.
+
+The small fixed destination array is retained. Chromium's `SharedImagePool` limits cached available images, not total
+outstanding allocations, and would still require our admission bound across retained frames and sizes. Similarly,
+the Miximus metadata pool and exported allocations encode different responsibilities rather than interchangeable
+caches. Switching to `MediaStreamTrackGenerator` would add writable-stream policy and track-lifetime questions for
+little further reduction; the narrower track factory is sufficient.
+
+The standalone media probe now supports `--reject-invalid-import` in place of its optional asynchronous depth. It
+first verifies valid pixels and source-generation behavior, then sends an unsupported modifier and checks that it
+is not delivered. Drivers may reject this by losing the SharedImage channel rather than completing a failed copy:
+missing completion is not declared safe, and the probe retains the exporter through runtime shutdown. The production
+session already handles this case through its bounded timeout/quarantine/restart path. `--size=N` instead qualifies
+square export sizes through the actual Chromium import and output-pixel path.
+
+Revision-4 qualification passed: all 168 capture tests and five native source tests; full native build without
+warnings; 32 Vulkan device tests, 14 transfer tests, eight media-export tests and eight ownership tests; the real
+eight-input session lifecycle probe under Vulkan validation. The unsupported-modifier probe confirmed lost completion
+without delivery, retaining the allocation through shutdown. A separate 128×128 test reproduced an ordinary EGL/raster
+import error: all 120 submissions were rejected for delivery with safe retirement, and the new explicit GL-error
+diagnostic appeared once. Thus both failure classes were exercised on real hardware. Artifacts are under
+`build/integration-tests/cef-cleanup-20260925`.
