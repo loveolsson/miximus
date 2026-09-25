@@ -90,7 +90,7 @@ void to_json(nlohmann::json& json, const T& value)
 template <described_json_enum T>
 void from_json(const nlohmann::json& json, T& value)
 {
-    const auto name = json.get<std::string_view>();
+    const auto name   = json.get<std::string_view>();
     const auto result = enum_from_string<T>(name);
     if (!result.has_value()) {
         throw std::invalid_argument("Invalid enumerator in a JSON contract");

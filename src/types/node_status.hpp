@@ -30,21 +30,21 @@ struct browser_cache_status_s
 struct cef_browser_status_s
 {
     cef_state_e       cef_state{cef_state_e::stopped};
-    std::string cef_error;
-    uint64_t    cef_paints{};
-    uint64_t    cef_copies{};
-    uint64_t    cef_capacity_drops{};
-    uint64_t    cef_restarts{};
-    uint64_t    cef_timing_rejections{};
-    std::string cef_timing_error{};
-    uint64_t    cef_capture_p50_upper_us{};
-    uint64_t    cef_capture_p95_upper_us{};
-    uint64_t    cef_capture_p99_upper_us{};
-    uint64_t    cef_capture_max_us{};
-    uint64_t    cef_completion_wait_p95_upper_us{};
-    uint64_t    cef_completion_wait_max_us{};
+    std::string       cef_error;
+    uint64_t          cef_paints{};
+    uint64_t          cef_copies{};
+    uint64_t          cef_capacity_drops{};
+    uint64_t          cef_restarts{};
+    uint64_t          cef_timing_rejections{};
+    std::string       cef_timing_error{};
+    uint64_t          cef_capture_p50_upper_us{};
+    uint64_t          cef_capture_p95_upper_us{};
+    uint64_t          cef_capture_p99_upper_us{};
+    uint64_t          cef_capture_max_us{};
+    uint64_t          cef_completion_wait_p95_upper_us{};
+    uint64_t          cef_completion_wait_max_us{};
     cef_input_state_e cef_inputs_state{cef_input_state_e::unavailable};
-    std::string cef_inputs_error;
+    std::string       cef_inputs_error;
     uint64_t          cef_inputs_active{};
     uint64_t          cef_inputs_submitted{};
     uint64_t          cef_inputs_delivered{};
