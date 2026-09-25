@@ -1422,7 +1422,7 @@ index f3c8baa63..1b5f29d27 100644
        cef::mojom::BrowserManager::GetNewRenderThreadInfoCallback callback)
        override;
 diff --git a/libcef/browser/browser_manager.cc b/libcef/browser/browser_manager.cc
-index a9ba92980..29c953f98 100644
+index a9ba92980..11140a483 100644
 --- a/libcef/browser/browser_manager.cc
 +++ b/libcef/browser/browser_manager.cc
 @@ -4,10 +4,17 @@
@@ -1443,7 +1443,7 @@ index a9ba92980..29c953f98 100644
  #include "mojo/public/cpp/bindings/pending_receiver.h"
  #include "mojo/public/cpp/bindings/self_owned_receiver.h"
  #include "services/service_manager/public/cpp/binder_registry.h"
-@@ -58,3 +65,107 @@ void CefBrowserManager::GetNewBrowserInfo(
+@@ -58,3 +65,117 @@ void CefBrowserManager::GetNewBrowserInfo(
                                            render_frame_token),
        std::move(callback));
  }
@@ -1542,9 +1542,19 @@ index a9ba92980..29c953f98 100644
 +                                           const std::string& document_token,
 +                                           uint32_t input,
 +                                           bool active) {
-+  if (input >= 8 || document_token.size() > 256 ||
-+      !document_token.starts_with(
-+          std::to_string(render_process_id_.GetUnsafeValue()) + "-")) {
++  if (input >= 8 || document_token.size() > 256) {
++    return;
++  }
++  // The document token is CEF's frame identifier followed by a context serial.
++  // Use the canonical parser: the identifier's process ID is hexadecimal.
++  const auto separator = document_token.find(':');
++  if (separator == std::string::npos) {
++    return;
++  }
++  const auto frame_token =
++      frame_util::ParseFrameIdentifier(document_token.substr(0, separator));
++  if (!frame_token ||
++      frame_token->child_id != render_process_id_.GetUnsafeValue()) {
 +    return;
 +  }
 +  CEF_POST_TASK(TID_UI,

@@ -655,3 +655,26 @@ The final native and web builds passed. The six-input 1920×1080 graph presented
 its five-second steady interval and reacquired streams in 29–31 ms. Resize, disconnect, rapid reload, disable/re-enable,
 and shutdown passed. Artifacts: `build/integration-tests/cef-inputs-20260925-174137`. The additional review did not
 reproduce another blocker in the tested paths; hardware qualification remains limited to the tested GPU/driver.
+
+## Hexadecimal renderer identifiers (revision 9)
+
+CEF frame identifiers encode their process ID in hexadecimal. The revision-8 retirement channel compared that prefix
+with a decimal string, rejecting valid activity and retirement messages for process IDs above 9. Retained document
+tokens then prevented new input allocations without reporting an error. Short navigation runs did not reach the
+failing retirement boundary.
+
+The channel now separates the context serial from the frame identifier, parses the identifier with CEF's canonical
+`frame_util::ParseFrameIdentifier`, and compares the decoded process ID with the authenticated sender. Invalid frame
+identifiers and mismatched process IDs remain rejected.
+
+The permanent navigation probe performs 30 immediate cross-origin/history cycles before recording real input frames,
+then verifies delivery and three further allocation/retirement cycles at the higher process IDs. This exact regression
+failed against revision 8 with all eight inputs subscribed and no GPU output. It also checks the case where byte
+counters are already zero despite stale document bookkeeping.
+
+Revision-9 validation passed the full native build without warnings, all 158 ordinary tests, ten Vulkan export tests,
+the extended navigation regression, the normal session probe, and both per-session and shared admission recovery.
+GPU-backed checks ran with synchronization validation and reported no Vulkan validation errors. After the 30 immediate
+navigation cycles, all eight inputs delivered again; the subsequent three navigation cycles retired real allocations
+and returned reservations to zero. The navigation run delivered all 3,808 submitted input frames. The normal session
+probe also covered timestamps, mutable stream caches, rapid stop/reacquisition, reload, and shutdown.

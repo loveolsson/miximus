@@ -15,7 +15,7 @@ After preparing/building the pinned source tree, package and select the SDK:
 ```sh
 python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no-archive
 cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
-  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r8"
+  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9"
 cmake --build build -j
 ./build/miximus
 ```
@@ -74,6 +74,10 @@ Revision 8 tracks destination retirement across both frame detachment and render
 retirement only clears destination accounting; it does not acknowledge native DMA reads or bypass export quarantine.
 Transparent content and refresh requests retain a monotonic media timestamp through disconnect and reconnection.
 
+Revision 9 validates retirement tokens with CEF's canonical frame-identifier parser. Renderer process IDs in those
+identifiers are hexadecimal; decimal prefix matching incorrectly rejected valid lifecycle messages once IDs exceeded 9.
+The navigation regression now crosses that boundary before checking allocation, delivery, and retirement.
+
 This header is required even when unqualified provenance is explicitly allowed for diagnostics.
 
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
@@ -115,14 +119,14 @@ any optimization or change other processes' affinity. Choose the job count with 
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r8.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r9.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r8.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r8.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```

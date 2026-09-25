@@ -475,8 +475,7 @@ void run(subsystem_s&       subsystem,
     }
     frame_probe_s probe(gpu, session, small_inputs);
     if (!navigation_url.empty()) {
-        for (int cycle = 0; cycle < 3; ++cycle) {
-            probe.run_stage(0);
+        const auto navigate_back = [&] {
             auto       other_origin = navigation_url;
             const auto host         = other_origin.find("127.0.0.1");
             if (host == std::string::npos) {
@@ -491,6 +490,17 @@ void run(subsystem_s&       subsystem,
             }
             run_script(session, "() => { setTimeout(() => history.back(), 50); }");
             wait_demand(session, 255, false);
+        };
+        // Exercise process IDs beyond 9 before any real input allocation.
+        // Decimal prefix validation used to leak retired document tokens here,
+        // silently preventing later delivery even though all byte counts were zero.
+        for (int cycle = 0; cycle < 30; ++cycle) {
+            navigate_back();
+        }
+        probe.run_stage(0);
+        // Also require retirement of real allocations at the higher process IDs.
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            navigate_back();
             probe.run_stage(0);
         }
         run_script(session,
