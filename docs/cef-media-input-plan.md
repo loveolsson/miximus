@@ -465,3 +465,32 @@ steady interval. Resize, disconnect, reload, disable/enable and shutdown also pa
 runtime, without `LD_LIBRARY_PATH`, with Vulkan validation off for performance
 (`build/integration-tests/cef-inputs-20260925-082547`). The post-completion error check therefore preserved the
 qualified six-input 1080p60 workload on this GPU.
+
+## Demand-driven stream lifetime (implementation plan, 2026-09-25)
+
+Only an input with live tracks created by `miximus.getInputMediaStream` should request graph work.
+Connections alone do not activate it. A surviving clone keeps the source active; stopping the last track,
+collecting an abandoned source, navigation, or context destruction revokes demand. DOM removal alone
+is not a stop signal. Replace the strong JavaScript stream and Blink track caches with weak references.
+Use Chromium's native source stop/destruction hooks, with activation epochs to reject delayed callbacks.
+
+Implement in these steps:
+
+1. Report native source activation/retirement to Miximus, scoped to the document token. Feed that state
+   into the existing `prepare` demand mask and recursive `submit` dependency selection. Preserve other
+   graph consumers and the established independently running hardware capture services.
+2. Inactive inputs must revoke pending deliveries, drain actual GPU work, and release idle exports and
+   Chromium destinations. Consumer-held frames retire using their real release tokens; no fabricated
+   completion, forced reuse, or render-thread waits. Retained old frames remain inside the capacity bound.
+3. Active inputs without a source display transparent content. Use a small Chromium-owned transparent
+   frame and the existing refresh-frame mechanism, rather than allocating/exporting a dummy Vulkan
+   texture on every render tick. Send only when entering the disconnected state or on refresh demand.
+4. Validate explicit stop, surviving clones, garbage collection, reconnect/reacquisition, stale callbacks,
+   transparent alpha, zero unused-input submissions, freed allocations, and source branch demand. Allow
+   1–10 frames of normal reacquisition latency; prefer freeing unused buffers over keeping pools warm.
+5. Rebuild and stage the patched runtime for the regular build, run native/source tests and real-GPU
+   lifecycle checks, then repeat the six-input 1080p60 performance campaign. Commit coherent milestones.
+
+The reservation remains conservative while consumers may retain old Chromium frames. Releasing GPU
+allocations and releasing accounting reservations are distinct operations; unproven foreign GPU access
+must retain both its allocation and its reservation through quarantine.
