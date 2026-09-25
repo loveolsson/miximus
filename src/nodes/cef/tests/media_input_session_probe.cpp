@@ -119,7 +119,7 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu)
         if (width.wait_for(5s) != std::future_status::ready)
             throw std::runtime_error("Video dimension metadata timed out");
         const auto result = width.get();
-        if (!result.error.empty() || result.json != (stage < 0 ? "256" : stage == 1 ? "320" : "640"))
+        if (!result.error.empty() || result.json != (stage < 0 ? "16" : stage == 1 ? "320" : "640"))
             throw std::runtime_error("Video input resize metadata mismatch: " + result.json + result.error);
         const auto m = session->metrics().inputs;
         std::cout << "Stage " << stage << ": submitted=" << m.submitted << " delivered=" << m.delivered

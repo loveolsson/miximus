@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual GPU-media input graph test. Select the experimental runtime via LD_LIBRARY_PATH."""
+"""GPU-media input graph test against the regular CEF runtime."""
 import argparse
 import json
 import pathlib
@@ -147,7 +147,7 @@ def main():
         try:
             wait(f"{args.inputs} inputs with no output consumer", lambda s, p:
                  s.get("cef_inputs_active") == args.inputs and len(p.get("samples", [])) == args.inputs and
-                 all(v["width"] == (args.width if i < args.connected_inputs else 256) and v["presented"] >= 30
+                 all(v["width"] == (args.width if i < args.connected_inputs else 16) and v["presented"] >= 30
                      for i, v in enumerate(p["samples"])))
             if args.steady_seconds:
                 if args.warmup_seconds:

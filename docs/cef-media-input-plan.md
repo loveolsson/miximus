@@ -450,3 +450,11 @@ without delivery, retaining the allocation through shutdown. A separate 128×128
 import error: all 120 submissions were rejected for delivery with safe retirement, and the new explicit GL-error
 diagnostic appeared once. Thus both failure classes were exercised on real hardware. Artifacts are under
 `build/integration-tests/cef-cleanup-20260925`.
+
+Device-local size requalification passed pixel checks at 16×16, 32×32 and 64×64. The 128×128 failure above shows
+that support is not monotonic in dimensions; this does not qualify arbitrary small connected sources. Initial
+opaque-black exports now use the specifically qualified **16×16** extent instead of the former 256×256 workaround.
+The eight-input session probe passed from eight initially disconnected streams through connection, source replacement,
+disconnect, resize, reload and shutdown. Initial eight-input budget reservation fell from 20 MiB to 5 MiB. The graph
+campaign with four requested streams and two connected sources also passed with Vulkan validation and no EGL errors.
+Later disconnections still retain their source's last dimensions.

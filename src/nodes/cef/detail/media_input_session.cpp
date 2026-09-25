@@ -21,9 +21,9 @@ namespace miximus::nodes::cef::detail {
 namespace {
 using namespace std::chrono_literals;
 constexpr size_t INPUTS = 8, MAX_EXPORT_DEPTH = 8;
-// Tiny Vulkan exports pass Vulkan format checks but fail Chromium's EGL import
-// on the qualified NVIDIA driver. Use a qualified size before a source connects.
-constexpr gpu::extent_s DISCONNECTED_EXTENT{256, 256};
+// Qualified through Chromium with device-local exports. Other small extents
+// are not interchangeable: the current driver still rejects 128x128 imports.
+constexpr gpu::extent_s DISCONNECTED_EXTENT{16, 16};
 size_t                  export_depth()
 {
     size_t depth = 2;
@@ -137,7 +137,7 @@ struct media_input_session_s::impl_s
             reservation      = std::make_shared<reservation_s>(runtime->impl_->budget, depth);
             exports          = std::make_unique<media_input_exports_s>(
                 device, depth, runtime->impl_->quarantine, 256ULL * 1024 * 1024, reservation);
-            black         = device.create_texture({16, 16});
+            black         = device.create_texture(DISCONNECTED_EXTENT);
             auto setup    = device.create_recording_context(1);
             auto commands = setup.try_record();
             commands->clear(black, {0, 0, 0, 1});
