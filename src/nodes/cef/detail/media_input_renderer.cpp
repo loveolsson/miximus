@@ -46,6 +46,7 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
     constexpr auto*           script = R"JS(
 (function (create) {
   const streams = new Array(8);
+  const tracks = new Array(8);
   const api = globalThis.miximus || {};
   Object.defineProperty(api, "getInputMediaStream", {
     value: async (options) => {
@@ -55,8 +56,17 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
       }
 
       let stream = streams[index]?.deref();
-      if (!stream || stream.getVideoTracks()[0].readyState === "ended") {
-        stream = new MediaStream([create(index)]);
+      const track = tracks[index]?.deref();
+      if (
+        !stream ||
+        !track ||
+        track.readyState === "ended" ||
+        stream.getTracks().length !== 1 ||
+        stream.getVideoTracks()[0] !== track
+      ) {
+        const inputTrack = create(index);
+        stream = new MediaStream([inputTrack]);
+        tracks[index] = new WeakRef(inputTrack);
         streams[index] = new WeakRef(stream);
       }
 

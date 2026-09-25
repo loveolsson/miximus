@@ -321,6 +321,27 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs)
     }
 
     run_script(session, R"JS(
+async () => {
+  const video = document.querySelector("video");
+  const original = video.srcObject;
+  const track = original.getVideoTracks()[0];
+  original.removeTrack(track);
+  const replacement = await miximus.getInputMediaStream({ inputIndex: 0 });
+  if (replacement === original || replacement.getVideoTracks()[0] !== track) {
+    throw new Error("Removing a track did not reconstruct the input stream");
+  }
+  const foreign = document.querySelectorAll("video")[1].srcObject.getVideoTracks()[0];
+  replacement.removeTrack(track);
+  replacement.addTrack(foreign);
+  const restored = await miximus.getInputMediaStream({ inputIndex: 0 });
+  if (restored.getVideoTracks()[0] !== track || restored.getTracks().length !== 1) {
+    throw new Error("A foreign track was returned as input 0");
+  }
+  video.srcObject = restored;
+  video.play().catch(console.error);
+}
+)JS");
+    run_script(session, R"JS(
 () => {
   const videos = [...document.querySelectorAll("video")];
   globalThis.survivor = videos[0].srcObject.clone();
