@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <gtest/gtest.h>
+#include <optional>
 #include <utility>
 
 namespace miximus::core::tests {
@@ -21,6 +22,28 @@ concept publishable_status =
 static_assert(publishable_status<status::connected_status_s>);
 static_assert(!publishable_status<unregistered_status_s>);
 static_assert(!publishable_status<nlohmann::json>);
+
+TEST(node_status_registry, keyer_modes_serialize_as_existing_wire_names)
+{
+    node_status_registry_s registry;
+    for (const auto [mode, name] : std::array{
+             std::pair{decklink_keyer_mode_e::disabled, "disabled"},
+             std::pair{decklink_keyer_mode_e::internal, "internal"},
+             std::pair{decklink_keyer_mode_e::external, "external"},
+    }) {
+        registry.write("decklink",
+                       status::decklink_output_keyer_status_s{
+                           .requested_keyer_mode  = mode,
+                           .active_keyer_mode     = mode,
+                           .keyer_fallback_reason = std::nullopt,
+                       });
+        EXPECT_EQ(registry.get("decklink").at("requested_keyer_mode"), name);
+        EXPECT_EQ(registry.get("decklink").at("active_keyer_mode"), name);
+        EXPECT_TRUE(registry.get("decklink").at("keyer_fallback_reason").is_null());
+        EXPECT_EQ(nlohmann::json(name).get<decklink_keyer_mode_e>(), mode);
+    }
+    EXPECT_THROW(nlohmann::json("invalid").get<decklink_keyer_mode_e>(), std::invalid_argument);
+}
 
 TEST(node_status_registry, cef_states_serialize_as_existing_wire_names)
 {

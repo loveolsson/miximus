@@ -31,6 +31,14 @@ TEST(typescript_generator, cef_status_fields_use_generated_enums)
     EXPECT_NE(output.find("readonly cef_inputs_state: cef_input_state_e;"), std::string::npos);
 }
 
+TEST(typescript_generator, keyer_status_fields_use_generated_enum)
+{
+    const auto output = generate_typescript();
+    EXPECT_NE(output.find("export const enum decklink_keyer_mode_e {"), std::string::npos);
+    EXPECT_NE(output.find("readonly requested_keyer_mode: decklink_keyer_mode_e;"), std::string::npos);
+    EXPECT_NE(output.find("readonly active_keyer_mode: decklink_keyer_mode_e;"), std::string::npos);
+}
+
 TEST(typescript_generator, opaque_json_overrides_are_member_specific)
 {
     struct unrelated_s

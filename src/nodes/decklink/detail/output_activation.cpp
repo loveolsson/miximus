@@ -37,13 +37,15 @@ bool output_activation_s::supports_ordinary_output(BMDDisplayMode display_mode)
     return true;
 }
 
-auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode display_mode, keyer_mode_e requested_keyer_mode)
+auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        display_mode,
+                                                       decklink_keyer_mode_e requested_keyer_mode)
     -> std::optional<std::string>
 {
     auto       attributes = device_.query<IDeckLinkProfileAttributes>();
     bool       capability{};
-    const auto capability_id = requested_keyer_mode == keyer_mode_e::external ? BMDDeckLinkSupportsExternalKeying
-                                                                              : BMDDeckLinkSupportsInternalKeying;
+    const auto capability_id = requested_keyer_mode == decklink_keyer_mode_e::external
+                                   ? BMDDeckLinkSupportsExternalKeying
+                                   : BMDDeckLinkSupportsInternalKeying;
     if (!attributes || attributes->GetFlag(capability_id, &capability) != S_OK || !capability) {
         return "the active device profile does not advertise that keyer capability";
     }
@@ -78,9 +80,9 @@ bool output_activation_s::enable_output(BMDDisplayMode display_mode)
     return true;
 }
 
-bool output_activation_s::enable_keyer(keyer_mode_e keyer_mode)
+bool output_activation_s::enable_keyer(decklink_keyer_mode_e keyer_mode)
 {
-    const bool external      = keyer_mode == keyer_mode_e::external;
+    const bool external      = keyer_mode == decklink_keyer_mode_e::external;
     const auto enable_result = keyer_->Enable(external);
     const auto level_result  = enable_result == S_OK ? keyer_->SetLevel(255) : E_FAIL;
     if (enable_result == S_OK && level_result == S_OK) {
@@ -114,11 +116,11 @@ bool output_activation_s::restart_without_keyer(const output_display_mode_s& dis
         return false;
     }
     active_output->path              = std::move(ordinary_path);
-    active_output->active_keyer_mode = keyer_mode_e::disabled;
+    active_output->active_keyer_mode = decklink_keyer_mode_e::disabled;
     return true;
 }
 
-auto output_activation_s::start(const output_display_mode_s& display_mode, keyer_mode_e requested_keyer_mode)
+auto output_activation_s::start(const output_display_mode_s& display_mode, decklink_keyer_mode_e requested_keyer_mode)
     -> std::optional<active_output_s>
 {
     if (!supports_ordinary_output(display_mode.mode)) {
@@ -128,11 +130,11 @@ auto output_activation_s::start(const output_display_mode_s& display_mode, keyer
     active_output_s active_output{
         .path                  = {},
         .requested_keyer_mode  = requested_keyer_mode,
-        .active_keyer_mode     = keyer_mode_e::disabled,
+        .active_keyer_mode     = decklink_keyer_mode_e::disabled,
         .keyer_fallback_reason = std::nullopt,
     };
 
-    if (requested_keyer_mode != keyer_mode_e::disabled) {
+    if (requested_keyer_mode != decklink_keyer_mode_e::disabled) {
         active_output.keyer_fallback_reason = keyed_output_fallback_reason(display_mode.mode, requested_keyer_mode);
         if (!active_output.keyer_fallback_reason) {
             active_output.path = premultiplied_argb_output_path_s::create(device_.get(), display_mode, device_name_);
@@ -160,7 +162,7 @@ auto output_activation_s::start(const output_display_mode_s& display_mode, keyer
         return std::nullopt;
     }
 
-    if (!active_output.keyer_fallback_reason && requested_keyer_mode != keyer_mode_e::disabled) {
+    if (!active_output.keyer_fallback_reason && requested_keyer_mode != decklink_keyer_mode_e::disabled) {
         if (enable_keyer(requested_keyer_mode)) {
             active_output.active_keyer_mode = requested_keyer_mode;
         } else {

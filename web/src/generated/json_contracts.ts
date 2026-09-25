@@ -18,6 +18,12 @@ export const enum cef_input_state_e {
   failed = "failed",
 }
 
+export const enum decklink_keyer_mode_e {
+  disabled = "disabled",
+  internal = "internal",
+  external = "external",
+}
+
 export const enum action_e {
   subscribe = "subscribe",
   unsubscribe = "unsubscribe",
@@ -438,8 +444,8 @@ export interface decklink_output_device_status_s {
 }
 
 export interface decklink_output_keyer_status_s {
-  readonly requested_keyer_mode: string;
-  readonly active_keyer_mode: string;
+  readonly requested_keyer_mode: decklink_keyer_mode_e;
+  readonly active_keyer_mode: decklink_keyer_mode_e;
   readonly keyer_fallback_reason?: string | null;
 }
 

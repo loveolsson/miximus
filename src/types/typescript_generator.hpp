@@ -1,5 +1,6 @@
 #pragma once
 #include "cef_status.hpp"
+#include "decklink_status.hpp"
 #include "frame_rate.hpp"
 #include "gpu/types.hpp"
 #include "json_contract.hpp"
@@ -45,6 +46,8 @@ std::string typescript_type()
         return "cef_state_e";
     } else if constexpr (std::same_as<T, cef_input_state_e>) {
         return "cef_input_state_e";
+    } else if constexpr (std::same_as<T, decklink_keyer_mode_e>) {
+        return "decklink_keyer_mode_e";
     } else if constexpr (std::same_as<T, action_e>) {
         return "action_e";
     } else if constexpr (std::same_as<T, topic_e>) {

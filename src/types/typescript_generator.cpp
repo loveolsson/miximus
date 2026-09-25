@@ -99,6 +99,7 @@ std::string generate_typescript()
 
     emit_enum<cef_state_e>(output, "cef_state_e");
     emit_enum<cef_input_state_e>(output, "cef_input_state_e");
+    emit_enum<decklink_keyer_mode_e>(output, "decklink_keyer_mode_e");
     emit_enum<action_e>(output, "action_e");
     emit_enum<topic_e>(output, "topic_e");
     emit_enum<error_e>(output, "error_e");

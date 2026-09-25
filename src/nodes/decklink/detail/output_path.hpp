@@ -4,6 +4,7 @@
 #include "gpu/geometry.hpp"
 #include "gpu/recording.hpp"
 #include "gpu/transfer/texture_transfer.hpp"
+#include "types/decklink_status.hpp"
 #include "utils/flicks.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 #include "wrapper/decklink-sdk/decklink_ptr.hpp"
@@ -23,13 +24,6 @@ class texture_readback_target_s;
 } // namespace miximus::gpu
 
 namespace miximus::nodes::decklink::detail {
-
-enum class keyer_mode_e : uint8_t
-{
-    disabled,
-    internal,
-    external,
-};
 
 struct output_display_mode_s
 {
@@ -113,8 +107,8 @@ class premultiplied_argb_output_path_s final : public output_path_i
 struct active_output_s
 {
     std::shared_ptr<const output_path_i> path;
-    keyer_mode_e                         requested_keyer_mode{keyer_mode_e::disabled};
-    keyer_mode_e                         active_keyer_mode{keyer_mode_e::disabled};
+    decklink_keyer_mode_e                requested_keyer_mode{decklink_keyer_mode_e::disabled};
+    decklink_keyer_mode_e                active_keyer_mode{decklink_keyer_mode_e::disabled};
     std::optional<std::string>           keyer_fallback_reason;
 };
 

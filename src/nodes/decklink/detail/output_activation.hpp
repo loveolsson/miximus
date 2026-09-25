@@ -16,10 +16,10 @@ class output_activation_s
     bool                                        output_enabled_{};
 
     bool supports_ordinary_output(BMDDisplayMode display_mode);
-    auto keyed_output_fallback_reason(BMDDisplayMode display_mode, keyer_mode_e requested_keyer_mode)
+    auto keyed_output_fallback_reason(BMDDisplayMode display_mode, decklink_keyer_mode_e requested_keyer_mode)
         -> std::optional<std::string>;
     bool enable_output(BMDDisplayMode display_mode);
-    bool enable_keyer(keyer_mode_e keyer_mode);
+    bool enable_keyer(decklink_keyer_mode_e keyer_mode);
     bool restart_without_keyer(const output_display_mode_s& display_mode, active_output_s* active_output);
 
   public:
@@ -31,7 +31,7 @@ class output_activation_s
     output_activation_s(output_activation_s&&)                 = delete;
     output_activation_s& operator=(output_activation_s&&)      = delete;
 
-    auto start(const output_display_mode_s& display_mode, keyer_mode_e requested_keyer_mode)
+    auto start(const output_display_mode_s& display_mode, decklink_keyer_mode_e requested_keyer_mode)
         -> std::optional<active_output_s>;
     void stop();
 };

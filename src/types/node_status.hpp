@@ -1,5 +1,6 @@
 #pragma once
 #include "cef_status.hpp"
+#include "decklink_status.hpp"
 #include "frame_rate.hpp"
 #include "settings_option.hpp"
 #include "utils/flicks.hpp"
@@ -184,8 +185,8 @@ struct decklink_output_device_status_s
 
 struct decklink_output_keyer_status_s
 {
-    std::string                requested_keyer_mode;
-    std::string                active_keyer_mode;
+    decklink_keyer_mode_e      requested_keyer_mode{decklink_keyer_mode_e::disabled};
+    decklink_keyer_mode_e      active_keyer_mode{decklink_keyer_mode_e::disabled};
     std::optional<std::string> keyer_fallback_reason;
 };
 

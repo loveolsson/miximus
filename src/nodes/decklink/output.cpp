@@ -164,7 +164,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     std::shared_ptr<reservation_s>             reservation_;
     std::string                                device_name_;
     std::string                                requested_mode_name_;
-    keyer_mode_e                               requested_keyer_mode_;
+    decklink_keyer_mode_e                      requested_keyer_mode_;
     output_activation_s                        output_activation_;
 
     mutable std::mutex             state_mutex_;
@@ -705,7 +705,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
                std::shared_ptr<reservation_s>             reservation,
                std::string                                device_name,
                std::string                                requested_mode_name,
-               keyer_mode_e                               requested_keyer_mode,
+               decklink_keyer_mode_e                      requested_keyer_mode,
                utils::flicks                              program_frame_duration,
                size_t                                     buffer_frames)
         : readback_service_(readback_service)
@@ -776,14 +776,14 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         if (render_state_) {
             const auto& active_output = render_state_->active_output;
             return {
-                .requested_keyer_mode  = std::string(enum_to_string(active_output.requested_keyer_mode)),
-                .active_keyer_mode     = std::string(enum_to_string(active_output.active_keyer_mode)),
+                .requested_keyer_mode  = active_output.requested_keyer_mode,
+                .active_keyer_mode     = active_output.active_keyer_mode,
                 .keyer_fallback_reason = active_output.keyer_fallback_reason,
             };
         }
         return {
-            .requested_keyer_mode  = std::string(enum_to_string(requested_keyer_mode_)),
-            .active_keyer_mode     = std::string(enum_to_string(keyer_mode_e::disabled)),
+            .requested_keyer_mode  = requested_keyer_mode_,
+            .active_keyer_mode     = decklink_keyer_mode_e::disabled,
             .keyer_fallback_reason = std::nullopt,
         };
     }
@@ -917,7 +917,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
 class node_impl : public node_i
 {
-    using selection_t = std::tuple<std::string, std::string, keyer_mode_e, bool, frame_rate_s, uint64_t, int>;
+    using selection_t = std::tuple<std::string, std::string, decklink_keyer_mode_e, bool, frame_rate_s, uint64_t, int>;
 
     decklink_ptr<callback_s>                  callback_;
     std::optional<callback_s::render_state_s> render_state_;
@@ -948,7 +948,7 @@ class node_impl : public node_i
                         decklink_ptr<IDeckLinkOutput> device,
                         std::string_view              device_name,
                         std::string_view              display_mode,
-                        keyer_mode_e                  keyer_mode,
+                        decklink_keyer_mode_e         keyer_mode,
                         utils::flicks                 program_frame_duration,
                         int                           buffer_frames)
     {
@@ -1108,7 +1108,7 @@ class node_impl : public node_i
 
         const auto device_name    = state.get_option<std::string>("device_name");
         const auto display_mode   = state.get_option<std::string>("display_mode");
-        const auto keyer_mode     = state.get_enum_option_unchecked<keyer_mode_e>("keyer_mode");
+        const auto keyer_mode     = state.get_enum_option_unchecked<decklink_keyer_mode_e>("keyer_mode");
         const auto enabled        = state.get_option<bool>("enabled");
         const auto buffer_frames  = app->frame_settings().decklink_output.buffer_frames;
         result->demands_execution = enabled;
@@ -1136,8 +1136,8 @@ class node_impl : public node_i
         if (!callback_) {
             status->write(id_,
                           status::decklink_output_keyer_status_s{
-                              .requested_keyer_mode  = std::string(enum_to_string(keyer_mode)),
-                              .active_keyer_mode     = std::string(enum_to_string(keyer_mode_e::disabled)),
+                              .requested_keyer_mode  = keyer_mode,
+                              .active_keyer_mode     = decklink_keyer_mode_e::disabled,
                               .keyer_fallback_reason = std::nullopt,
                           });
         }
@@ -1194,11 +1194,11 @@ class node_impl : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
-            {"name",         "DeckLink output"                      },
-            {"enabled",      true                                   },
-            {"display_mode", "720p60"                               },
-            {"fill_mode",    enum_to_string(gpu::fill_mode_e::scale)},
-            {"keyer_mode",   enum_to_string(keyer_mode_e::disabled) },
+            {"name",         "DeckLink output"                              },
+            {"enabled",      true                                           },
+            {"display_mode", "720p60"                                       },
+            {"fill_mode",    enum_to_string(gpu::fill_mode_e::scale)        },
+            {"keyer_mode",   enum_to_string(decklink_keyer_mode_e::disabled)},
         };
     }
 
@@ -1208,7 +1208,7 @@ class node_impl : public node_i
             return normalize_option_value<std::string_view>(value);
         }
         if (name == "keyer_mode") {
-            return normalize_enum_option_value<keyer_mode_e>(value);
+            return normalize_enum_option_value<decklink_keyer_mode_e>(value);
         }
         if (name == "fill_mode") {
             return normalize_enum_option_value<gpu::fill_mode_e>(value);
