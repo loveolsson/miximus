@@ -93,6 +93,21 @@ onBeforeUnmount(() => {
     class="baklava-connection"
     :class="{ '--forbidden': isForbidden }"
     :d="d"
-    :style="{ stroke: strokeColor }"
+    :style="{ stroke: strokeColor, color: strokeColor }"
+    @pointerdown.stop
+    @contextmenu.stop.prevent="if ($event.ctrlKey) graph.removeConnection(connection);"
   />
 </template>
+
+<style scoped>
+.baklava-connection {
+  stroke-width: 4px;
+  pointer-events: stroke;
+}
+
+.baklava-connection:hover {
+  --connection-glow-color: color-mix(in srgb, currentColor 50%, white);
+  filter: drop-shadow(0 0 4px var(--connection-glow-color))
+    drop-shadow(0 0 2px var(--connection-glow-color));
+}
+</style>
