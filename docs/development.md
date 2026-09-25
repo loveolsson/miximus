@@ -32,7 +32,8 @@ The deferred style and containment cleanup, to follow the Vulkan and CEF branch 
 ## Building and running
 
 Requirements include CMake 3.28+, a C++20 compiler, Boost with the Fiber, Program_options, and URL development
-components, and Node.js 22+ for the web client.
+components, and Node.js 22+ for the web client. Linux builds also require the libdrm development headers
+for DMA-BUF modifier definitions.
 
 ```bash
 cmake -S . -B build

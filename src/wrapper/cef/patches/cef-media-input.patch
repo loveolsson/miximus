@@ -311,7 +311,7 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
    // Called when this frame has been detached from the view. This *will* be
    // called for child frames when a parent frame is detached.
    // The browser may hold the last reference to |this|. Take a reference here to
-@@ -938,3 +945,61 @@
+@@ -938,3 +945,73 @@
  #pragma warning(pop)
  #endif
  #endif
@@ -342,7 +342,19 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
 +              args->SetBool(3, drained);
 +              frame->SendProcessMessage(PID_BROWSER, message);
 +            },
-+            weak_ptr_factory_.GetWeakPtr()));
++            weak_ptr_factory_.GetWeakPtr()),
++        base::BindRepeating(
++            [](base::WeakPtr<CefFrameImpl> frame, const std::string& token,
++               const std::string& error) {
++              if (!frame) {
++                return;
++              }
++              auto message = CefProcessMessage::Create("miximus.media-input.failure.v1");
++              auto args = message->GetArgumentList();
++              args->SetString(0, token);
++              args->SetString(1, error);
++              frame->SendProcessMessage(PID_BROWSER, message);
++            }, weak_ptr_factory_.GetWeakPtr()));
 +  }
 +  return media_inputs_->CreateTrack(input, token);
 +}
@@ -929,7 +941,7 @@ diff --git a/libcef/renderer/media_input_bridge.h b/libcef/renderer/media_input_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.h
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,90 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -963,7 +975,8 @@ new file mode 100644
 +      base::OnceCallback<void(bool safe_to_reuse, bool delivered)>;
 +  using Activity =
 +      base::RepeatingCallback<void(const std::string&, uint32_t, bool, bool)>;
-+  explicit CefMediaInputBridge(size_t depth, Activity activity);
++  using Failure = base::RepeatingCallback<void(const std::string&, const std::string&)>;
++  explicit CefMediaInputBridge(size_t depth, Activity activity, Failure failure);
 +  bool SetTransparent(const std::string& token,
 +                      uint32_t input,
 +                      uint64_t generation);
@@ -1008,12 +1021,14 @@ new file mode 100644
 +  void SourceStopped(size_t input, uint64_t activation);
 +  void ReleaseUnused(size_t input);
 +  void NotifyInactive(size_t input);
++  void Fail(const std::string& error);
 +  const size_t depth_;
 +  std::string context_token_;
 +  std::array<Input, kInputs> inputs_;
 +  scoped_refptr<viz::RasterContextProvider> context_;
 +  bool failed_ = false;
 +  Activity activity_;
++  Failure failure_;
 +  base::WeakPtrFactory<CefMediaInputBridge> weak_factory_{this};
 +};
 +#endif  // CEF_LIBCEF_RENDERER_MEDIA_INPUT_BRIDGE_H_
@@ -1021,7 +1036,7 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,301 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -1040,12 +1055,23 @@ new file mode 100644
 +#include "media/base/video_frame.h"
 +#include "third_party/blink/public/platform/platform.h"
 +
-+CefMediaInputBridge::CefMediaInputBridge(size_t depth, Activity activity)
-+    : depth_(depth), activity_(std::move(activity)) {
++CefMediaInputBridge::CefMediaInputBridge(size_t depth, Activity activity, Failure failure)
++    : depth_(depth), activity_(std::move(activity)), failure_(std::move(failure)) {
 +  CHECK_GE(depth_, 1u);
 +  CHECK_LE(depth_, kMaxDepth);
 +}
 +CefMediaInputBridge::~CefMediaInputBridge() = default;
++
++void CefMediaInputBridge::Fail(const std::string& error) {
++  if (failed_) {
++    return;
++  }
++  failed_ = true;
++  LOG(ERROR) << error;
++  if (!context_token_.empty()) {
++    failure_.Run(context_token_, error);
++  }
++}
 +
 +CefRefPtr<CefV8Value> CefMediaInputBridge::CreateTrack(
 +    size_t input,
@@ -1193,7 +1219,7 @@ new file mode 100644
 +  }
 +  if (!context_ || !context_->ContextCapabilities().sync_query ||
 +      context_->RasterInterface()->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
-+    failed_ = true;
++    Fail("CEF media input raster context unavailable");
 +    std::move(completion).Run(true, false);  // No imported access started.
 +    return;
 +  }
@@ -1272,7 +1298,7 @@ new file mode 100644
 +  const bool healthy = ri->GetGraphicsResetStatusKHR() == GL_NO_ERROR;
 +  ri->DeleteQueriesEXT(1, &query);
 +  if (!healthy) {
-+    failed_ = true;
++    Fail("CEF media input raster context lost during copy");
 +    std::move(completion).Run(false, false);
 +    return;
 +  }
@@ -1284,8 +1310,7 @@ new file mode 100644
 +  if (!failed_) {
 +    const auto error = ri->GetError();
 +    if (error != GL_NO_ERROR) {
-+      LOG(ERROR) << "CEF media input import/copy failed: GL error " << error;
-+      failed_ = true;
++      Fail("CEF media input import/copy failed: GL error " + std::to_string(error));
 +    }
 +  }
 +  bool delivered = false;

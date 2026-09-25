@@ -1,5 +1,5 @@
 {
-  "revision": 5,
+  "revision": 6,
   "cef_revision": "1ce985cb23056548b9cc51483bbef4faf68b1cd3",
   "chromium_revision": "066c60fad7c77efe3a81ad78c8109afba848b18d",
   "chromium_branch": "7977",
@@ -29,7 +29,7 @@
     {
       "file": "patches/cef-media-input.patch",
       "repository": "cef",
-      "sha256": "ca4811288cc42f4f2ce7bcb7f1c951d7e57c9296387db218f5e8e722dabd221f",
+      "sha256": "3b20b0530c4cc202022b42f4bbc467deeb7bc23a07b300377bf23c568f291d58",
       "reason": "GPU-only browser texture inputs: bounded Chromium-owned copies, native media tracks, and generation-aware completion transport."
     }
   ],

@@ -15,6 +15,7 @@ class dma_buf_export_s
 
   public:
     dma_buf_export_s(device_s& device, extent_s extent);
+
     ~dma_buf_export_s();
     dma_buf_export_s(const dma_buf_export_s&)            = delete;
     dma_buf_export_s& operator=(const dma_buf_export_s&) = delete;

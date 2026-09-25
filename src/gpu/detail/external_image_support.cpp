@@ -22,15 +22,18 @@ probe_external_image_import(bool requested, [[maybe_unused]] std::span<const std
         "VK_EXT_queue_family_foreign",
         "VK_KHR_external_semaphore_fd",
     };
+
     for (const auto extension : required) {
         if (std::ranges::find(available_extensions, extension) == available_extensions.end()) {
             result.missing_support.emplace_back(extension);
         }
     }
+
     if (result.missing_support.empty()) {
         result.enabled = true;
         result.enabled_extensions.assign(required.begin(), required.end());
     }
+
 #else
     result.missing_support.emplace_back("External image import is not qualified on this platform");
 #endif

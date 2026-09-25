@@ -553,3 +553,39 @@ passed stop/free/reacquire, resize, disconnect, rapid reload, disable/enable, an
 Artifacts: `build/integration-tests/cef-lifetime-20260925`; mixed graph `cef-inputs-20260925-092543`;
 six-input runs `cef-inputs-20260925-092636` and `cef-inputs-20260925-092843`;
 four-input run `cef-inputs-20260925-093005` (all graph directories under `build/integration-tests`).
+
+
+## Merge-review corrections (2026-09-25, revision 6)
+
+The diagnostic staging tool now reads the standard `source-build.json` instead of maintaining a second revision and
+patch-digest manifest. Its prepare check passes against the revision-6 source tree.
+
+Renderer import/copy failures now send a document-token-scoped error to the native session. A failed session withdraws
+input demand and enters the existing bounded browser restart policy. Buffer safety remains independent: completed
+copies can retire safely even when delivery failed; missing completion still quarantines allocations. The node retains
+the input error in status during failure. Before changing export layouts, the original two-input 128×128 graph verified
+visible errors, zero active inputs on failure, exactly three retries, terminal failure and clean shutdown.
+
+The small-image failure came from selecting NVIDIA's first advertised modifier, which uses a 256-row block even for
+tiny images. Vulkan accepted those allocations, but EGL rejected their import. Export selection now skips NVIDIA block
+heights larger than the logical image height (with one GOB as the minimum). Driver ordering for larger images and other
+vendors is preserved. Pixel dimensions, GPU-only transport, capacities, completion and quarantine contracts are unchanged.
+Linux builds use the system libdrm headers for modifier definitions, discovered in the Vulkan wrapper.
+
+Revision 6 was built, packaged and selected as the regular SDK in `build/cef`. Validation on the Quadro P2000 passed:
+
+- Full native build without warnings, 156 ordinary tests, C++ formatting and `git diff --check`.
+- All 168 Chromium capture tests and eight native media-source tests.
+- 32 Vulkan device tests, 14 transfer tests and nine media-export tests with synchronization validation.
+- Normal and `--small-inputs` eight-input session probes, checking GPU pixels and both logical dimensions of every
+  video element through connection, source replacement, disconnect, resize, reload, clone retirement and reacquisition.
+  Small inputs include 1×1, 7×3, 8×8, 16×16, 32×32, 64×64, 128×128 and 129×127, plus a 63×7 resize.
+- The original two-input 128×128 graph now passes stop/free/reacquire, independent resize, disconnect, rapid reload,
+  disable/enable and shutdown with no import errors.
+- The invalid-modifier probe verified valid pixels first, then rejected delivery and retained the export through CEF
+  shutdown when the driver dropped completion. No unsafe retirement was introduced by failure reporting.
+
+Logs are in `build/integration-tests/review-merge-fixes-r6`; the graph run is
+`build/integration-tests/cef-inputs-20260925-134548`. The failure/retry check before the layout fix is preserved under
+`build/integration-tests/review-input-failure-r6`. These checks do not constitute a new full DeckLink/NDI/display or
+cross-vendor qualification campaign.

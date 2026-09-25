@@ -5,6 +5,7 @@
 #include "detail/frame_pool.hpp"
 #include "media/timed_source_queue.hpp"
 #include "media_input_types.hpp"
+#include "types/cef_status.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -32,15 +33,7 @@ class session_s
         bool         operator==(const options_s&) const = default;
     };
 
-    enum class phase_e : uint8_t
-    {
-        starting,
-        loading,
-        ready,
-        closing,
-        closed,
-        failed
-    };
+    using phase_e = cef_state_e;
 
     struct metrics_s
     {

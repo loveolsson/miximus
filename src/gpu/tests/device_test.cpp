@@ -563,11 +563,13 @@ TEST_F(device_test, V210PackingZerosPartialPaddingGroupsAcrossRows)
         512U | (64U << 10) | (512U << 20),
         64U | (512U << 10) | (64U << 20),
     };
+
     for (size_t row = 0; row < 2; ++row) {
         for (size_t word = 0; word < 8; ++word) {
-            EXPECT_EQ(words.at(row * 9 + word), black.at(word % 4));
+            EXPECT_EQ(words.at((row * 9) + word), black.at(word % 4));
         }
-        EXPECT_EQ(words.at(row * 9 + 8), 0U);
+
+        EXPECT_EQ(words.at((row * 9) + 8), 0U);
     }
 }
 
@@ -638,8 +640,8 @@ TEST_F(device_test, PremultipliedEncodingAndARGBOrderMatchCPUReference)
 
 TEST_F(device_test, SrgbPremultipliedExportMatchesIndependentReference)
 {
-    auto source = device->create_texture({1, 1}, format_e::rgba_unorm16);
-    auto target = device->create_texture({1, 1}, format_e::rgba_unorm8);
+    auto source = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm16);
+    auto target = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm8);
     auto output = device->create_buffer(4, host_access_e::readback);
     for (float alpha : {0.5F, 0.0F}) {
         auto record = device->try_record();
@@ -654,8 +656,9 @@ TEST_F(device_test, SrgbPremultipliedExportMatchesIndependentReference)
                                              (1.055 * std::pow(0.5, 1.0 / 2.4) - 0.055) * double(alpha) * 255,
                                              double(alpha) * 255,
                                              double(alpha) * 255};
-        for (size_t channel = 0; channel < 4; ++channel)
-            EXPECT_NEAR(std::to_integer<unsigned>(actual[channel]), expected[channel], 1);
+        for (size_t channel = 0; channel < 4; ++channel) {
+            EXPECT_NEAR(std::to_integer<unsigned>(actual[channel]), expected.at(channel), 1);
+        }
     }
 }
 

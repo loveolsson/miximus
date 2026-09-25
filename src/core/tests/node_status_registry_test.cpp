@@ -1,8 +1,10 @@
 #include "core/node_status_registry.hpp"
 #include "types/node_status_json.hpp"
 
+#include <array>
 #include <chrono>
 #include <gtest/gtest.h>
+#include <utility>
 
 namespace miximus::core::tests {
 
@@ -19,6 +21,44 @@ concept publishable_status =
 static_assert(publishable_status<status::connected_status_s>);
 static_assert(!publishable_status<unregistered_status_s>);
 static_assert(!publishable_status<nlohmann::json>);
+
+TEST(node_status_registry, cef_states_serialize_as_existing_wire_names)
+{
+    node_status_registry_s       registry;
+    status::cef_browser_status_s payload;
+    const std::array             states{
+        std::pair{cef_state_e::starting,    "starting"   },
+        std::pair{cef_state_e::loading,     "loading"    },
+        std::pair{cef_state_e::ready,       "ready"      },
+        std::pair{cef_state_e::closing,     "closing"    },
+        std::pair{cef_state_e::closed,      "closed"     },
+        std::pair{cef_state_e::failed,      "failed"     },
+        std::pair{cef_state_e::stopped,     "stopped"    },
+        std::pair{cef_state_e::unavailable, "unavailable"},
+    };
+    for (const auto& [state, name] : states) {
+        payload.cef_state = state;
+        registry.write("browser", payload);
+        EXPECT_EQ(registry.get("browser").at("cef_state"), name);
+        EXPECT_EQ(nlohmann::json(name).get<cef_state_e>(), state);
+    }
+
+    const std::array input_states{
+        std::pair{cef_input_state_e::unavailable, "unavailable"},
+        std::pair{cef_input_state_e::idle,        "idle"       },
+        std::pair{cef_input_state_e::active,      "active"     },
+        std::pair{cef_input_state_e::failed,      "failed"     },
+    };
+    for (const auto& [state, name] : input_states) {
+        payload.cef_inputs_state = state;
+        registry.write("browser", payload);
+        EXPECT_EQ(registry.get("browser").at("cef_inputs_state"), name);
+        EXPECT_EQ(nlohmann::json(name).get<cef_input_state_e>(), state);
+    }
+
+    payload.cef_state = static_cast<cef_state_e>(255);
+    EXPECT_THROW(registry.write("browser", payload), std::invalid_argument);
+}
 
 TEST(node_status_registry, described_status_is_serialized_and_delta_filtered)
 {

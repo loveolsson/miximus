@@ -22,6 +22,7 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     if (!device || !device->external_image_import.enabled) {
         throw std::runtime_error("DMA-BUF image import is not enabled");
     }
+
     if (descriptor.fd < 0 || descriptor.extent.width == 0 || descriptor.extent.height == 0 ||
         descriptor.extent.width > device->properties.limits.maxImageDimension2D ||
         descriptor.extent.height > device->properties.limits.maxImageDimension2D ||
@@ -29,6 +30,7 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
         descriptor.stride > (std::numeric_limits<uint64_t>::max() - descriptor.offset) / descriptor.extent.height) {
         throw std::invalid_argument("Invalid DMA-BUF image layout");
     }
+
     VkFormat format{};
     switch (descriptor.order) {
         case channel_order_e::rgba:
@@ -43,12 +45,15 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
 
     VkDrmFormatModifierPropertiesListEXT modifiers{};
     modifiers.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT;
+
     VkFormatProperties2 formats{};
     formats.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
     formats.pNext = &modifiers;
+
     device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, format, &formats);
     std::vector<VkDrmFormatModifierPropertiesEXT> entries(modifiers.drmFormatModifierCount);
     modifiers.pDrmFormatModifierProperties = entries.data();
+
     device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, format, &formats);
     entries.resize(modifiers.drmFormatModifierCount);
     const auto found =
@@ -63,10 +68,12 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     modifier_query.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT;
     modifier_query.drmFormatModifier = descriptor.modifier;
     modifier_query.sharingMode       = VK_SHARING_MODE_EXCLUSIVE;
+
     VkPhysicalDeviceExternalImageFormatInfo external_query{};
     external_query.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO;
     external_query.pNext      = &modifier_query;
     external_query.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
     VkPhysicalDeviceImageFormatInfo2 query{};
     query.sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2;
     query.pNext  = &external_query;
@@ -74,11 +81,14 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     query.type   = VK_IMAGE_TYPE_2D;
     query.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
     query.usage  = VK_IMAGE_USAGE_SAMPLED_BIT;
+
     VkExternalImageFormatProperties external_properties{};
     external_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES;
+
     VkImageFormatProperties2 properties{};
     properties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
     properties.pNext = &external_properties;
+
     check(device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties),
           "query DMA-BUF image format");
     if ((external_properties.externalMemoryProperties.externalMemoryFeatures &
@@ -96,18 +106,22 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     // Imported contents must be preserved; a future ownership-acquire helper
     // must seed its recording layout before the usual submission prologue.
     image->layouts = {VK_IMAGE_LAYOUT_GENERAL};
+
     VkSubresourceLayout plane{};
     plane.offset   = descriptor.offset;
     plane.rowPitch = descriptor.stride;
+
     VkImageDrmFormatModifierExplicitCreateInfoEXT modifier{};
     modifier.sType                       = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT;
     modifier.drmFormatModifier           = descriptor.modifier;
     modifier.drmFormatModifierPlaneCount = 1;
     modifier.pPlaneLayouts               = &plane;
+
     VkExternalMemoryImageCreateInfo external{};
     external.sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
     external.pNext       = &modifier;
     external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+
     VkImageCreateInfo info{};
     info.sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     info.pNext       = &external;
@@ -119,12 +133,16 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     info.samples     = VK_SAMPLE_COUNT_1_BIT;
     info.tiling      = query.tiling;
     info.usage       = query.usage;
+
     check(device->vk.vkCreateImage(device->device, &info, nullptr, &image->image), "create DMA-BUF image");
 
     VkMemoryRequirements requirements{};
+
     device->vk.vkGetImageMemoryRequirements(device->device, image->image, &requirements);
+
     VkMemoryFdPropertiesKHR fd_properties{};
     fd_properties.sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR;
+
     check(device->vk.vkGetMemoryFdPropertiesKHR(
               device->device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT, descriptor.fd, &fd_properties),
           "query DMA-BUF memory types");
@@ -138,14 +156,17 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     if (duplicate.get() < 0) {
         throw std::system_error(errno, std::generic_category(), "duplicate DMA-BUF FD");
     }
+
     VkMemoryDedicatedAllocateInfo dedicated{};
     dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
     dedicated.image = image->image;
+
     VkImportMemoryFdInfoKHR import{};
     import.sType      = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR;
     import.pNext      = &dedicated;
     import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
     import.fd         = duplicate.get();
+
     VkMemoryAllocateInfo allocation{};
     allocation.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocation.pNext           = &import;
@@ -155,9 +176,12 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
     if (result != VK_SUCCESS) {
         check(result, "import DMA-BUF memory");
     }
+
     (void)duplicate.release();
     image->external_allocation_bytes = requirements.size;
+
     check(device->vk.vkBindImageMemory(device->device, image->image, image->external_memory, 0), "bind DMA-BUF image");
+
     VkImageViewCreateInfo view{};
     view.sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view.image            = image->image;
@@ -168,6 +192,7 @@ std::shared_ptr<texture_state_s> import_dma_buf_image(const std::shared_ptr<devi
                              .levelCount     = 1,
                              .baseArrayLayer = 0,
                              .layerCount     = 1};
+
     check(device->vk.vkCreateImageView(device->device, &view, nullptr, &image->view), "create DMA-BUF sampled view");
     image->sampled_view = image->view;
     return image;

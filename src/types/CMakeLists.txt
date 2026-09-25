@@ -1,5 +1,6 @@
 add_library(miximus_types
     action.hpp
+    cef_status.hpp
     connection.hpp
     error.hpp
     frame_rate.hpp

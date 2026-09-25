@@ -131,6 +131,7 @@ vec4 linear_to_srgb_premultiplied(vec4 color)
     if (!(color.a > 0.0)) {
         return vec4(0.0);
     }
+
     vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
     vec3 encoded_rgb = mix(1.055 * pow(straight_rgb, vec3(1.0 / 2.4)) - 0.055,
                            12.92 * straight_rgb,

@@ -23,6 +23,7 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
     if (!spdlog::get("gpu")) {
         logger::init_loggers(spdlog::level::warn);
     }
+
     gpu::device_options_s options;
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
@@ -30,6 +31,7 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
     if (const auto* uuid = std::getenv("MIXIMUS_VULKAN_DEVICE")) {
         options.device_uuid = uuid;
     }
+
     options.external_image_import = true;
     gpu::device_s producer(options);
     gpu::device_s consumer(options);
@@ -51,6 +53,7 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
             exports.push_back(std::make_unique<gpu::detail::dma_buf_export_s>(producer, extent));
             EXPECT_GT(exports.back()->allocation_bytes(), 0U);
         }
+
         // Fill all slots before consuming, then change every slot's pixels on
         // every round. Static textures cannot catch premature reuse/stale reads.
         for (size_t round = 0; round < 4; ++round) {
@@ -62,33 +65,40 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
                 // No native submission: first-use/reacquire ownership must not
                 // change, and the next recording must still work.
             }
+
             std::vector<media_input_pool_s::ticket_s> tickets;
             std::vector<std::array<float, 4>>         colors;
             for (size_t input = 0; input < media_input_pool_s::INPUT_COUNT; ++input) {
                 for (size_t slot = 0; slot < depth; ++slot) {
                     const auto ticket = pool.acquire(input);
-                    ASSERT_TRUE(ticket);
+                    if (!ticket) {
+                        FAIL() << "Export slot unavailable";
+                        return;
+                    }
+
                     tickets.push_back(*ticket);
                     const std::array<float, 4> color{
                         float((round + slot) % 4) / 4, float(input) / 8, float(round) / 4, 1};
                     colors.push_back(color);
-                    auto& exported = *exports[input * depth + slot];
+                    auto& exported = *exports[(input * depth) + slot];
                     auto  record   = producer_context.try_record();
                     ASSERT_TRUE(record);
                     record->clear(source, color);
                     exported.copy(*record, source, conversion);
-                    record->on_submitted([&pool, ticket = *ticket](gpu::completion_s /* completion */) {
+                    record->on_submitted([&pool, ticket = *ticket](const gpu::completion_s& /* completion */) {
                         EXPECT_TRUE(pool.publish(ticket));
                     });
                     ASSERT_EQ(record->submit().wait(5s), gpu::wait_result_e::ready);
                     ASSERT_TRUE(pool.producer_finished(*ticket));
                 }
+
                 EXPECT_FALSE(pool.acquire(input));
             }
+
             for (size_t index = 0; index < tickets.size(); ++index) {
                 const auto ticket = tickets[index];
                 ASSERT_TRUE(pool.begin_consume(ticket));
-                auto& exported = *exports[ticket.input * depth + ticket.slot];
+                auto& exported = *exports[(ticket.input * depth) + ticket.slot];
                 auto  record   = consumer_context.try_record();
                 ASSERT_TRUE(record);
                 // Host waits are test orchestration, never CPU pixel transfer.
@@ -110,27 +120,31 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
                 EXPECT_EQ(errors[0], 0U) << "depth=" << depth << " input=" << ticket.input << " round=" << round;
             }
         }
+
         for (size_t input = 0; input < media_input_pool_s::INPUT_COUNT; ++input) {
             EXPECT_EQ(pool.metrics(input).occupied, 0U);
             EXPECT_EQ(pool.metrics(input).high_water, depth);
         }
     }
+
     EXPECT_EQ(producer.validation_errors(), 0U);
     EXPECT_EQ(consumer.validation_errors(), 0U);
 }
 
 class export_queue_test : public testing::Test
 {
-  protected:
+  public:
     std::unique_ptr<gpu::device_s>                       device;
     std::unique_ptr<media_input_exports_s::quarantine_s> quarantine;
     std::unique_ptr<media_input_exports_s>               queue;
     gpu::texture_s                                       source;
-    std::optional<gpu::recording_context_s>              context;
+    std::unique_ptr<gpu::recording_context_s>            context;
     void                                                 SetUp() override
     {
-        if (!spdlog::get("gpu"))
+        if (!spdlog::get("gpu")) {
             logger::init_loggers(spdlog::level::warn);
+        }
+
         gpu::device_options_s options;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
@@ -139,17 +153,19 @@ class export_queue_test : public testing::Test
         quarantine                    = std::make_unique<media_input_exports_s::quarantine_s>();
         queue                         = std::make_unique<media_input_exports_s>(*device, 1, *quarantine);
         ASSERT_TRUE(queue->configure(0, {16, 16}));
-        source = device->create_texture({16, 16});
-        context.emplace(device->create_recording_context(1));
+        source  = device->create_texture({.width = 16, .height = 16});
+        context = std::make_unique<gpu::recording_context_s>(device->create_recording_context(1));
     }
+
     void TearDown() override { EXPECT_EQ(device->validation_errors(), 0U); }
-    std::shared_ptr<media_input_exports_s::publication_s> record(std::unique_ptr<gpu::recording_s>& commands)
+    std::shared_ptr<media_input_exports_s::publication_s> record(std::unique_ptr<gpu::recording_s>& commands) const
     {
         commands = context->try_record();
         commands->clear(source, {0.1F, 0.2F, 0.3F, 0.5F});
         return queue->record(0, *commands, source, 12345);
     }
-    void finish(std::unique_ptr<gpu::recording_s>& commands)
+
+    static void finish(std::unique_ptr<gpu::recording_s>& commands)
     {
         EXPECT_EQ(commands->submit().wait(5s), gpu::wait_result_e::ready);
         commands.reset();
@@ -271,24 +287,28 @@ TEST_F(export_queue_test, ForgottenConsumerQuarantinesAcrossQueueDestruction)
 
 TEST_F(export_queue_test, EightInputsRemainBoundedAndByteBudgetRejectsOversizeBeforeAllocation)
 {
-    for (size_t input = 1; input < 8; ++input)
+    for (size_t input = 1; input < 8; ++input) {
         ASSERT_TRUE(queue->configure(input, {16, 16}));
+    }
+
     auto commands = context->try_record();
     commands->clear(source, {0, 0, 0, 1});
     std::vector<std::shared_ptr<media_input_exports_s::publication_s>> publications;
     for (size_t input = 0; input < 8; ++input) {
         auto publication = queue->record(input, *commands, source, static_cast<int64_t>(input));
         ASSERT_TRUE(publication);
-        commands->on_submitted([publication](gpu::completion_s) { publication->commit(); });
+        commands->on_submitted([publication](const gpu::completion_s&) { publication->commit(); });
         publications.push_back(publication);
         EXPECT_FALSE(queue->record(input, *commands, source, 99));
     }
+
     finish(commands);
     uint32_t received{};
     while (auto frame = queue->poll()) {
-        received |= 1u << frame->ticket().input;
+        received |= 1U << frame->ticket().input;
         frame->retire(true);
     }
+
     EXPECT_EQ(received, 255U);
     EXPECT_TRUE(queue->idle());
     media_input_exports_s limited(*device, 1, *quarantine, 1024);

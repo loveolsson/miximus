@@ -32,9 +32,11 @@ class unavailable_browser_s final : public node_i
     {
         const bool stopped = !state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty();
         app->status_registry()->write(id_, status::connected_status_s{.connected = false});
-        app->status_registry()->write(id_,
-                                      status::cef_browser_status_s{.cef_state = stopped ? "stopped" : "unavailable",
-                                                                   .cef_error = stopped ? "" : app->cef_error()});
+        app->status_registry()->write(
+            id_,
+            status::cef_browser_status_s{.cef_state        = stopped ? cef_state_e::stopped : cef_state_e::unavailable,
+                                         .cef_error        = stopped ? "" : app->cef_error(),
+                                         .cef_inputs_error = {}});
     }
     void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& /* state */) final
     {

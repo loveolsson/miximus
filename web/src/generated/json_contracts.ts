@@ -1,5 +1,23 @@
 // Generated from the described C++ JSON contracts. Do not edit manually.
 
+export const enum cef_state_e {
+  starting = "starting",
+  loading = "loading",
+  ready = "ready",
+  closing = "closing",
+  closed = "closed",
+  failed = "failed",
+  stopped = "stopped",
+  unavailable = "unavailable",
+}
+
+export const enum cef_input_state_e {
+  unavailable = "unavailable",
+  idle = "idle",
+  active = "active",
+  failed = "failed",
+}
+
 export const enum action_e {
   subscribe = "subscribe",
   unsubscribe = "unsubscribe",
@@ -279,7 +297,7 @@ export interface browser_cache_status_s {
 }
 
 export interface cef_browser_status_s {
-  readonly cef_state: string;
+  readonly cef_state: cef_state_e;
   readonly cef_error: string;
   readonly cef_paints: number;
   readonly cef_copies: number;
@@ -293,7 +311,7 @@ export interface cef_browser_status_s {
   readonly cef_capture_max_us: number;
   readonly cef_completion_wait_p95_upper_us: number;
   readonly cef_completion_wait_max_us: number;
-  readonly cef_inputs_state: string;
+  readonly cef_inputs_state: cef_input_state_e;
   readonly cef_inputs_error: string;
   readonly cef_inputs_active: number;
   readonly cef_inputs_submitted: number;

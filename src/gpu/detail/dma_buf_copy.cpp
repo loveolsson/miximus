@@ -44,16 +44,21 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
     VkPhysicalDeviceExternalSemaphoreInfo query{};
     query.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO;
     query.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
+
     VkExternalSemaphoreProperties properties{};
     properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES;
+
     device->instance_vk.vkGetPhysicalDeviceExternalSemaphoreProperties(device->physical, &query, &properties);
     if ((properties.externalSemaphoreFeatures & VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT) == 0) {
         throw std::runtime_error("DMA-BUF read requires importable sync-file semaphores");
     }
+
     auto fence   = std::make_shared<read_fence_s>();
     fence->owner = device;
+
     VkSemaphoreCreateInfo create{};
     create.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
     check(device->vk.vkCreateSemaphore(device->device, &create, nullptr, &fence->semaphore),
           "create DMA-BUF read semaphore");
 
@@ -65,6 +70,7 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
     if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &export_fence) < 0) {
         throw std::system_error(errno, std::generic_category(), "export DMA-BUF write fence");
     }
+
     // Snapshot the fence once and wait only on this private callback/worker.
     // Do not enqueue an unresolved foreign dependency that could stall the graph.
     utils::owned_fd_s sync_file{export_fence.fd};
@@ -78,17 +84,22 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
         if (result < 0 && errno == EINTR) {
             continue;
         }
+
         if (result < 0) {
             throw std::system_error(errno, std::generic_category(), "wait for DMA-BUF write fence");
         }
+
         if (result == 0) {
             throw recording_unavailable_s("DMA-BUF producer readiness budget exhausted");
         }
+
         if ((descriptor.revents & (POLLERR | POLLNVAL | POLLHUP)) != 0 || (descriptor.revents & POLLIN) == 0) {
             throw std::runtime_error("DMA-BUF producer fence failed");
         }
+
         break;
     }
+
     VkImportSemaphoreFdInfoKHR import{};
     import.sType      = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
     import.semaphore  = fence->semaphore;
@@ -99,6 +110,7 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
     if (result != VK_SUCCESS) {
         check(result, "import DMA-BUF write fence");
     }
+
     (void)sync_file.release(); // Ownership transferred to Vulkan.
     return fence;
 }
@@ -114,17 +126,21 @@ completion_s dma_buf_copy_s::submit(recording_s&              record,
     if (readiness_timeout < std::chrono::milliseconds::zero()) {
         throw std::invalid_argument("Negative DMA-BUF readiness timeout");
     }
+
     if (!record.state_ || record.state_->submission_attempted) {
         throw std::invalid_argument("DMA-BUF copy requires an active recording");
     }
+
     auto& state = *record.state_;
     if (!destination.state_ || destination.state_->owner != state.owner) {
         throw std::invalid_argument("DMA-BUF destination must belong to the recording device");
     }
+
     auto image = import_dma_buf_image(state.owner, source);
     auto fence = import_read_fence(state.owner, source.fd, readiness_timeout);
     state.retain(fence);
     state.retain(image);
+
     VkSemaphoreSubmitInfo wait{};
     wait.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     wait.semaphore = fence->semaphore;
@@ -133,6 +149,7 @@ completion_s dma_buf_copy_s::submit(recording_s&              record,
     // As in the CUDA bridge, prevent the submission prologue from transitioning
     // the imported image before the explicit ownership-acquire barrier.
     state.layouts.emplace(image.get(), std::vector{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+
     VkImageMemoryBarrier2 barrier{};
     barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrier.dstStageMask        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
@@ -147,10 +164,12 @@ completion_s dma_buf_copy_s::submit(recording_s&              record,
                                    .levelCount     = 1,
                                    .baseArrayLayer = 0,
                                    .layerCount     = 1};
+
     VkDependencyInfo dependency{};
     dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependency.imageMemoryBarrierCount = 1;
     dependency.pImageMemoryBarriers    = &barrier;
+
     state.owner->vk.vkCmdPipelineBarrier2(state.arena->commands, &dependency);
 
     record.draw(texture_s(image), destination, conversion);
@@ -163,6 +182,7 @@ completion_s dma_buf_copy_s::submit(recording_s&              record,
     barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
     barrier.srcQueueFamilyIndex = state.owner->queue_family;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_FOREIGN_EXT;
+
     state.owner->vk.vkCmdPipelineBarrier2(state.arena->commands, &dependency);
     return enqueue_recording(record.state_, std::span{&wait, 1});
 }

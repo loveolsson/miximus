@@ -67,34 +67,16 @@ class node_impl final : public node_i
         retry_after_ = std::chrono::steady_clock::now() + std::chrono::seconds(1ULL << restarts_);
     }
 
-    static std::string_view phase_name(session_t::phase_e phase)
-    {
-        switch (phase) {
-            case session_t::phase_e::starting:
-                return "starting";
-            case session_t::phase_e::loading:
-                return "loading";
-            case session_t::phase_e::ready:
-                return "ready";
-            case session_t::phase_e::closing:
-                return "closing";
-            case session_t::phase_e::closed:
-                return "closed";
-            case session_t::phase_e::failed:
-                return "failed";
-        }
-        return "failed";
-    }
     void publish_metrics(core::node_status_registry_s*              status,
                          const std::optional<session_t::metrics_s>& metrics,
                          std::chrono::steady_clock::time_point      now)
     {
         auto& browser_status = browser_status_;
         if (metrics) {
-            browser_status.cef_state = phase_name(metrics->phase);
+            browser_status.cef_state = metrics->phase;
             browser_status.cef_error = metrics->error;
         } else {
-            browser_status.cef_state = request_ ? "starting" : "failed";
+            browser_status.cef_state = request_ ? cef_state_e::starting : cef_state_e::failed;
             browser_status.cef_error = error_;
         }
         browser_status.cef_restarts = restarts_;
@@ -104,11 +86,16 @@ class node_impl final : public node_i
             return;
         }
         if (metrics) {
-            const auto& inputs                              = metrics->inputs;
-            browser_status.cef_inputs_state                 = !inputs.available   ? "unavailable"
-                                                              : inputs.failed     ? "failed"
-                                                              : inputs.subscribed ? "active"
-                                                                                  : "idle";
+            const auto& inputs = metrics->inputs;
+            if (!inputs.available) {
+                browser_status.cef_inputs_state = cef_input_state_e::unavailable;
+            } else if (inputs.failed) {
+                browser_status.cef_inputs_state = cef_input_state_e::failed;
+            } else {
+                browser_status.cef_inputs_state =
+                    inputs.subscribed != 0 ? cef_input_state_e::active : cef_input_state_e::idle;
+            }
+
             browser_status.cef_inputs_error                 = inputs.error;
             browser_status.cef_inputs_active                = std::popcount(inputs.subscribed);
             browser_status.cef_inputs_submitted             = inputs.submitted;
@@ -219,8 +206,9 @@ class node_impl final : public node_i
             status->write(id_, status::connected_status_s{.connected = false});
             status->write(id_,
                           status::cef_browser_status_s{
-                              .cef_state = !enabled || url.empty() ? "stopped" : "unavailable",
+                              .cef_state = !enabled || url.empty() ? cef_state_e::stopped : cef_state_e::unavailable,
                               .cef_error = !enabled || url.empty() ? "" : app->cef_error(),
+                              .cef_inputs_error = {},
                           });
             return;
         }
@@ -245,10 +233,12 @@ class node_impl final : public node_i
                 fail(metrics->error.empty() ? "Browser closed unexpectedly" : metrics->error);
                 metrics.reset();
             } else if (metrics->inputs.failed) {
-                // Lost GPU retirement poisons the whole export queue. Keep its
-                // allocations quarantined and recover through the existing
-                // bounded session restart policy, with a new document identity.
+                // Recover renderer and retirement failures through the bounded
+                // session restart policy. Only unproven GPU retirement quarantines
+                // allocations; ordinary copy failures still retire safely.
                 fail(metrics->inputs.error.empty() ? "Browser input transport failed" : metrics->inputs.error);
+                browser_status_.cef_inputs_state = cef_input_state_e::failed;
+                browser_status_.cef_inputs_error = error_;
                 metrics.reset();
             }
         }
@@ -265,9 +255,11 @@ class node_impl final : public node_i
     {
         if (session_) {
             (void)session_->submit_frame(app->frame_context().program_pts);
-            for (size_t input = 0; input < inputs_.ports.size(); ++input)
-                if (input_mask_ & (1u << input))
-                    interface_i::submit_dependencies(app, nodes, inputs_.ports[input].connections(state));
+            for (size_t input = 0; input < inputs_.ports.size(); ++input) {
+                if ((input_mask_ & (1U << input)) != 0U) {
+                    interface_i::submit_dependencies(app, nodes, inputs_.ports.at(input).connections(state));
+                }
+            }
         }
     }
 
@@ -275,12 +267,14 @@ class node_impl final : public node_i
     {
         output_ = session_ ? session_->resolve_frame() : nullptr;
         iface_tex_.set_value(output_ ? &output_->texture() : nullptr);
-        if (session_)
+        if (session_) {
             for (size_t input = 0; input < inputs_.ports.size(); ++input) {
-                if (!(input_mask_ & (1u << input)))
+                if ((input_mask_ & (1U << input)) == 0U) {
                     continue;
-                const auto*            source      = inputs_.ports[input].resolve_value(app, nodes, state);
-                const auto             connections = inputs_.ports[input].connections(state);
+                }
+
+                const auto*            source      = inputs_.ports.at(input).resolve_value(app, nodes, state);
+                const auto             connections = inputs_.ports.at(input).connections(state);
                 const std::string_view source_node =
                     connections.empty() ? std::string_view{} : connections.front().from_node;
                 const std::string_view source_interface =
@@ -292,9 +286,11 @@ class node_impl final : public node_i
                         source_node,
                         source_interface,
                         std::chrono::duration_cast<std::chrono::microseconds>(app->frame_context().program_pts)
-                            .count()))
-                    app->defer_output([publish = std::move(publish)](gpu::completion_s) { publish(); });
+                            .count())) {
+                    app->defer_output([publish = std::move(publish)](const gpu::completion_s&) { publish(); });
+                }
             }
+        }
     }
 
     void complete(core::app_state_s* /* app */) final

@@ -69,6 +69,7 @@ void main()
         for (uint i = 0; i < 4 && first_word + i < parameters.row_stride_words; ++i) {
             destination.words[word_index + i] = 0;
         }
+
         return;
     }
 
@@ -78,6 +79,7 @@ void main()
     vec3 d = load_encoded_yuv(first_pixel + 3, group_position.y);
     vec3 e = load_encoded_yuv(first_pixel + 4, group_position.y);
     vec3 f = load_encoded_yuv(first_pixel + 5, group_position.y);
+
     vec2 ab_chroma = (a.yz + b.yz) * .5;
     vec2 cd_chroma = (c.yz + d.yz) * .5;
     vec2 ef_chroma = (e.yz + f.yz) * .5;

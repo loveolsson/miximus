@@ -17,6 +17,7 @@ class color_comparison_s
 
   public:
     color_comparison_s(const texture_s& source, const std::filesystem::path& shader);
+
     ~color_comparison_s();
     void record(recording_s&         recording,
                 const texture_s&     source,
@@ -26,4 +27,5 @@ class color_comparison_s
                 uint32_t             x_begin = 0,
                 uint32_t             x_end   = 0);
 };
+
 } // namespace miximus::gpu::detail

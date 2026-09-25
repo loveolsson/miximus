@@ -22,6 +22,10 @@ target_link_libraries(volk PUBLIC Vulkan::Headers)
 
 add_library(vulkan_dependencies STATIC allocator.cpp)
 target_link_libraries(vulkan_dependencies PUBLIC volk::volk GPUOpen::VulkanMemoryAllocator)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_path(MIXIMUS_DRM_INCLUDE_DIR drm_fourcc.h PATH_SUFFIXES libdrm drm REQUIRED)
+    target_include_directories(vulkan_dependencies SYSTEM PUBLIC "${MIXIMUS_DRM_INCLUDE_DIR}")
+endif()
 target_compile_definitions(vulkan_dependencies PUBLIC
     VK_NO_PROTOTYPES
     VK_ENABLE_BETA_EXTENSIONS

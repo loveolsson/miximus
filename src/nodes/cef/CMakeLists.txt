@@ -1,4 +1,11 @@
-target_sources(nodes PRIVATE register.hpp register.cpp subsystem_fwd.hpp browser_options.hpp browser_inputs.hpp media_input_types.hpp)
+target_sources(nodes PRIVATE
+    register.hpp
+    register.cpp
+    subsystem_fwd.hpp
+    browser_options.hpp
+    browser_inputs.hpp
+    media_input_types.hpp
+)
 if(MIXIMUS_ENABLE_CEF)
     target_sources(nodes PRIVATE browser.cpp)
 else()
@@ -52,8 +59,10 @@ if(MIXIMUS_ENABLE_CEF)
     target_sources(miximus_cef_helper PRIVATE detail/renderer_app.hpp detail/renderer_app.cpp detail/media_input_renderer.hpp detail/media_input_renderer.cpp detail/command_protocol.hpp detail/command_messages.hpp)
     add_library(cef_runtime STATIC detail/runtime.hpp detail/runtime.cpp)
     target_sources(cef_runtime PRIVATE
-        session.hpp media_input_types.hpp
-        detail/media_input_session.hpp detail/media_input_session.cpp
+        session.hpp
+        media_input_types.hpp
+        detail/media_input_session.hpp
+        detail/media_input_session.cpp
         detail/task.hpp
         detail/capture_timing.hpp
         detail/browser_session.hpp detail/browser_session.cpp

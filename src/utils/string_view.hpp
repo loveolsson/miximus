@@ -94,6 +94,7 @@ template <size_t S>
 
     return true;
 }
+
 /**
  * Case insensitive substring search for an ASCII string_view.
  * An empty token matches any text. Bytes outside ASCII are compared unchanged.
@@ -103,6 +104,7 @@ template <size_t S>
     if (token.empty()) {
         return true;
     }
+
     return std::search(text.begin(), text.end(), token.begin(), token.end(), [](char a, char b) {
                return ascii_to_lower(a) == ascii_to_lower(b);
            }) != text.end();

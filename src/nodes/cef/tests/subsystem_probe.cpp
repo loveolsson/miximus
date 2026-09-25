@@ -5,6 +5,7 @@
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/command_messages.hpp"
 #include "nodes/cef/subsystem.hpp"
+#include "utils/lookup.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <iostream>
 #include <stdexcept>
 #include <sys/resource.h>
@@ -299,8 +301,9 @@ void exercise_renderer_failure(session_s& session)
     }
     const auto metrics = session.metrics();
     if (metrics.phase != session_s::phase_e::failed || metrics.error.find("renderer terminated") == std::string::npos) {
-        throw std::runtime_error("Renderer termination did not fail its session: phase=" +
-                                 std::to_string(static_cast<int>(metrics.phase)) + " error=" + metrics.error);
+        throw std::runtime_error(std::format("Renderer termination did not fail its session: phase={} error={}",
+                                             enum_to_string(metrics.phase),
+                                             metrics.error));
     }
     const auto cancelled = command_result(std::move(pending));
     if (cancelled.error.empty() || cancelled.error.find("timed out") != std::string::npos || session.context_ready()) {

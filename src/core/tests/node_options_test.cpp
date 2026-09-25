@@ -106,6 +106,7 @@ TEST(NodeOptions, CefBrowserExposesEightStableTextureInputsInEveryBuild)
         EXPECT_EQ(input->type(), nodes::interface_type_e::texture);
         EXPECT_TRUE(input->accepts(nodes::interface_type_e::framebuffer));
     }
+
     ASSERT_NE(node->find_interface("tex"), nullptr);
     EXPECT_EQ(node->find_interface("tex")->direction(), nodes::interface_i::dir_e::output);
     EXPECT_EQ(node->find_interface("input_8"), nullptr);

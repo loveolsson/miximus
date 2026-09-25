@@ -1,4 +1,5 @@
 #pragma once
+#include "cef_status.hpp"
 #include "frame_rate.hpp"
 #include "settings_option.hpp"
 #include "utils/flicks.hpp"
@@ -28,7 +29,7 @@ struct browser_cache_status_s
 
 struct cef_browser_status_s
 {
-    std::string cef_state;
+    cef_state_e       cef_state{cef_state_e::stopped};
     std::string cef_error;
     uint64_t    cef_paints{};
     uint64_t    cef_copies{};
@@ -42,10 +43,15 @@ struct cef_browser_status_s
     uint64_t    cef_capture_max_us{};
     uint64_t    cef_completion_wait_p95_upper_us{};
     uint64_t    cef_completion_wait_max_us{};
-    std::string cef_inputs_state{"unavailable"};
+    cef_input_state_e cef_inputs_state{cef_input_state_e::unavailable};
     std::string cef_inputs_error;
-    uint64_t cef_inputs_active{}, cef_inputs_submitted{}, cef_inputs_delivered{}, cef_inputs_drops{}, cef_inputs_held{},
-        cef_inputs_reserved_bytes{}, cef_inputs_export_bytes{};
+    uint64_t          cef_inputs_active{};
+    uint64_t          cef_inputs_submitted{};
+    uint64_t          cef_inputs_delivered{};
+    uint64_t          cef_inputs_drops{};
+    uint64_t          cef_inputs_held{};
+    uint64_t          cef_inputs_reserved_bytes{};
+    uint64_t          cef_inputs_export_bytes{};
 };
 
 struct device_names_status_s

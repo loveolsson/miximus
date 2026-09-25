@@ -1,4 +1,5 @@
 #pragma once
+#include "cef_status.hpp"
 #include "frame_rate.hpp"
 #include "gpu/types.hpp"
 #include "json_contract.hpp"
@@ -40,6 +41,10 @@ std::string typescript_type()
         return "number";
     } else if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view>) {
         return "string";
+    } else if constexpr (std::same_as<T, cef_state_e>) {
+        return "cef_state_e";
+    } else if constexpr (std::same_as<T, cef_input_state_e>) {
+        return "cef_input_state_e";
     } else if constexpr (std::same_as<T, action_e>) {
         return "action_e";
     } else if constexpr (std::same_as<T, topic_e>) {
