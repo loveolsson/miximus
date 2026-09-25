@@ -9,7 +9,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <format>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -232,14 +234,20 @@ void wait_demand(const std::shared_ptr<session_s>& session, uint32_t wanted, boo
             std::cout << "Demand " << wanted << " after "
                       << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start)
                              .count()
-                      << "ms, export bytes=" << m.export_bytes << '\n';
+                      << "ms, export bytes=" << m.export_bytes << ", reserved bytes=" << m.reserved_bytes << '\n';
             return;
         }
 
         std::this_thread::sleep_for(5ms);
     }
 
-    throw std::runtime_error("Track demand/resources did not retire");
+    const auto m = session->metrics().inputs;
+    throw std::runtime_error(
+        std::format("Track demand/resources did not retire: demand={}, exports={}, held={}, reserved={}",
+                    session->media_input_demand(),
+                    m.export_bytes,
+                    m.occupied,
+                    m.reserved_bytes));
 }
 
 void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>& session)
@@ -287,7 +295,12 @@ void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>&
     std::cout << "Budget exhaustion rolled back admission and recovered all waiting inputs\n";
 }
 
-void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs, bool budget)
+void run(subsystem_s&       subsystem,
+         gpu::device_s&     gpu,
+         bool               small_inputs,
+         const std::string& navigation_url,
+         const std::string& profile,
+         bool               budget)
 {
     std::string page =
         R"HTML(
@@ -330,8 +343,16 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs, bool bud
   );
 </script>
 )HTML";
+    if (!navigation_url.empty()) {
+        std::filesystem::create_directories(profile);
+        std::ofstream output(std::filesystem::path(profile) / "inputs.html");
+        output << page;
+        if (!output)
+            throw std::runtime_error("Could not write navigation fixture");
+    }
     const session_s::options_s options{
-        .url        = "data:text/html," + CefURIEncode(page, false).ToString(),
+        .url        = navigation_url.empty() ? "data:text/html," + CefURIEncode(page, false).ToString()
+                                             : navigation_url + "/inputs.html",
         .dimensions = {640, 360},
         .frame_rate = 60,
     };
@@ -361,12 +382,70 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs, bool bud
         return;
     }
     frame_probe_s probe(gpu, session, small_inputs);
+    if (!navigation_url.empty()) {
+        probe.run_stage(0);
+        auto       other_origin = navigation_url;
+        const auto host         = other_origin.find("127.0.0.1");
+        if (host == std::string::npos)
+            throw std::runtime_error("Navigation origin must use 127.0.0.1");
+        other_origin.replace(host, 9, "localhost");
+        run_script(session, "() => { setTimeout(() => location.href = '" + other_origin + "/blank.html', 50); }");
+        wait_demand(session, 0, true);
+        const auto navigation_deadline = std::chrono::steady_clock::now() + 10s;
+        while (!session->context_ready() && std::chrono::steady_clock::now() < navigation_deadline) {
+            std::this_thread::sleep_for(10ms);
+        }
+        run_script(session, "() => { setTimeout(() => history.back(), 50); }");
+        wait_demand(session, 255, false);
+        probe.run_stage(0);
+        run_script(session,
+                   "() => { document.querySelectorAll('video').forEach(v => v.srcObject.getTracks().forEach(t => "
+                   "t.stop())); }");
+        wait_demand(session, 0, true);
+        return;
+    }
     for (int stage = -1; stage < 3; ++stage) {
+        if (stage == 0) {
+            run_script(session, R"JS(
+() => {
+  globalThis.timestampSamples = [];
+  const track = document.querySelectorAll("video")[1].srcObject.getVideoTracks()[0];
+  globalThis.timestampReader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+  globalThis.timestampRead = (async () => {
+    while (true) {
+      const { value: frame, done } = await timestampReader.read();
+      if (done) break;
+      timestampSamples.push({ timestamp: frame.timestamp, width: frame.displayWidth });
+      frame.close();
+    }
+  })();
+}
+)JS");
+        }
         if (stage == 2 && !request->reload()) {
             throw std::runtime_error("Session reload was rejected");
         }
 
         probe.run_stage(stage);
+        if (stage == 1) {
+            run_script(session, R"JS(
+async () => {
+  await timestampReader.cancel();
+  await timestampRead;
+  let previous = -1;
+  let connected = false;
+  let disconnected = false;
+  for (const sample of timestampSamples) {
+    if (sample.timestamp <= previous) throw new Error("Media input timestamp did not advance");
+    previous = sample.timestamp;
+    if (sample.width !== 16) connected = true;
+    else if (connected) disconnected = true;
+  }
+  if (!disconnected) throw new Error("Timestamp probe missed the disconnect transition");
+  timestampReader.releaseLock();
+}
+)JS");
+        }
     }
 
     run_script(session, R"JS(
@@ -419,6 +498,15 @@ async () => {
 
     run_script(session, "() => { document.querySelector('video').srcObject.getTracks().forEach(t => t.stop()); }");
     wait_demand(session, 0, true);
+    // Reconnect real GPU inputs, then navigate to a document with no media API use.
+    // This must retire the old document's destinations and its admission charge.
+    if (!request->reload()) {
+        throw std::runtime_error("Navigation regression reload was rejected");
+    }
+    wait_demand(session, 255, false);
+    probe.run_stage(0);
+    run_script(session, "() => { setTimeout(() => location.href = 'about:blank', 50); }");
+    wait_demand(session, 0, true);
     session.reset();
     request.reset();
 }
@@ -428,8 +516,10 @@ int main(int argc, char** argv)
 {
     const bool small_inputs = argc == 4 && std::string_view(argv[3]) == "--small-inputs";
     const bool budget       = argc == 4 && std::string_view(argv[3]) == "--budget";
-    if (argc != 3 && !small_inputs && !budget) {
-        std::cerr << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs | --budget]\n";
+    const bool navigation   = argc == 5 && std::string_view(argv[3]) == "--navigation";
+    if (argc != 3 && !small_inputs && !navigation && !budget) {
+        std::cerr
+            << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs | --budget | --navigation URL]\n";
         return 2;
     }
 
@@ -443,14 +533,15 @@ int main(int argc, char** argv)
         gpu::device_s gpu(options);
         {
             subsystem_s subsystem(gpu, argv[2], argv[1]);
-            run(subsystem, gpu, small_inputs, budget);
+            run(subsystem, gpu, small_inputs, navigation ? argv[4] : "", argv[2], budget);
         }
 
         if (gpu.validation_errors() != 0U) {
             throw std::runtime_error("Vulkan validation errors");
         }
 
-        std::cout << "Session inputs passed: eight streams, source replacement, disconnect, resize, reload, shutdown\n";
+        std::cout << "Session inputs passed: eight streams, source replacement, disconnect, resize, reload, stream "
+                     "mutation, navigation retirement, shutdown\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

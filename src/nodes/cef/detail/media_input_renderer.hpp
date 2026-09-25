@@ -12,6 +12,7 @@ namespace miximus::nodes::cef::detail {
 void                  install_media_inputs(const CefRefPtr<CefFrame>&     frame,
                                            const CefRefPtr<CefV8Context>& context,
                                            const std::string&             token);
+inline constexpr auto MEDIA_INPUT_RETIRED  = "miximus.media-input.retired.v1";
 inline constexpr auto MEDIA_INPUT_FAILURE  = "miximus.media-input.failure.v1";
 inline constexpr auto MEDIA_INPUT_ACTIVITY = "miximus.media-input.activity.v1";
 } // namespace miximus::nodes::cef::detail

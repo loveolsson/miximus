@@ -15,6 +15,7 @@
 #include <dlfcn.h>
 #include <format>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <utility>
 
@@ -146,20 +147,22 @@ struct media_input_session_s::impl_s
     {
         struct input_s
         {
-            gpu::extent_s wanted{DISCONNECTED_EXTENT};
-            std::string   source_node;
-            std::string   source_interface;
-            std::string   error;
-            uint64_t      revision{1};
-            uint64_t      configured{};
-            uint64_t      sent_generation{};
-
+            gpu::extent_s                         wanted{DISCONNECTED_EXTENT};
+            std::string                           source_node;
+            std::string                           source_interface;
+            std::string                           error;
+            uint64_t                              revision{1};
+            uint64_t                              configured{};
+            uint64_t                              sent_generation{};
+            int64_t                               timestamp_us{};
             std::chrono::steady_clock::time_point retry_after{};
 
             bool invalidation_pending{};
             bool transparent_pending{};
             bool transparent{true};
-            bool renderer_idle{};
+            // Live sources and revoked documents whose destinations have not drained.
+            // New GPU allocations wait for previous documents, keeping one bounded pool.
+            std::set<std::string, std::less<>> renderer_contexts;
         };
 
         struct pending_s
@@ -213,9 +216,8 @@ struct media_input_session_s::impl_s
                 for (size_t input = 0; input < INPUTS; ++input) {
                     exports->invalidate(input);
                     ++inputs.at(input).revision;
-                    inputs.at(input).transparent   = true;
-                    inputs.at(input).renderer_idle = false;
-                    inputs.at(input).wanted        = DISCONNECTED_EXTENT;
+                    inputs.at(input).transparent = true;
+                    inputs.at(input).wanted      = DISCONNECTED_EXTENT;
                     inputs.at(input).source_node.clear();
                     inputs.at(input).source_interface.clear();
                 }
@@ -368,6 +370,7 @@ struct media_input_session_s::impl_s
                         return;
                     }
 
+                    packet.timestamp_us      = entry.timestamp_us;
                     browser                  = self->browser_id;
                     packet.source_generation = self->exports->generation(input);
                 }
@@ -407,7 +410,8 @@ struct media_input_session_s::impl_s
                 auto&            entry = inputs.at(input);
                 if (closing || ((subscribed & (1U << input)) == 0U) || entry.transparent ||
                     entry.configured == entry.revision ||
-                    (!entry.error.empty() && std::chrono::steady_clock::now() < entry.retry_after)) {
+                    (!entry.error.empty() && std::chrono::steady_clock::now() < entry.retry_after) ||
+                    entry.renderer_contexts.size() != 1 || !entry.renderer_contexts.contains(context)) {
                     return;
                 }
 
@@ -498,7 +502,7 @@ struct media_input_session_s::impl_s
                         // release() only frees revoked, fully retired allocations.
                         if (exports->release(input)) {
                             std::scoped_lock lock(mutex);
-                            if (((subscribed & (1U << input)) == 0U) && inputs.at(input).renderer_idle) {
+                            if (((subscribed & (1U << input)) == 0U) && inputs.at(input).renderer_contexts.empty()) {
                                 reservation->release(input);
                             }
                         }
@@ -606,6 +610,22 @@ bool media_input_session_s::receive(const CefRefPtr<CefBrowser>&        browser,
         return true;
     }
 
+    if (name == MEDIA_INPUT_RETIRED) {
+        // CEF's process-level channel survives detachment of the originating frame.
+        // Only remove known retirement accounting; this message never changes live demand.
+        if (state.exports && args->GetSize() == 2 && args->GetType(0) == VTYPE_STRING &&
+            args->GetType(1) == VTYPE_INT && args->GetInt(1) >= 0 && args->GetInt(1) < 8) {
+            const auto input = static_cast<size_t>(args->GetInt(1));
+            const auto token = args->GetString(0).ToString();
+            // This channel is independent of current-frame activity. A drained
+            // acknowledgement can arrive after the same document reactivates.
+            if (token != state.context || (state.subscribed & (1U << input)) == 0U) {
+                state.inputs.at(input).renderer_contexts.erase(token);
+            }
+        }
+        return true;
+    }
+
     if (name == MEDIA_INPUT_FAILURE) {
         if (state.exports && !state.closing && args->GetSize() == 2 && args->GetType(0) == VTYPE_STRING &&
             !state.context.empty() && args->GetString(0).ToString() == state.context &&
@@ -623,10 +643,17 @@ bool media_input_session_s::receive(const CefRefPtr<CefBrowser>&        browser,
     }
 
     if (state.exports && !state.closing && args->GetSize() == 4 && args->GetType(0) == VTYPE_STRING &&
-        args->GetString(0).ToString() == state.context && args->GetType(1) == VTYPE_INT && args->GetInt(1) >= 0 &&
-        args->GetInt(1) < 8 && args->GetType(2) == VTYPE_BOOL && args->GetType(3) == VTYPE_BOOL) {
-        const auto input                     = static_cast<size_t>(args->GetInt(1));
-        state.inputs.at(input).renderer_idle = !args->GetBool(2) && args->GetBool(3);
+        !state.context.empty() && args->GetString(0).ToString() == state.context && args->GetType(1) == VTYPE_INT &&
+        args->GetInt(1) >= 0 && args->GetInt(1) < 8 && args->GetType(2) == VTYPE_BOOL &&
+        args->GetType(3) == VTYPE_BOOL) {
+        const auto input    = static_cast<size_t>(args->GetInt(1));
+        auto&      contexts = state.inputs.at(input).renderer_contexts;
+        if (args->GetBool(2)) {
+            contexts.insert(state.context);
+        } else if (args->GetBool(3)) {
+            contexts.erase(state.context);
+        }
+
         if (!args->GetBool(2) && ((state.subscribed & (1U << input)) == 0U)) {
             return true; // Destination retirement acknowledgement, not a new activation.
         }
@@ -668,8 +695,9 @@ std::function<void()> media_input_session_s::record(size_t                input,
             return {};
         }
 
-        auto&      entry  = state.inputs.at(input);
-        const auto extent = (source != nullptr) ? source->extent() : DISCONNECTED_EXTENT;
+        auto& entry        = state.inputs.at(input);
+        entry.timestamp_us = timestamp_us;
+        const auto extent  = (source != nullptr) ? source->extent() : DISCONNECTED_EXTENT;
         if (entry.transparent != (source == nullptr) || entry.wanted != extent || entry.source_node != source_node ||
             entry.source_interface != source_interface) {
             state.exports->invalidate(input);

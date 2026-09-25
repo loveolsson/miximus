@@ -589,3 +589,58 @@ Logs are in `build/integration-tests/review-merge-fixes-r6`; the graph run is
 `build/integration-tests/cef-inputs-20260925-134548`. The failure/retry check before the layout fix is preserved under
 `build/integration-tests/review-input-failure-r6`. These checks do not constitute a new full DeckLink/NDI/display or
 cross-vendor qualification campaign.
+
+## Navigation retirement and mutable stream cache (revision 7)
+
+Document revocation now retains the old document token for destination-retirement acknowledgements. These travel
+over CEF's process-level browser-manager channel because navigation destroys the old frame's message pipe. The browser
+checks the renderer process identity; the native session only removes known retirement accounting. Live activity
+still uses the current main frame. The CEF frame
+releases its bridge when the context ends; outstanding copies and VideoFrames retain it until they finish. Native
+sessions track outstanding document tokens per input, accept retirement without reviving old demand, and wait for
+previous documents before allocating replacement GPU inputs. A page that navigates away without acquiring new inputs
+can therefore return its admission reservation after export and destination retirement.
+
+The JavaScript cache also weakly remembers the native input track. Acquisition reconstructs the stream if page code
+removes that track or substitutes/adds tracks, without keeping abandoned sources alive. The session probe covers track
+removal, foreign-track substitution, and navigation from eight connected GPU inputs to `about:blank`, where demand,
+held buffers, exports, and reservations must all return to zero.
+
+Revision-7 validation passed the full native build, all 158 ordinary tests, nine GPU export tests, and the session
+probe at normal and small input sizes with Vulkan synchronization validation. Both stream-mutation checks passed.
+Navigation from eight 640×360 inputs returned the 90 MiB admission charge, exports, and demand to zero in 66 ms;
+small-input navigation retired in 65 ms. The regular six-input 1920×1080 graph passed stop/reacquisition, independent
+resize, disconnect, rapid reload, disable/re-enable, and shutdown. Each input presented 59.99 frames/s during the
+five-second steady interval; reacquisition took 45–47 ms. No synchronization-validation errors were reported.
+
+## Cross-origin retirement, admission recovery, and timestamps (revision 8)
+
+A renderer process swap can shut down the old process before frame-release callbacks arrive. The patched browser
+manager now tracks active media-input documents on the UI thread and observes their renderer process lifetime.
+Explicit destination retirement and process termination both retire document accounting through the process channel.
+Neither path acknowledges native DMA reads: unproven exports still fail closed and retain their quarantine lease.
+A delayed retirement acknowledgement cannot erase an input that the current document has already reacquired.
+
+Admission growth is now transactional. Failed or cancelled configuration rolls back its tentative increment while
+preserving high-water charges for earlier successful generations. Export-capacity and shared-budget errors retry
+with a 250 ms backoff; unsupported dimensions and other configuration errors remain failed until their source changes.
+
+Transparent control messages carry the program timestamp. Chromium creates a fresh transparent frame for refresh
+requests, advances its timestamp by elapsed time, and keeps the next connected frame monotonic on the same track.
+The session probe checks this with a real `MediaStreamTrackProcessor` through disconnect.
+
+Revision-8 checks passed the native build, all 158 ordinary tests, ten Vulkan export tests, and the normal session
+probe under synchronization validation. The cross-origin test navigated from `127.0.0.1` to `localhost`, returned
+all 90 MiB of reservations within 70 ms, and resumed all eight streams on history-back. The 4096×4096 budget probe
+admitted two inputs, rejected the other six without retaining tentative charges, then recovered each waiting pair
+as its predecessors stopped. All reservations returned to zero at the end.
+
+Reproduce the additional regressions with the qualified SDK staged in `build/cef`:
+
+```sh
+python3 scripts/test_cef_media_input_navigation.py
+build/src/nodes/cef/cef_media_input_session_probe build/cef /tmp/miximus-budget-profile --budget
+```
+
+Enable Vulkan synchronization validation as described in the GPU guide when qualifying hardware. These runs do not
+extend the prior cross-vendor or DeckLink/NDI/display qualification scope.

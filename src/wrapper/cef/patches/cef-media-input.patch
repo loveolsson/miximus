@@ -70,9 +70,10 @@ diff --git a/libcef/common/mojom/BUILD.gn b/libcef/common/mojom/BUILD.gn
    ]
  
 diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
+index 46aa48d05..b47ead5c8 100644
 --- a/libcef/common/mojom/cef.mojom
 +++ b/libcef/common/mojom/cef.mojom
-@@ -12,6 +12,7 @@
+@@ -12,6 +12,7 @@ import "services/network/public/mojom/url_request.mojom";
  import "third_party/blink/public/mojom/loader/referrer.mojom";
  import "third_party/blink/public/mojom/tokens/tokens.mojom";
  import "ui/gfx/geometry/mojom/geometry.mojom";
@@ -80,7 +81,7 @@ diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
  import "url/mojom/url.mojom";
  
  // Structure passed to UpdateDraggableRegions().
-@@ -50,6 +51,12 @@
+@@ -50,6 +51,12 @@ struct RequestParams {
  
  // Interface for communicating with a frame in the renderer process.
  interface RenderFrame {
@@ -93,7 +94,18 @@ diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
    // Browser process has received the FrameAttached() message.
    // |allow| will be false if we don't want to attach the frame.
    FrameAttachedAck(bool allow);
+@@ -130,6 +137,9 @@ struct NewBrowserInfo {
+ 
+ // Interface for communicating with browser management in the browser process.
+ interface BrowserManager {
++  // Document destinations have drained, even if the originating frame detached.
++  MediaInputActivity(int32 browser_id, string document_token, uint32 input, bool active);
++
+   // Retrieve info for a new RenderThread.
+   [Sync]
+   GetNewRenderThreadInfo() => (NewRenderThreadInfo info);
 diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
+index a9a030ef9..ffbae72a2 100644
 --- a/libcef/renderer/blink_glue.cc
 +++ b/libcef/renderer/blink_glue.cc
 @@ -5,7 +5,11 @@
@@ -138,11 +150,10 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
  #undef LOG
  
  #include "base/logging.h"
-@@ -55,6 +69,144 @@
- }
+@@ -56,6 +70,159 @@ blink::ExecutionContext* GetExecutionContext(v8::Local<v8::Context> context) {
  
  }  // namespace
-+
+ 
 +namespace {
 +// Only lifecycle/refresh policy is custom; Chromium owns track fanout and stop.
 +class InputVideoSource final : public blink::PushableMediaStreamVideoSource {
@@ -154,19 +165,29 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +  ~InputVideoSource() override { NotifyStopped(); }
 +  void StopSourceImpl() override {
 +    PushableMediaStreamVideoSource::StopSourceImpl();
-+    transparent_.reset();
++    transparent_ = false;
 +    NotifyStopped();
 +  }
 +  void RequestRefreshFrame() override {
 +    if (transparent_ && GetBroker()->IsRunning()) {
-+      GetBroker()->PushFrame(transparent_, base::TimeTicks::Now());
++      const auto now = base::TimeTicks::Now();
++      auto frame = media::VideoFrame::CreateTransparentFrame(gfx::Size(16, 16));
++      StampFrame(frame, transparent_timestamp_ + (now - transparent_started_));
++      GetBroker()->PushFrame(std::move(frame), now);
 +    }
 +  }
-+  void SetTransparent(bool transparent) {
-+    transparent_ =
-+        transparent
-+            ? media::VideoFrame::CreateTransparentFrame(gfx::Size(16, 16))
-+            : nullptr;
++  void StampFrame(const scoped_refptr<media::VideoFrame>& frame,
++                  base::TimeDelta timestamp) {
++    // Refresh requests use elapsed wall time. Clamp the next program frame as
++    // well, so a refresh racing its delivery cannot move this track backwards.
++    last_timestamp_ =
++        std::max(timestamp, last_timestamp_ + base::Microseconds(1));
++    frame->set_timestamp(last_timestamp_);
++  }
++  void SetTransparent(bool transparent, base::TimeDelta timestamp = {}) {
++    transparent_ = transparent;
++    transparent_timestamp_ = timestamp;
++    transparent_started_ = base::TimeTicks::Now();
 +    RequestRefreshFrame();
 +  }
 +
@@ -177,7 +198,10 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +    }
 +  }
 +  base::OnceClosure stopped_;
-+  scoped_refptr<media::VideoFrame> transparent_;
++  bool transparent_ = false;
++  base::TimeDelta transparent_timestamp_;
++  base::TimeTicks transparent_started_;
++  base::TimeDelta last_timestamp_ = base::Microseconds(-1);
 +};
 +
 +class ExternalVideoSource final : public CefExternalVideoSource {
@@ -197,6 +221,8 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +    }
 +    static_cast<InputVideoSource*>(source_->GetPlatformSource())
 +        ->SetTransparent(false);
++    static_cast<InputVideoSource*>(source_->GetPlatformSource())
++        ->StampFrame(frame, frame->timestamp());
 +    broker_->PushFrame(std::move(frame), capture_time);
 +    return true;
 +  }
@@ -224,12 +250,12 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +    return blink::ToV8Traits<blink::MediaStreamTrack>::ToV8(script,
 +                                                            track_.Get());
 +  }
-+  bool PushTransparentFrame() override {
++  bool PushTransparentFrame(base::TimeDelta timestamp) override {
 +    if (!source_ || !broker_->IsRunning()) {
 +      return false;
 +    }
 +    static_cast<InputVideoSource*>(source_->GetPlatformSource())
-+        ->SetTransparent(true);
++        ->SetTransparent(true, timestamp);
 +    return true;
 +  }
 +  void Stop() override { broker_->StopSource(); }
@@ -280,10 +306,12 @@ diff --git a/libcef/renderer/blink_glue.cc b/libcef/renderer/blink_glue.cc
 +                                                            native_track);
 +  return std::make_unique<ExternalVideoSource>(std::move(broker), native_track);
 +}
- 
++
  bool CanGoBack(blink::WebView* view) {
    if (!view) {
+     return false;
 diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
+index a91adcc41..d623cdffc 100644
 --- a/libcef/renderer/frame_impl.cc
 +++ b/libcef/renderer/frame_impl.cc
 @@ -31,6 +31,7 @@
@@ -294,12 +322,13 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
  #include "cef/libcef/renderer/render_frame_util.h"
  #include "cef/libcef/renderer/thread_util.h"
  #include "cef/libcef/renderer/v8_impl.h"
-@@ -416,10 +417,16 @@
+@@ -416,10 +417,18 @@ void CefFrameImpl::OnContextCreated(v8::Local<v8::Context> context) {
  }
  
  void CefFrameImpl::OnContextReleased() {
 +  if (media_inputs_) {
 +    media_inputs_->Invalidate();
++    media_inputs_.reset();
 +  }
    execution_context_lifecycle_state_observer_.reset();
  }
@@ -307,11 +336,12 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
  void CefFrameImpl::OnDetached() {
 +  if (media_inputs_) {
 +    media_inputs_->Invalidate();
++    media_inputs_.reset();
 +  }
    // Called when this frame has been detached from the view. This *will* be
    // called for child frames when a parent frame is detached.
    // The browser may hold the last reference to |this|. Take a reference here to
-@@ -938,3 +945,73 @@
+@@ -938,3 +947,76 @@ void CefFrameImpl::ContextLifecycleStateChanged(
  #pragma warning(pop)
  #endif
  #endif
@@ -326,7 +356,7 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
 +  }
 +  if (!media_inputs_) {
 +    media_inputs_ = base::MakeRefCounted<CefMediaInputBridge>(
-+        destination_depth,
++        browser_->GetIdentifier(), destination_depth,
 +        base::BindRepeating(
 +            [](base::WeakPtr<CefFrameImpl> frame, const std::string& token,
 +               uint32_t input, bool active, bool drained) {
@@ -349,12 +379,14 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
 +              if (!frame) {
 +                return;
 +              }
-+              auto message = CefProcessMessage::Create("miximus.media-input.failure.v1");
++              auto message =
++                  CefProcessMessage::Create("miximus.media-input.failure.v1");
 +              auto args = message->GetArgumentList();
 +              args->SetString(0, token);
 +              args->SetString(1, error);
 +              frame->SendProcessMessage(PID_BROWSER, message);
-+            }, weak_ptr_factory_.GetWeakPtr()));
++            },
++            weak_ptr_factory_.GetWeakPtr()));
 +  }
 +  return media_inputs_->CreateTrack(input, token);
 +}
@@ -375,7 +407,8 @@ diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
 +  if (!handle) {
 +    if (size == gfx::Size(16, 16)) {
 +      std::move(callback).Run(
-+          true, media_inputs_->SetTransparent(token, input, source_generation));
++          true, media_inputs_->SetTransparent(token, input, source_generation,
++                                              timestamp_us));
 +    } else {
 +      media_inputs_->AdvanceGeneration(token, input, source_generation);
 +      std::move(callback).Run(true, false);
@@ -679,7 +712,7 @@ new file mode 100644
 +  // Return the weakly cached live track or recreate it while clones keep the
 +  // source alive.
 +  virtual v8::Local<v8::Value> GetTrack(v8::Isolate* isolate) = 0;
-+  virtual bool PushTransparentFrame() = 0;
++  virtual bool PushTransparentFrame(base::TimeDelta timestamp) = 0;
 +  virtual void Stop() = 0;
 +  virtual bool IsRunning() = 0;
 +};
@@ -941,7 +974,7 @@ diff --git a/libcef/renderer/media_input_bridge.h b/libcef/renderer/media_input_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.h
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,97 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -975,11 +1008,16 @@ new file mode 100644
 +      base::OnceCallback<void(bool safe_to_reuse, bool delivered)>;
 +  using Activity =
 +      base::RepeatingCallback<void(const std::string&, uint32_t, bool, bool)>;
-+  using Failure = base::RepeatingCallback<void(const std::string&, const std::string&)>;
-+  explicit CefMediaInputBridge(size_t depth, Activity activity, Failure failure);
++  using Failure =
++      base::RepeatingCallback<void(const std::string&, const std::string&)>;
++  explicit CefMediaInputBridge(int browser_id,
++                               size_t depth,
++                               Activity activity,
++                               Failure failure);
 +  bool SetTransparent(const std::string& token,
 +                      uint32_t input,
-+                      uint64_t generation);
++                      uint64_t generation,
++                      int64_t timestamp_us);
 +  CefRefPtr<CefV8Value> CreateTrack(size_t input,
 +                                    const std::string& context_token);
 +  void Invalidate();
@@ -1022,8 +1060,10 @@ new file mode 100644
 +  void ReleaseUnused(size_t input);
 +  void NotifyInactive(size_t input);
 +  void Fail(const std::string& error);
++  const int browser_id_;
 +  const size_t depth_;
 +  std::string context_token_;
++  std::string retired_token_;
 +  std::array<Input, kInputs> inputs_;
 +  scoped_refptr<viz::RasterContextProvider> context_;
 +  bool failed_ = false;
@@ -1036,13 +1076,16 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,329 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
 +#include "cef/libcef/renderer/media_input_bridge.h"
 +
++#include <utility>
++
 +#include "base/task/bind_post_task.h"
++#include "cef/libcef/renderer/render_manager.h"
 +#include "cef/libcef/renderer/thread_util.h"
 +#include "cef/libcef/renderer/v8_impl.h"
 +#include "components/viz/common/gpu/raster_context_provider.h"
@@ -1055,8 +1098,14 @@ new file mode 100644
 +#include "media/base/video_frame.h"
 +#include "third_party/blink/public/platform/platform.h"
 +
-+CefMediaInputBridge::CefMediaInputBridge(size_t depth, Activity activity, Failure failure)
-+    : depth_(depth), activity_(std::move(activity)), failure_(std::move(failure)) {
++CefMediaInputBridge::CefMediaInputBridge(int browser_id,
++                                         size_t depth,
++                                         Activity activity,
++                                         Failure failure)
++    : browser_id_(browser_id),
++      depth_(depth),
++      activity_(std::move(activity)),
++      failure_(std::move(failure)) {
 +  CHECK_GE(depth_, 1u);
 +  CHECK_LE(depth_, kMaxDepth);
 +}
@@ -1103,6 +1152,8 @@ new file mode 100644
 +    entry.source = std::move(source);
 +    entry.active = true;
 +    entry.transparent = false;
++    CefRenderManager::Get()->GetBrowserManager()->MediaInputActivity(
++        browser_id_, context_token_, input, true);
 +    activity_.Run(context_token_, input, true, false);
 +  }
 +  if (track.IsEmpty()) {
@@ -1113,7 +1164,10 @@ new file mode 100644
 +
 +void CefMediaInputBridge::Invalidate() {
 +  CEF_REQUIRE_RT();
-+  context_token_.clear();
++  if (context_token_.empty()) {
++    return;
++  }
++  retired_token_ = std::exchange(context_token_, {});
 +  for (auto& input : inputs_) {
 +    ++input.activation;
 +    input.active = false;
@@ -1124,6 +1178,9 @@ new file mode 100644
 +        destination = {};
 +      }
 +    }
++  }
++  for (size_t input = 0; input < kInputs; ++input) {
++    NotifyInactive(input);
 +  }
 +}
 +
@@ -1147,19 +1204,29 @@ new file mode 100644
 +}
 +
 +void CefMediaInputBridge::NotifyInactive(size_t input) {
-+  if (context_token_.empty() || inputs_[input].active) {
++  const auto& token = context_token_.empty() ? retired_token_ : context_token_;
++  if (token.empty() || inputs_[input].active) {
 +    return;
 +  }
 +  bool drained = true;
 +  for (const auto& destination : inputs_[input].destinations) {
 +    drained &= !destination.busy;
 +  }
-+  activity_.Run(context_token_, input, false, drained);
++  if (drained) {
++    // The process channel also survives the window between native revocation
++    // and renderer context release, when ordinary activity is already stale.
++    CefRenderManager::Get()->GetBrowserManager()->MediaInputActivity(
++        browser_id_, token, input, false);
++  }
++  if (!context_token_.empty()) {
++    activity_.Run(token, input, false, drained);
++  }
 +}
 +
 +bool CefMediaInputBridge::SetTransparent(const std::string& token,
 +                                         uint32_t input,
-+                                         uint64_t generation) {
++                                         uint64_t generation,
++                                         int64_t timestamp_us) {
 +  CEF_REQUIRE_RT_RETURN(false);
 +  if (failed_ || input >= kInputs || token != context_token_ || token.empty() ||
 +      !inputs_[input].active || !inputs_[input].source || !generation ||
@@ -1170,7 +1237,7 @@ new file mode 100644
 +  entry.generation = generation;
 +  entry.transparent = true;
 +  ReleaseUnused(input);
-+  return entry.source->PushTransparentFrame();
++  return entry.source->PushTransparentFrame(base::Microseconds(timestamp_us));
 +}
 +
 +void CefMediaInputBridge::AdvanceGeneration(const std::string& token,
@@ -1310,7 +1377,8 @@ new file mode 100644
 +  if (!failed_) {
 +    const auto error = ri->GetError();
 +    if (error != GL_NO_ERROR) {
-+      Fail("CEF media input import/copy failed: GL error " + std::to_string(error));
++      Fail("CEF media input import/copy failed: GL error " +
++           std::to_string(error));
 +    }
 +  }
 +  bool delivered = false;
@@ -1337,4 +1405,149 @@ new file mode 100644
 +    destination = {};
 +  }
 +  NotifyInactive(input);
++}
+diff --git a/libcef/browser/browser_manager.h b/libcef/browser/browser_manager.h
+index f3c8baa63..1b5f29d27 100644
+--- a/libcef/browser/browser_manager.h
++++ b/libcef/browser/browser_manager.h
+@@ -43,6 +43,10 @@ class CefBrowserManager : public cef::mojom::BrowserManager {
+ 
+  private:
+   // cef::mojom::BrowserManager methods:
++  void MediaInputActivity(int32_t browser_id,
++                          const std::string& document_token,
++                          uint32_t input,
++                          bool active) override;
+   void GetNewRenderThreadInfo(
+       cef::mojom::BrowserManager::GetNewRenderThreadInfoCallback callback)
+       override;
+diff --git a/libcef/browser/browser_manager.cc b/libcef/browser/browser_manager.cc
+index a9ba92980..29c953f98 100644
+--- a/libcef/browser/browser_manager.cc
++++ b/libcef/browser/browser_manager.cc
+@@ -4,10 +4,17 @@
+ 
+ #include "cef/libcef/browser/browser_manager.h"
+ 
++#include <map>
++#include <utility>
++
++#include "cef/include/cef_process_message.h"
++#include "cef/libcef/browser/browser_host_base.h"
+ #include "cef/libcef/browser/browser_info_manager.h"
+ #include "cef/libcef/browser/origin_whitelist_impl.h"
++#include "cef/libcef/browser/thread_util.h"
+ #include "cef/libcef/common/frame_util.h"
+ #include "content/public/browser/render_process_host.h"
++#include "content/public/browser/render_process_host_observer.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+ #include "services/service_manager/public/cpp/binder_registry.h"
+@@ -58,3 +65,107 @@ void CefBrowserManager::GetNewBrowserInfo(
+                                           render_frame_token),
+       std::move(callback));
+ }
++
++namespace {
++void NotifyMediaInputRetired(int browser_id,
++                             const std::string& token,
++                             uint32_t input) {
++  CEF_REQUIRE_UIT();
++  auto browser = CefBrowserHostBase::GetBrowserForBrowserId(browser_id);
++  if (!browser || !browser->GetClient() || !browser->GetMainFrame()) {
++    return;
++  }
++  auto message = CefProcessMessage::Create("miximus.media-input.retired.v1");
++  auto args = message->GetArgumentList();
++  args->SetString(0, token);
++  args->SetInt(1, input);
++  browser->GetClient()->OnProcessMessageReceived(
++      browser, browser->GetMainFrame(), PID_RENDERER, message);
++}
++
++// A process swap may fast-shutdown the renderer before its frame-release
++// callbacks run. Observe that terminal lifetime separately from frame IPC.
++// This retires Chromium destination accounting, NEVER native DMA read leases.
++class MediaInputProcesses final : public base::SupportsUserData::Data,
++                                  public content::RenderProcessHostObserver {
++ public:
++  explicit MediaInputProcesses(content::RenderProcessHost* host) {
++    host->AddObserver(this);
++  }
++  void Update(int browser_id,
++              const std::string& token,
++              uint32_t input,
++              bool active) {
++    const auto key = std::make_pair(browser_id, token);
++    if (active) {
++      inputs_[key] |= 1u << input;
++    } else {
++      auto it = inputs_.find(key);
++      if (it != inputs_.end()) {
++        it->second &= ~(1u << input);
++        if (!it->second) {
++          inputs_.erase(it);
++        }
++      }
++      NotifyMediaInputRetired(browser_id, token, input);
++    }
++  }
++  void RenderProcessExited(
++      content::RenderProcessHost*,
++      const content::ChildProcessTerminationInfo&) override {
++    Retire();
++  }
++  void RenderProcessHostDestroyed(content::RenderProcessHost* host) override {
++    Retire();
++    host->RemoveObserver(this);
++  }
++
++ private:
++  void Retire() {
++    auto inputs = std::exchange(inputs_, {});
++    for (const auto& [key, mask] : inputs) {
++      for (uint32_t input = 0; input < 8; ++input) {
++        if (mask & (1u << input)) {
++          NotifyMediaInputRetired(key.first, key.second, input);
++        }
++      }
++    }
++  }
++  std::map<std::pair<int, std::string>, uint32_t> inputs_;
++};
++
++void UpdateMediaInputProcess(content::ChildProcessId process_id,
++                             int browser_id,
++                             std::string token,
++                             uint32_t input,
++                             bool active) {
++  CEF_REQUIRE_UIT();
++  auto* host = content::RenderProcessHost::FromID(process_id);
++  if (!host) {
++    return;
++  }
++  static const int kMediaInputsKey = 0;
++  auto* observer =
++      static_cast<MediaInputProcesses*>(host->GetUserData(&kMediaInputsKey));
++  if (!observer) {
++    auto owner = std::make_unique<MediaInputProcesses>(host);
++    observer = owner.get();
++    host->SetUserData(&kMediaInputsKey, std::move(owner));
++  }
++  observer->Update(browser_id, token, input, active);
++}
++}  // namespace
++
++void CefBrowserManager::MediaInputActivity(int32_t browser_id,
++                                           const std::string& document_token,
++                                           uint32_t input,
++                                           bool active) {
++  if (input >= 8 || document_token.size() > 256 ||
++      !document_token.starts_with(
++          std::to_string(render_process_id_.GetUnsafeValue()) + "-")) {
++    return;
++  }
++  CEF_POST_TASK(TID_UI,
++                base::BindOnce(&UpdateMediaInputProcess, render_process_id_,
++                               browser_id, document_token, input, active));
 +}

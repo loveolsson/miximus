@@ -411,6 +411,6 @@ external reuse waits for actual copy completion. Document/source generations rev
 Unknown completion quarantines exports and their admission reservation until after CEF shutdown. Renderer import/copy
 failures report a document-scoped error and trigger bounded session recovery independently of safe buffer retirement.
 NVIDIA export modifiers use a block height that fits the image, allowing small textures to import through EGL without
-changing their logical dimensions. Regular CEF-enabled builds require the revision-6 SDK with the private v3 sender;
+changing their logical dimensions. Regular CEF-enabled builds require the revision-8 SDK with the private v3 sender;
 older runtimes are diagnostic-only. See the [implementation plan](cef-media-input-plan.md) for pool-depth measurements,
 memory bounds, opt-in runtime staging and qualification limits.
