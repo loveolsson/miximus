@@ -295,6 +295,96 @@ void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>&
     std::cout << "Budget exhaustion rolled back admission and recovered all waiting inputs\n";
 }
 
+void check_shared_budget_recovery(subsystem_s& subsystem, gpu::device_s& gpu)
+{
+    const std::string          page = R"HTML(
+<video muted autoplay></video>
+<script>
+  miximus.getInputMediaStream({ inputIndex: 0 }).then((stream) => {
+    document.querySelector("video").srcObject = stream;
+  });
+</script>
+)HTML";
+    const session_s::options_s options{
+        .url        = "data:text/html," + CefURIEncode(page, false).ToString(),
+        .dimensions = {64, 64},
+        .frame_rate = 60,
+    };
+
+    std::array<std::unique_ptr<session_request_s>, 4> requests;
+    std::array<std::shared_ptr<session_s>, 4>         sessions;
+    for (size_t index = 0; index < sessions.size(); ++index) {
+        requests.at(index)  = subsystem.create_session(options);
+        const auto deadline = std::chrono::steady_clock::now() + 10s;
+        while (!sessions.at(index) && std::chrono::steady_clock::now() < deadline) {
+            sessions.at(index) = requests.at(index)->session();
+            if (!requests.at(index)->error().empty()) {
+                throw std::runtime_error(requests.at(index)->error());
+            }
+
+            std::this_thread::sleep_for(10ms);
+        }
+        if (!sessions.at(index)) {
+            throw std::runtime_error("Shared-budget session creation timed out");
+        }
+
+        wait_demand(sessions.at(index), 1, false);
+    }
+    auto       source  = gpu.create_texture({4096, 4096});
+    auto       context = gpu.create_recording_context(3);
+    int64_t    timestamp{};
+    const auto feed = [&] {
+        for (int frame = 0; frame < 180; ++frame) {
+            timestamp += 16667;
+            if (auto record = context.try_record()) {
+                record->clear(source, {0.5F, 0, 0, 1});
+                for (const auto& session : sessions) {
+                    auto publish = session->record_media_input(0, *record, &source, "producer", "tex", timestamp);
+                    if (publish) {
+                        record->on_submitted([publish](const gpu::completion_s&) { publish(); });
+                    }
+                }
+                (void)record->submit();
+            }
+            std::this_thread::sleep_for(16667us);
+        }
+    };
+    feed();
+    size_t reserved{};
+    size_t active{};
+    size_t blocked = sessions.size();
+    size_t donor   = sessions.size();
+    for (size_t index = 0; index < sessions.size(); ++index) {
+        const auto metrics = sessions.at(index)->metrics().inputs;
+        reserved += metrics.reserved_bytes;
+        if (metrics.delivered != 0) {
+            ++active;
+            donor = index;
+        } else {
+            blocked = index;
+            if (metrics.error.find("Shared input texture budget exhausted") == std::string::npos) {
+                throw std::runtime_error("Shared-budget probe did not reach shared admission exhaustion");
+            }
+        }
+    }
+    if (active != 3 || reserved != 3ULL * 4096 * 4096 * 4 * 10) {
+        throw std::runtime_error("Shared admission retained tentative charges or exceeded its bound");
+    }
+    const std::string stop = "() => { document.querySelector('video').srcObject.getTracks().forEach(t => t.stop()); }";
+    run_script(sessions.at(donor), stop);
+    wait_demand(sessions.at(donor), 0, true);
+    feed();
+    if (sessions.at(blocked)->metrics().inputs.delivered == 0 ||
+        !sessions.at(blocked)->metrics().inputs.error.empty()) {
+        throw std::runtime_error("Waiting browser session did not recover released shared admission");
+    }
+    for (const auto& session : sessions) {
+        run_script(session, stop);
+        wait_demand(session, 0, true);
+    }
+    std::cout << "Shared admission recovered between independent browser sessions\n";
+}
+
 void run(subsystem_s&       subsystem,
          gpu::device_s&     gpu,
          bool               small_inputs,
@@ -347,8 +437,9 @@ void run(subsystem_s&       subsystem,
         std::filesystem::create_directories(profile);
         std::ofstream output(std::filesystem::path(profile) / "inputs.html");
         output << page;
-        if (!output)
+        if (!output) {
             throw std::runtime_error("Could not write navigation fixture");
+        }
     }
     const session_s::options_s options{
         .url        = navigation_url.empty() ? "data:text/html," + CefURIEncode(page, false).ToString()
@@ -379,25 +470,29 @@ void run(subsystem_s&       subsystem,
 
     if (budget) {
         check_budget_recovery(gpu, session);
+        check_shared_budget_recovery(subsystem, gpu);
         return;
     }
     frame_probe_s probe(gpu, session, small_inputs);
     if (!navigation_url.empty()) {
-        probe.run_stage(0);
-        auto       other_origin = navigation_url;
-        const auto host         = other_origin.find("127.0.0.1");
-        if (host == std::string::npos)
-            throw std::runtime_error("Navigation origin must use 127.0.0.1");
-        other_origin.replace(host, 9, "localhost");
-        run_script(session, "() => { setTimeout(() => location.href = '" + other_origin + "/blank.html', 50); }");
-        wait_demand(session, 0, true);
-        const auto navigation_deadline = std::chrono::steady_clock::now() + 10s;
-        while (!session->context_ready() && std::chrono::steady_clock::now() < navigation_deadline) {
-            std::this_thread::sleep_for(10ms);
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            probe.run_stage(0);
+            auto       other_origin = navigation_url;
+            const auto host         = other_origin.find("127.0.0.1");
+            if (host == std::string::npos) {
+                throw std::runtime_error("Navigation origin must use 127.0.0.1");
+            }
+            other_origin.replace(host, 9, "localhost");
+            run_script(session, "() => { setTimeout(() => location.href = '" + other_origin + "/blank.html', 50); }");
+            wait_demand(session, 0, true);
+            const auto navigation_deadline = std::chrono::steady_clock::now() + 10s;
+            while (!session->context_ready() && std::chrono::steady_clock::now() < navigation_deadline) {
+                std::this_thread::sleep_for(10ms);
+            }
+            run_script(session, "() => { setTimeout(() => history.back(), 50); }");
+            wait_demand(session, 255, false);
+            probe.run_stage(0);
         }
-        run_script(session, "() => { setTimeout(() => history.back(), 50); }");
-        wait_demand(session, 255, false);
-        probe.run_stage(0);
         run_script(session,
                    "() => { document.querySelectorAll('video').forEach(v => v.srcObject.getTracks().forEach(t => "
                    "t.stop())); }");
@@ -470,6 +565,19 @@ async () => {
 }
 )JS");
     run_script(session, R"JS(
+async () => {
+  const video = document.querySelector("video");
+  for (let cycle = 0; cycle < 32; ++cycle) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = await miximus.getInputMediaStream({ inputIndex: 0 });
+  }
+  video.play().catch(console.error);
+}
+)JS");
+    wait_demand(session, 255, false);
+    probe.run_stage(0);
+
+    run_script(session, R"JS(
 () => {
   const videos = [...document.querySelectorAll("video")];
   globalThis.survivor = videos[0].srcObject.clone();
@@ -540,8 +648,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Vulkan validation errors");
         }
 
-        std::cout << "Session inputs passed: eight streams, source replacement, disconnect, resize, reload, stream "
-                     "mutation, navigation retirement, shutdown\n";
+        std::cout << "Requested session input regressions passed, including clean shutdown\n";
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

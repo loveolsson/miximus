@@ -644,3 +644,14 @@ build/src/nodes/cef/cef_media_input_session_probe build/cef /tmp/miximus-budget-
 
 Enable Vulkan synchronization validation as described in the GPU guide when qualifying hardware. These runs do not
 extend the prior cross-vendor or DeckLink/NDI/display qualification scope.
+
+The follow-up edge-case pass added 32 immediate stop/reacquisition cycles, three cross-origin history cycles, and
+shared admission pressure across four independent browser sessions. All passed with synchronization validation.
+Three 4096×4096 inputs consumed the shared allowance; the fourth recovered after a different browser released its
+input, and every session returned its reservation to zero. The invalid-import probe also confirmed that missing
+copy completion still retains the exporter until runtime shutdown.
+
+The final native and web builds passed. The six-input 1920×1080 graph presented 59.79–59.99 frames/s per input over
+its five-second steady interval and reacquired streams in 29–31 ms. Resize, disconnect, rapid reload, disable/re-enable,
+and shutdown passed. Artifacts: `build/integration-tests/cef-inputs-20260925-174137`. The additional review did not
+reproduce another blocker in the tested paths; hardware qualification remains limited to the tested GPU/driver.
