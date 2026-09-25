@@ -242,7 +242,52 @@ void wait_demand(const std::shared_ptr<session_s>& session, uint32_t wanted, boo
     throw std::runtime_error("Track demand/resources did not retire");
 }
 
-void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs)
+void check_budget_recovery(gpu::device_s& gpu, const std::shared_ptr<session_s>& session)
+{
+    auto       source  = gpu.create_texture({4096, 4096});
+    auto       context = gpu.create_recording_context(3);
+    int64_t    timestamp{};
+    const auto feed = [&] {
+        for (int frame = 0; frame < 180; ++frame) {
+            timestamp += 16667;
+            if (auto record = context.try_record()) {
+                record->clear(source, {0.5F, 0, 0, 1});
+                for (size_t input = 0; input < 8; ++input) {
+                    auto publish = session->record_media_input(input, *record, &source, "producer", "tex", timestamp);
+                    if (publish) {
+                        record->on_submitted([publish](const gpu::completion_s&) { publish(); });
+                    }
+                }
+                (void)record->submit();
+            }
+            std::this_thread::sleep_for(16667us);
+        }
+    };
+    feed();
+    const auto       initial          = session->metrics().inputs;
+    constexpr size_t two_input_charge = 2ULL * 4096 * 4096 * 4 * 10;
+    if (initial.reserved_bytes != two_input_charge || initial.delivered == 0 || initial.error.empty()) {
+        throw std::runtime_error("Failed allocations retained admission or did not exercise capacity exhaustion");
+    }
+    for (int stopped = 2; stopped <= 8; stopped += 2) {
+        run_script(session,
+                   std::format("() => {{ [...document.querySelectorAll('video')].slice(0, {}).forEach(v => "
+                               "v.srcObject.getTracks().forEach(t => t.stop())); }}",
+                               stopped));
+        wait_demand(session, 255U & ~((1U << stopped) - 1U), stopped == 8);
+        if (stopped != 8) {
+            const auto before = session->metrics().inputs.delivered;
+            feed();
+            const auto after = session->metrics().inputs;
+            if (after.delivered <= before || after.reserved_bytes != two_input_charge) {
+                throw std::runtime_error("Demanded inputs did not recover after export capacity was released");
+            }
+        }
+    }
+    std::cout << "Budget exhaustion rolled back admission and recovered all waiting inputs\n";
+}
+
+void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs, bool budget)
 {
     std::string page =
         R"HTML(
@@ -311,6 +356,10 @@ void run(subsystem_s& subsystem, gpu::device_s& gpu, bool small_inputs)
         throw std::runtime_error("Session did not subscribe to eight inputs");
     }
 
+    if (budget) {
+        check_budget_recovery(gpu, session);
+        return;
+    }
     frame_probe_s probe(gpu, session, small_inputs);
     for (int stage = -1; stage < 3; ++stage) {
         if (stage == 2 && !request->reload()) {
@@ -377,8 +426,10 @@ async () => {
 
 int main(int argc, char** argv)
 {
-    if (argc != 3 && (argc != 4 || std::string_view(argv[3]) != "--small-inputs")) {
-        std::cerr << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs]\n";
+    const bool small_inputs = argc == 4 && std::string_view(argv[3]) == "--small-inputs";
+    const bool budget       = argc == 4 && std::string_view(argv[3]) == "--budget";
+    if (argc != 3 && !small_inputs && !budget) {
+        std::cerr << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs | --budget]\n";
         return 2;
     }
 
@@ -392,7 +443,7 @@ int main(int argc, char** argv)
         gpu::device_s gpu(options);
         {
             subsystem_s subsystem(gpu, argv[2], argv[1]);
-            run(subsystem, gpu, argc == 4);
+            run(subsystem, gpu, small_inputs, budget);
         }
 
         if (gpu.validation_errors() != 0U) {

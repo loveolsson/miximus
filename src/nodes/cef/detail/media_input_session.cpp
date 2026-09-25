@@ -107,13 +107,16 @@ struct reservation_s
         return true;
     }
 
-    void release(size_t input)
+    void restore(size_t input, size_t previous)
     {
         std::scoped_lock lock(budget->mutex);
-        budget->used -= high_water.at(input);
-        bytes -= high_water.at(input);
-        high_water.at(input) = 0;
+        const auto       delta = high_water.at(input) - previous;
+        budget->used -= delta;
+        bytes -= delta;
+        high_water.at(input) = previous;
     }
+
+    void release(size_t input) { restore(input, 0); }
 
     size_t reserved() const
     {
@@ -150,6 +153,8 @@ struct media_input_session_s::impl_s
             uint64_t      revision{1};
             uint64_t      configured{};
             uint64_t      sent_generation{};
+
+            std::chrono::steady_clock::time_point retry_after{};
 
             bool invalidation_pending{};
             bool transparent_pending{};
@@ -401,7 +406,8 @@ struct media_input_session_s::impl_s
                 std::scoped_lock lock(mutex);
                 auto&            entry = inputs.at(input);
                 if (closing || ((subscribed & (1U << input)) == 0U) || entry.transparent ||
-                    entry.configured == entry.revision || !entry.error.empty()) {
+                    entry.configured == entry.revision ||
+                    (!entry.error.empty() && std::chrono::steady_clock::now() < entry.retry_after)) {
                     return;
                 }
 
@@ -409,25 +415,42 @@ struct media_input_session_s::impl_s
                 revision = entry.revision;
             }
 
+            // Only this worker mutates reservations. Keep charges for earlier
+            // successful generations, but undo growth that never reached a consumer.
+            const auto previous = reservation->high_water.at(input);
             try {
-                if (wanted.width > 4096 || wanted.height > 4096 || !reservation->grow(input, wanted)) {
-                    throw std::runtime_error("Input dimensions or shared texture budget exceeded");
+                if (wanted.width > 4096 || wanted.height > 4096) {
+                    throw std::invalid_argument("Input dimensions exceed 4096");
+                }
+                if (!reservation->grow(input, wanted)) {
+                    throw media_input_exports_s::capacity_error_s("Shared input texture budget exhausted");
                 }
 
                 if (!exports->configure(input, wanted)) {
+                    reservation->restore(input, previous);
                     return;
                 }
 
                 std::scoped_lock lock(mutex);
                 if (inputs.at(input).revision == revision) {
                     inputs.at(input).configured = revision;
+                    inputs.at(input).error.clear();
                 } else {
                     exports->invalidate(input); // Stop/source change raced worker allocation.
                 }
-            } catch (const std::exception& failure) {
+            } catch (const media_input_exports_s::capacity_error_s& failure) {
+                reservation->restore(input, previous);
                 std::scoped_lock lock(mutex);
                 if (inputs.at(input).revision == revision) {
-                    inputs.at(input).error = failure.what();
+                    inputs.at(input).error       = failure.what();
+                    inputs.at(input).retry_after = std::chrono::steady_clock::now() + 250ms;
+                }
+            } catch (const std::exception& failure) {
+                reservation->restore(input, previous);
+                std::scoped_lock lock(mutex);
+                if (inputs.at(input).revision == revision) {
+                    inputs.at(input).error       = failure.what();
+                    inputs.at(input).retry_after = std::chrono::steady_clock::time_point::max();
                 }
             }
         }

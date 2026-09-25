@@ -4,6 +4,7 @@
 #include "media_input_pool.hpp"
 
 #include <memory>
+#include <stdexcept>
 
 namespace miximus::nodes::cef::detail {
 
@@ -17,6 +18,11 @@ class media_input_exports_s
     std::shared_ptr<state_s> state_;
 
   public:
+    struct capacity_error_s : std::runtime_error
+    {
+        using std::runtime_error::runtime_error;
+    };
+
     // Retain this owner until AFTER Chromium has shut down. Unproven external
     // reads disable their queue and retain its allocations in this quarantine.
     class quarantine_s

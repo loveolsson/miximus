@@ -263,7 +263,7 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
 
         available = state.byte_budget - state.allocated_bytes(input);
         if (uint64_t(extent.width) * extent.height * 4 * state.depth > available) {
-            throw std::runtime_error("Browser input export byte budget exhausted");
+            throw capacity_error_s("Browser input export byte budget exhausted");
         }
 
         state.revoke(input);
@@ -280,7 +280,7 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
             images.at(slot) = std::make_shared<gpu::detail::dma_buf_export_s>(state.device, extent);
             allocated += images.at(slot)->allocation_bytes();
             if (allocated > available) {
-                throw std::runtime_error("Browser input export allocation exceeds byte budget");
+                throw capacity_error_s("Browser input export allocation exceeds byte budget");
             }
         }
     } catch (...) {
@@ -291,10 +291,14 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
 
     std::scoped_lock lock(state.mutex);
     auto&            entry = state.inputs.at(input);
-    entry.images.swap(images);
-    entry.extent      = extent;
-    entry.configuring = false;
-    entry.active      = !state.failed && entry.revision == revision;
+    entry.configuring      = false;
+    entry.active           = !state.failed && entry.revision == revision;
+    if (entry.active) {
+        entry.images.swap(images);
+        entry.extent = extent;
+    }
+    // A raced invalidation never publishes these allocations. Destroy them on
+    // return, so callers can roll back tentative admission on a false result.
     return entry.active;
 }
 

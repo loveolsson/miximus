@@ -316,6 +316,20 @@ TEST_F(export_queue_test, EightInputsRemainBoundedAndByteBudgetRejectsOversizeBe
     EXPECT_TRUE(limited.idle());
 }
 
+TEST_F(export_queue_test, CapacityFailureCanRecoverAfterAnotherInputReleasesItsAllocations)
+{
+    const auto            capacity = queue->allocated_bytes();
+    media_input_exports_s limited(*device, 1, *quarantine, capacity);
+    ASSERT_TRUE(limited.configure(0, {16, 16}));
+    EXPECT_THROW(limited.configure(1, {16, 16}), media_input_exports_s::capacity_error_s);
+    EXPECT_EQ(limited.allocated_bytes(), capacity);
+    limited.invalidate(0);
+    ASSERT_TRUE(limited.release(0));
+    ASSERT_TRUE(limited.configure(1, {16, 16}));
+    EXPECT_EQ(limited.allocated_bytes(), capacity);
+    EXPECT_THROW(limited.configure(2, {4097, 16}), std::invalid_argument);
+}
+
 TEST_F(export_queue_test, PendingFrameDecisionCannotBeOvertakenByANewerFrame)
 {
     queue = std::make_unique<media_input_exports_s>(*device, 2, *quarantine);
