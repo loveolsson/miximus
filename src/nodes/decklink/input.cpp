@@ -85,7 +85,8 @@ class node_impl : public node_i
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
         const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
         if (device_status_version_.observe(status_key)) {
-            app->status_registry()->write(id_, make_device_status(device_status ? *device_status : device_status_s{}));
+            app->status_registry()->write(status_handle_,
+                                          make_device_status(device_status ? *device_status : device_status_s{}));
         }
     }
 
@@ -97,7 +98,7 @@ class node_impl : public node_i
         }
 
         const auto metrics = capture_->metrics();
-        status_registry->write(id_,
+        status_registry->write(status_handle_,
                                status::decklink_input_metrics_status_s{
                                    .frames_received            = metrics.frames_received,
                                    .frames_missing             = metrics.frames_missing,
@@ -113,7 +114,7 @@ class node_impl : public node_i
                                    .available_video_frames     = metrics.available_video_frames,
                                });
         status_registry->write(
-            id_,
+            status_handle_,
             status::source_timing_status_s{
                 .source_queue_pushed                  = metrics.source_queue.pushed,
                 .source_queue_depth                   = metrics.source_queue.queued,
@@ -153,13 +154,13 @@ class node_impl : public node_i
             log()->error("DeckLink input capture failed");
             stop_capture();
             capture_selection_.reset();
-            status_registry->write(id_, status::connected_status_s{.connected = false});
+            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
             return;
         }
         if (phase == input_capture_s::phase_e::stopped) {
             capture_ = nullptr;
             capture_selection_.reset();
-            status_registry->write(id_, status::connected_status_s{.connected = false});
+            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -203,7 +204,7 @@ class node_impl : public node_i
         const auto current_version     = app->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(current_version);
         if (device_list_changed) {
-            sr->write(id_,
+            sr->write(status_handle_,
                       status::device_names_status_s{.device_names = app->decklink_registry()->get_input_options()});
         }
 
@@ -226,24 +227,24 @@ class node_impl : public node_i
 
             if (!enabled) {
                 capture_selection_.commit(selection);
-                sr->write(id_, status::connected_status_s{.connected = false});
+                sr->write(status_handle_, status::connected_status_s{.connected = false});
                 return;
             }
 
             auto device = app->decklink_registry()->get_input(device_name);
             if (!device) {
-                sr->write(id_, status::connected_status_s{.connected = false});
+                sr->write(status_handle_, status::connected_status_s{.connected = false});
                 return;
             }
 
             if (!start_capture(app, std::move(device), device_name)) {
-                sr->write(id_, status::connected_status_s{.connected = false});
+                sr->write(status_handle_, status::connected_status_s{.connected = false});
                 return;
             }
             capture_selection_.commit(selection);
         }
 
-        sr->write(id_,
+        sr->write(status_handle_,
                   status::connected_status_s{
                       .connected = capture_ && capture_->phase() == input_capture_s::phase_e::running,
                   });

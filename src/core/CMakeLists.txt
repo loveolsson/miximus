@@ -19,6 +19,7 @@ add_library(app
     node_manager_fwd.hpp
     node_manager.cpp
     origin_info.hpp
+    node_status_handle.hpp
     node_status_registry.hpp
     node_status_registry_fwd.hpp
     node_status_registry.cpp

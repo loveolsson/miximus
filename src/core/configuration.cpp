@@ -241,7 +241,7 @@ void configuration_s::load_file(const std::filesystem::path& path)
 
 json configuration_s::serialize(bool include_status) const
 {
-    const std::unique_lock lock(node_manager_.nodes_mutex_);
+    std::unique_lock lock(node_manager_.nodes_mutex_);
 
     auto nodes       = json::array();
     auto connections = json::array();
@@ -258,6 +258,10 @@ json configuration_s::serialize(bool include_status) const
     for (const auto& connection : node_manager_.connections_) {
         connections.emplace_back(connection);
     }
+
+    // Status snapshots belong to this configuration executor; copying their
+    // catalogues must not hold the graph lock needed at the next render frame.
+    lock.unlock();
 
     json result{
         {"schema_version", SCHEMA_VERSION        },
@@ -296,11 +300,12 @@ std::optional<json> configuration_s::get_node(std::string_view id) const
 
 std::optional<json> configuration_s::get_node_status(std::string_view id) const
 {
-    const std::unique_lock lock(node_manager_.nodes_mutex_);
-    if (!node_manager_.nodes_.contains(id)) {
-        return std::nullopt;
+    {
+        const std::unique_lock lock(node_manager_.nodes_mutex_);
+        if (!node_manager_.nodes_.contains(id)) {
+            return std::nullopt;
+        }
     }
-
     return node_manager_.status_registry_ != nullptr ? node_manager_.status_registry_->get(id) : json::object();
 }
 

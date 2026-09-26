@@ -130,7 +130,7 @@ class node_impl final : public node_i
         }
 #endif
         if (auto* registry = app->status_registry()) {
-            registry->write(id_, status::browser_cache_status_s{.browser_cache_clearing = pending});
+            registry->write(status_handle_, status::browser_cache_status_s{.browser_cache_clearing = pending});
         }
     }
 

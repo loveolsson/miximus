@@ -66,9 +66,11 @@ the control executor before transfer services and the process-wide NDI runtime.
 - Screen-output disable and destruction call `join()` on the display thread. The worker is signalled first, but a driver
   stall in buffer swap or context teardown can still delay the render thread. Consider asynchronous retirement with GL
   resources destroyed by the display thread before it reports completion.
-- Registry-backed status lists are converted to JSON and compared under the status-registry mutex. Version checks avoid
-  doing this every frame, but large application-wide catalogues should eventually be published once as shared system
-  state rather than duplicated per node.
+- Status JSON conversion, deduplication, snapshot reads, and WebSocket broadcasting now run on the configuration
+  executor. Render-thread publication transfers typed values through a coalescing mailbox. Collecting worker metrics,
+  copying lvalue payloads, and retiring superseded typed catalogues can still cost producer time. Version checks avoid
+  rebuilding lists every frame; large application-wide catalogues could eventually use shared immutable system state
+  rather than duplicated per-node values.
 - Shader, framebuffer, texture, and transfer allocation can cause driver work on first use or format changes. These are
   not ordinary CPU blocking calls and often require the render context, but caches and preallocation can reduce frame
   spikes where latency matters.

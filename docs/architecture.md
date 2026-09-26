@@ -30,7 +30,7 @@ this document continues to describe the current runtime until each migration sta
 - the configuration `boost::asio::io_context`, work guard, and configuration thread;
 - a small FiberPool used for explicitly submitted background work;
 - DeckLink, NDI, and font registries;
-- the thread-safe node-status registry.
+- the typed node-status mailbox and configuration-thread snapshot store.
 
 The main thread is the render thread. Normal node `prepare`, `execute`, and `complete` calls happen there. The project is not a generally parallel graph executor. Multithreading is explicit:
 
@@ -73,7 +73,8 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 9. Commit the frame scope: enqueue pending GPU work and output publication callbacks. Publish outputs only after
    successful native submission on the submission worker; retain GPU uses through timeline completion.
 10. Call `complete()` on every node without waiting for unrelated GPU work. Release CPU frame references here.
-11. Flush and broadcast node-status deltas.
+11. Publish the completed typed status batch to the configuration executor. JSON conversion, deduplication, and
+    broadcasting happen there asynchronously.
 12. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
 
 The frame scope releases unpublished output leases on every exit, including exceptions. A command batch flushed before
@@ -193,18 +194,40 @@ with designated initialization:
 
 ```cpp
 status_registry->write(
-    node_id,
+    status_handle_,
     status::connected_status_s{
         .connected = true,
     });
 ```
 
-The described struct converts to JSON through nlohmann ADL at the call boundary. The registry updates the flat
-node-status object one member at a time; writes are thread-safe and unchanged values are ignored. Changed values are
-accumulated into one pending delta object per node, which is moved into the WebSocket broadcast at frame end;
-`web/src/nodes/status_store.ts` shallow-merges it. Initial config and explicit `node_status` requests return full
-snapshots. Optional status members serialize as `null` when absent so a later update can explicitly clear an earlier
-value.
+`write()` is render-thread-only and accepts only `status::registered_contract` types. It owns the typed value through
+a templated, type-erased entry; the mailbox does not enumerate status types. Temporary vectors and strings move into
+the entry, while lvalue payloads are copied. Nodes use an instance-specific `status_handle_`, initialized with their ID.
+
+After all nodes complete, `publish()` hands the frame to the existing configuration executor. There is at most one
+scheduled drain, with one batch processing and one coalesced batch waiting. Waiting frames keep the newest complete
+value per node instance and contract type, so backlog scales with live nodes and registered groups rather than elapsed
+frames. Publication uses a short mailbox mutex; JSON conversion, snapshot copies, and broadcasting never hold it.
+The ordinary empty-mailbox handoff swaps the batch. Coalescing may retire superseded typed payloads on the producer;
+this is bounded by the pending groups, but large catalogues still warrant version gating.
+
+The configuration thread converts each value through nlohmann ADL, applies groups in publication order, compares the
+final fields against its JSON snapshot, and broadcasts one flat delta per changed node. Multiple contract types with
+overlapping fields retain last-write semantics. Optional members serialize as `null` to clear earlier values.
+`web/src/nodes/status_store.ts` shallow-merges deltas. Initial config, HTTP status, and explicit `node_status` queries
+read the latest **processed** batch without waiting for rendering. Configuration snapshots release the graph lock
+before copying status JSON. JSON state is configuration-thread-owned; getters
+and removal must run there, or while that executor is quiescent during startup/tests.
+
+Authoritative removal retires the instance handle and removes its JSON snapshot on the configuration thread. Staged
+or queued values from that instance are discarded, including when the ID has been reused. The mailbox prunes retired
+instances during publication. The reserved settings handle is shared by its node, frame lifecycle metrics, and scheduler
+metrics; scheduler metrics sampled after `finish_frame()` join the next frame's batch.
+
+Startup installs the broadcast callback before the first publication. It retains only a weak server reference, never
+node or adapter pointers. Shutdown stops status publication before stopping the web server. Posted handlers own their
+mailbox state and skip processing after stop, so destroying the registry cannot leave a dangling task. A drain yields
+to other configuration work before scheduling another batch. Status conversion/broadcast exceptions are logged there.
 
 The native `miximus_typescript_generator` traverses the same descriptions and maintains
 `web/src/generated/json_contracts.ts`. It also exports the native protocol enums. The generated `node_status_s` type is

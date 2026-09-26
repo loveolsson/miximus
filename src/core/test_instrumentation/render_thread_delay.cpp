@@ -33,13 +33,13 @@ void render_thread_delay_test_s::inject_before_render_frame()
     ++rendered_frames_;
 }
 
-void render_thread_delay_test_s::publish_status(app_state_s* app) const
+void render_thread_delay_test_s::publish_status(app_state_s* app, const node_status_handle_s& status_handle) const
 {
     if (!delay_.has_value()) {
         return;
     }
 
-    app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+    app->status_registry()->write(status_handle,
                                   status::render_delay_test_status_s{
                                       .test_render_delay_ms         = delay_->count(),
                                       .test_render_delay_every      = every_frames_,

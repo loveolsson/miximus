@@ -11,6 +11,7 @@
 #include "logger/logger.hpp"
 #include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
+#include "types/web_message_json.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"
 #include "utils/shutdown_watchdog.hpp"
@@ -61,6 +62,7 @@ auto& get_signal_status() noexcept
 void signal_handler(int /*signal*/) noexcept { get_signal_status() = 1; }
 
 void publish_scheduler_status(core::app_state_s*                     app,
+                              const core::node_status_handle_s&      status_handle,
                               const core::frame_scheduler_s&         scheduler,
                               const core::frame_scheduler_metrics_s& metrics)
 {
@@ -69,7 +71,7 @@ void publish_scheduler_status(core::app_state_s*                     app,
     };
 
     const auto& context = app->frame_context();
-    app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+    app->status_registry()->write(status_handle,
                                   status::application_scheduler_status_s{
                                       .clock_source              = std::string(scheduler.clock_name()),
                                       .frame_number              = context.frame_number,
@@ -117,10 +119,22 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
             auto web_server = web_server::create_web_server();
             web_server->start(HTTP_PORT, app.cfg_executor());
 
-            core::node_manager_s             node_manager;
+            core::node_manager_s             node_manager(app.status_registry());
             core::configuration_s            configuration(node_manager);
             const exception_shutdown_guard_s exception_shutdown_guard;
             configuration.load_file(app.command_line_options().settings_path);
+
+            app.status_registry()->set_callback(
+                [server = std::weak_ptr<web_server::server_s>(web_server)](const auto& updates) {
+                    if (const auto endpoint = server.lock()) {
+                        for (const auto& update : updates) {
+                            endpoint->broadcast_message_sync(web_message::node_status_command_s{
+                                .id     = update.node_id,
+                                .status = update.status,
+                            });
+                        }
+                    }
+                });
 
             // Set up web server config getters
             web_server->set_config_getters({
@@ -158,8 +172,8 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                 const auto& metrics = frame_scheduler.finish_frame();
                 const auto& context = app.frame_context();
                 if (context.epoch != status_epoch || context.program_pts >= next_status_pts) {
-                    publish_scheduler_status(&app, frame_scheduler, metrics);
-                    render_thread_delay_test.publish_status(&app);
+                    publish_scheduler_status(&app, node_manager.settings_status_handle(), frame_scheduler, metrics);
+                    render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
                     status_epoch    = context.epoch;
                     next_status_pts = context.program_pts + utils::k_flicks_one_second;
                 }
@@ -172,6 +186,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
             getlog("app")->info("Exiting...");
             utils::start_shutdown_watchdog();
             utils::begin_shutdown_step("web subsystem");
+            app.status_registry()->stop();
             web_server->stop();
             node_manager.clear_adapters();
             web_server.reset();

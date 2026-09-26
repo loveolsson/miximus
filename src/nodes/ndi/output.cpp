@@ -85,9 +85,9 @@ class node_impl : public node_i
         };
         if (readback_stream_) {
             const auto readback_metrics = readback_stream_->metrics();
-            status_registry->write(id_, output_status);
+            status_registry->write(status_handle_, output_status);
             status_registry->write(
-                id_,
+                status_handle_,
                 status::download_stream_status_s{
                     .download_slots                      = readback_metrics.slots,
                     .download_slots_free                 = readback_metrics.free_slots,
@@ -104,7 +104,7 @@ class node_impl : public node_i
                     .download_allocation_failed          = readback_metrics.allocation_failed,
                 });
         } else {
-            status_registry->write(id_, output_status);
+            status_registry->write(status_handle_, output_status);
         }
         next_metrics_status_ = now + 1s;
     }
@@ -133,7 +133,7 @@ class node_impl : public node_i
         render_target_drops_ = 0;
         if (!selection.second) {
             sender_selection_.commit(selection);
-            status_registry->write(id_, status::connected_status_s{.connected = false});
+            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -210,7 +210,7 @@ class node_impl : public node_i
         }
 
         publish_metrics(status_registry);
-        status_registry->write(id_,
+        status_registry->write(status_handle_,
                                status::connected_status_s{
                                    .connected = sender_ && sender_->phase() == output_sender_s::phase_e::running,
                                });

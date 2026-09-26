@@ -1,12 +1,16 @@
 #pragma once
+#include "node_status_handle.hpp"
 #include "types/node_status_json.hpp"
-#include "utils/string_map.hpp"
 
+#include <boost/asio/io_context.hpp>
 #include <nlohmann/json.hpp>
 
-#include <mutex>
+#include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <typeindex>
+#include <utility>
 #include <vector>
 
 namespace miximus::core {
@@ -19,52 +23,56 @@ class node_status_registry_s
         std::string    node_id;
         nlohmann::json status;
     };
+    using callback_t = std::function<void(const std::vector<status_update_s>&)>;
 
   private:
-    using state_map_t = utils::unordered_string_map_t<nlohmann::json>;
-
-    mutable std::mutex mutex_;
-    state_map_t        states_;
-    state_map_t        pending_;
-
-    void write_json(std::string_view node_id, nlohmann::json status);
+    struct value_i
+    {
+        virtual ~value_i()                       = default;
+        virtual nlohmann::json serialize() const = 0;
+    };
+    template <status::registered_contract T>
+    struct value_s final : value_i
+    {
+        T value;
+        explicit value_s(T input)
+            : value(std::move(input))
+        {
+        }
+        nlohmann::json serialize() const final { return value; }
+    };
+    struct state_s;
+    std::shared_ptr<state_s> state_;
+    void        enqueue(const node_status_handle_s& node, std::type_index type, std::unique_ptr<value_i> value);
+    static void schedule(const std::shared_ptr<state_s>& state);
+    static void drain(const std::shared_ptr<state_s>& state);
 
   public:
-    node_status_registry_s()  = default;
-    ~node_status_registry_s() = default;
-
+    explicit node_status_registry_s(boost::asio::io_context& executor);
+    ~node_status_registry_s();
     node_status_registry_s(const node_status_registry_s&)            = delete;
     node_status_registry_s& operator=(const node_status_registry_s&) = delete;
 
-    /**
-     * Write a registered status object for a node. Thread-safe and callable
-     * from any thread; unchanged fields are filtered out.
-     */
+    // Install before the first publication. Invoked only on the configuration executor.
+    void set_callback(callback_t callback);
+
+    // Render thread only. Own the complete typed group; do no JSON work here.
     template <status::registered_contract T>
-    void write(std::string_view node_id, const T& value)
+    void write(const node_status_handle_s& node, T value)
     {
-        write_json(node_id, value);
+        if (node.active()) {
+            enqueue(node, typeid(T), std::make_unique<value_s<T>>(std::move(value)));
+        }
     }
 
-    /**
-     * Remove all status entries for a node. Called when a node is destroyed.
-     */
-    void remove_node(std::string_view node_id);
+    // Render thread, after complete(): publish one frame, coalescing any waiting frames.
+    void publish();
+    // Stop publication/callbacks during teardown. Queued handlers own their state, never this object.
+    void stop() noexcept;
 
-    /**
-     * Drain pending changes and return per-node status deltas. Multiple writes
-     * to a node during one tick are merged into a single update.
-     */
-    std::vector<status_update_s> flush();
-
-    /**
-     * Return the current status object for a single node (for pull queries).
-     */
+    // Configuration thread (or quiescent startup/tests) only. Reads see the last processed batch.
+    void           remove_node(const node_status_handle_s& node);
     nlohmann::json get(std::string_view node_id) const;
-
-    /**
-     * Return a map of all node statuses (for inclusion in get_config responses).
-     */
     nlohmann::json get_all() const;
 };
 

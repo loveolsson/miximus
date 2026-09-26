@@ -110,7 +110,8 @@ namespace miximus::core {
 using nlohmann::json;
 using namespace std::chrono_literals;
 
-node_manager_s::node_manager_s()
+node_manager_s::node_manager_s(node_status_registry_s* status_registry)
+    : status_registry_(status_registry)
 {
     nodes::register_all_nodes(&node_definitions_);
     const auto error =
@@ -118,6 +119,7 @@ node_manager_s::node_manager_s()
     if (error != error_e::no_error) {
         throw std::logic_error("Failed to create the application settings node");
     }
+    settings_status_handle_ = nodes_.at(std::string(nodes::system::SETTINGS_NODE_ID)).node->status_handle();
 }
 
 error_e node_manager_s::handle_add_node(std::string_view                    type,
@@ -227,6 +229,11 @@ error_e node_manager_s::handle_remove_node(std::string_view id, const std::optio
         adapter->emit_remove_node(id, origin);
     }
 
+    if (status_registry_) {
+        status_registry_->remove_node(node->status_handle());
+    } else {
+        node->status_handle().retire();
+    }
     removed_nodes_.emplace(node_it->first);
     nodes_.erase(node_it);
 
@@ -449,7 +456,6 @@ void node_manager_s::clear_adapters()
 
 void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& scheduler)
 {
-    status_registry_ = app->status_registry();
     node_actions_s::batch_t actions;
 
     {
@@ -465,7 +471,6 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             if (!dirty_nodes_.empty() || !removed_nodes_.empty()) {
                 for (const auto& id : removed_nodes_) {
                     nodes_copy_.erase(id);
-                    app->status_registry()->remove_node(id);
                 }
                 for (const auto& id : dirty_nodes_) {
                     if (auto it = nodes_.find(id); it != nodes_.end()) {
@@ -504,7 +509,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 
         {
             const auto& frame_context = app->frame_context();
-            app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+            app->status_registry()->write(settings_status_handle_,
                                           status::application_frame_status_s{
                                               .frame_rate            = app->frame_settings().frame_rate,
                                               .frame_duration_flicks = frame_context.frame_duration.count(),
@@ -547,7 +552,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             const auto to_microseconds = [](utils::flicks duration) {
                 return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
             };
-            app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
+            app->status_registry()->write(settings_status_handle_,
                                           status::application_lifecycle_status_s{
                                               .prepare_duration_us    = to_microseconds(prepare_end - prepare_start),
                                               .submit_duration_us     = to_microseconds(submit_end - prepare_end),
@@ -563,13 +568,8 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         }
     }
 
-    // Broadcast status changes collected during this tick
-    const auto status_updates = app->status_registry()->flush();
-    for (const auto& update : status_updates) {
-        for (auto& adapter : adapters_) {
-            adapter->emit_node_status(update.node_id, update.status);
-        }
-    }
+    // Transfer owned typed status only after every node has completed the frame.
+    app->status_registry()->publish();
 }
 
 void node_manager_s::clear_nodes(app_state_s* app)

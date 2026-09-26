@@ -106,11 +106,11 @@ class node_impl : public node_i
 
         if (font_list_changed) {
             app->status_registry()->write(
-                id_, status::font_names_status_s{.font_names = app->font_registry()->get_font_options()});
+                status_handle_, status::font_names_status_s{.font_names = app->font_registry()->get_font_options()});
         }
         if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
-                id_,
+                status_handle_,
                 status::font_variants_status_s{
                     .font_variants = app->font_registry()->get_font_variant_options(font_name),
                 });

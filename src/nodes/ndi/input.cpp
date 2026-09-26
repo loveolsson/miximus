@@ -59,7 +59,7 @@ class node_impl : public node_i
         }
 
         const auto metrics = capture_->metrics();
-        status_registry->write(id_,
+        status_registry->write(status_handle_,
                                status::ndi_input_metrics_status_s{
                                    .frames_received      = metrics.frames_received,
                                    .invalid_frames       = metrics.invalid_frames,
@@ -68,7 +68,7 @@ class node_impl : public node_i
                                    .upload_slot_drops    = metrics.upload_slot_drops,
                                });
         status_registry->write(
-            id_,
+            status_handle_,
             status::source_timing_status_s{
                 .source_queue_pushed                  = metrics.source_queue.pushed,
                 .source_queue_depth                   = metrics.source_queue.queued,
@@ -115,7 +115,7 @@ class node_impl : public node_i
         stop_capture();
         if (!selection.second || selection.first.empty()) {
             capture_selection_.commit(selection);
-            status_registry->write(id_, status::connected_status_s{.connected = false});
+            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -142,7 +142,8 @@ class node_impl : public node_i
         const auto current_version = app->ndi_registry()->get_source_list_version();
         if (source_version_.observe(current_version)) {
             status_registry->write(
-                id_, status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()});
+                status_handle_,
+                status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()});
         }
 
         const auto selection =
@@ -155,7 +156,7 @@ class node_impl : public node_i
             capture_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
         }
 
-        status_registry->write(id_,
+        status_registry->write(status_handle_,
                                status::connected_status_s{
                                    .connected = capture_ && capture_->phase() == input_capture_s::phase_e::running,
                                });

@@ -976,7 +976,8 @@ class node_impl : public node_i
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
         const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
         if (device_status_version_.observe(status_key)) {
-            app->status_registry()->write(id_, make_device_status(device_status ? *device_status : device_status_s{}));
+            app->status_registry()->write(status_handle_,
+                                          make_device_status(device_status ? *device_status : device_status_s{}));
         }
     }
 
@@ -988,16 +989,17 @@ class node_impl : public node_i
 
         const auto options_key = std::pair(std::string(device_name), callback_->mode_options_version());
         if (mode_options_version_.observe(options_key)) {
-            status_registry->write(id_, status::display_modes_status_s{.display_modes = callback_->mode_options()});
+            status_registry->write(status_handle_,
+                                   status::display_modes_status_s{.display_modes = callback_->mode_options()});
         }
-        status_registry->write(id_, callback_->keyer_status());
+        status_registry->write(status_handle_, callback_->keyer_status());
 
         const auto now = std::chrono::steady_clock::now();
         if (now < next_metrics_status_) {
             return;
         }
         const auto metrics = callback_->metrics();
-        status_registry->write(id_,
+        status_registry->write(status_handle_,
                                status::decklink_output_metrics_status_s{
                                    .frames_completed                     = metrics.frames_completed,
                                    .frames_displayed_late                = metrics.frames_displayed_late,
@@ -1032,7 +1034,7 @@ class node_impl : public node_i
                                    .render_target_drops                  = render_target_drops_,
                                });
         status_registry->write(
-            id_,
+            status_handle_,
             status::download_stream_status_s{
                 .download_slots                      = metrics.readback_stream.slots,
                 .download_slots_free                 = metrics.readback_stream.free_slots,
@@ -1065,7 +1067,7 @@ class node_impl : public node_i
             if (phase == callback_s::phase_e::prerolling) {
                 callback_->request_preroll_pump();
             }
-            status->write(id_, status::connected_status_s{.connected = render_state_.has_value()});
+            status->write(status_handle_, status::connected_status_s{.connected = render_state_.has_value()});
             return true;
         }
 
@@ -1082,7 +1084,7 @@ class node_impl : public node_i
 
         render_state_.reset();
         frame_renderer_.reset();
-        status->write(id_, status::connected_status_s{.connected = false});
+        status->write(status_handle_, status::connected_status_s{.connected = false});
         return true;
     }
 
@@ -1103,7 +1105,8 @@ class node_impl : public node_i
         const bool device_list_changed = device_version_.observe(device_list_version);
         if (device_list_changed) {
             status->write(
-                id_, status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()});
+                status_handle_,
+                status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()});
         }
 
         const auto device_name    = state.get_option<std::string>("device_name");
@@ -1134,7 +1137,7 @@ class node_impl : public node_i
         }
 
         if (!callback_) {
-            status->write(id_,
+            status->write(status_handle_,
                           status::decklink_output_keyer_status_s{
                               .requested_keyer_mode  = keyer_mode,
                               .active_keyer_mode     = decklink_keyer_mode_e::disabled,
@@ -1146,7 +1149,7 @@ class node_impl : public node_i
             return;
         }
 
-        status->write(id_, status::connected_status_s{.connected = false});
+        status->write(status_handle_, status::connected_status_s{.connected = false});
         if (!enabled || std::chrono::steady_clock::now() < next_start_attempt_) {
             return;
         }

@@ -119,7 +119,7 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
     , ndi_registry_(nodes::ndi::ndi_registry_s::create_ndi_registry())
     , font_registry_(render::font_registry_s::create_font_registry())
-    , status_registry_(std::make_unique<node_status_registry_s>())
+    , status_registry_(std::make_unique<node_status_registry_s>(cfg_executor_))
 {
     fallback_texture_ = std::make_unique<gpu::texture_s>(
         *gpu_, gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::format_e::rgba_unorm16);

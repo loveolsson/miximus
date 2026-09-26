@@ -82,7 +82,7 @@ class node_impl final : public node_i
         browser_status.cef_restarts = restarts_;
         // Publish lifecycle changes every frame while retaining the last counter snapshot.
         if (now < next_metrics_ && metrics) {
-            status->write(id_, browser_status);
+            status->write(status_handle_, browser_status);
             return;
         }
         if (metrics) {
@@ -116,10 +116,10 @@ class node_impl final : public node_i
             browser_status.cef_completion_wait_p95_upper_us = metrics->completion_wait.p95_upper_us;
             browser_status.cef_completion_wait_max_us       = metrics->completion_wait.maximum_us;
         }
-        status->write(id_, browser_status);
+        status->write(status_handle_, browser_status);
         if (metrics) {
             const auto& queue = metrics->source_queue;
-            status->write(id_,
+            status->write(status_handle_,
                           status::source_timing_status_s{
                               .source_queue_pushed                  = queue.pushed,
                               .source_queue_depth                   = queue.queued,
@@ -203,8 +203,8 @@ class node_impl final : public node_i
         if (app->cef_subsystem() == nullptr || !enabled || url.empty()) {
             stop();
             selection_.reset();
-            status->write(id_, status::connected_status_s{.connected = false});
-            status->write(id_,
+            status->write(status_handle_, status::connected_status_s{.connected = false});
+            status->write(status_handle_,
                           status::cef_browser_status_s{
                               .cef_state = !enabled || url.empty() ? cef_state_e::stopped : cef_state_e::unavailable,
                               .cef_error = !enabled || url.empty() ? "" : app->cef_error(),
@@ -242,7 +242,7 @@ class node_impl final : public node_i
                 metrics.reset();
             }
         }
-        status->write(id_,
+        status->write(status_handle_,
                       status::connected_status_s{
                           .connected = metrics && metrics->phase == session_t::phase_e::ready,
                       });

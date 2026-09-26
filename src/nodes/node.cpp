@@ -26,7 +26,11 @@ action_result_s node_i::handle_action(core::app_state_s* /* app */,
     return {.error = error_e::unsupported_action, .message = "Node does not support this action"};
 }
 
-void node_i::init(std::string_view id) { id_ = id; }
+void node_i::init(std::string_view id)
+{
+    id_            = id;
+    status_handle_ = core::node_status_handle_s(id);
+}
 
 void node_i::submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state)
 {

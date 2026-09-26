@@ -5,6 +5,7 @@
 #include "core/node_actions.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "core/origin_info.hpp"
+#include "node_status_handle.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/option_result.hpp"
@@ -43,7 +44,6 @@ class node_manager_s
                                       const std::optional<origin_info_s>& origin)                                = 0;
         virtual void emit_add_connection(const connection_s& con, const std::optional<origin_info_s>& origin)    = 0;
         virtual void emit_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin) = 0;
-        virtual void emit_node_status(std::string_view id, const nlohmann::json& status)                         = 0;
 
       public:
         adapter_i()          = default;
@@ -67,6 +67,7 @@ class node_manager_s
     nodes::node_definition_map_t          node_definitions_;
     adapter_list_t                        adapters_;
     node_status_registry_s*               status_registry_{nullptr};
+    node_status_handle_s                  settings_status_handle_;
     std::chrono::steady_clock::time_point next_lifecycle_status_{};
 
     error_e handle_add_node_locked(std::string_view                    type,
@@ -76,7 +77,8 @@ class node_manager_s
     error_e remove_connection_locked(const connection_s& con, const std::optional<origin_info_s>& origin);
 
   public:
-    node_manager_s();
+    explicit node_manager_s(node_status_registry_s* status_registry = nullptr);
+    const node_status_handle_s& settings_status_handle() const { return settings_status_handle_; }
     ~node_manager_s() { actions_.close(); }
 
     error_e handle_add_node(std::string_view                    type,

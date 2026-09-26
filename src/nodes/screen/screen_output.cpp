@@ -58,7 +58,7 @@ class node_impl : public node_i
 
         const auto metrics = presenter_->metrics();
         status_registry->write(
-            id_,
+            status_handle_,
             status::screen_output_metrics_status_s{
                 .clock_quality    = metrics.uses_present_wait ? "Display completion estimate" : "Nominal FIFO estimate",
                 .frames_submitted = metrics.frames_submitted,
@@ -96,7 +96,7 @@ class node_impl : public node_i
     {
         const auto monitor_version = gpu::window_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
-            app->status_registry()->write(id_,
+            app->status_registry()->write(status_handle_,
                                           status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()});
         }
 
@@ -133,7 +133,7 @@ class node_impl : public node_i
         if (window_settings_changed || enabled_changed) {
             failure_.clear();
         }
-        app->status_registry()->write(id_, status::screen_output_status_s{.screen_error = failure_});
+        app->status_registry()->write(status_handle_, status::screen_output_status_s{.screen_error = failure_});
         const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
         const bool output_dimensions_changed  = presenter_ && presenter_->output_dimensions_changed();
         if (presenter_ && (presenter_settings_changed || window_settings_changed || output_dimensions_changed) &&
@@ -144,14 +144,14 @@ class node_impl : public node_i
 
         if (presenter_stopping_) {
             if (!presenter_->stopped()) {
-                app->status_registry()->write(id_, status::connected_status_s{.connected = false});
+                app->status_registry()->write(status_handle_, status::connected_status_s{.connected = false});
                 return;
             }
             destroy_presenter();
         }
 
         if (!enabled || !failure_.empty()) {
-            app->status_registry()->write(id_, status::connected_status_s{.connected = false});
+            app->status_registry()->write(status_handle_, status::connected_status_s{.connected = false});
             return;
         }
 
@@ -168,14 +168,14 @@ class node_impl : public node_i
             } catch (const std::exception& error) {
                 failure_ = error.what();
                 destroy_presenter();
-                app->status_registry()->write(id_, status::screen_output_status_s{.screen_error = failure_});
-                app->status_registry()->write(id_, status::connected_status_s{.connected = false});
+                app->status_registry()->write(status_handle_, status::screen_output_status_s{.screen_error = failure_});
+                app->status_registry()->write(status_handle_, status::connected_status_s{.connected = false});
                 return;
             }
         }
 
         result->demands_execution = true;
-        app->status_registry()->write(id_, status::connected_status_s{.connected = true});
+        app->status_registry()->write(status_handle_, status::connected_status_s{.connected = true});
         publish_metrics(app->status_registry());
     }
 

@@ -66,7 +66,6 @@ class websocket_config_s final : public node_manager_s::adapter_i
                           const std::optional<origin_info_s>& origin) final;
     void emit_add_connection(const connection_s& con, const std::optional<origin_info_s>& origin) final;
     void emit_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin) final;
-    void emit_node_status(std::string_view id, const nlohmann::json& status) final;
 
   public:
     websocket_config_s(node_manager_s&                              manager,
@@ -280,14 +279,6 @@ void websocket_config_s::emit_remove_connection(const connection_s& con, const s
         .origin_id    = get_origin_id(origin),
         .origin_token = get_origin_token(origin),
         .connection   = con,
-    });
-}
-
-void websocket_config_s::emit_node_status(std::string_view id, const nlohmann::json& status)
-{
-    server_.broadcast_message_sync(web_message::node_status_command_s{
-        .id     = std::string(id),
-        .status = status,
     });
 }
 
