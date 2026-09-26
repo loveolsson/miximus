@@ -13,7 +13,6 @@
 #include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
-#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -21,7 +20,6 @@
 #include <utility>
 
 namespace {
-using namespace std::chrono_literals;
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace miximus::nodes::ndi;
@@ -39,8 +37,8 @@ class node_impl : public node_i
     utils::observed_value_s<std::pair<std::string, bool>> sender_selection_;
     utils::observed_value_s<timing_selection_t>           timing_selection_;
     utils::observed_value_s<gpu::vec2i_t>                 stream_dimensions_;
-    std::chrono::steady_clock::time_point                 next_metrics_status_;
-    uint64_t                                              render_target_drops_{};
+
+    uint64_t render_target_drops_{};
 
     input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -64,8 +62,7 @@ class node_impl : public node_i
 
     void publish_metrics(core::node_status_registry_s* status_registry)
     {
-        const auto now = std::chrono::steady_clock::now();
-        if (!sender_ || now < next_metrics_status_) {
+        if (!sender_) {
             return;
         }
 
@@ -106,7 +103,6 @@ class node_impl : public node_i
         } else {
             status_registry->write(status_handle_, output_status);
         }
-        next_metrics_status_ = now + 1s;
     }
 
     void update_sender_lifecycle(core::app_state_s*                  app,
@@ -133,7 +129,7 @@ class node_impl : public node_i
         render_target_drops_ = 0;
         if (!selection.second) {
             sender_selection_.commit(selection);
-            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
+            report_connection(status_registry, {.connected = false});
             return;
         }
 
@@ -210,10 +206,8 @@ class node_impl : public node_i
         }
 
         publish_metrics(status_registry);
-        status_registry->write(status_handle_,
-                               status::connected_status_s{
-                                   .connected = sender_ && sender_->phase() == output_sender_s::phase_e::running,
-                               });
+        report_connection(status_registry,
+                          {.connected = sender_ && sender_->phase() == output_sender_s::phase_e::running});
     }
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

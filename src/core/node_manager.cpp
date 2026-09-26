@@ -229,7 +229,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, const std::optio
         adapter->emit_remove_node(id, origin);
     }
 
-    if (status_registry_) {
+    if (status_registry_ != nullptr) {
         status_registry_->remove_node(node->status_handle());
     } else {
         node->status_handle().retire();
@@ -514,7 +514,10 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
                                               .frame_rate            = app->frame_settings().frame_rate,
                                               .frame_duration_flicks = frame_context.frame_duration.count(),
                                               .epoch                 = frame_context.epoch,
-                                          });
+                                          },
+                                          reported_status_epoch_.observe(frame_context.epoch)
+                                              ? status_delivery_e::immediate
+                                              : status_delivery_e::rate_limited);
         }
 
         node_actions_s::dispatch(std::move(actions), app, nodes_copy_);
@@ -547,8 +550,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         nodes::complete_all_nodes(app, nodes_copy_);
         const auto complete_end = utils::flicks_now();
 
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= next_lifecycle_status_) {
+        {
             const auto to_microseconds = [](utils::flicks duration) {
                 return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
             };
@@ -564,7 +566,6 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
                                               .executed_node_count    = app->frame_info.executed_nodes.size(),
                                               .gpu_recording_drops    = gpu_recording_drops_,
                                           });
-            next_lifecycle_status_ = now + 1s;
         }
     }
 

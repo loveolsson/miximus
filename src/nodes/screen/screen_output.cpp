@@ -12,7 +12,6 @@
 #include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
-#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -21,7 +20,6 @@
 #include <utility>
 
 namespace {
-using namespace std::chrono_literals;
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace miximus::nodes::screen::detail;
@@ -40,8 +38,8 @@ class node_impl : public node_i
     utils::observed_value_s<presenter_settings_t> presenter_settings_;
     bool                                          presenter_stopping_{};
     std::string                                   failure_;
+    utils::observed_value_s<std::string>          reported_error_;
     utils::observed_value_s<bool>                 enabled_;
-    std::chrono::steady_clock::time_point         next_metrics_status_;
 
     void destroy_presenter()
     {
@@ -49,10 +47,17 @@ class node_impl : public node_i
         presenter_stopping_ = false;
     }
 
+    void publish_error(core::node_status_registry_s* registry)
+    {
+        registry->write(status_handle_,
+                        status::screen_output_status_s{.screen_error = failure_},
+                        reported_error_.observe(failure_) ? core::status_delivery_e::immediate
+                                                          : core::status_delivery_e::rate_limited);
+    }
+
     void publish_metrics(core::node_status_registry_s* status_registry)
     {
-        const auto now = std::chrono::steady_clock::now();
-        if (!presenter_ || now < next_metrics_status_) {
+        if (!presenter_) {
             return;
         }
 
@@ -79,7 +84,6 @@ class node_impl : public node_i
                 .completion_interval_max_us   = metrics.completion_interval_max_us,
                 .measured_refresh_hz          = metrics.measured_refresh_hz,
             });
-        next_metrics_status_ = now + 1s;
     }
 
   public:
@@ -97,7 +101,8 @@ class node_impl : public node_i
         const auto monitor_version = gpu::window_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
             app->status_registry()->write(status_handle_,
-                                          status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()});
+                                          status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()},
+                                          core::status_delivery_e::immediate);
         }
 
         const auto enabled                = state.get_option<bool>("enabled", false);
@@ -133,7 +138,7 @@ class node_impl : public node_i
         if (window_settings_changed || enabled_changed) {
             failure_.clear();
         }
-        app->status_registry()->write(status_handle_, status::screen_output_status_s{.screen_error = failure_});
+        publish_error(app->status_registry());
         const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
         const bool output_dimensions_changed  = presenter_ && presenter_->output_dimensions_changed();
         if (presenter_ && (presenter_settings_changed || window_settings_changed || output_dimensions_changed) &&
@@ -144,14 +149,14 @@ class node_impl : public node_i
 
         if (presenter_stopping_) {
             if (!presenter_->stopped()) {
-                app->status_registry()->write(status_handle_, status::connected_status_s{.connected = false});
+                report_connection(app->status_registry(), {.connected = false});
                 return;
             }
             destroy_presenter();
         }
 
         if (!enabled || !failure_.empty()) {
-            app->status_registry()->write(status_handle_, status::connected_status_s{.connected = false});
+            report_connection(app->status_registry(), {.connected = false});
             return;
         }
 
@@ -168,14 +173,14 @@ class node_impl : public node_i
             } catch (const std::exception& error) {
                 failure_ = error.what();
                 destroy_presenter();
-                app->status_registry()->write(status_handle_, status::screen_output_status_s{.screen_error = failure_});
-                app->status_registry()->write(status_handle_, status::connected_status_s{.connected = false});
+                publish_error(app->status_registry());
+                report_connection(app->status_registry(), {.connected = false});
                 return;
             }
         }
 
         result->demands_execution = true;
-        app->status_registry()->write(status_handle_, status::connected_status_s{.connected = true});
+        report_connection(app->status_registry(), {.connected = true});
         publish_metrics(app->status_registry());
     }
 

@@ -2,6 +2,7 @@
 #include "types/node_status_json.hpp"
 
 #include <boost/asio/post.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 #include <array>
 #include <chrono>
@@ -27,18 +28,17 @@ static_assert(publishable_status<status::connected_status_s>);
 static_assert(!publishable_status<unregistered_status_s>);
 static_assert(!publishable_status<nlohmann::json>);
 
-class node_status_registry : public testing::Test
+struct node_status_registry_test_s : testing::Test
 {
-  protected:
     boost::asio::io_context                              executor;
-    node_status_registry_s                               registry{executor};
+    node_status_registry_s                               registry{executor, std::chrono::milliseconds(20)};
     node_status_handle_s                                 decklink{"decklink"};
     node_status_handle_s                                 browser{"browser"};
     node_status_handle_s                                 output{"output"};
     std::vector<node_status_registry_s::status_update_s> updates;
     size_t                                               callbacks{};
 
-    node_status_registry()
+    node_status_registry_test_s()
     {
         registry.set_callback([this](const auto& batch) {
             EXPECT_TRUE(executor.get_executor().running_in_this_thread());
@@ -55,7 +55,7 @@ class node_status_registry : public testing::Test
     }
 };
 
-TEST_F(node_status_registry, keyer_modes_serialize_as_existing_wire_names)
+TEST_F(node_status_registry_test_s, keyer_modes_serialize_as_existing_wire_names)
 {
     for (const auto [mode, name] : std::array{
              std::pair{decklink_keyer_mode_e::disabled, "disabled"},
@@ -77,7 +77,7 @@ TEST_F(node_status_registry, keyer_modes_serialize_as_existing_wire_names)
     EXPECT_THROW(nlohmann::json("invalid").get<decklink_keyer_mode_e>(), std::invalid_argument);
 }
 
-TEST_F(node_status_registry, cef_states_serialize_as_existing_wire_names)
+TEST_F(node_status_registry_test_s, cef_states_serialize_as_existing_wire_names)
 {
     status::cef_browser_status_s payload;
     const std::array             states{
@@ -116,7 +116,7 @@ TEST_F(node_status_registry, cef_states_serialize_as_existing_wire_names)
     EXPECT_THROW(nlohmann::json("invalid").get<cef_input_state_e>(), std::invalid_argument);
 }
 
-TEST_F(node_status_registry, described_status_is_serialized_and_delta_filtered)
+TEST_F(node_status_registry_test_s, described_status_is_serialized_and_delta_filtered)
 {
     status::source_timing_status_s source_status;
     source_status.source_queue_pushed    = 1;
@@ -164,7 +164,7 @@ TEST_F(node_status_registry, described_status_is_serialized_and_delta_filtered)
     EXPECT_TRUE(flush().empty());
 }
 
-TEST_F(node_status_registry, typed_status_groups_are_merged_into_node_status)
+TEST_F(node_status_registry_test_s, typed_status_groups_are_merged_into_node_status)
 {
     registry.write(output, status::connected_status_s{.connected = true});
     registry.write(output,
@@ -181,7 +181,7 @@ TEST_F(node_status_registry, typed_status_groups_are_merged_into_node_status)
     ASSERT_EQ(result.size(), 1);
 }
 
-TEST_F(node_status_registry, waits_for_frame_publication_and_executor)
+TEST_F(node_status_registry_test_s, waits_for_frame_publication_and_executor)
 {
     registry.write(output, status::connected_status_s{.connected = true});
     EXPECT_TRUE(registry.get("output").empty());
@@ -194,7 +194,7 @@ TEST_F(node_status_registry, waits_for_frame_publication_and_executor)
     EXPECT_EQ(registry.get("output").at("connected"), true);
 }
 
-TEST_F(node_status_registry, stalled_executor_coalesces_groups_without_losing_catalogues)
+TEST_F(node_status_registry_test_s, stalled_executor_coalesces_groups_without_losing_catalogues)
 {
     registry.write(output, status::display_modes_status_s{.display_modes = {{.id = "mode", .label = "Mode"}}});
     for (uint64_t i = 0; i != 1000; ++i) {
@@ -210,7 +210,7 @@ TEST_F(node_status_registry, stalled_executor_coalesces_groups_without_losing_ca
     EXPECT_EQ(registry.get("output").at("display_modes").size(), 1);
 }
 
-TEST_F(node_status_registry, owns_values_and_clears_optional_fields)
+TEST_F(node_status_registry_test_s, owns_values_and_clears_optional_fields)
 {
     status::decklink_output_keyer_status_s payload{.keyer_fallback_reason = "initial"};
     registry.write(output, payload);
@@ -227,7 +227,7 @@ TEST_F(node_status_registry, owns_values_and_clears_optional_fields)
     }));
 }
 
-TEST_F(node_status_registry, removal_discards_staged_and_queued_old_instances)
+TEST_F(node_status_registry_test_s, removal_discards_staged_and_queued_old_instances)
 {
     registry.write(output, status::connected_status_s{.connected = true});
     flush();
@@ -249,7 +249,7 @@ TEST_F(node_status_registry, removal_discards_staged_and_queued_old_instances)
     EXPECT_EQ(registry.get("output").at("screen_error"), "replacement");
 }
 
-TEST_F(node_status_registry, overlapping_contract_fields_keep_last_write_order)
+TEST_F(node_status_registry_test_s, overlapping_contract_fields_keep_last_write_order)
 {
     registry.write(output, status::decklink_input_metrics_status_s{.frames_received = 1});
     registry.publish();
@@ -259,7 +259,7 @@ TEST_F(node_status_registry, overlapping_contract_fields_keep_last_write_order)
     EXPECT_EQ(registry.get("output").at("frames_received"), 3);
 }
 
-TEST_F(node_status_registry, concurrent_publication_reschedules_and_yields_to_commands)
+TEST_F(node_status_registry_test_s, concurrent_publication_reschedules_and_yields_to_commands)
 {
     // Publish from the producer while the consumer is inside its first callback.
     std::promise<void> entered;
@@ -289,8 +289,10 @@ TEST_F(node_status_registry, concurrent_publication_reschedules_and_yields_to_co
     EXPECT_EQ(registry.get("output").at("connected"), false);
 }
 
-TEST_F(node_status_registry, serialization_is_deferred_and_bad_group_does_not_block_later_batches)
+TEST_F(node_status_registry_test_s, serialization_is_deferred_and_bad_group_does_not_block_later_batches)
 {
+    // Deliberately invalid: verify deferred serialization failure is isolated.
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     const auto invalid = static_cast<decklink_keyer_mode_e>(-1);
     EXPECT_NO_THROW(registry.write(output,
                                    status::decklink_output_keyer_status_s{.requested_keyer_mode  = invalid,
@@ -311,7 +313,7 @@ TEST_F(node_status_registry, serialization_is_deferred_and_bad_group_does_not_bl
     }));
 }
 
-TEST_F(node_status_registry, stop_and_destruction_cancel_queued_callbacks)
+TEST_F(node_status_registry_test_s, stop_and_destruction_cancel_queued_callbacks)
 {
     registry.write(output, status::connected_status_s{.connected = true});
     registry.publish();
@@ -326,6 +328,125 @@ TEST_F(node_status_registry, stop_and_destruction_cancel_queued_callbacks)
         temporary.publish();
     }
     executor.run();
+}
+
+TEST_F(node_status_registry_test_s, normal_updates_and_pulls_do_not_consume_the_broadcast_delta)
+{
+    registry.write(output, status::ndi_output_metrics_status_s{.frames_sent = 1});
+    flush();
+    registry.write(output, status::ndi_output_metrics_status_s{.frames_sent = 2});
+    registry.publish();
+    executor.restart();
+    ASSERT_EQ(executor.poll_one(), 1); // Admit typed values, leaving the timer pending.
+    EXPECT_TRUE(updates.empty());
+    EXPECT_EQ(registry.get("output").at("frames_sent"), 2);
+    EXPECT_EQ(registry.get_all().at("output").at("frames_sent"), 2);
+    executor.run(); // No further producer write: the timer must deliver the change.
+    ASSERT_EQ(updates.size(), 1);
+    EXPECT_EQ(updates.front().status.at("frames_sent"), 2);
+}
+
+TEST_F(node_status_registry_test_s, immediate_delivery_survives_frame_and_mailbox_coalescing)
+{
+    registry.write(output, status::connected_status_s{.connected = false});
+    flush();
+    registry.write(output, status::connected_status_s{.connected = true}, status_delivery_e::immediate);
+    registry.write(output, status::connected_status_s{.connected = true});
+    registry.publish();
+    registry.write(output, status::connected_status_s{.connected = true});
+    registry.write(output, status::ndi_output_metrics_status_s{.frames_sent = 42});
+    registry.publish();
+    executor.restart();
+    ASSERT_EQ(executor.poll_one(), 1);
+    ASSERT_EQ(updates.size(), 1);
+    EXPECT_EQ(updates.front().status.at("connected"), true);
+    EXPECT_EQ(updates.front().status.at("frames_sent"), 42);
+}
+
+TEST(node_status_cadence, immediate_event_resets_deadline_and_continuous_writes_do_not_postpone_it)
+{
+    using namespace std::chrono_literals;
+    boost::asio::io_context                            executor;
+    node_status_registry_s                             registry(executor, 60ms);
+    const node_status_handle_s                         node("node");
+    boost::asio::steady_timer                          event(executor);
+    boost::asio::steady_timer                          writer(executor);
+    std::vector<std::chrono::steady_clock::time_point> sent;
+    std::vector<nlohmann::json>                        values;
+    registry.set_callback([&](const auto& batch) {
+        sent.push_back(std::chrono::steady_clock::now());
+        values.push_back(batch.front().status);
+    });
+    registry.write(node, status::connected_status_s{.connected = false});
+    registry.publish();
+    executor.poll();
+    event.expires_after(25ms);
+    event.async_wait([&](const auto& error) {
+        ASSERT_FALSE(error);
+        registry.write(node, status::connected_status_s{.connected = true}, status_delivery_e::immediate);
+        registry.publish();
+    });
+    uint64_t                                              frame = 0;
+    std::function<void(const boost::system::error_code&)> tick;
+    tick = [&](const auto& error) {
+        ASSERT_FALSE(error);
+        registry.write(node, status::ndi_output_metrics_status_s{.frames_sent = ++frame});
+        registry.publish();
+        if (frame < 10) {
+            writer.expires_after(5ms);
+            writer.async_wait(tick);
+        }
+    };
+    writer.expires_after(30ms);
+    writer.async_wait(tick);
+    executor.restart();
+    executor.run();
+    ASSERT_GE(sent.size(), 3);
+    EXPECT_TRUE(values[1].at("connected").get<bool>());
+    EXPECT_GE(sent[2] - sent[1], 60ms);
+    EXPECT_GE(sent[2], sent[0] + 85ms);
+    EXPECT_EQ(values.back().at("frames_sent"), 10);
+    // With no new writes, no recurring heartbeat or outstanding timer remains.
+    executor.restart();
+    EXPECT_EQ(executor.poll(), 0);
+}
+
+TEST(node_status_cadence, removal_and_shutdown_cancel_delayed_publication)
+{
+    using namespace std::chrono_literals;
+    boost::asio::io_context    executor;
+    node_status_registry_s     registry(executor, 1h);
+    const node_status_handle_s node("node");
+    size_t                     callbacks = 0;
+    registry.set_callback([&](const auto&) { ++callbacks; });
+    registry.write(node, status::connected_status_s{.connected = false});
+    registry.publish();
+    executor.poll();
+    registry.write(node, status::connected_status_s{.connected = true});
+    registry.publish();
+    executor.restart();
+    executor.poll();
+    registry.remove_node(node);
+    executor.run(); // Would hang for an hour if removal didn't cancel its timer.
+    EXPECT_EQ(callbacks, 1);
+    const node_status_handle_s replacement("node");
+    registry.write(replacement, status::connected_status_s{.connected = true});
+    registry.publish();
+    executor.restart();
+    executor.poll();
+    registry.write(replacement, status::connected_status_s{.connected = false});
+    registry.publish();
+    executor.restart();
+    executor.poll();
+    registry.stop();
+    executor.run();
+    EXPECT_EQ(callbacks, 2);
+}
+
+TEST(node_status_cadence, invalid_report_interval_is_rejected)
+{
+    boost::asio::io_context executor;
+    EXPECT_THROW(node_status_registry_s(executor, std::chrono::seconds(0)), std::invalid_argument);
 }
 
 } // namespace miximus::core::tests

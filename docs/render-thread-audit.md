@@ -67,7 +67,9 @@ the control executor before transfer services and the process-wide NDI runtime.
   stall in buffer swap or context teardown can still delay the render thread. Consider asynchronous retirement with GL
   resources destroyed by the display thread before it reports completion.
 - Status JSON conversion, deduplication, snapshot reads, and WebSocket broadcasting now run on the configuration
-  executor. Render-thread publication transfers typed values through a coalescing mailbox. Collecting worker metrics,
+  executor, with a central 1 Hz per-node cadence and immediate transition reports. Nodes submit available telemetry
+  every frame, while JSON conversion waits for a reporting deadline or explicit pull. Render-thread publication transfers
+  typed values through a coalescing mailbox. Collecting worker metrics,
   copying lvalue payloads, and retiring superseded typed catalogues can still cost producer time. Version checks avoid
   rebuilding lists every frame; large application-wide catalogues could eventually use shared immutable system state
   rather than duplicated per-node values.

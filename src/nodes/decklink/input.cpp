@@ -17,10 +17,10 @@
 #include "utils/observed_value.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 
-#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 
 namespace {
@@ -55,15 +55,16 @@ class node_impl : public node_i
 {
     std::unique_ptr<input_capture_s> capture_;
 
-    std::shared_ptr<gpu::texture_s>                           framebuffer_;
-    utils::observed_value_s<uint64_t>                         device_version_;
-    utils::observed_value_s<std::pair<std::string, bool>>     capture_selection_;
-    utils::observed_value_s<BMDColorspace>                    colorspace_;
-    utils::observed_value_s<std::pair<std::string, uint64_t>> device_status_version_;
-    std::chrono::steady_clock::time_point                     next_metrics_status_;
-    gpu::color_conversion_s                                   yuv_conversion_{};
-    gpu::mat3                                                 gamut_conversion_{1.0F};
-    gpu::texture_frame_ptr                                    rendered_input_frame_;
+    std::shared_ptr<gpu::texture_s>                       framebuffer_;
+    utils::observed_value_s<uint64_t>                     device_version_;
+    utils::observed_value_s<std::pair<std::string, bool>> capture_selection_;
+    utils::observed_value_s<BMDColorspace>                colorspace_;
+    utils::observed_value_s<std::tuple<std::string, std::optional<bool>, std::optional<std::string>>>
+        device_status_event_;
+
+    gpu::color_conversion_s yuv_conversion_{};
+    gpu::mat3               gamut_conversion_{1.0F};
+    gpu::texture_frame_ptr  rendered_input_frame_;
 
     output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -83,17 +84,18 @@ class node_impl : public node_i
     void publish_device_status(core::app_state_s* app, std::string_view device_name)
     {
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
-        const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
-        if (device_status_version_.observe(status_key)) {
-            app->status_registry()->write(status_handle_,
-                                          make_device_status(device_status ? *device_status : device_status_s{}));
-        }
+        auto       payload       = make_device_status(device_status ? *device_status : device_status_s{});
+        const bool important     = device_status_event_.observe(
+            std::tuple(std::string(device_name), payload.signal_locked, payload.active_format));
+        app->status_registry()->write(status_handle_,
+                                      std::move(payload),
+                                      important ? core::status_delivery_e::immediate
+                                                : core::status_delivery_e::rate_limited);
     }
 
     void publish_metrics(core::node_status_registry_s* status_registry)
     {
-        const auto now = std::chrono::steady_clock::now();
-        if (!capture_ || now < next_metrics_status_) {
+        if (!capture_) {
             return;
         }
 
@@ -135,7 +137,6 @@ class node_impl : public node_i
                 .source_repeat_next_frame_lead_min_us = metrics.source_queue.repeat_next_frame_lead_min,
                 .source_repeat_next_frame_lead_max_us = metrics.source_queue.repeat_next_frame_lead_max,
             });
-        next_metrics_status_ = now + std::chrono::seconds(1);
     }
 
     void prepare_active_capture(core::app_state_s* app, core::node_status_registry_s* status_registry)
@@ -154,13 +155,13 @@ class node_impl : public node_i
             log()->error("DeckLink input capture failed");
             stop_capture();
             capture_selection_.reset();
-            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
+            report_connection(status_registry, {.connected = false});
             return;
         }
         if (phase == input_capture_s::phase_e::stopped) {
             capture_ = nullptr;
             capture_selection_.reset();
-            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
+            report_connection(status_registry, {.connected = false});
             return;
         }
 
@@ -205,7 +206,8 @@ class node_impl : public node_i
         const bool device_list_changed = device_version_.observe(current_version);
         if (device_list_changed) {
             sr->write(status_handle_,
-                      status::device_names_status_s{.device_names = app->decklink_registry()->get_input_options()});
+                      status::device_names_status_s{.device_names = app->decklink_registry()->get_input_options()},
+                      core::status_delivery_e::immediate);
         }
 
         prepare_active_capture(app, sr);
@@ -227,27 +229,24 @@ class node_impl : public node_i
 
             if (!enabled) {
                 capture_selection_.commit(selection);
-                sr->write(status_handle_, status::connected_status_s{.connected = false});
+                report_connection(sr, {.connected = false});
                 return;
             }
 
             auto device = app->decklink_registry()->get_input(device_name);
             if (!device) {
-                sr->write(status_handle_, status::connected_status_s{.connected = false});
+                report_connection(sr, {.connected = false});
                 return;
             }
 
             if (!start_capture(app, std::move(device), device_name)) {
-                sr->write(status_handle_, status::connected_status_s{.connected = false});
+                report_connection(sr, {.connected = false});
                 return;
             }
             capture_selection_.commit(selection);
         }
 
-        sr->write(status_handle_,
-                  status::connected_status_s{
-                      .connected = capture_ && capture_->phase() == input_capture_s::phase_e::running,
-                  });
+        report_connection(sr, {.connected = capture_ && capture_->phase() == input_capture_s::phase_e::running});
     }
 
     void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final

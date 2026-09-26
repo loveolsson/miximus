@@ -1,14 +1,20 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
 #include "core/node_status_handle.hpp"
+#include "core/node_status_registry_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
 #include "nodes/option_result.hpp"
 #include "types/error.hpp"
+#include "utils/observed_value.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
 #include <string>
 #include <string_view>
+
+namespace miximus::status {
+struct connected_status_s;
+}
 
 namespace miximus::nodes {
 
@@ -24,6 +30,9 @@ class node_i
     interface_map_t            interfaces_;
     std::string                id_;
     core::node_status_handle_s status_handle_;
+
+    utils::observed_value_s<bool> reported_connection_;
+    void report_connection(core::node_status_registry_s* registry, status::connected_status_s connection);
 
     node_i()          = default;
     virtual ~node_i() = default;

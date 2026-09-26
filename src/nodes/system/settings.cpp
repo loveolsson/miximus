@@ -11,6 +11,7 @@
 #include "types/frame_rate.hpp"
 #include "types/node_status_json.hpp"
 #include "types/output_buffer_limits.hpp"
+#include "utils/observed_value.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -94,6 +95,8 @@ option_result_e normalize_framebuffer_size(json* value)
 
 class node_impl final : public node_i
 {
+    utils::observed_value_s<bool> reported_cache_pending_;
+
   public:
     std::string_view type() const final { return miximus::nodes::system::SETTINGS_NODE_TYPE; }
 
@@ -130,7 +133,10 @@ class node_impl final : public node_i
         }
 #endif
         if (auto* registry = app->status_registry()) {
-            registry->write(status_handle_, status::browser_cache_status_s{.browser_cache_clearing = pending});
+            registry->write(status_handle_,
+                            status::browser_cache_status_s{.browser_cache_clearing = pending},
+                            reported_cache_pending_.observe(pending) ? core::status_delivery_e::immediate
+                                                                     : core::status_delivery_e::rate_limited);
         }
     }
 

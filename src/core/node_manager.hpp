@@ -3,18 +3,19 @@
 #include "core/configuration_fwd.hpp"
 #include "core/frame_scheduler_fwd.hpp"
 #include "core/node_actions.hpp"
+#include "core/node_status_handle.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "core/origin_info.hpp"
-#include "node_status_handle.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/option_result.hpp"
 #include "nodes/register_all.hpp"
 #include "types/error.hpp"
+#include "utils/observed_value.hpp"
 
 #include <nlohmann/json_fwd.hpp>
 
-#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
@@ -57,18 +58,18 @@ class node_manager_s
 
     using adapter_list_t = std::vector<std::unique_ptr<adapter_i>>;
 
-    node_actions_s                        actions_;
-    std::mutex                            nodes_mutex_;
-    nodes::node_map_t                     nodes_;
-    nodes::node_map_t                     nodes_copy_;
-    std::unordered_set<std::string>       dirty_nodes_;
-    std::unordered_set<std::string>       removed_nodes_;
-    nodes::con_set_t                      connections_;
-    nodes::node_definition_map_t          node_definitions_;
-    adapter_list_t                        adapters_;
-    node_status_registry_s*               status_registry_{nullptr};
-    node_status_handle_s                  settings_status_handle_;
-    std::chrono::steady_clock::time_point next_lifecycle_status_{};
+    node_actions_s                    actions_;
+    std::mutex                        nodes_mutex_;
+    nodes::node_map_t                 nodes_;
+    nodes::node_map_t                 nodes_copy_;
+    std::unordered_set<std::string>   dirty_nodes_;
+    std::unordered_set<std::string>   removed_nodes_;
+    nodes::con_set_t                  connections_;
+    nodes::node_definition_map_t      node_definitions_;
+    adapter_list_t                    adapters_;
+    node_status_registry_s*           status_registry_{nullptr};
+    node_status_handle_s              settings_status_handle_;
+    utils::observed_value_s<uint64_t> reported_status_epoch_;
 
     error_e handle_add_node_locked(std::string_view                    type,
                                    std::string_view                    id,

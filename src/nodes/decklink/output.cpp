@@ -926,10 +926,11 @@ class node_impl : public node_i
     utils::observed_value_s<selection_t>                      selection_;
     utils::observed_value_s<uint64_t>                         device_version_;
     utils::observed_value_s<std::pair<std::string, uint64_t>> mode_options_version_;
-    utils::observed_value_s<std::pair<std::string, uint64_t>> device_status_version_;
-    std::chrono::steady_clock::time_point                     next_start_attempt_;
-    std::chrono::steady_clock::time_point                     next_metrics_status_;
-    uint64_t                                                  render_target_drops_{};
+    utils::observed_value_s<std::tuple<std::string, std::optional<bool>, std::optional<std::string>>>
+                                          device_status_event_;
+    std::chrono::steady_clock::time_point next_start_attempt_;
+
+    uint64_t render_target_drops_{};
 
     input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -974,11 +975,25 @@ class node_impl : public node_i
     void publish_device_status(core::app_state_s* app, std::string_view device_name)
     {
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
-        const auto status_key    = std::pair(std::string(device_name), device_status ? device_status->version : 0);
-        if (device_status_version_.observe(status_key)) {
-            app->status_registry()->write(status_handle_,
-                                          make_device_status(device_status ? *device_status : device_status_s{}));
-        }
+        auto       payload       = make_device_status(device_status ? *device_status : device_status_s{});
+        const bool important     = device_status_event_.observe(
+            std::tuple(std::string(device_name), payload.reference_locked, payload.active_format));
+        app->status_registry()->write(status_handle_,
+                                      std::move(payload),
+                                      important ? core::status_delivery_e::immediate
+                                                : core::status_delivery_e::rate_limited);
+    }
+
+    utils::observed_value_s<std::tuple<decklink_keyer_mode_e, decklink_keyer_mode_e, std::optional<std::string>>>
+        keyer_status_event_;
+
+    void publish_keyer_status(core::node_status_registry_s* registry, status::decklink_output_keyer_status_s payload)
+    {
+        const bool important = keyer_status_event_.observe(
+            std::tuple(payload.requested_keyer_mode, payload.active_keyer_mode, payload.keyer_fallback_reason));
+        registry->write(status_handle_,
+                        std::move(payload),
+                        important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);
     }
 
     void publish_callback_status(core::node_status_registry_s* status_registry, std::string_view device_name)
@@ -990,14 +1005,11 @@ class node_impl : public node_i
         const auto options_key = std::pair(std::string(device_name), callback_->mode_options_version());
         if (mode_options_version_.observe(options_key)) {
             status_registry->write(status_handle_,
-                                   status::display_modes_status_s{.display_modes = callback_->mode_options()});
+                                   status::display_modes_status_s{.display_modes = callback_->mode_options()},
+                                   core::status_delivery_e::immediate);
         }
-        status_registry->write(status_handle_, callback_->keyer_status());
+        publish_keyer_status(status_registry, callback_->keyer_status());
 
-        const auto now = std::chrono::steady_clock::now();
-        if (now < next_metrics_status_) {
-            return;
-        }
         const auto metrics = callback_->metrics();
         status_registry->write(status_handle_,
                                status::decklink_output_metrics_status_s{
@@ -1050,7 +1062,6 @@ class node_impl : public node_i
                 .download_transfer_duration_max_us   = metrics.readback_stream.transfer_duration_max_us,
                 .download_allocation_failed          = metrics.readback_stream.allocation_failed,
             });
-        next_metrics_status_ = now + 1s;
     }
 
     bool prepare_existing_playback(core::node_status_registry_s* status, std::string_view device_name)
@@ -1067,7 +1078,7 @@ class node_impl : public node_i
             if (phase == callback_s::phase_e::prerolling) {
                 callback_->request_preroll_pump();
             }
-            status->write(status_handle_, status::connected_status_s{.connected = render_state_.has_value()});
+            report_connection(status, {.connected = render_state_.has_value()});
             return true;
         }
 
@@ -1084,7 +1095,7 @@ class node_impl : public node_i
 
         render_state_.reset();
         frame_renderer_.reset();
-        status->write(status_handle_, status::connected_status_s{.connected = false});
+        report_connection(status, {.connected = false});
         return true;
     }
 
@@ -1104,9 +1115,9 @@ class node_impl : public node_i
         const auto device_list_version = app->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(device_list_version);
         if (device_list_changed) {
-            status->write(
-                status_handle_,
-                status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()});
+            status->write(status_handle_,
+                          status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()},
+                          core::status_delivery_e::immediate);
         }
 
         const auto device_name    = state.get_option<std::string>("device_name");
@@ -1137,19 +1148,19 @@ class node_impl : public node_i
         }
 
         if (!callback_) {
-            status->write(status_handle_,
-                          status::decklink_output_keyer_status_s{
-                              .requested_keyer_mode  = keyer_mode,
-                              .active_keyer_mode     = decklink_keyer_mode_e::disabled,
-                              .keyer_fallback_reason = std::nullopt,
-                          });
+            publish_keyer_status(status,
+                                 status::decklink_output_keyer_status_s{
+                                     .requested_keyer_mode  = keyer_mode,
+                                     .active_keyer_mode     = decklink_keyer_mode_e::disabled,
+                                     .keyer_fallback_reason = std::nullopt,
+                                 });
         }
         publish_callback_status(status, device_name);
         if (prepare_existing_playback(status, device_name)) {
             return;
         }
 
-        status->write(status_handle_, status::connected_status_s{.connected = false});
+        report_connection(status, {.connected = false});
         if (!enabled || std::chrono::steady_clock::now() < next_start_attempt_) {
             return;
         }

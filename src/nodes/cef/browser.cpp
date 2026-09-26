@@ -8,17 +8,18 @@
 #include "nodes/node_map.hpp"
 #include "subsystem.hpp"
 #include "types/node_status_json.hpp"
+#include "utils/observed_value.hpp"
 
 #include <bit>
 #include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 
 namespace {
 using namespace miximus;
 using namespace miximus::nodes;
-using namespace std::chrono_literals;
 
 class node_impl final : public node_i
 {
@@ -31,10 +32,10 @@ class node_impl final : public node_i
     session_t::frame_ptr_t                  output_;
     std::optional<session_t::options_s>     selection_;
     std::chrono::steady_clock::time_point   retry_after_;
-    std::chrono::steady_clock::time_point   next_metrics_;
-    uint64_t                                restarts_{};
-    std::string                             error_;
-    status::cef_browser_status_s            browser_status_;
+
+    uint64_t                     restarts_{};
+    std::string                  error_;
+    status::cef_browser_status_s browser_status_;
 
     static session_t::options_s session_options(core::app_state_s* app, const node_state_s& state)
     {
@@ -67,9 +68,23 @@ class node_impl final : public node_i
         retry_after_ = std::chrono::steady_clock::now() + std::chrono::seconds(1ULL << restarts_);
     }
 
-    void publish_metrics(core::node_status_registry_s*              status,
-                         const std::optional<session_t::metrics_s>& metrics,
-                         std::chrono::steady_clock::time_point      now)
+    using lifecycle_t = std::tuple<cef_state_e, std::string, cef_input_state_e, std::string, std::string, uint64_t>;
+    utils::observed_value_s<lifecycle_t> reported_lifecycle_;
+
+    void publish_browser_status(core::node_status_registry_s* registry, const status::cef_browser_status_s& value)
+    {
+        const bool important = reported_lifecycle_.observe(lifecycle_t{value.cef_state,
+                                                                       value.cef_error,
+                                                                       value.cef_inputs_state,
+                                                                       value.cef_inputs_error,
+                                                                       value.cef_timing_error,
+                                                                       value.cef_restarts});
+        registry->write(status_handle_,
+                        value,
+                        important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);
+    }
+
+    void publish_metrics(core::node_status_registry_s* status, const std::optional<session_t::metrics_s>& metrics)
     {
         auto& browser_status = browser_status_;
         if (metrics) {
@@ -80,11 +95,6 @@ class node_impl final : public node_i
             browser_status.cef_error = error_;
         }
         browser_status.cef_restarts = restarts_;
-        // Publish lifecycle changes every frame while retaining the last counter snapshot.
-        if (now < next_metrics_ && metrics) {
-            status->write(status_handle_, browser_status);
-            return;
-        }
         if (metrics) {
             const auto& inputs = metrics->inputs;
             if (!inputs.available) {
@@ -116,7 +126,7 @@ class node_impl final : public node_i
             browser_status.cef_completion_wait_p95_upper_us = metrics->completion_wait.p95_upper_us;
             browser_status.cef_completion_wait_max_us       = metrics->completion_wait.maximum_us;
         }
-        status->write(status_handle_, browser_status);
+        publish_browser_status(status, browser_status);
         if (metrics) {
             const auto& queue = metrics->source_queue;
             status->write(status_handle_,
@@ -141,7 +151,6 @@ class node_impl final : public node_i
                               .source_repeat_next_frame_lead_max_us = queue.repeat_next_frame_lead_max,
                           });
         }
-        next_metrics_ = now + 1s;
     }
 
     void update_session(cef::subsystem_s&                     subsystem,
@@ -191,7 +200,7 @@ class node_impl final : public node_i
         if (!request_->reload(payload.value("ignore_cache", false))) {
             return {.error = error_e::busy, .message = "Browser is not ready to reload"};
         }
-        next_metrics_ = {};
+
         return {};
     }
 
@@ -203,13 +212,14 @@ class node_impl final : public node_i
         if (app->cef_subsystem() == nullptr || !enabled || url.empty()) {
             stop();
             selection_.reset();
-            status->write(status_handle_, status::connected_status_s{.connected = false});
-            status->write(status_handle_,
-                          status::cef_browser_status_s{
-                              .cef_state = !enabled || url.empty() ? cef_state_e::stopped : cef_state_e::unavailable,
-                              .cef_error = !enabled || url.empty() ? "" : app->cef_error(),
-                              .cef_inputs_error = {},
-                          });
+            report_connection(status, {.connected = false});
+            publish_browser_status(
+                status,
+                status::cef_browser_status_s{
+                    .cef_state        = !enabled || url.empty() ? cef_state_e::stopped : cef_state_e::unavailable,
+                    .cef_error        = !enabled || url.empty() ? "" : app->cef_error(),
+                    .cef_inputs_error = {},
+                });
             return;
         }
         const auto selection = session_options(app, state);
@@ -217,9 +227,8 @@ class node_impl final : public node_i
             stop();
             selection_ = selection;
             error_.clear();
-            restarts_     = 0;
-            retry_after_  = {};
-            next_metrics_ = {};
+            restarts_    = 0;
+            retry_after_ = {};
         }
         const auto now = std::chrono::steady_clock::now();
         update_session(*app->cef_subsystem(), selection, now);
@@ -242,13 +251,10 @@ class node_impl final : public node_i
                 metrics.reset();
             }
         }
-        status->write(status_handle_,
-                      status::connected_status_s{
-                          .connected = metrics && metrics->phase == session_t::phase_e::ready,
-                      });
+        report_connection(status, {.connected = metrics && metrics->phase == session_t::phase_e::ready});
         input_mask_               = session_ ? session_->media_input_demand() : 0;
         result->demands_execution = input_mask_ != 0;
-        publish_metrics(status, metrics, now);
+        publish_metrics(status, metrics);
     }
 
     void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final

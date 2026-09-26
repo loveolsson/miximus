@@ -3,7 +3,6 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "logger/logger.hpp"
-#include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
 
 #include <thread>

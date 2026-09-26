@@ -126,5 +126,14 @@
     "stdfloat": "cpp",
     "text_encoding": "cpp"
   },
-  "js/ts.tsdk.path": "web/node_modules/typescript/lib"
+  "js/ts.tsdk.path": "web/node_modules/typescript/lib",
+  "cmake.configureSettings": {
+    "MIXIMUS_ENABLE_CEF": true,
+    "MIXIMUS_CEF_ROOT": "${workspaceFolder}/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9",
+    "MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK": false,
+    "MIXIMUS_TUNE_NATIVE": true,
+    "MIXIMUS_ENABLE_PRECOMPILED_HEADERS": true,
+    "MIXIMUS_ENABLE_CLANG_TIDY": false,
+    "MIXIMUS_ENABLE_RELEASE_IPO": false
+  }
 }

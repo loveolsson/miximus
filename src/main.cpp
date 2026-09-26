@@ -9,7 +9,6 @@
 #include "core/test_instrumentation/render_thread_delay.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
-#include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
 #include "types/web_message_json.hpp"
 #include "utils/filesystem.hpp"
@@ -159,9 +158,6 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                                                            *app.command_line_options().stop_after);
             }
 
-            uint64_t      status_epoch{};
-            utils::flicks next_status_pts{};
-
             while (get_signal_status() == 0 &&
                    (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
                 render_thread_delay_test.inject_before_render_frame();
@@ -170,13 +166,8 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                 gpu::window_s::poll();
 
                 const auto& metrics = frame_scheduler.finish_frame();
-                const auto& context = app.frame_context();
-                if (context.epoch != status_epoch || context.program_pts >= next_status_pts) {
-                    publish_scheduler_status(&app, node_manager.settings_status_handle(), frame_scheduler, metrics);
-                    render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
-                    status_epoch    = context.epoch;
-                    next_status_pts = context.program_pts + utils::k_flicks_one_second;
-                }
+                publish_scheduler_status(&app, node_manager.settings_status_handle(), frame_scheduler, metrics);
+                render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
             }
 
             if (stop_time.has_value() && get_signal_status() == 0) {

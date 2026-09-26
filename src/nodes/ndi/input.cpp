@@ -13,14 +13,12 @@
 #include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
-#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 
 namespace {
-using namespace std::chrono_literals;
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace miximus::nodes::ndi;
@@ -36,8 +34,8 @@ class node_impl : public node_i
 
     utils::observed_value_s<uint64_t>                     source_version_;
     utils::observed_value_s<std::pair<std::string, bool>> capture_selection_;
-    std::chrono::steady_clock::time_point                 next_metrics_status_;
-    gpu::texture_frame_ptr                                rendered_input_frame_;
+
+    gpu::texture_frame_ptr rendered_input_frame_;
 
     output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
 
@@ -53,8 +51,7 @@ class node_impl : public node_i
 
     void publish_metrics(core::node_status_registry_s* status_registry)
     {
-        const auto now = std::chrono::steady_clock::now();
-        if (!capture_ || now < next_metrics_status_) {
+        if (!capture_) {
             return;
         }
 
@@ -89,7 +86,6 @@ class node_impl : public node_i
                 .source_repeat_next_frame_lead_min_us = metrics.source_queue.repeat_next_frame_lead_min,
                 .source_repeat_next_frame_lead_max_us = metrics.source_queue.repeat_next_frame_lead_max,
             });
-        next_metrics_status_ = now + 1s;
     }
 
     void update_capture_lifecycle(core::app_state_s*                  app,
@@ -115,7 +111,7 @@ class node_impl : public node_i
         stop_capture();
         if (!selection.second || selection.first.empty()) {
             capture_selection_.commit(selection);
-            status_registry->write(status_handle_, status::connected_status_s{.connected = false});
+            report_connection(status_registry, {.connected = false});
             return;
         }
 
@@ -143,7 +139,8 @@ class node_impl : public node_i
         if (source_version_.observe(current_version)) {
             status_registry->write(
                 status_handle_,
-                status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()});
+                status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()},
+                core::status_delivery_e::immediate);
         }
 
         const auto selection =
@@ -156,10 +153,8 @@ class node_impl : public node_i
             capture_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
         }
 
-        status_registry->write(status_handle_,
-                               status::connected_status_s{
-                                   .connected = capture_ && capture_->phase() == input_capture_s::phase_e::running,
-                               });
+        report_connection(status_registry,
+                          {.connected = capture_ && capture_->phase() == input_capture_s::phase_e::running});
     }
 
     void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final

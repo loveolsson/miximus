@@ -1,6 +1,7 @@
 #include "node.hpp"
 
 #include "action.hpp"
+#include "core/node_status_registry.hpp"
 #include "interface.hpp"
 #include "normalize_option.hpp"
 
@@ -30,6 +31,14 @@ void node_i::init(std::string_view id)
 {
     id_            = id;
     status_handle_ = core::node_status_handle_s(id);
+}
+
+void node_i::report_connection(core::node_status_registry_s* registry, status::connected_status_s connection)
+{
+    registry->write(status_handle_,
+                    connection,
+                    reported_connection_.observe(connection.connected) ? core::status_delivery_e::immediate
+                                                                       : core::status_delivery_e::rate_limited);
 }
 
 void node_i::submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state)

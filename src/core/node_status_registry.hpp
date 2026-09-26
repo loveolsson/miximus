@@ -5,6 +5,8 @@
 #include <boost/asio/io_context.hpp>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -14,6 +16,12 @@
 #include <vector>
 
 namespace miximus::core {
+
+enum class status_delivery_e : uint8_t
+{
+    rate_limited,
+    immediate,
+};
 
 class node_status_registry_s
 {
@@ -28,6 +36,11 @@ class node_status_registry_s
   private:
     struct value_i
     {
+        value_i()                                = default;
+        value_i(const value_i& other)            = delete;
+        value_i& operator=(const value_i& other) = delete;
+        value_i(value_i&& other)                 = delete;
+        value_i& operator=(value_i&& other)      = delete;
         virtual ~value_i()                       = default;
         virtual nlohmann::json serialize() const = 0;
     };
@@ -43,25 +56,35 @@ class node_status_registry_s
     };
     struct state_s;
     std::shared_ptr<state_s> state_;
-    void        enqueue(const node_status_handle_s& node, std::type_index type, std::unique_ptr<value_i> value);
-    static void schedule(const std::shared_ptr<state_s>& state);
-    static void drain(const std::shared_ptr<state_s>& state);
+    void                     enqueue(const node_status_handle_s& node,
+                                     std::type_index             type,
+                                     std::unique_ptr<value_i>    value,
+                                     status_delivery_e           delivery);
+    static void              schedule(const std::shared_ptr<state_s>& state);
+    static void              drain(const std::shared_ptr<state_s>& state);
+    static void              emit_due(const std::shared_ptr<state_s>& state);
+    static void              arm_timer(const std::shared_ptr<state_s>& state);
 
   public:
-    explicit node_status_registry_s(boost::asio::io_context& executor);
+    explicit node_status_registry_s(boost::asio::io_context&            executor,
+                                    std::chrono::steady_clock::duration report_interval = std::chrono::seconds(1));
     ~node_status_registry_s();
-    node_status_registry_s(const node_status_registry_s&)            = delete;
-    node_status_registry_s& operator=(const node_status_registry_s&) = delete;
+    node_status_registry_s(const node_status_registry_s& other)            = delete;
+    node_status_registry_s& operator=(const node_status_registry_s& other) = delete;
+
+    node_status_registry_s(node_status_registry_s&& other)            = delete;
+    node_status_registry_s& operator=(node_status_registry_s&& other) = delete;
 
     // Install before the first publication. Invoked only on the configuration executor.
     void set_callback(callback_t callback);
 
     // Render thread only. Own the complete typed group; do no JSON work here.
+    // An event bypasses the node cadence at publication and resets its deadline.
     template <status::registered_contract T>
-    void write(const node_status_handle_s& node, T value)
+    void write(const node_status_handle_s& node, T value, status_delivery_e delivery = status_delivery_e::rate_limited)
     {
         if (node.active()) {
-            enqueue(node, typeid(T), std::make_unique<value_s<T>>(std::move(value)));
+            enqueue(node, typeid(T), std::make_unique<value_s<T>>(std::move(value)), delivery);
         }
     }
 
@@ -70,7 +93,8 @@ class node_status_registry_s
     // Stop publication/callbacks during teardown. Queued handlers own their state, never this object.
     void stop() noexcept;
 
-    // Configuration thread (or quiescent startup/tests) only. Reads see the last processed batch.
+    // Configuration thread (or quiescent startup/tests) only. Reads materialize the latest processed typed batch
+    // without advancing WS cadence.
     void           remove_node(const node_status_handle_s& node);
     nlohmann::json get(std::string_view node_id) const;
     nlohmann::json get_all() const;

@@ -211,13 +211,32 @@ frames. Publication uses a short mailbox mutex; JSON conversion, snapshot copies
 The ordinary empty-mailbox handoff swaps the batch. Coalescing may retire superseded typed payloads on the producer;
 this is bounded by the pending groups, but large catalogues still warrant version gating.
 
-The configuration thread converts each value through nlohmann ADL, applies groups in publication order, compares the
-final fields against its JSON snapshot, and broadcasts one flat delta per changed node. Multiple contract types with
-overlapping fields retain last-write semantics. Optional members serialize as `null` to clear earlier values.
-`web/src/nodes/status_store.ts` shallow-merges deltas. Initial config, HTTP status, and explicit `node_status` queries
-read the latest **processed** batch without waiting for rendering. Configuration snapshots release the graph lock
-before copying status JSON. JSON state is configuration-thread-owned; getters
-and removal must run there, or while that executor is quiescent during startup/tests.
+The configuration thread retains the latest typed groups and rate-limits normal WebSocket publication to one combined
+node delta per second. JSON conversion and field deduplication happen only when a node is due or an explicit pull needs
+its current snapshot. A single executor-owned timer services the earliest pending deadline; waiting does not create
+per-frame timer operations or an unbounded queue. The first publication is immediate, and a final pending update is
+sent when due even if the producer stops writing.
+
+Pass `core::status_delivery_e::immediate` as the third `write()` argument for a significant transition; the default is
+`core::status_delivery_e::rate_limited`. Urgency survives later normal writes and coalescing. At frame publication, it
+makes all that node's pending groups eligible together, then resets the next normal deadline to one second after delivery. Normal writes never push that deadline back. Unchanged
+values do not generate messages; unchanged normal telemetry is still converted at most once per reporting interval.
+An unchanged immediate request does not postpone the normal deadline. Immediate reporting is asynchronous and cannot
+outrun a busy configuration executor; it is latest-state reporting, not a lossless event log.
+
+Nodes submit available telemetry every render frame. `node_i::report_connection()` marks connection transitions as
+immediate. Browser lifecycle/errors, screen errors, keyer changes, source signal/format changes, cache-clear state,
+application clock epochs, and changed catalogs also request immediate delivery. Large catalogs retain version/selection
+gating. SDK polling cadences (for example, background NDI performance queries) are acquisition policies, independent of
+WebSocket reporting, and remain bounded separately.
+
+Groups are materialized in publication order, including last-write semantics for overlapping fields. Optional members
+serialize as `null` to clear earlier values. `web/src/nodes/status_store.ts` shallow-merges flat deltas. Initial config,
+HTTP status, and explicit `node_status` queries materialize the latest **processed** typed batch without waiting for
+rendering. Pulls neither reset the WS deadline nor consume an outbound delta: current JSON and last-broadcast JSON are
+tracked separately. Only modified fields participate in outbound comparisons, so unchanged catalogs are not repeatedly
+compared with per-frame metrics. Configuration snapshots release the graph lock before copying status JSON. Getters and
+removal run on the configuration thread, or while that executor is quiescent during startup/tests.
 
 Authoritative removal retires the instance handle and removes its JSON snapshot on the configuration thread. Staged
 or queued values from that instance are discarded, including when the ID has been reused. The mailbox prunes retired
@@ -226,7 +245,8 @@ metrics; scheduler metrics sampled after `finish_frame()` join the next frame's 
 
 Startup installs the broadcast callback before the first publication. It retains only a weak server reference, never
 node or adapter pointers. Shutdown stops status publication before stopping the web server. Posted handlers own their
-mailbox state and skip processing after stop, so destroying the registry cannot leave a dangling task. A drain yields
+mailbox state and skip processing after stop, so destroying the registry cannot leave a dangling task. Timer cancellation
+also runs on the configuration executor. A drain yields
 to other configuration work before scheduling another batch. Status conversion/broadcast exceptions are logged there.
 
 The native `miximus_typescript_generator` traverses the same descriptions and maintains
