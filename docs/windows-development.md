@@ -77,6 +77,13 @@ Sources: [vcpkg classic mode](https://learn.microsoft.com/en-us/vcpkg/consume/cl
 [pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/ffmpeg/vcpkg.json),
 [pinned GLFW port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/glfw3/vcpkg.json).
 
+**Boost/WebSocket++ compatibility:** The working Linux installation uses Boost **1.90.0** (package
+`1.90.0-6ubuntu1`) and **patched** WebSocket++ package `0.8.2+git20250909-2` (headers report **0.8.3**).
+Its distribution changelog identifies upstream PR **1190** as providing the modern Boost.Asio compatibility fixes.
+The stock WebSocket++ package must not be assumed compatible with Boost 1.88+; the vcpkg command below does not
+supply those fixes by itself. Before building on Windows, provide an explicitly pinned WebSocket++ source/patch
+set with equivalent fixes, for example through a vcpkg overlay port, and verify it against the selected Boost version.
+
 ```powershell
 git clone --branch 2025.06.13 https://github.com/microsoft/vcpkg.git C:\src\vcpkg-miximus
 $env:VCPKG_ROOT = 'C:\src\vcpkg-miximus'
