@@ -1,5 +1,9 @@
 # CUDA/Vulkan transfers and verification
 
+Windows CUDA transfers are a required deliverable of the [full Windows port](windows-development.md#required-cuda-transfer-port).
+The implementation and commands below currently describe Linux; the handoff covers Windows toolkit installation,
+Win32 external-memory/semaphore work, and the equivalent hardware acceptance requirements.
+
 Vulkan staging is the default. Pass `--use-cuda` to request CUDA transfers on Linux builds with CUDA support.
 CUDA is enabled only when the selected Vulkan GPU has a matching,
 usable CUDA device and the required external-memory/semaphore extensions. Before selecting CUDA, startup creates and

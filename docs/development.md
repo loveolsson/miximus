@@ -31,6 +31,10 @@ The deferred style and containment cleanup, to follow the Vulkan and CEF branch 
 
 ## Building and running
 
+For a clean Windows checkout, start with [Windows setup and the full-feature port handoff](windows-development.md).
+It covers all native libraries and vendor SDKs, including the required custom CEF build and CUDA transfer port,
+and distinguishes intermediate build checkpoints from full Windows hardware acceptance.
+
 Requirements include CMake 3.28+, a C++20 compiler, Boost with the Fiber, Program_options, and URL development
 components, and Node.js 22+ for the web client. Linux builds also require the libdrm development headers
 for DMA-BUF modifier definitions.

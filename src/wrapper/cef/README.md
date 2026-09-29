@@ -4,9 +4,13 @@ Application builds never download or compile Chromium implicitly. The existing `
 152.0.8 SDK used for baseline qualification; it is **not** a patched artifact. Linux/NVIDIA accelerated capture
 failed with that artifact. Do not claim accelerated support from its successful initialization test.
 
+Windows full-feature implementation, toolchain setup, custom SDK packaging and qualification are covered in
+[the Windows handoff](../../../docs/windows-development.md#required-custom-cef-build-and-windows-implementation).
+The Linux-only scripts below are the starting implementation to port; custom CEF remains a required Windows deliverable.
+
 ## Regular application build
 
-CEF-enabled application builds require source-build revision 5, including GPU texture inputs. No library-path override
+CEF-enabled application builds require the current `source-build.json` revision (9), including GPU texture inputs. No library-path override
 or separate runtime is needed. The packaged helper, resources and library are staged together into `build/cef`.
 A missing or outdated SDK is a configure error; `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON` is only for diagnostic probes.
 
