@@ -1,4 +1,5 @@
 #include "types/web_message.hpp"
+#include "web_server/payload_parse.hpp"
 #include "web_server/server.hpp"
 #include "web_server/typed_server.hpp"
 
@@ -13,6 +14,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 using namespace miximus;
@@ -267,13 +269,60 @@ TEST(web_message, node_action_preserves_arbitrary_json_and_requires_its_envelope
     auto malformed    = request;
     malformed["name"] = 42;
     EXPECT_THROW((void)malformed.get<web_message::node_action_request_s>(), std::exception);
-    malformed            = request;
-    malformed["payload"] = std::string(node_action_limits::MAX_PAYLOAD_BYTES, 'x');
-    EXPECT_THROW((void)malformed.get<web_message::node_action_request_s>(), std::exception);
     const nlohmann::json result = web_message::node_action_result_s{.token = "action-1", .data = decoded.payload};
     EXPECT_EQ(result.at("token"), "action-1");
     EXPECT_EQ(result.at("data"), decoded.payload);
     EXPECT_EQ(result.at("action"), "result");
+}
+
+TEST(web_message, node_action_has_no_additional_json_size_depth_or_text_limits)
+{
+    nlohmann::json nested = nullptr;
+    for (size_t depth = 0; depth < 80; ++depth) {
+        nested = nlohmann::json::array({std::move(nested)});
+    }
+    const nlohmann::json payload = {
+        {"text", std::string(size_t{128} * 1024, 'x')},
+        {"values", std::vector<int>(20000, 1)},
+        {"nested", std::move(nested)}
+    };
+    const nlohmann::json request = {
+        {"token", std::string(512, 't')},
+        {"id", std::string(512, 'i')},
+        {"name", std::string(512, 'n')},
+        {"payload", payload}
+    };
+    const auto decoded = nlohmann::json::parse(request.dump()).get<web_message::node_action_request_s>();
+    EXPECT_EQ(decoded.payload, payload);
+    EXPECT_EQ(decoded.token.size(), 512);
+    EXPECT_EQ(decoded.id.size(), 512);
+    EXPECT_EQ(decoded.name.size(), 512);
+}
+
+TEST(web_message, websocket_limits_total_container_nesting_to_16)
+{
+    for (const auto leaf : {"0", "null", "\"text\"", "[]", "{}"}) {
+        // Envelope + 14 arrays + optional leaf container fit within 16 levels.
+        const auto wire   = std::string(R"({"payload":)") + std::string(14, '[') + leaf + std::string(14, ']') + "}";
+        const auto parsed = web_server::parse_websocket_payload(wire);
+        EXPECT_EQ(parsed, nlohmann::json::parse(wire));
+    }
+    const auto nested = [](size_t arrays, std::string_view leaf) {
+        return std::string(R"({"payload":)") + std::string(arrays, '[') + std::string(leaf) + std::string(arrays, ']') +
+               "}";
+    };
+    EXPECT_FALSE(web_server::parse_websocket_payload(nested(15, "0")).is_discarded());
+    EXPECT_TRUE(web_server::parse_websocket_payload(nested(15, "[]")).is_discarded());
+    EXPECT_TRUE(web_server::parse_websocket_payload(nested(15, "{}")).is_discarded());
+    EXPECT_TRUE(web_server::parse_websocket_payload(nested(16, "0")).is_discarded());
+    EXPECT_TRUE(web_server::parse_websocket_payload(nested(100000, "0")).is_discarded());
+}
+
+TEST(web_message, websocket_depth_guard_preserves_syntax_rejection_and_sibling_values)
+{
+    EXPECT_TRUE(web_server::parse_websocket_payload(R"({"payload":[})").is_discarded());
+    const auto wire = R"({"action":"command","payload":[{},[],{"a":[1,2]},null],"token":"t"})";
+    EXPECT_EQ(web_server::parse_websocket_payload(wire), nlohmann::json::parse(wire));
 }
 
 } // namespace

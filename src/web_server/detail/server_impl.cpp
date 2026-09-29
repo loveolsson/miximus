@@ -22,6 +22,10 @@ web_server_impl::web_server_impl()
     endpoint_.set_access_channels(alevel::access_core);
     endpoint_.set_access_channels(alevel::app);
     endpoint_.set_reuse_addr(true);
+    // Keep WebSocket++'s existing 32 MB receive cap explicit. It applies to
+    // complete messages (including fragments), before application JSON parsing.
+    // on_message also limits JSON nesting to 16 levels during parsing.
+    endpoint_.set_max_message_size(32'000'000);
 }
 
 void web_server_impl::subscribe(topic_e topic, const callback_t& callback)

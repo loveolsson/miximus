@@ -49,7 +49,9 @@ Each explicit background path owns its locks, queues, completion signals, and sh
 - `nodes_`: authoritative configuration, protected by `nodes_mutex_` and mutated by configuration commands;
 - `nodes_copy_`: stable render-thread snapshot used for one frame.
 
-Configuration changes mark node IDs dirty or removed. At frame start, the render thread copies only those records into `nodes_copy_`. This provides three important properties:
+Configuration changes create per-node pending update records or mark node IDs removed. Pending update records also
+own transient frame actions admitted against the authoritative configuration. At frame start, the render thread copies
+only those records into `nodes_copy_`. This provides three important properties:
 
 1. configuration does not remain locked during rendering;
 2. every frame sees stable node state;
@@ -64,7 +66,8 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 1. Begin render-thread lifecycle work; no graphics context is made current.
 2. Apply dirty and removed records to `nodes_copy_` and read the reserved settings node from that stable snapshot.
 3. Create the immutable frame context for this evaluation.
-4. Call `prepare()` on every render-snapshot node and collect the sinks that demand a frame.
+4. Deliver the frame's pending node actions, then call `prepare()` on every render-snapshot node and collect the sinks
+   that demand a frame.
 5. Recursively call `submit()` from every demanding sink. Each node follows the input connections it may need through
    `interface_i`; a dedicated visited set ensures that shared upstream nodes submit only once.
 6. Finish the complete submission traversal before execution begins.
@@ -181,9 +184,12 @@ before asynchronous posting. The base `server.hpp` remains lightweight, while pr
 `web_server/typed_server.hpp` for typed subscription parsing. HTTP responses use the same typed contracts, including the
 configuration envelope; heterogeneous option and node-status values remain JSON inside those envelopes.
 
-Transient per-node commands use the bounded [node action system](node-actions.md). Requests are bound to a node
-instance and delivered on the render thread before `prepare()`, with typed result/error replies and arbitrary JSON
-payloads. They do not change saved options or broadcast graph mutations.
+Per-node commands use the [node action system](node-actions.md). Configuration-side admission may derive validated
+settings changes, return immediately, start independent service work, or attach an action to the pending frame update.
+Native control batches validate explicit settings atomically, then admit attached actions individually in order.
+Frame actions share the settings cutoff and run before `prepare()` against that stable snapshot. One move-only action object owns payload, identity and exactly-once response responsibility throughout config, frame,
+and asynchronous handling. Only config admission receives the separate settings-editing capability. Actions are transient; their accepted settings changes broadcast and persist
+normally. The existing WebSocket request/result/error envelopes are unchanged; a wire batch envelope is still deferred.
 
 The browser graph is never authoritative. Update native validation/defaults first, then mirror the accepted shape in TypeScript.
 

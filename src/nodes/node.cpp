@@ -19,12 +19,14 @@ void node_i::register_interface(const interface_i& iface)
     }
 }
 
-action_result_s node_i::handle_action(core::app_state_s* /* app */,
-                                      const node_state_s& /* state */,
-                                      std::string_view /* name */,
-                                      const nlohmann::json& /* payload */)
+action_dispatch_e node_i::handle_action(action_context_s& /* context */, action_s& /* action */) const
 {
-    return {.error = error_e::unsupported_action, .message = "Node does not support this action"};
+    return action_dispatch_e::unhandled;
+}
+action_dispatch_e
+node_i::handle_frame_action(core::app_state_s* /* app */, const node_state_s& /* state */, action_s& /* action */)
+{
+    return action_dispatch_e::unhandled;
 }
 
 void node_i::init(std::string_view id)

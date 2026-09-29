@@ -37,6 +37,7 @@ class websocket_config_s final : public node_manager_s::adapter_i
 {
     // These are required, non-owning dependencies whose lifetime is managed by app_state_s.
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
+    app_state_s*             app_;
     node_manager_s&          manager_;
     configuration_s&         configuration_;
     web_server::server_s&    server_;
@@ -68,17 +69,20 @@ class websocket_config_s final : public node_manager_s::adapter_i
     void emit_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin) final;
 
   public:
-    websocket_config_s(node_manager_s&                              manager,
+    websocket_config_s(app_state_s*                                 app,
+                       node_manager_s&                              manager,
                        configuration_s&                             configuration,
                        const std::shared_ptr<web_server::server_s>& server,
                        render::font_registry_s&                     font_registry);
 };
 
-websocket_config_s::websocket_config_s(node_manager_s&                              manager,
+websocket_config_s::websocket_config_s(app_state_s*                                 app,
+                                       node_manager_s&                              manager,
                                        configuration_s&                             configuration,
                                        const std::shared_ptr<web_server::server_s>& server,
                                        render::font_registry_s&                     font_registry)
-    : manager_(manager)
+    : app_(app)
+    , manager_(manager)
     , configuration_(configuration)
     , server_(*server)
     , font_registry_(font_registry)
@@ -107,6 +111,7 @@ websocket_config_s::websocket_config_s(node_manager_s&                          
 void websocket_config_s::handle_node_action(const web_message::node_action_request_s& message, int64_t origin_id)
 {
     const auto result = manager_.handle_node_action(
+        app_,
         message.id,
         message.name,
         message.payload,
@@ -284,12 +289,13 @@ void websocket_config_s::emit_remove_connection(const connection_s& con, const s
 
 } // namespace
 
-std::unique_ptr<node_manager_s::adapter_i> create_websocket_adapter(node_manager_s&  manager,
+std::unique_ptr<node_manager_s::adapter_i> create_websocket_adapter(app_state_s*     app,
+                                                                    node_manager_s&  manager,
                                                                     configuration_s& configuration,
                                                                     const std::shared_ptr<web_server::server_s>& server,
                                                                     render::font_registry_s& font_registry)
 {
-    return std::make_unique<websocket_config_s>(manager, configuration, server, font_registry);
+    return std::make_unique<websocket_config_s>(app, manager, configuration, server, font_registry);
 }
 
 } // namespace miximus::core

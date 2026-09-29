@@ -13,6 +13,7 @@ add_library(app
     frame_scheduler.hpp
     frame_scheduler_fwd.hpp
     frame_scheduler.cpp
+    node_handle.hpp
     node_actions.hpp
     node_actions.cpp
     node_manager.hpp

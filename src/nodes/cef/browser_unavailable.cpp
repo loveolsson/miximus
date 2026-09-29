@@ -21,16 +21,19 @@ class unavailable_browser_s final : public node_i
     browser_inputs_s                                      inputs_{*this};
     utils::observed_value_s<std::pair<bool, std::string>> reported_state_;
 
-  public:
-    action_result_s handle_action(core::app_state_s* /* app */,
-                                  const node_state_s& /* state */,
-                                  std::string_view name,
-                                  const nlohmann::json& /* payload */) final
+    static void handle_reload(action_s& action)
     {
-        return name == "reload"
-                   ? action_result_s{.error   = error_e::unavailable,
-                                     .message = "CEF support is not enabled in this build"}
-                   : action_result_s{.error = error_e::unsupported_action, .message = "Unknown browser action"};
+        action.fail(error_e::unavailable, "CEF support is not enabled in this build");
+    }
+
+  public:
+    action_dispatch_e handle_action(action_context_s& /* context */, action_s& action) const final
+    {
+        if (action.name == "reload") {
+            handle_reload(action);
+            return action_dispatch_e::handled;
+        }
+        return action_dispatch_e::unhandled;
     }
 
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final

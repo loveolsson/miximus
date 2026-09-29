@@ -1,8 +1,9 @@
 # Node actions
 
-Node actions are transient commands for individual nodes. They use the existing WebSocket request/reply channel;
-they are not options, graph mutations, broadcasts, or persisted configuration. Adding an action requires a node
-handler and a caller, without changing the shared protocol or adding an action to a global enum.
+Node actions are commands interpreted against the authoritative configuration graph. An action may derive settings
+changes, perform work independent of rendering, or request work at a frame boundary. The action itself is transient;
+its accepted settings changes use the normal update broadcasts and persistence. The WebSocket request/reply contract
+is unchanged. Adding an action requires a node handler and a caller, without adding a global protocol enum.
 
 ## Wire contract
 
@@ -17,12 +18,15 @@ handler and a caller, without changing the shared protocol or adding an action t
 }
 ```
 
-All four request fields (`token`, `id`, `name`, `payload`) are required. Payload may be any JSON value; use `{}` for
-an action without arguments. Tokens and node IDs are limited to 256 bytes, names to 128 bytes, and serialized
-payloads to 64 KiB. Payloads/results also have a maximum nesting depth of 64 and 16,384 JSON values, checked before
-copying or serialization. Envelope/limit violations return `malformed_payload` at the wire boundary; native queue
-callers receive `invalid_payload`. IDs, names and tokens must be nonempty. The target node validates supported names
-and payload schemas.
+All four request fields (`token`, `id`, `name`, `payload`) are required. Token, ID and name must be nonempty strings;
+payload may be any JSON value, including `{}` for an action without arguments. Missing/wrongly typed envelope fields
+return `malformed_payload`. The target node validates supported names and the action-specific payload schema.
+
+There are no action-specific byte, nesting, value-count or string-length limits, and no extra serialization pass to
+validate parsed JSON. The WebSocket transport caps all received messages at 32,000,000 bytes, including fragmented
+messages, before JSON parsing. During parsing, the WebSocket handler also rejects more than 16 nested objects/arrays,
+counting the envelope object as level 1. Both limits apply equally to every topic; they are not action validation rules.
+Over-deep messages close the connection as invalid JSON before typed decoding or command dispatch.
 
 A successful handler returns an arbitrary JSON result:
 
@@ -32,49 +36,108 @@ A successful handler returns an arbitrary JSON result:
 
 Errors use the existing `error_s` envelope with the same token and an optional explanatory message. Relevant codes
 are `malformed_payload`, `invalid_payload`, `not_found`, `unsupported_action`, `unavailable`, `busy`, `expired`,
-`cancelled`, and `internal_error`. Results are limited to 64 KiB and explanatory messages to 1 KiB.
+`cancelled`, and `internal_error`. Results and explanatory messages have no action-specific size limit.
 
-Success acknowledges that the handler ran and accepted/performed the action. If it scheduled background work,
-success does **not** mean that work finished. Publish its progress and eventual failures through normal node status.
+A result means whatever completion the action explicitly documents. Existing browser reload and cache clearing
+continue to acknowledge scheduling, with later progress in node status. New asynchronous actions may retain an owned
+action and reply when their work actually finishes, using the same result/error envelopes.
 
-## Delivery and ownership
+## One action throughout its lifetime
 
-The manager validates the target against the authoritative graph and captures a weak reference to that exact node
-instance. JSON validation and copying happen outside the graph and inbox locks. The bounded inbox owns the request
-values and reply callback, not the node. Removing a node and reusing its ID cannot redirect an old request to the
-replacement.
+A well-formed native request is wrapped once in move-only `nodes::action_s`. The same object travels through
+configuration admission, pending frame updates, frame dispatch, and optional asynchronous work. It owns its ID,
+name, JSON payload, resolved node-instance handle, and response responsibility. Wire token correlation stays in
+its responder callback. No settings, borrowed graph references, or transaction policy belong to the action.
 
-At the frame boundary, graph changes and the action batch are selected under the same graph lock. Dispatch happens
-on the render thread, after `begin_frame()` and before `prepare()`, outside graph/queue locks. Handlers receive the
-stable frame snapshot's options, including changes accepted before that boundary. A removal or option update after
-the boundary applies next frame, just like other graph changes. A handler can run before the node's first `prepare()`.
+`complete(result)` and `fail(error, message)` share one synchronized settlement state with timeout handling.
+Only the first settlement attempts a reply. Moving transfers response authority; a moved-from object can inspect
+`result_error()` but cannot settle the action. Dropping an owned, unsettled action reports `internal_error`.
+Throwing reply callbacks are isolated. Exactly-once settlement means one reply attempt; it cannot guarantee network
+delivery after a disconnect.
 
-The inbox admits at most 64 queued requests, at most eight per node ID, and takes at most 16 per frame. Requests
-expire after five seconds when checked at dispatch. Queue capacity is released when a batch is taken, so at most
-64 queued plus 16 selected requests are retained. Excess work is rejected as `busy`; it never creates an unbounded
-render-thread backlog. Accepted requests preserve FIFO order.
+## Configuration settings and dispatch
 
-Each accepted request gets one reply attempt when dispatched, expired, or cancelled. Handler exceptions become
-`internal_error` and do not interrupt other actions. Discarding an undispatched frame batch cancels its requests;
-shutdown closes admission and cancels queued requests. Reply failures cannot interrupt the remaining batch. The
-WebSocket responder weakly references the server and posts replies to its connection thread.
+Both hooks receive `action_s&` and return `action_dispatch_e`:
 
-A disconnected client does not cancel an already accepted action. Requests are never automatically replayed.
-A lost reply or client timeout leaves the outcome unknown; a repeated command is a new invocation, even if its
-payload or token matches an earlier one. This protocol does not provide reconnect-spanning deduplication.
+```cpp
+action_dispatch_e handle_action(action_context_s& context, action_s& action) const final;
+action_dispatch_e handle_frame_action(core::app_state_s* app, const node_state_s& state,
+                                     action_s& action) final;
+```
+
+Keep both hooks as name dispatchers. Dedicated action handlers own payload decoding, validation, and behavior.
+The enum is `unhandled`, `handled`, or `frame`. `handled` means replied or transferred responsibility, including
+asynchronous work, not necessarily success. The config caller reports generic `unsupported_action` for `unhandled`.
+The frame caller reports `internal_error` for any result other than `handled`; the base hooks return `unhandled`.
+A handler reporting a normal failure calls `action.fail()` itself and returns `handled`.
+
+Only `handle_action` receives the separate borrowed config capability, `action_context_s`. It exposes the current
+settings/connections, read-only connected-node lookup, and `update_settings(patch)`. The manager owns the candidate
+settings and normalizes every edit through `set_options`. The handler checks the update result and reports a failure
+through its action. A failed action's candidate settings are discarded; successful changes mark the node dirty and
+broadcast canonical options. Action-derived broadcasts also reach the originating editor.
+
+Configuration dispatch runs under the graph lock. It must not access render-owned fields or retain the context.
+For independent work, a dedicated handler calls `context.defer(handler)` and returns `handled`. The caller moves the
+same action into `handler(app, action)` after committing settings and releasing the lock. That handler may finish or
+move the whole action into a service worker. It must own all arguments and must not capture the config context or
+render-owned node resources. Replies settled during admission are also delivered after unlocking, allowing reentry.
+
+A frame action returns `frame`, leaving ownership with the caller, which moves it into the pending node update.
+The dedicated config handler can copy resolved arguments into the action payload when it needs admission-time values.
+Otherwise frame handlers see the original payload and the selected frame's final settings. Frame and async handlers
+never receive the settings-editing capability. A delayed settings update must submit a new config operation with its
+captured target handle, preventing updates to a replacement node with the same ID.
+
+Dedicated handlers may use `action.get_typed_payload<T>()`. It uses nlohmann deserialization and returns an empty
+optional for JSON decoding errors. The handler reports `invalid_payload`; dispatch hooks do not decode payloads.
+There are no generic action payload-size or complexity limits.
+
+## Native control batches and future transactions
+
+`handle_control_batch()` is an internal batching operation, not a transaction protocol. It validates explicit option
+updates atomically, then processes actions individually in order as best effort. Later actions see successful changes
+from earlier actions. A failed action does not stop the batch or roll back previously accepted settings.
+
+Every supplied action is wrapped before rejection is possible. If explicit settings validation fails or the manager
+is closed, the caller fails every unprocessed action with the batch rejection reason and returns the settings error.
+No node action handlers run on that path. Callbacks run outside the graph lock. Individual action errors use their own
+responder; the single-action WS adapter must not send another error after a request has been accepted for processing.
+
+Transactions, transaction tokens, and transaction rollback policy are not implemented. A future transaction owner
+must answer every deferred or unprocessed action on abort, plus its transaction token; already settled action results
+stand. Actions themselves remain unaware of that policy. The WS envelope and client correlation behavior are unchanged.
+
+## Frame delivery, identity, and expiry
+
+Per-node pending update records own whole actions under the same graph lock as settings. At frame start,
+`take_frame_updates()` copies the updated node snapshot and moves the actions out exactly once. Dispatch runs before
+all-node `prepare()`, regardless of render demand, in admission FIFO order. Actions are never persisted or replayed.
+
+The authoritative graph resolves each action's `node_handle_s`. Removal cancels pending actions with `not_found`;
+a replacement gets a fresh identity. Dispatch compares identity with the selected frame snapshot. A removal after
+the cutoff does not invalidate the already selected frame. Handles retain identity metadata, never node resources.
+
+There are 64 pending frame actions per node instance, no global or per-frame count cap, and a five-second waiting
+expiry. `action_s` owns its deadline and timeout failure. With an application executor, its timer can settle an expired
+action even if frame delivery stalls; dispatch also checks the deadline. Tests/native callers without an executor use
+the same explicit deadline check. Already settled entries are reclaimed before checking per-node capacity.
+
+Consuming an action at frame dispatch atomically checks and disarms its waiting timeout. That timeout does not limit
+subsequent async work. An async owner can explicitly arm its own deadline using `set_deadline(deadline, executor)`.
+Timer callbacks share only response state and race safely with completion, cancellation, and destruction. They do not
+cancel side effects already started. The executor must outlive actions with timers attached to it.
+
+Discarding a frame batch reports `cancelled`; ignoring a delivered action reports `internal_error`. Async owners must
+complete, fail, or release their actions on shutdown. A consumed action may finish after its node is removed, but cannot
+implicitly target a replacement. A disconnected client does not cancel accepted work, and requests are never replayed.
 
 ## Adding an action
 
-Include `nodes/action.hpp` and override `node_i::handle_action(app, state, name, payload)` in the native node:
-
-- Validate the name and the entire payload before side effects. Unsupported names return `unsupported_action`;
-  invalid arguments return `invalid_payload`. Nodes without an override reject every action.
-- Use the supplied snapshot state to decide whether the operation is available. Return `unavailable` or `busy`
-  when appropriate; an action must not implicitly enable a disabled node.
-- Keep handling bounded and nonblocking. Do not wait for SDK/network/file work or record GPU commands here.
-  Schedule background work through the node's existing owner/worker, or latch state for `prepare()`/`execute()`.
-- Return `nodes::action_result_s`, optionally with JSON `data`. Preserve ordinary configuration changes through
-  `update_node`; do not mutate the snapshot or use actions as a second configuration store.
+Include `nodes/action.hpp`, route the name in `handle_action`, and implement a dedicated handler. Return `frame` for
+frame-bound work and route it to a dedicated handler in `handle_frame_action`. Forward or move the entire action;
+there is no separate completion or action plan to construct. Keep frame handlers nonblocking and latch work for later
+lifecycle stages when GPU recording is required.
 
 The reusable `NodeActionInterface` supplies a row of non-port buttons:
 
@@ -90,12 +153,13 @@ Each button can supply an optional JSON payload. Custom controls can call
 limits outstanding waits, and cleans up on replies, disconnect, a ten-second timeout, or abort. Aborting cancels
 only the local reply wait. The control aborts that wait on unmount and disables its buttons while waiting. Labels remain unchanged;
 errors are logged to the console without inline feedback.
-Neither path changes an interface value or writes an option.
+The control itself does not write an option; action-derived changes arrive through normal authoritative broadcasts.
 
 ## Browser reload
 
 The browser accepts `reload` with `{}` or `{ "ignore_cache": boolean }`; other fields/types are rejected.
-The action requires an enabled, ready session matching the current URL, size and frame rate. The owning
+Configuration admission only recognizes the name and selects frame delivery. The dedicated frame-side reload handler
+validates the payload and requires an enabled, ready session matching the frame's URL, size and frame rate. The owning
 `session_request_s` posts reload to CEF's UI thread; the frame-consumer session API retains no lifecycle controls.
 Only one reload task may be pending for a session. CEF `Reload()` uses normal cache behavior and
 `ReloadIgnoreCache()` explicitly bypasses it.
@@ -115,12 +179,15 @@ CEF's shared HTTP cache for all browser nodes, without reloading pages or deleti
 service-worker storage. It also works with no active browser nodes. CEF-disabled/unavailable runtimes return
 `unavailable`; concurrent clearing returns `busy`. The action acknowledges scheduling, and the settings node's
 `browser_cache_clearing` status reports whether the asynchronous operation is still pending. SDK work and completion
-run on CEF's UI thread, with no render-thread waiting.
+run on CEF's UI thread. Scheduling starts on the configuration thread after the graph commit; it does not wait for
+a frame boundary or access render-owned node state.
 
 ## Validation
 
-`core_test` covers payload ownership, dispatch thread/order/snapshot state, target removal/replacement, queue and
-batch limits, expiry, shutdown/abandoned-batch cancellation, exception isolation, and typed wire decoding.
+`core_test` covers configuration admission, atomic explicit settings, ordered best-effort action patches, connection-
+derived settings, authoritative broadcasts and persistence, owned payloads, 500-node FIFO frame delivery, per-instance
+capacity, replacement across frame cutoffs, asynchronous ownership, expiry, cancellation, reply exceptions, and typed
+wire decoding.
 `npm test` in `web/` covers correlated replies, server errors, disconnect without replay, timeout, abort, capacity,
 and serialization failures using the real WebSocket wrapper with a controlled transport.
 
@@ -142,3 +209,11 @@ Initial node-action validation on the development machine:
 The global-settings controls were additionally checked with CEF-enabled and CEF-disabled native builds (147 tests
 passing in each), the web production build and five frontend tests. Both WebSocket integration variants passed
 under Vulkan validation, including font refresh, cache eviction without navigation and CEF-disabled rejection.
+
+Configuration-admission redesign validation:
+
+- CEF-enabled and CEF-disabled native builds passed without compiler warnings; all 187 CTests passed in each build.
+- All five existing WebSocket client tests passed without client or wire-contract changes.
+- Both WebSocket integration variants passed with Vulkan validation enabled and no validation errors.
+- Manager-level tests include 500-node FIFO delivery, settings/action batches, settings derived from connections,
+  action-origin broadcasts, delayed expected-instance checks, and completion ownership across removal and shutdown.

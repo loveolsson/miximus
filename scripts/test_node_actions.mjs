@@ -185,7 +185,7 @@ try {
     );
     assert.equal(
       (await action("reload", "x".repeat(65536))).error,
-      "malformed_payload",
+      "invalid_payload",
     );
     await update({ enabled: true });
     await until(

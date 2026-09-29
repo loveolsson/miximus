@@ -224,9 +224,26 @@ TEST(SettingsNode, RejectsInvalidUpdatesAtomically)
 
 TEST(SettingsNode, CacheClearValidatesBeforeAccessingTheRuntime)
 {
-    auto node = create_settings_node();
-    EXPECT_EQ(node->handle_action(nullptr, {}, "unknown", {}).error, error_e::unsupported_action);
+    auto                             node = create_settings_node();
+    const nodes::node_state_s        state;
+    const nodes::node_map_t          graph;
+    nodes::action_context_s::start_t start;
+    nodes::action_context_s          context(
+        state,
+        graph,
+        [](const nlohmann::json&) {
+            return nodes::set_options_result_s{.error = error_e::internal_error, .has_corrected_values = false};
+        },
+        start);
+    nodes::action_s unknown("$app", "unknown", {}, [](const nodes::action_result_s&) {});
+    EXPECT_EQ(node->handle_action(context, unknown), nodes::action_dispatch_e::unhandled);
+    unknown.fail(error_e::unsupported_action);
     for (const auto& payload : {nlohmann::json(nullptr), nlohmann::json::array(), nlohmann::json{{"extra", true}}}) {
-        EXPECT_EQ(node->handle_action(nullptr, {}, "clear_browser_cache", payload).error, error_e::invalid_payload);
+        std::optional<error_e> result;
+        nodes::action_s        action(
+            "$app", "clear_browser_cache", payload, [&](nodes::action_result_s value) { result = value.error; });
+        EXPECT_EQ(node->handle_action(context, action), nodes::action_dispatch_e::handled);
+        EXPECT_EQ(result, error_e::invalid_payload);
+        EXPECT_FALSE(start);
     }
 }

@@ -18,7 +18,9 @@ struct connected_status_s;
 
 namespace miximus::nodes {
 
-struct action_result_s;
+enum class action_dispatch_e;
+class action_context_s;
+class action_s;
 
 class node_i
 {
@@ -52,13 +54,14 @@ class node_i
      */
     virtual void init(std::string_view id);
 
-    // Transient custom action, called on the render thread before prepare with
-    // this frame's configuration (possibly before this node's first prepare).
-    // Validate payload before side effects. Never block or record GPU work;
-    // schedule background work and report its progress through node status.
-    // Returning success acknowledges handling/admission, not background completion.
-    virtual action_result_s
-    handle_action(core::app_state_s*, const node_state_s&, std::string_view, const nlohmann::json&);
+    // Name dispatch only. Dedicated config handlers may edit settings through
+    // the separately supplied context, reply, or schedule independent work.
+    virtual action_dispatch_e handle_action(action_context_s& context, action_s& action) const;
+
+    // Name dispatch only, against this frame's stable settings. Return handled
+    // after replying or transferring ownership; unknown names return unhandled.
+    // Frame handlers never receive the settings editing capability.
+    virtual action_dispatch_e handle_frame_action(core::app_state_s* app, const node_state_s& state, action_s& action);
 
     /**
      * Called every tick on the main/render thread. Update lifecycle state,
@@ -97,6 +100,8 @@ class node_i
     virtual option_result_e              normalize_option(std::string_view name, nlohmann::json* value) const = 0;
     [[nodiscard]] static option_result_e normalize_common_option(std::string_view name, nlohmann::json* value);
     [[nodiscard]] set_options_result_s   set_options(nlohmann::json& state, const nlohmann::json& options) const;
+
+    const core::node_handle_s& handle() const { return status_handle_; }
 
     const core::node_status_handle_s& status_handle() const { return status_handle_; }
 

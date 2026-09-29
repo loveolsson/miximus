@@ -1,6 +1,5 @@
 #pragma once
 #include "json_contract.hpp"
-#include "node_action_limits.hpp"
 #include "web_message.hpp"
 
 #include <optional>
@@ -119,20 +118,12 @@ BOOST_DESCRIBE_STRUCT(node_action_request_s, (), (token, id, name, payload))
 BOOST_DESCRIBE_STRUCT(config_request_s, (), (token))
 BOOST_DESCRIBE_STRUCT(node_status_request_s, (), (token, id))
 
-// Guard the raw payload before the owning described conversion copies it.
 inline void from_json(const nlohmann::json& json, node_action_request_s& message)
 {
-    const auto valid_text = [&](const char* key, size_t limit) {
-        const auto& text = json.at(key).get_ref<const std::string&>();
-        return !text.empty() && text.size() <= limit;
-    };
-    if (!valid_text("token", node_action_limits::MAX_TOKEN_BYTES) ||
-        !valid_text("id", node_action_limits::MAX_ID_BYTES) ||
-        !valid_text("name", node_action_limits::MAX_NAME_BYTES) ||
-        !node_action_limits::valid_payload(json.at("payload"))) {
-        throw std::invalid_argument("Node action request exceeds its envelope or payload limits");
-    }
     detail::read_described_json(json, message);
+    if (message.token.empty() || message.id.empty() || message.name.empty()) {
+        throw std::invalid_argument("Node action token, id and name must be nonempty");
+    }
 }
 
 } // namespace miximus::web_message

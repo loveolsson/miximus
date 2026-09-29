@@ -539,18 +539,22 @@ stores the resolved values as frame-local settings on `app_state_s` for nodes to
 
 ## Atomic option batches
 
-Batched option changes are useful for external control but are independent of source PTS alignment and are not on the
-critical path for the first timing milestones. The first transaction form contains a transaction ID and an ordered set
-of option updates only. It has no target PTS or target frame number.
+The native control path now supports next-boundary batches through `node_manager_s::handle_control_batch()`. Explicit
+option updates validate atomically; attached node actions are then admitted in order as best effort. An action can
+edit settings through a separate config capability, start independent service work, or attach work to the same frame boundary. The
+graph lock prevents a render snapshot between those settings updates and action admission. A failing action does not
+roll back the accepted settings or stop following actions. Rejected explicit settings cause every unprocessed action
+to receive a batch rejection response. Each action owns its exactly-once response responsibility, without transaction
+knowledge. See [node actions](node-actions.md) for ownership and errors.
 
-The configuration side normalizes and validates the entire batch before enqueueing it. If any update is invalid, the
-whole batch is rejected. The render thread applies an accepted immutable batch at its next frame boundary, before
-`prepare()`, so every update becomes visible in the same evaluation. Accepted batches retain FIFO ordering. Existing
-single-node updates may remain on their current path until this independent feature is implemented.
+Existing single-node settings updates and actions use this same path. No target PTS or frame number is assigned in
+advance: all pending updates selected at the next actual evaluation share its frame context. Multiple accepted batches
+may coalesce into one frame's final settings; frame actions preserve admission order and may capture configuration-
+dependent arguments at admission.
 
-Node creation/removal, connection changes, candidate-graph validation, graph revisions, and explicitly scheduled
-future-frame transactions are later extensions. They must not complicate the first option-batch implementation or the
-initial timing scheduler.
+The WebSocket contract remains unchanged. A wire batch envelope, transaction IDs, aggregate replies, and optional
+per-action reply tokens remain future work. Node creation/removal and connection changes are not batch operations;
+candidate-graph validation and explicitly scheduled future-frame transactions remain later extensions.
 
 ## Threading and ownership
 
@@ -887,8 +891,8 @@ Exit criteria:
 
 ### Independent follow-up: atomic option batches
 
-After the timing foundation is stable, add all-or-nothing option-only batches applied at the next frame boundary. This
-work may proceed independently and must not introduce target-PTS scheduling, graph mutation transactions, or candidate
+The native settings/action batch path is implemented; exposing batches over the wire remains independent follow-up.
+That extension must not introduce target-PTS scheduling, graph mutation transactions, or candidate
 graph reconstruction in its first version.
 
 ### Future extensions

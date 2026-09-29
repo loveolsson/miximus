@@ -60,7 +60,7 @@ void web_server_impl::on_message(const con_hdl_t& hdl, const msg_ptr_t& msg)
         return;
     }
 
-    auto doc = nlohmann::json::parse(msg->get_payload(), nullptr, false);
+    auto doc = parse_websocket_payload(msg->get_payload());
     if (doc.is_discarded() || !doc.is_object()) {
         terminate_and_log(hdl, "invalid JSON payload");
         return;

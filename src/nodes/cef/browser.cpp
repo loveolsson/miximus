@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 
 namespace {
 using namespace miximus;
@@ -171,6 +172,28 @@ class node_impl final : public node_i
         }
     }
 
+    void handle_reload(core::app_state_s* app, const node_state_s& state, action_s action)
+    {
+        const auto& payload = action.payload;
+        if (!payload.is_object() || payload.size() > 1 ||
+            (payload.size() == 1 && (!payload.contains("ignore_cache") || !payload.at("ignore_cache").is_boolean()))) {
+            action.fail(error_e::invalid_payload, "Reload expects an object with optional boolean ignore_cache");
+            return;
+        }
+        // Runtime/session objects belong exclusively to the render thread. The
+        // frame may include configuration accepted after action admission.
+        if (!state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty() || !request_ ||
+            !session_ || !selection_ || *selection_ != session_options(app, state)) {
+            action.fail(error_e::unavailable, "Browser has no active session to reload");
+            return;
+        }
+        if (!request_->reload(payload.value("ignore_cache", false))) {
+            action.fail(error_e::busy, "Browser is not ready to reload");
+            return;
+        }
+        action.complete();
+    }
+
   public:
     node_impl()                                  = default;
     node_impl(const node_impl& other)            = delete;
@@ -180,28 +203,17 @@ class node_impl final : public node_i
 
     ~node_impl() override { stop(); }
 
-    action_result_s handle_action(core::app_state_s*    app,
-                                  const node_state_s&   state,
-                                  std::string_view      name,
-                                  const nlohmann::json& payload) final
+    action_dispatch_e handle_action(action_context_s& /* context */, action_s& action) const final
     {
-        if (name != "reload") {
-            return {.error = error_e::unsupported_action, .message = "Unknown browser action"};
+        return action.name == "reload" ? action_dispatch_e::frame : action_dispatch_e::unhandled;
+    }
+    action_dispatch_e handle_frame_action(core::app_state_s* app, const node_state_s& state, action_s& action) final
+    {
+        if (action.name == "reload") {
+            handle_reload(app, state, std::move(action));
+            return action_dispatch_e::handled;
         }
-        if (!payload.is_object() || payload.size() > 1 ||
-            (payload.size() == 1 && (!payload.contains("ignore_cache") || !payload.at("ignore_cache").is_boolean()))) {
-            return {.error   = error_e::invalid_payload,
-                    .message = "Reload expects an object with optional boolean ignore_cache"};
-        }
-        if (!state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty() || !request_ ||
-            !session_ || !selection_ || *selection_ != session_options(app, state)) {
-            return {.error = error_e::unavailable, .message = "Browser has no active session to reload"};
-        }
-        if (!request_->reload(payload.value("ignore_cache", false))) {
-            return {.error = error_e::busy, .message = "Browser is not ready to reload"};
-        }
-
-        return {};
+        return action_dispatch_e::unhandled;
     }
 
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
