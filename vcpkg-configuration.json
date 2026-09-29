@@ -1,0 +1,22 @@
+{
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://github.com/microsoft/vcpkg",
+    "baseline": "ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0",
+    "reference": "refs/tags/2025.06.13"
+  },
+  "overlay-ports": [
+    "src/wrapper/vcpkg-ports"
+  ],
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/microsoft/vcpkg",
+      "baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1",
+      "reference": "refs/tags/2026.01.16",
+      "packages": [
+        "boost-*"
+      ]
+    }
+  ]
+}

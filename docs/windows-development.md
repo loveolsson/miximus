@@ -7,14 +7,19 @@ Chromium, CUDA/Vulkan transfers, DeckLink, NDI, screen outputs, text/fonts, and 
 required work in this port even though their CMake switches are optional for other builds. A build with either
 feature disabled is only an intermediate diagnostic checkpoint, not completion.
 
-This guide was checked against the repository on 2026-09-29. These Windows commands and the proposed dependency
-baseline have not been run on Windows. Existing Linux results do not qualify Windows. Some Windows implementations
+This guide was checked against the repository on 2026-09-29. The manifest dependencies install successfully on
+Windows and pass an isolated MSVC C++20 compile/link/runtime check, including a local WebSocket echo exchange,
+Boost.Fiber, and all eight requested FFmpeg libraries. All 93 installed WebSocket++ headers match the documented
+Linux binary package byte-for-byte. Full project configuration still stops at the NDI SDK's missing `Version.txt`;
+the full-feature port commands remain a target workflow. Existing Linux results do not qualify Windows. Some Windows implementations
 already exist (DeckLink COM/MIDL, font discovery, monitor discovery, Unicode paths); CEF and CUDA still have explicit
 Linux restrictions and require implementation, not just library installation.
 
 Read [development](development.md), [architecture](architecture.md), [GPU/media](gpu-and-media.md),
 [frame timing](frame-timing-and-synchronization.md), and the nearest `AGENTS.md` before modifying their subsystems.
 Preserve Linux support while adding Windows paths. Put SDK discovery/linkage in `src/wrapper/`.
+The Windows preset opts into vcpkg; ordinary Linux CMake configuration continues to use its existing dependencies.
+Windows validation does not substitute for a Linux build when shared source or build logic changes.
 
 ## Machine and toolchains
 
@@ -69,22 +74,59 @@ Clone the branch/commit containing this handoff. Preserve LF bytes in CEF patch 
 verified by the source builder. A clean clone does not contain local `3rd-party` SDKs, `build/tools`, CEF build
 artifacts, `node_modules`, or the developer's settings. Obtain them explicitly; do not copy a Linux build cache.
 
-Use a dedicated vcpkg checkout. The following **proposed, unqualified Windows baseline** uses tag `2025.06.13`, whose
-ports include GLFW 3.4 and FFmpeg 7.1.1 with `postproc`. This avoids depending on a moving FFmpeg feature set while
-bringing up the existing wrapper. Record its resolved commit and installed package versions. This is a porting
-baseline, not a claim that these versions are current or tested together with Miximus.
-Sources: [vcpkg classic mode](https://learn.microsoft.com/en-us/vcpkg/consume/classic-mode),
-[pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/ffmpeg/vcpkg.json),
-[pinned GLFW port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/glfw3/vcpkg.json).
+The checked-in `vcpkg.json` lists packages and `vcpkg-configuration.json` pins the default registry to commit
+`ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0` (tag `2025.06.13`), including GLFW 3.4 and FFmpeg 7.1.1
+with `postproc`. The registry reference also selects that tag, so version history does not depend on a moving HEAD.
+The manifest installs the directly used Boost packages, FFmpeg components, FreeType, GLFW,
+GLM, nlohmann-json, websocketpp and zlib. Submodule dependencies and vendor SDKs remain separate.
+
+Boost packages use a separate registry pin at `66c0373dc7fca549e5803087b9487edfe3aca0a1`
+(tag `2026.01.16`), selecting Boost **1.90.0** consistently across all Boost modules. The other libraries
+retain the default registry pin, including FFmpeg 7.1.1 with `postproc`.
+
+Use the vcpkg bundled with Visual Studio 2026, or an existing standalone vcpkg installation. There is no need
+to clone another copy when Visual Studio already provides it. Set `VCPKG_ROOT` for the current shell:
 
 ```powershell
-git clone --branch 2025.06.13 https://github.com/microsoft/vcpkg.git C:\src\vcpkg-miximus
-$env:VCPKG_ROOT = 'C:\src\vcpkg-miximus'
-& "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
-& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows boost-fiber boost-program-options boost-url boost-asio boost-container boost-describe boost-locale boost-mp11 glfw3 glm nlohmann-json websocketpp freetype zlib 'ffmpeg[avcodec,avdevice,avfilter,avformat,swresample,swscale,postproc]'
-git -C $env:VCPKG_ROOT rev-parse HEAD
+# Run from the Miximus checkout in an x64 Developer PowerShell.
+$vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+$env:VCPKG_ROOT = Join-Path $vsInstall 'VC\vcpkg'
+# For standalone vcpkg, set VCPKG_ROOT to that checkout instead.
+& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows --host-triplet x64-windows
+if ($LASTEXITCODE -ne 0) { throw 'vcpkg installation failed' }
 & "$env:VCPKG_ROOT\vcpkg.exe" list
+
+cmake --preset windows-release
+if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+cmake --build --preset windows-release --parallel
 ```
+
+`CMakePresets.json` uses Ninja, MSVC, Release, `build-win/` and the vcpkg toolchain. Both the explicit install and the preset
+share the ignored `vcpkg_installed/` directory in the checkout; downloaded sources and compiled packages are
+not committed. vcpkg builds missing binaries from source for both Release and Debug, then reuses its binary
+cache on subsequent matching installs. The FFmpeg manifest features select development libraries without the
+command-line programs. CMake also installs missing manifest packages automatically. The preset sets the CMake 4
+compatibility floor needed by older submodules before their first `cmake_minimum_required()` call.
+Machine-specific overrides belong in the ignored `CMakeUserPresets.json`.
+
+**Boost/WebSocket++ compatibility:** Upstream main documents the working Linux installation as Boost
+**1.90.0** (Ubuntu package `1.90.0-6ubuntu1`) and patched WebSocket++ package
+`0.8.2+git20250909-2` (headers report **0.8.3-dev**). Its distribution changelog identifies upstream
+PR **1190** as providing the modern Boost.Asio fixes.
+
+The overlay under `src/wrapper/vcpkg-ports/websocketpp/` downloads that exact distribution source archive
+and packaging archive, verifies their SHA-512 hashes, and applies the complete, unchanged `1190.patch`
+from the package's patch series. It contains no locally rebased Asio or C++20 patches. See its README
+for provenance and checksums. The Windows Boost release matches Linux, but the vcpkg recipes are not
+the same as Ubuntu's packaging patches or ABI. Stock WebSocket++ 0.8.2 is not an equivalent replacement.
+
+This is the ordinary dependency/bootstrap configuration, not full Windows feature acceptance: CEF retains
+its default OFF, and CUDA retains its existing Linux-only implementation gate. The full-feature configuration
+below still requires the custom CEF SDK and platform port. Installation success does not establish application
+or hardware correctness.
+
+Sources: [vcpkg manifest/CMake integration](https://learn.microsoft.com/en-us/vcpkg/users/buildsystems/cmake-integration),
+[pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/ffmpeg/vcpkg.json).
 
 Use `x64-windows` consistently (dynamic CRT/libraries); avoid mixing x86, static-CRT, MinGW, Debug and Release
 artifacts. FFmpeg's `postproc` feature selects GPL code in this baseline. The current wrapper requests avcodec,
@@ -260,6 +302,8 @@ $cefSdk = 'C:\cef\distribution\miximus-cef-windows64'
 cmake -S . -B build-win -G Ninja `
   "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
   -DVCPKG_TARGET_TRIPLET=x64-windows `
+  "-DVCPKG_INSTALLED_DIR=$PWD/vcpkg_installed" `
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
   -DCMAKE_BUILD_TYPE=RelWithDebInfo `
   "-DNDI_ROOT=$env:NDI_ROOT" `
   "-DCUDAToolkit_ROOT=$env:CUDA_PATH" `
@@ -286,7 +330,7 @@ NDI/CUDA runtime directories to the same shell's `PATH`:
 
 ```powershell
 $ndiRuntime = 'C:\Program Files\NDI\NDI 6 SDK\Bin\x64' # Verify against the installed SDK.
-$env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$ndiRuntime;$env:CUDA_PATH\bin;$env:PATH"
+$env:PATH = "$PWD\vcpkg_installed\x64-windows\bin;$ndiRuntime;$env:CUDA_PATH\bin;$env:PATH"
 .\build-win\miximus.exe --help
 ```
 
