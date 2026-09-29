@@ -1,5 +1,6 @@
 #include "cuda_transfer.hpp"
 
+#include "gpu/detail/cuda_external.hpp"
 #include "gpu/detail/device.hpp"
 #include "gpu/detail/fatal.hpp"
 #include "gpu/detail/recording.hpp"
@@ -17,12 +18,32 @@
 #include <memory>
 #include <span>
 #include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 #include <utility>
 #include <vector>
 
 namespace miximus::gpu::transfer::detail {
 namespace {
+
+#ifdef _WIN32
+struct exported_handle_s
+{
+    HANDLE value{};
+    exported_handle_s()                                    = default;
+    exported_handle_s(const exported_handle_s&)            = delete;
+    exported_handle_s& operator=(const exported_handle_s&) = delete;
+    ~exported_handle_s()
+    {
+        if (value != nullptr) {
+            CloseHandle(value);
+        }
+    }
+};
+#endif
 
 void check_cuda(cudaError_t result, const char* operation)
 {
@@ -185,7 +206,7 @@ cuda_transfer_s::cuda_transfer_s(device_s&                      device,
     state_->recording_context = recording_context;
     auto& state               = *state_;
     if (!state.owner->cuda_external_memory) {
-        throw std::runtime_error("selected Vulkan device lacks CUDA external-memory/semaphore FD support");
+        throw std::runtime_error("selected Vulkan device lacks CUDA external-memory/semaphore support");
     }
 
     select_cuda_device();
@@ -295,7 +316,7 @@ void cuda_transfer_s::validate_external_resources()
 
     VkPhysicalDeviceExternalSemaphoreInfo semaphore_info{};
     semaphore_info.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO;
-    semaphore_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    semaphore_info.handleType = gpu::detail::cuda_semaphore_handle_type;
 
     VkExternalSemaphoreProperties semaphore_properties{};
     semaphore_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES;
@@ -358,6 +379,18 @@ void cuda_transfer_s::import_frame_memory()
         throw std::invalid_argument("CUDA transfer frame was not allocated for external access");
     }
 
+    cudaExternalMemoryHandleDesc import{};
+#ifdef _WIN32
+    VkMemoryGetWin32HandleInfoKHR handle_info{};
+    handle_info.sType      = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+    handle_info.memory     = memory;
+    handle_info.handleType = gpu::detail::cuda_memory_handle_type;
+    exported_handle_s handle;
+    check(state.owner->vk.vkGetMemoryWin32HandleKHR(state.owner->device, &handle_info, &handle.value),
+          "export Vulkan allocation Win32 handle");
+    import.type                = cudaExternalMemoryHandleTypeOpaqueWin32;
+    import.handle.win32.handle = handle.value;
+#else
     VkMemoryGetFdInfoKHR fd_info{};
     fd_info.sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
     fd_info.memory     = memory;
@@ -365,15 +398,17 @@ void cuda_transfer_s::import_frame_memory()
     int fd{-1};
     check(state.owner->vk.vkGetMemoryFdKHR(state.owner->device, &fd_info, &fd), "export Vulkan allocation FD");
 
-    cudaExternalMemoryHandleDesc import{};
-    import.type              = cudaExternalMemoryHandleTypeOpaqueFd;
-    import.handle.fd         = fd;
+    import.type      = cudaExternalMemoryHandleTypeOpaqueFd;
+    import.handle.fd = fd;
+#endif
     import.size              = state.device_allocation_bytes;
     import.flags             = cudaExternalMemoryDedicated;
     const auto import_result = cudaImportExternalMemory(&state.imported_memory, &import);
+#ifndef _WIN32
     if (import_result != cudaSuccess) {
         (void)::close(fd); // Successful CUDA import owns the FD.
     }
+#endif
 
     check_cuda(import_result, "import Vulkan allocation into CUDA");
 
@@ -402,7 +437,7 @@ void cuda_transfer_s::create_external_semaphores()
     const auto make_semaphore = [&](VkSemaphore& semaphore, cudaExternalSemaphore_t& cuda_semaphore) {
         VkExportSemaphoreCreateInfo export_semaphore{};
         export_semaphore.sType       = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
-        export_semaphore.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+        export_semaphore.handleTypes = gpu::detail::cuda_semaphore_handle_type;
 
         VkSemaphoreCreateInfo create{};
         create.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -410,6 +445,18 @@ void cuda_transfer_s::create_external_semaphores()
         check(state.owner->vk.vkCreateSemaphore(state.owner->device, &create, nullptr, &semaphore),
               "CUDA shared semaphore");
 
+        cudaExternalSemaphoreHandleDesc desc{};
+#ifdef _WIN32
+        VkSemaphoreGetWin32HandleInfoKHR get{};
+        get.sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
+        get.semaphore  = semaphore;
+        get.handleType = gpu::detail::cuda_semaphore_handle_type;
+        exported_handle_s handle;
+        check(state.owner->vk.vkGetSemaphoreWin32HandleKHR(state.owner->device, &get, &handle.value),
+              "export Vulkan semaphore Win32 handle");
+        desc.type                = cudaExternalSemaphoreHandleTypeOpaqueWin32;
+        desc.handle.win32.handle = handle.value;
+#else
         VkSemaphoreGetFdInfoKHR get{};
         get.sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
         get.semaphore  = semaphore;
@@ -418,13 +465,15 @@ void cuda_transfer_s::create_external_semaphores()
         check(state.owner->vk.vkGetSemaphoreFdKHR(state.owner->device, &get, &semaphore_fd),
               "export Vulkan semaphore FD");
 
-        cudaExternalSemaphoreHandleDesc desc{};
-        desc.type         = cudaExternalSemaphoreHandleTypeOpaqueFd;
-        desc.handle.fd    = semaphore_fd;
+        desc.type      = cudaExternalSemaphoreHandleTypeOpaqueFd;
+        desc.handle.fd = semaphore_fd;
+#endif
         const auto result = cudaImportExternalSemaphore(&cuda_semaphore, &desc);
+#ifndef _WIN32
         if (result != cudaSuccess) {
             (void)::close(semaphore_fd);
         }
+#endif
 
         check_cuda(result, "import Vulkan semaphore into CUDA");
     };

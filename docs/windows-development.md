@@ -283,9 +283,18 @@ normal application configure must not silently download/build Chromium.
 
 ## Required CUDA transfer port
 
+Checkpoint: the Win32 implementation now compiles with CUDA Toolkit 13.4, using opaque NT memory/semaphore
+handles and application-owned handle cleanup. It is **not runtime-qualified**: startup's repeated imports of a
+frame allocation fail with `cudaErrorOperatingSystem`, so startup selects Vulkan staging. An isolated import
+probe succeeds on the same P2000/582.78 driver; temporary diagnostics showed a valid handle on the first import
+and an invalid handle on the next export of the same allocation. Investigate repeated export/handle lifetime
+before claiming CUDA support. The PowerShell runner `scripts/test_cuda_transfers.ps1` correctly rejects these
+fallback runs by requiring completed CUDA uploads and readbacks. Linux FD handling remains separate and has
+not been rebuilt here. The implementation items below remain acceptance requirements.
+
 Read [CUDA transfers](cuda-transfers.md) and [the DeckLink direct-memory contract](decklink-direct-memory.md).
-Installing CUDA is necessary but not sufficient: `src/wrapper/cuda/CMakeLists.txt` only creates `cuda_dependencies`
-on Linux today. The Windows task includes enabling discovery/linkage **and implementing Win32 interoperability**.
+Installing CUDA is necessary but not sufficient: discovery/linkage is enabled on Linux and Windows, but the
+Windows task still requires **qualified Win32 interoperability**.
 
 - Update the wrapper, GPU capability/allocator code in `src/gpu/device.cpp`, and
   `src/gpu/transfer/detail/cuda_transfer.cpp`. Existing memory/semaphore capability queries, export flags and calls

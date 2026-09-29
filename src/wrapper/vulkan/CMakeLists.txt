@@ -24,6 +24,9 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/submodules/volk ${CMAKE_CURRENT_BINARY_DI
 add_subdirectory(${PROJECT_SOURCE_DIR}/submodules/vma ${CMAKE_CURRENT_BINARY_DIR}/vma EXCLUDE_FROM_ALL)
 set_target_properties(volk VulkanMemoryAllocator PROPERTIES SYSTEM TRUE)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
+if(WIN32)
+    target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_WIN32_KHR)
+endif()
 
 add_library(vulkan_dependencies STATIC allocator.cpp)
 target_link_libraries(vulkan_dependencies PUBLIC volk::volk GPUOpen::VulkanMemoryAllocator)

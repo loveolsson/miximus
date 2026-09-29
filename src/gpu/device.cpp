@@ -1,5 +1,6 @@
 #include "detail/device.hpp"
 
+#include "detail/cuda_external.hpp"
 #include "detail/external_image_support.hpp"
 #include "detail/recording.hpp"
 #include "detail/resource.hpp"
@@ -20,6 +21,9 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#ifdef _WIN32
+#include <dxgi1_2.h>
+#endif
 
 namespace miximus::gpu::detail {
 
@@ -289,8 +293,7 @@ device_state_s::select_cuda_extensions([[maybe_unused]] std::span<const uint8_t,
     if (options.use_cuda) {
         cuda_device_index = transfer::detail::find_cuda_device(uuid, cuda_missing_support);
         if (cuda_device_index >= 0) {
-            for (const auto* extension :
-                 {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME}) {
+            for (const auto* extension : {detail::cuda_memory_extension, detail::cuda_semaphore_extension}) {
                 if (!std::ranges::any_of(extensions, [&](const auto& available) {
                         return std::strcmp(available.extensionName, extension) == 0;
                     })) {
@@ -304,8 +307,8 @@ device_state_s::select_cuda_extensions([[maybe_unused]] std::span<const uint8_t,
     }
     cuda_external_memory = cuda_device_index >= 0;
     if (cuda_external_memory) {
-        device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-        device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
+        device_extensions.push_back(detail::cuda_memory_extension);
+        device_extensions.push_back(detail::cuda_semaphore_extension);
     }
 #else
     cuda_missing_support.emplace_back("CUDA support was not compiled into this build");
@@ -662,7 +665,14 @@ void allocate_external_memory(detail::device_state_s&     device,
     VkExportMemoryAllocateInfo export_info{};
     export_info.sType       = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
     export_info.pNext       = &dedicated;
-    export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    export_info.handleTypes = detail::cuda_memory_handle_type;
+#ifdef _WIN32
+    VkExportMemoryWin32HandleInfoKHR win32_export{};
+    win32_export.sType    = VK_STRUCTURE_TYPE_EXPORT_MEMORY_WIN32_HANDLE_INFO_KHR;
+    win32_export.pNext    = &dedicated;
+    win32_export.dwAccess = DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE;
+    export_info.pNext     = &win32_export;
+#endif
 
     VkMemoryAllocateInfo allocate{};
     allocate.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -802,7 +812,7 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
 
         VkPhysicalDeviceExternalImageFormatInfo external_format{};
         external_format.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO;
-        external_format.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        external_format.handleType = detail::cuda_memory_handle_type;
         VkPhysicalDeviceImageFormatInfo2 query{};
         query.sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2;
         query.pNext  = &external_format;
@@ -885,7 +895,7 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
         VkPhysicalDeviceExternalBufferInfo query{};
         query.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO;
         query.usage      = info.usage;
-        query.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        query.handleType = detail::cuda_memory_handle_type;
         VkExternalBufferProperties properties{};
         properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES;
         state_->instance_vk.vkGetPhysicalDeviceExternalBufferProperties(state_->physical, &query, &properties);
