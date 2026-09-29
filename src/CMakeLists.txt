@@ -1,7 +1,5 @@
-if(WIN32) 
-# Set project wide definitions to make Windows includes behave
-# add_compile_definitions(_WIN32_WINNT=0x0A00)
-#add_compile_definitions(WIN32_LEAN_AND_MEAN)
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0A00 NOMINMAX)
 endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -34,6 +32,7 @@ PRIVATE
 )
 
 add_sanitizers(miximus)
+miximus_stage_runtime_dlls(miximus)
 
 macro(copy_library_to_binary_dir NAME)
 add_custom_command(TARGET miximus POST_BUILD
@@ -42,12 +41,6 @@ add_custom_command(TARGET miximus POST_BUILD
 )
 endmacro()
 
-copy_library_to_binary_dir(static_files)
-
-if(WIN32)
-    foreach(BOOST_RUNTIME url fiber context filesystem atomic program_options)
-        if(TARGET Boost::${BOOST_RUNTIME})
-            copy_library_to_binary_dir(Boost::${BOOST_RUNTIME})
-        endif()
-    endforeach()
+if(NOT WIN32)
+    copy_library_to_binary_dir(static_files)
 endif()

@@ -242,7 +242,9 @@ Current wrappers include:
 - system FFmpeg components;
 - stb implementation sources.
 
-The Vulkan wrapper requires SDK headers/loader discovery, GLFW 3.4, glslang 16.2.0, and `spirv-val`. VMA 3.3.0 and Volk
+The Vulkan wrapper requires SDK headers/loader discovery, GLFW 3.4, glslang 16.2.0 or newer, and `spirv-val`.
+`MIXIMUS_GLSLANG_VERSION` sets the minimum compiler version; configuration reports the selected version and path.
+VMA 3.3.0 and Volk
 SDK 1.4.341.0 are pinned submodules; no upstream implementation/header is copied into `src/`. Shader modules are
 validated
 and bundled into `static_files` during the native build using the existing file bundler. The macOS package baseline is

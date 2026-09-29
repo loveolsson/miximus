@@ -726,7 +726,8 @@ class callback_s final : public IDeckLinkVideoOutputCallback
         }
     }
 
-    ~callback_s() override = default;
+    // Windows COM interfaces have no virtual destructor; Release deletes this concrete type.
+    ~callback_s() = default;
 
     callback_s(const callback_s&)            = delete;
     callback_s& operator=(const callback_s&) = delete;

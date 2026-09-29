@@ -9,6 +9,7 @@
     "boost-mp11",
     "boost-program-options",
     "boost-url",
+    "boost-uuid",
     {
       "name": "ffmpeg",
       "default-features": false,

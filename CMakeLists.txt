@@ -85,6 +85,19 @@ add_compile_options(
 )
 endif()
 
+function(miximus_stage_runtime_dlls runtime_target)
+  if(WIN32)
+    # Stage linked project/SDK DLLs before POST_BUILD GoogleTest discovery.
+    # vcpkg additionally stages transitive DLL imports from its installed tree.
+    add_custom_command(TARGET ${runtime_target} PRE_LINK
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:${runtime_target}> $<TARGET_FILE_DIR:${runtime_target}>
+        COMMAND_EXPAND_LISTS
+        VERBATIM
+    )
+  endif()
+endfunction()
+
 add_subdirectory(src)
 add_subdirectory(static)
 

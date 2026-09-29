@@ -22,14 +22,14 @@ size_t node_actions_s::batch_t::size() const
 {
     size_t count{};
     for (const auto& group : groups_) {
-        count += group.size();
+        count += group.actions.size();
     }
     return count;
 }
 void node_actions_s::batch_t::cancel(error_e error, std::string_view message)
 {
     for (auto& group : groups_) {
-        for (auto& request : group) {
+        for (auto& request : group.actions) {
             request.fail(error, message);
         }
     }
@@ -40,7 +40,7 @@ void node_actions_s::batch_t::dispatch(app_state_s* app, const nodes::node_map_t
     std::vector<request_s*> ordered;
     ordered.reserve(size());
     for (auto& group : groups_) {
-        for (auto& request : group) {
+        for (auto& request : group.actions) {
             ordered.push_back(&request);
         }
     }

@@ -1,0 +1,2 @@
+# Match the generator's deterministic LF output, including on Windows checkouts.
+/web/src/generated/json_contracts.ts text eol=lf

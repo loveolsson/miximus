@@ -35,12 +35,12 @@ PRIVATE
     gpu
     render
     nodes
-    miximus_types
     shutdown_watchdog
     magic_enum::magic_enum
-    Boost::headers
     Boost::program_options
 PUBLIC
+    miximus_types
+    Boost::headers
     logger
 )
 
@@ -83,5 +83,6 @@ if(BUILD_TESTING)
         )
     endif()
     add_sanitizers(core_test)
+    miximus_stage_runtime_dlls(core_test)
     gtest_discover_tests(core_test)
 endif()

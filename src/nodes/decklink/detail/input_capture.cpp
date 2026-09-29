@@ -341,7 +341,8 @@ class callback_s
     {
     }
 
-    ~callback_s() override
+    // Windows COM interfaces have no virtual destructor; Release deletes this concrete type.
+    ~callback_s()
     {
         if (allocator_) {
             log()->error("DeckLink input callback destroyed before its allocator was retired");

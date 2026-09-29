@@ -22,7 +22,7 @@ output_activation_s::output_activation_s(decklink_ptr<IDeckLinkOutput> device, s
 
 bool output_activation_s::supports_ordinary_output(BMDDisplayMode display_mode)
 {
-    bool supported{};
+    BOOL supported{};
     if (device_->DoesSupportVideoMode(bmdVideoConnectionUnspecified,
                                       display_mode,
                                       bmdFormat10BitYUV,
@@ -42,7 +42,7 @@ auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        dis
     -> std::optional<std::string>
 {
     auto       attributes = device_.query<IDeckLinkProfileAttributes>();
-    bool       capability{};
+    BOOL       capability{};
     const auto capability_id = requested_keyer_mode == decklink_keyer_mode_e::external
                                    ? BMDDeckLinkSupportsExternalKeying
                                    : BMDDeckLinkSupportsInternalKeying;
@@ -55,7 +55,7 @@ auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        dis
         return "the device does not expose the DeckLink keyer interface";
     }
 
-    bool supported{};
+    BOOL supported{};
     if (device_->DoesSupportVideoMode(bmdVideoConnectionUnspecified,
                                       display_mode,
                                       bmdFormat8BitARGB,

@@ -74,7 +74,11 @@ if(NOT DEFINED WEB_DIR OR NOT DEFINED SRC_HASH_FILE
 endif()
 
 # 1. Check npm is available ------------------------------------------------
-find_program(NPM_EXECUTABLE npm)
+if(CMAKE_HOST_WIN32)
+    find_program(NPM_EXECUTABLE NAMES npm.cmd)
+else()
+    find_program(NPM_EXECUTABLE NAMES npm)
+endif()
 if(NOT NPM_EXECUTABLE)
     web_fail("npm not found on PATH. Install Node.js (https://nodejs.org) to build the Web UI.")
 endif()

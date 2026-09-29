@@ -10,7 +10,7 @@ feature disabled is only an intermediate diagnostic checkpoint, not completion.
 This guide was checked against the repository on 2026-09-29. The manifest dependencies install successfully on
 Windows and pass an isolated MSVC C++20 compile/link/runtime check, including a local WebSocket echo exchange,
 Boost.Fiber, and all eight requested FFmpeg libraries. All 93 installed WebSocket++ headers match the documented
-Linux binary package byte-for-byte. Full project configuration still stops at the NDI SDK's missing `Version.txt`;
+Linux binary package byte-for-byte. Windows configuration now reads the NDI runtime DLL's version resource;
 the full-feature port commands remain a target workflow. Existing Linux results do not qualify Windows. Some Windows implementations
 already exist (DeckLink COM/MIDL, font discovery, monitor discovery, Unicode paths); CEF and CUDA still have explicit
 Linux restrictions and require implementation, not just library installation.
@@ -20,6 +20,23 @@ Read [development](development.md), [architecture](architecture.md), [GPU/media]
 Preserve Linux support while adding Windows paths. Put SDK discovery/linkage in `src/wrapper/`.
 The Windows preset opts into vcpkg; ordinary Linux CMake configuration continues to use its existing dependencies.
 Windows validation does not substitute for a Linux build when shared source or build logic changes.
+
+The Windows Release checkpoint now configures and builds successfully, including the bundled web UI and validated
+SPIR-V shaders. All 199 ordinary CTest tests pass, and `miximus.exe --help` launches with the staged DLLs.
+NDI SDK 6.3.2.0 was verified through both its DLL version resource and `NDIlib_version()`.
+Linux-style FFmpeg discovery was checked with clean and stale-cache fixtures, and the existing NDI version-file
+parser was checked with supported, too-old and malformed versions. These are discovery checks, not a Linux build.
+CUDA Toolkit 13.4 is detected; its Windows transfer implementation and the custom Windows CEF port remain pending.
+With the installed SDK 1.4.357.0 validation layer, all 32 device tests and 14 Vulkan staging-transfer tests pass
+using binaries/shaders rebuilt with glslang 16.4.0 from that SDK. All five shaders compiled and passed `spirv-val`,
+and all 199 ordinary tests passed again. These runs isolated third-party implicit layers via
+`VK_IMPLICIT_LAYER_PATH` pointing to an empty directory: stale TikTok LIVE Studio registry entries otherwise
+reported two missing layer manifests per device. Khronos synchronization validation remained enabled via
+`VK_LAYER_PATH=C:\VulkanSDK\1.4.357.0\Bin` and `MIXIMUS_VULKAN_VALIDATION=1`; no registry entries were changed.
+This does not qualify CUDA, CEF, physical DeckLink/NDI I/O, or screen presentation.
+The wrapper now requires glslang >=16.2.0, preserving support for the existing Linux compiler. Windows was tested
+with 16.2.0 previously and 16.4.0 after this change; Linux was not rebuilt here. Cached SDK paths were refreshed
+to 1.4.357.0. Logs are in `build-win/sdk357-{configure,build,ctest,device,transfer}.log`.
 
 ## Machine and toolchains
 
@@ -38,10 +55,10 @@ Install the following before starting the port:
 | CMake and Ninja | CMake **3.28+** and Ninja on `PATH`. Use Ninja initially to keep executable paths independent of build configuration subdirectories. |
 | Node.js/npm | Install a current Node 22 release **at least 22.12**, or a compatible newer LTS. `package.json` says 22+, but the locked Vite dependency requires at least 22.12 on that line. Use `npm ci`. |
 | Python | Python **3.11+** for repository scripts (`source_build.py` uses `hashlib.file_digest`). Chromium also supplies its own pinned Python through depot_tools. |
-| Vulkan SDK | [LunarG Windows SDK](https://vulkan.lunarg.com/sdk/home): headers/loader >=1.3, `glslangValidator`, `spirv-val`, Vulkan tools, and Khronos validation layer. The wrapper pins glslang **16.2.0**. Verify the installed compiler; the SDK version alone is not proof of a match. |
+| Vulkan SDK | [LunarG Windows SDK](https://vulkan.lunarg.com/sdk/home): headers/loader >=1.3, `glslangValidator` **16.2.0 or newer**, `spirv-val`, Vulkan tools, and Khronos validation layer. Verify the installed compiler; configuration reports its version and path. |
 | CUDA Toolkit | Install the [NVIDIA Windows CUDA Toolkit](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html), including runtime development headers/import libraries and tools. Select a toolkit whose compiler/driver support table matches the installed MSVC and GPU. Record the exact toolkit and driver versions. `CUDAToolkit_ROOT` can select a nondefault installation. |
 | Blackmagic DeckLink SDK | Download **Desktop Video SDK 16.0** from [Blackmagic support](https://www.blackmagicdesign.com/support/family/capture-and-playback); this is the repository's current SDK baseline. Install the separate Desktop Video driver for runtime testing. The old README's 12.1 baseline is obsolete. |
-| NDI SDK | Obtain the Windows **NDI SDK 6.2 or newer** from [NDI developers](https://ndi.video/for-developers/ndi-sdk/). Miximus needs headers, x64 import library, runtime DLL, and `Version.txt`; NDI Tools alone is insufficient. |
+| NDI SDK | Obtain the Windows **NDI SDK 6.2 or newer** from [NDI developers](https://ndi.video/for-developers/ndi-sdk/). Miximus needs headers, x64 import library, and the SDK runtime DLL with its version resource; NDI Tools alone is insufficient. |
 | NVIDIA Video Codec SDK | Obtain the [Video Codec SDK](https://developer.nvidia.com/nvidia-video-codec-sdk/download). The local SDK inventory is **13.1.15**. This wrapper is separate from CUDA transfers; include it in full dependency discovery, but its successful discovery does not establish an implemented encoder/decoder feature. |
 | Custom CEF/Chromium | Build the pinned, patched Windows SDK as described below. A stock downloaded CEF SDK is not a replacement for the custom media-input API. |
 | Open-source native libraries | Install through vcpkg as below. Submodules already supply stb, fiberpool, sanitizers-cmake, magic_enum, GoogleTest, spdlog, Volk, and VMA; do not replace these with unrelated installed versions. |
@@ -160,13 +177,17 @@ Set NDI to the actual installed SDK root:
 $env:NDI_ROOT = 'C:\Program Files\NDI\NDI 6 SDK'
 Test-Path "$env:NDI_ROOT\Include\Processing.NDI.Lib.h"
 Test-Path "$env:NDI_ROOT\Lib\x64\Processing.NDI.Lib.x64.lib"
-Get-Content "$env:NDI_ROOT\Version.txt"
+([System.Diagnostics.FileVersionInfo]::GetVersionInfo("$env:NDI_ROOT\Bin\x64\Processing.NDI.Lib.x64.dll")).ProductVersion
 Get-ChildItem $env:NDI_ROOT -Recurse -Filter Processing.NDI.Lib.x64.dll
 ```
 
-The first `Version.txt` line must contain a version such as `v6.2.0`. Use the real SDK version file; if a newer
-vendor layout changes it, adapt the wrapper's discovery/parser rather than fabricating metadata. Record the actual
-runtime DLL directory and prepend it to `PATH` for launching the app and tests.
+Windows SDKs need not contain `Version.txt`. The wrapper reads the numeric product version from the matching
+SDK DLL under `Bin/x64` (or `Bin/x86`) using PowerShell and
+[FileVersionInfo](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.fileversioninfo).
+It does not load a DLL from `PATH` or execute target code. Linux/macOS retain the existing `Version.txt` check
+(first line containing a version such as `v6.2.0`); all platforms require at least 6.2.
+This checks the installed SDK runtime, not which DLL an eventual process loads. Record the actual runtime DLL
+directory and prepend it to `PATH` for launching the app and tests.
 
 After installing Vulkan/CUDA, open a new developer shell and check:
 
@@ -181,9 +202,11 @@ $env:CUDA_PATH
 nvidia-smi
 ```
 
-Ensure Vulkan `Bin` is on `PATH`. If glslang differs from 16.2.0, select a matching compiler explicitly with
-`Vulkan_GLSLANG_VALIDATOR_EXECUTABLE`, or make a deliberate toolchain update using `MIXIMUS_GLSLANG_VERSION` and
-revalidate all shaders. Do not merely bypass the version check. The shader compiler and validation layer can come
+Ensure Vulkan `Bin` is on `PATH`. The wrapper accepts glslang 16.2.0 or newer; `MIXIMUS_GLSLANG_VERSION` is the
+minimum version, not an exact pin. `Vulkan_GLSLANG_VALIDATOR_EXECUTABLE` can select a specific compiler.
+After replacing an SDK, clear cached discovery paths with
+`cmake --preset windows-release -U 'Vulkan_*' -U MIXIMUS_SPIRV_VAL`, rebuild all shaders and rerun GPU validation.
+Newer compilers can change SPIR-V output, so record the compiler used for each qualification. The shader compiler and validation layer can come
 from separate SDK versions; the Linux validation notes identify problems with the older 1.4.341 layer. Qualify the
 installed Windows layer independently and record its version.
 
@@ -334,20 +357,20 @@ $env:PATH = "$PWD\vcpkg_installed\x64-windows\bin;$ndiRuntime;$env:CUDA_PATH\bin
 .\build-win\miximus.exe --help
 ```
 
-For Debug use the matching vcpkg `debug\bin`. CMake copies `static_files` and selected Boost targets next to Miximus;
-do not assume every other dependency is staged. Use `dumpbin /dependents` on executables/DLLs when diagnosing
-loading, including generated build tools and test binaries. Missing DLLs may fail GoogleTest discovery during the
-build. Ensure `static_files.dll` is beside each executable that needs it, and implement repeatable CMake staging for
-the app, tests and tools as needed. Follow the qualified CEF runtime layout from its Windows port, not a blanket
-addition of CEF's directory to global `PATH`.
+For Debug use the matching vcpkg `debug\bin`. Windows CMake targets stage their linked project/SDK DLLs, including
+`static_files` and NDI, before linking so GoogleTest discovery can load them. vcpkg also stages transitive DLL imports
+from its installed tree. Use `dumpbin /dependents` on executables/DLLs when diagnosing loading, including generated
+build tools and test binaries. Newly added executables using project/SDK DLLs should call
+`miximus_stage_runtime_dlls`. Follow the qualified CEF runtime layout from its Windows port, not a blanket addition
+of CEF's directory to global `PATH`.
 
 ## Likely first build issues
 
 | Symptom | Inspect/fix |
 | --- | --- |
-| FFmpeg discovery reports the same library for every component | `src/wrapper/ffmpeg/CMakeLists.txt` reuses cached `INCLUDE_DIRS` and `LIBRARIES` inside its macro. Give each component distinct cache variables/imported targets and correct Debug/Release selection; confirm every requested component independently. |
+| FFmpeg discovery | Each component now uses independent `FFMPEG_<component>_*` cache variables on every platform; Windows additionally selects the matching Debug/Release import library. Old shared `INCLUDE_DIRS`/`LIBRARIES` entries are ignored. |
 | Missing `postproc` | Confirm the chosen FFmpeg build supplies the requested development component. The proposed vcpkg baseline includes it; any removal from Miximus needs an explicit dependency cleanup, not a fake success. |
-| Missing Boost headers | Check all directly used header packages as well as Fiber, Program_options and URL; the install list includes Asio, Container, Describe, Locale and Mp11. |
+| Missing Boost headers | Check all directly used header packages as well as Fiber, Program_options and URL; the install list includes Asio, Container, Describe, Locale, Mp11 and UUID (used by the asset bundler). |
 | MIDL not found / DeckLink header errors | Use the x64 developer environment, correct SDK root and full IDL set. Confirm generated files are dependencies of every consumer. |
 | MSVC errors in Windows-only code | Check `font_registry_win.cpp`, monitor and COM code, const correctness, Win32 macro collisions, Unicode paths, and required Windows system libraries. Fix target/platform ownership rather than globally weakening diagnostics. |
 | Native build succeeds but web UI is absent | Native bundling can report web failure only as a final warning. Inspect `build-win/static/web_build_failed.txt`, `web/dist`, and npm invocation (`npm.cmd` on Windows). |

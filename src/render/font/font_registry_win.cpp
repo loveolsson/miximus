@@ -46,10 +46,10 @@ static std::filesystem::path fonts_path()
 
 static void read_registry_fonts(init_data_s* data)
 {
-    static const LPWSTR fontRegistryPath = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
-    HKEY                hKey;
-    LONG                result;
-    std::wstring        res;
+    static constexpr wchar_t fontRegistryPath[] = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+    HKEY                     hKey;
+    LONG                     result;
+    std::wstring             res;
 
     // Open Windows font registry key
     result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, fontRegistryPath, 0, KEY_READ, &hKey);

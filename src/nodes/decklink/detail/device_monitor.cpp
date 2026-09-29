@@ -129,8 +129,8 @@ struct monitor_state_s
 
 std::optional<bool> read_flag(IDeckLinkStatus* status, BMDDeckLinkStatusID id)
 {
-    bool value{};
-    return status != nullptr && status->GetFlag(id, &value) == S_OK ? std::optional(value) : std::nullopt;
+    BOOL value{};
+    return status != nullptr && status->GetFlag(id, &value) == S_OK ? std::optional(value != 0) : std::nullopt;
 }
 
 std::optional<int64_t> read_int(IDeckLinkStatus* status, BMDDeckLinkStatusID id)

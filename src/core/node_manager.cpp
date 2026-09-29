@@ -672,7 +672,7 @@ node_actions_s::batch_t node_manager_s::take_frame_updates()
     // Only transfer completion ownership once the complete snapshot is ready.
     for (auto& [id, pending] : pending_nodes_) {
         if (!pending.actions.empty()) {
-            actions.groups_.push_back(std::move(pending.actions));
+            actions.groups_.push_back(std::move(pending));
         }
     }
     pending_nodes_.clear();
