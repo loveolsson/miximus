@@ -2,6 +2,7 @@
 
 #include "web_server/payload_parse.hpp"
 
+#include <boost/asio/dispatch.hpp>
 #include <boost/asio/post.hpp>
 #include <nlohmann/json.hpp>
 
@@ -153,59 +154,29 @@ void web_server_impl::stop()
 
 void web_server_impl::send_message(const nlohmann::json& msg, int64_t connection_id)
 {
-    boost::asio::post(endpoint_.get_io_context(),
-                      [weak_self = weak_from_this(), serialized = msg.dump(), connection_id]() {
-                          if (const auto self = weak_self.lock()) {
-                              self->send_message_sync(serialized, connection_id);
-                          }
-                      });
-}
-
-void web_server_impl::send_message_sync(const nlohmann::json& msg, int64_t connection_id)
-{
-    send_message_sync(msg.dump(), connection_id);
-}
-
-void web_server_impl::send_message_sync(const std::string& msg, int64_t connection_id)
-{
-    auto hdl = connections_by_id_.find(connection_id);
-    if (hdl == connections_by_id_.end()) {
-        return;
-    }
-
-    auto con = connections_.find(hdl->second);
-    if (con == connections_.end()) {
-        return;
-    }
-
-    send(hdl->second, msg);
+    boost::asio::dispatch(
+        endpoint_.get_io_context(), [weak_self = weak_from_this(), serialized = msg.dump(), connection_id]() {
+            if (const auto self = weak_self.lock()) {
+                const auto hdl = self->connections_by_id_.find(connection_id);
+                if (hdl != self->connections_by_id_.end() && self->connections_.contains(hdl->second)) {
+                    self->send(hdl->second, serialized);
+                }
+            }
+        });
 }
 
 void web_server_impl::broadcast_message(const nlohmann::json& msg)
 {
-    auto topic = get_topic_from_payload(msg);
+    const auto topic = get_topic_from_payload(msg);
     if (topic.has_value()) {
-        boost::asio::post(endpoint_.get_io_context(),
-                          [weak_self = weak_from_this(), topic = *topic, serialized = msg.dump()]() {
-                              if (const auto self = weak_self.lock()) {
-                                  self->broadcast_message_sync(topic, serialized);
-                              }
-                          });
-    }
-}
-
-void web_server_impl::broadcast_message_sync(const nlohmann::json& msg)
-{
-    auto topic = get_topic_from_payload(msg);
-    if (topic.has_value()) {
-        broadcast_message_sync(*topic, msg.dump());
-    }
-}
-
-void web_server_impl::broadcast_message_sync(topic_e topic, const std::string& msg)
-{
-    for (const auto& hdl : get_connections_by_topic(topic)) {
-        send(hdl, msg);
+        boost::asio::dispatch(endpoint_.get_io_context(),
+                              [weak_self = weak_from_this(), topic = *topic, serialized = msg.dump()]() {
+                                  if (const auto self = weak_self.lock()) {
+                                      for (const auto& hdl : self->get_connections_by_topic(topic)) {
+                                          self->send(hdl, serialized);
+                                      }
+                                  }
+                              });
     }
 }
 

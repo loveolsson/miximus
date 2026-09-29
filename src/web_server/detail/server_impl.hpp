@@ -85,11 +85,7 @@ class web_server_impl
     void stop() final;
 
     void send_message(const nlohmann::json& msg, int64_t connection_id) final;
-    void send_message_sync(const nlohmann::json& msg, int64_t connection_id) final;
-    void send_message_sync(const std::string& msg, int64_t connection_id);
 
     void broadcast_message(const nlohmann::json& msg) final;
-    void broadcast_message_sync(const nlohmann::json& msg) final;
-    void broadcast_message_sync(topic_e topic, const std::string& msg);
 };
 } // namespace miximus::web_server::detail

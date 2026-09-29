@@ -174,6 +174,11 @@ The embedded server and protocol are implemented in:
 - `web/src/App.vue`: subscriptions and initial config restore;
 - `web/src/server_sync.ts`: Baklava-to-server synchronization and feedback-loop suppression.
 
+`send_message()` and `broadcast_message()` serialize on the caller and dispatch to the single config/server executor:
+inline when already executing there, queued otherwise. Callers do not select sync/async variants. Graph broadcasts
+and snapshots retain their config-thread order; replies correlate by token. Lifecycle operations that require a later
+event-loop turn, particularly shutdown completion, still use `post`.
+
 Commands use request tokens for result/error correlation. Broadcast mutations include `origin_id`; clients normally ignore their own echo. Connection removal is deliberately processed even for the originating client because the server may remove an older connection as a side effect of enforcing connection limits.
 
 WebSocket payload contracts live in `src/types/web_message.hpp`. The transport parses the common action/topic envelope,

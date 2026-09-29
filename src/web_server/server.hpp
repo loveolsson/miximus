@@ -34,13 +34,10 @@ class server_s
     virtual void start(uint16_t port, boost::asio::io_context* service) = 0;
     virtual void stop()                                                 = 0;
 
-    /**
-     * Sync versions of calls should only be called from the callback thread
-     */
-    virtual void send_message(const nlohmann::json& msg, int64_t connection_id)      = 0;
-    virtual void send_message_sync(const nlohmann::json& msg, int64_t connection_id) = 0;
-    virtual void broadcast_message(const nlohmann::json& msg)                        = 0;
-    virtual void broadcast_message_sync(const nlohmann::json& msg)                   = 0;
+    // Submit inline on the server executor, or queue from other threads.
+    // Serialization happens on the caller; neither call waits for network delivery.
+    virtual void send_message(const nlohmann::json& msg, int64_t connection_id) = 0;
+    virtual void broadcast_message(const nlohmann::json& msg)                   = 0;
 
     template <typename Message, typename Callback>
     void subscribe(topic_e topic, Callback&& callback);

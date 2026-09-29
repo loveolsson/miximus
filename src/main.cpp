@@ -127,7 +127,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                 [server = std::weak_ptr<web_server::server_s>(web_server)](const auto& updates) {
                     if (const auto endpoint = server.lock()) {
                         for (const auto& update : updates) {
-                            endpoint->broadcast_message_sync(web_message::node_status_command_s{
+                            endpoint->broadcast_message(web_message::node_status_command_s{
                                 .id     = update.node_id,
                                 .status = update.status,
                             });

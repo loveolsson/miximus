@@ -47,19 +47,7 @@ class server_mock_s final : public web_server::server_s
         did_send           = true;
     }
 
-    void send_message_sync(const nlohmann::json& message, int64_t connection_id) final
-    {
-        sent_connection_id = connection_id;
-        sent_message_value = message;
-        did_send           = true;
-    }
-
     void broadcast_message(const nlohmann::json& message) final
-    {
-        broadcast_message_value = message;
-        did_broadcast           = true;
-    }
-    void broadcast_message_sync(const nlohmann::json& message) final
     {
         broadcast_message_value = message;
         did_broadcast           = true;
@@ -75,7 +63,7 @@ TEST(web_message, typed_broadcast_serializes_the_envelope_and_payload)
         {"gain", 0.5      }
     };
 
-    server.broadcast_message_sync(web_message::add_node_command_s{
+    server.broadcast_message(web_message::add_node_command_s{
         .origin_id    = 42,
         .origin_token = "request-7",
         .node =

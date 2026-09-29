@@ -36,7 +36,7 @@ void server_s::subscribe(topic_e topic, Callback&& callback)
                       if (const auto log = getlog("http"); log != nullptr) {
                           log->warn("Received malformed {} payload: {}", enum_to_string(topic), error.what());
                       }
-                      send_message_sync(
+                      send_message(
                           web_message::error_s{
                               .token = token_value,
                               .error = error_e::malformed_payload,
@@ -51,7 +51,7 @@ void server_s::subscribe(topic_e topic, Callback&& callback)
                       if (const auto log = getlog("http"); log != nullptr) {
                           log->error("Failed to handle {} payload: {}", enum_to_string(topic), error.what());
                       }
-                      send_message_sync(
+                      send_message(
                           web_message::error_s{
                               .token = token_value,
                               .error = error_e::internal_error,
