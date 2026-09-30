@@ -1,0 +1,23 @@
+diff --git a/cef/libcef/renderer/external_video_source_test.cc b/cef/libcef/renderer/external_video_source_test.cc
+--- a/cef/libcef/renderer/external_video_source_test.cc
++++ b/cef/libcef/renderer/external_video_source_test.cc
+@@ -187,13 +187,18 @@
+   base::RunLoop loop;
+   FrameSink sink(&received,
+                  base::BindPostTaskToCurrentDefault(loop.QuitClosure()));
+-  ASSERT_TRUE(source->PushTransparentFrame());
++  const auto started = base::TimeTicks::Now();
++  ASSERT_TRUE(source->PushTransparentFrame(base::Milliseconds(123)));
+   task_environment_.RunUntilIdle();
+   sink.Connect(
+       blink::WebDOMMediaStreamTrack::FromV8Value(scope.GetIsolate(), value)
+           .Component());
+   loop.Run();
+   ASSERT_TRUE(received);
++  // Refresh frames advance from the supplied timestamp by elapsed wall time.
++  EXPECT_GE(received->timestamp(), base::Milliseconds(123));
++  EXPECT_LE(received->timestamp(),
++            base::Milliseconds(123) + (base::TimeTicks::Now() - started));
+   EXPECT_EQ(received->format(), media::PIXEL_FORMAT_I420A);
+   EXPECT_EQ(received->visible_data(media::VideoFrame::Plane::kA)[0], 0);
+   sink.Disconnect();

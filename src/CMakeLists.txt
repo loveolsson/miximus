@@ -28,6 +28,7 @@ PRIVATE
     app
     gpu
     shutdown_watchdog
+    shutdown_signal
     magic_enum::magic_enum
 )
 

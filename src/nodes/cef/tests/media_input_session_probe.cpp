@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -640,16 +641,16 @@ async () => {
 
 int main(int argc, char** argv)
 {
-    const bool small_inputs = argc == 4 && std::string_view(argv[3]) == "--small-inputs";
-    const bool budget       = argc == 4 && std::string_view(argv[3]) == "--budget";
-    const bool navigation   = argc == 5 && std::string_view(argv[3]) == "--navigation";
-    if (argc != 3 && !small_inputs && !navigation && !budget) {
-        std::cerr
-            << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs | --budget | --navigation URL]\n";
-        return 2;
-    }
-
     try {
+        const bool small_inputs = argc == 4 && std::string_view(argv[3]) == "--small-inputs";
+        const bool budget       = argc == 4 && std::string_view(argv[3]) == "--budget";
+        const bool navigation   = argc == 5 && std::string_view(argv[3]) == "--navigation";
+        if (argc != 3 && !small_inputs && !navigation && !budget) {
+            std::cerr << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs | --budget | "
+                         "--navigation URL]\n";
+            return 2;
+        }
+
         std::cout.setf(std::ios::unitbuf);
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
@@ -668,7 +669,11 @@ int main(int argc, char** argv)
 
         std::cout << "Requested session input regressions passed, including clean shutdown\n";
     } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
+        std::fprintf(stderr, "%s\n", error.what());
+        return 1;
+    } catch (...) {
+        std::fputs("CEF probe failed with an unknown exception\n", stderr);
         return 1;
     }
+    return 0;
 }

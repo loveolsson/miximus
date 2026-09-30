@@ -1,10 +1,10 @@
 # CUDA/Vulkan transfers and verification
 
 Windows CUDA transfers are a required deliverable of the [full Windows port](windows-development.md#required-cuda-transfer-port).
-The implementation and commands below currently describe Linux; the handoff covers Windows toolkit installation,
-Win32 external-memory/semaphore work, and the equivalent hardware acceptance requirements.
+The implementation supports Linux FD and Windows NT-handle interoperability. The handoff covers platform
+toolkit installation and hardware acceptance requirements.
 
-Vulkan staging is the default. Pass `--use-cuda` to request CUDA transfers on Linux builds with CUDA support.
+Vulkan staging is the default. Pass `--use-cuda` to request CUDA transfers on builds with CUDA support.
 CUDA is enabled only when the selected Vulkan GPU has a matching,
 usable CUDA device and the required external-memory/semaphore extensions. Before selecting CUDA, startup creates and
 imports every required host-format/sampling combination through the production allocator and CUDA backend, for uploads
@@ -80,8 +80,22 @@ If discovery needs help, add `-DCUDAToolkit_ROOT=/usr/local/cuda`. CMake should 
 External SDK discovery and linkage live in `src/wrapper/cuda`; only first-party integration code lives in the transfer
 implementation. No CUDA language compiler invocation or `.cu` kernel compilation is needed.
 
-`MIXIMUS_ENABLE_CUDA=OFF` builds without the backend. This implementation uses Linux FD export/import; Windows
-CUDA/Win32 interoperability is not implemented, and those builds retain Vulkan staging.
+`MIXIMUS_ENABLE_CUDA=OFF` builds without the backend. Every externally shareable allocation retains one native
+handle for its lifetime on Linux and Windows. CUDA imports a duplicate: successful FD import consumes it;
+NT-handle import leaves it owned by our RAII wrapper. The original remains available for later registrations.
+The same native-handle owner is used by CEF's DMA-BUF export/import path; handle ownership does not replace
+GPU completion or the external image's layout/queue-ownership contract. Exporting only once also meets Vulkan's
+[NT-handle export rule](https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryGetWin32HandleInfoKHR.html).
+The transfer worker polls Vulkan queue acceptance before issuing the corresponding CUDA binary-semaphore wait;
+it does not wait for GPU completion or block other streams. NVIDIA requires the signal to have been issued before
+the wait. See [CUDA interoperability](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/graphics-interop.html).
+
+On Windows, run `scripts/test_cuda_transfers.ps1 -BuildDir build -Repeats 3` with the validation environment
+described in the Windows handoff. The runner requires completed uploads/readbacks and rejects staging fallback.
+On 2026-09-29, all 14 transfer tests passed three times on Quadro P2000/582.78 with CUDA Toolkit 13.4 and SDK
+1.4.357.0 synchronization validation. The 32 device tests, 14 staging-transfer tests and 199 ordinary tests also
+passed. This includes SDK buffer-wrapper lease checks, not live DeckLink/NDI hardware acceptance. Linux was not
+rebuilt on this Windows host.
 
 ## Sanitizer builds
 

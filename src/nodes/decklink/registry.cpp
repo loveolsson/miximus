@@ -47,7 +47,7 @@ std::string get_decklink_name(decklink_ptr<IDeckLink>& device)
 }
 } // namespace
 
-class discovery_callback : public IDeckLinkDeviceNotificationCallback
+class discovery_callback final : public IDeckLinkDeviceNotificationCallback
 {
     decklink_registry_s* registry_;
     std::atomic_ulong    ref_count_{1};
@@ -205,27 +205,33 @@ decklink_registry_s::decklink_registry_s()
     }
 
     statistics_thread_ = std::jthread([this](const std::stop_token& stop_token) {
-        std::mutex                  wait_mutex;
-        std::condition_variable_any wait_condition;
-        std::unique_lock            wait_lock(wait_mutex);
+        try {
+            std::mutex                  wait_mutex;
+            std::condition_variable_any wait_condition;
+            std::unique_lock            wait_lock(wait_mutex);
 
-        while (!stop_token.stop_requested()) {
-            wait_condition.wait_for(wait_lock, stop_token, 2s, [] { return false; });
-            if (stop_token.stop_requested()) {
-                break;
-            }
+            while (!stop_token.stop_requested()) {
+                wait_condition.wait_for(wait_lock, stop_token, 2s, [] { return false; });
+                if (stop_token.stop_requested()) {
+                    break;
+                }
 
-            std::vector<std::shared_ptr<detail::device_monitor_s>> monitors;
-            {
-                const std::shared_lock lock(device_mutex_);
-                monitors.reserve(monitors_.size());
-                for (const auto& [_, monitor] : monitors_) {
-                    monitors.push_back(monitor);
+                std::vector<std::shared_ptr<detail::device_monitor_s>> monitors;
+                {
+                    const std::shared_lock lock(device_mutex_);
+                    monitors.reserve(monitors_.size());
+                    for (const auto& [_, monitor] : monitors_) {
+                        monitors.push_back(monitor);
+                    }
+                }
+                for (const auto& monitor : monitors) {
+                    monitor->poll_statistics();
                 }
             }
-            for (const auto& monitor : monitors) {
-                monitor->poll_statistics();
-            }
+
+        } catch (...) {
+            logger::log_error_noexcept("decklink", "DeckLink statistics worker failed");
+            std::terminate();
         }
     });
 }

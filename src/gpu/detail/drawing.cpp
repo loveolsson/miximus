@@ -22,8 +22,8 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
     }
 
     VkRect2D scissor{
-        {0,                    0                    },
-        {target->extent.width, target->extent.height}
+        .offset = {.x = 0,                        .y = 0                         },
+        .extent = {.width = target->extent.width, .height = target->extent.height},
     };
 
     if (clip) {
@@ -41,8 +41,8 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
         }
 
         scissor = {
-            .offset = {static_cast<int32_t>(left),          static_cast<int32_t>(top)          },
-            .extent = {static_cast<uint32_t>(right - left), static_cast<uint32_t>(bottom - top)}
+            .offset = {.x = static_cast<int32_t>(left),              .y = static_cast<int32_t>(top)               },
+            .extent = {.width = static_cast<uint32_t>(right - left), .height = static_cast<uint32_t>(bottom - top)}
         };
     }
 
@@ -69,30 +69,37 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
 
     std::array<VkWriteDescriptorSet, 2> writes{};
     for (uint32_t i = 0; i < writes.size(); ++i) {
-        writes.at(i).sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes.at(i).dstSet          = descriptor;
-        writes.at(i).dstBinding      = i;
-        writes.at(i).descriptorCount = 1;
-        writes.at(i).descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes.at(i).pImageInfo      = &sampled.at(i);
+        writes.at(i) = {
+            .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet          = descriptor,
+            .dstBinding      = i,
+            .descriptorCount = 1,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo      = &sampled.at(i),
+        };
     }
 
     owner->vk.vkUpdateDescriptorSets(owner->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-    VkRenderingAttachmentInfo attachment{};
-    attachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    attachment.imageView   = target->view;
-    attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    attachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
-    attachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingAttachmentInfo attachment{
+        .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView   = target->view,
+        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
+    };
 
-    VkRenderingInfo render{};
-    render.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    render.renderArea.extent    = {.width = target->extent.width, .height = target->extent.height};
-    render.layerCount           = 1;
-    render.colorAttachmentCount = 1;
-    render.pColorAttachments    = &attachment;
-    const auto command_buffer   = arena->commands;
+    VkRenderingInfo render{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea =
+            {
+                         .extent = {.width = target->extent.width, .height = target->extent.height},
+                         },
+        .layerCount           = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments    = &attachment,
+    };
+    const auto command_buffer = arena->commands;
     owner->vk.vkCmdBeginRendering(command_buffer, &render);
     const auto& pipelines =
         operation == draw_operation_e::mix ? owner->drawing->mix_pipelines : owner->drawing->pipelines;
@@ -108,7 +115,13 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
                                       nullptr);
 
     const VkViewport viewport{
-        0, 0, static_cast<float>(target->extent.width), static_cast<float>(target->extent.height), 0, 1};
+        .x        = 0,
+        .y        = 0,
+        .width    = static_cast<float>(target->extent.width),
+        .height   = static_cast<float>(target->extent.height),
+        .minDepth = 0,
+        .maxDepth = 1,
+    };
     owner->vk.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     owner->vk.vkCmdSetScissor(command_buffer, 0, 1, &scissor);
     owner->vk.vkCmdPushConstants(command_buffer,

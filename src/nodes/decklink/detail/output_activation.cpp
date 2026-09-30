@@ -30,7 +30,7 @@ bool output_activation_s::supports_ordinary_output(BMDDisplayMode display_mode)
                                       bmdSupportedVideoModeDefault,
                                       nullptr,
                                       &supported) != S_OK ||
-        !supported) {
+        !static_cast<bool>(supported)) {
         log()->error("DeckLink output mode is not supported by {}", device_name_);
         return false;
     }
@@ -46,7 +46,7 @@ auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        dis
     const auto capability_id = requested_keyer_mode == decklink_keyer_mode_e::external
                                    ? BMDDeckLinkSupportsExternalKeying
                                    : BMDDeckLinkSupportsInternalKeying;
-    if (!attributes || attributes->GetFlag(capability_id, &capability) != S_OK || !capability) {
+    if (!attributes || attributes->GetFlag(capability_id, &capability) != S_OK || !static_cast<bool>(capability)) {
         return "the active device profile does not advertise that keyer capability";
     }
 
@@ -63,7 +63,7 @@ auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        dis
                                       bmdSupportedVideoModeKeying,
                                       nullptr,
                                       &supported) != S_OK ||
-        !supported) {
+        !static_cast<bool>(supported)) {
         keyer_ = nullptr;
         return "the selected display mode does not support 8-bit ARGB keying";
     }
@@ -83,7 +83,7 @@ bool output_activation_s::enable_output(BMDDisplayMode display_mode)
 bool output_activation_s::enable_keyer(decklink_keyer_mode_e keyer_mode)
 {
     const bool external      = keyer_mode == decklink_keyer_mode_e::external;
-    const auto enable_result = keyer_->Enable(external);
+    const auto enable_result = keyer_->Enable(static_cast<BOOL>(external));
     const auto level_result  = enable_result == S_OK ? keyer_->SetLevel(255) : E_FAIL;
     if (enable_result == S_OK && level_result == S_OK) {
         return true;

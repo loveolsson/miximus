@@ -155,6 +155,8 @@ class output_sender_s::impl_s
                               },
             });
         }
+        // The bounded queue owns the frames; Clang's MSVC shared_ptr model reports a false leak.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
     }
 
     void run_stream(const stream_state_s& state)

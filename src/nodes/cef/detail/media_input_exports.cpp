@@ -1,5 +1,7 @@
 #include "media_input_exports.hpp"
 
+#include "gpu/detail/fatal.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -28,9 +30,9 @@ media_input_exports_s::quarantine_s::~quarantine_s() = default;
 
 struct media_input_exports_s::pending_s
 {
-    media_input_pool_s::ticket_s                   ticket;
-    std::shared_ptr<gpu::detail::dma_buf_export_s> image;
-    gpu::completion_s                              completion;
+    media_input_pool_s::ticket_s                          ticket;
+    std::shared_ptr<gpu::detail::external_image_export_s> image;
+    gpu::completion_s                                     completion;
 
     int64_t timestamp{};
     bool    abandoned{};
@@ -45,12 +47,12 @@ struct media_input_exports_s::state_s
 {
     struct input_s
     {
-        uint64_t                                                          revision{};
-        gpu::extent_s                                                     extent{};
-        bool                                                              active{};
-        bool                                                              configuring{};
-        std::array<std::shared_ptr<gpu::detail::dma_buf_export_s>, SLOTS> images;
-        std::array<std::shared_ptr<pending_s>, SLOTS>                     pending;
+        uint64_t                                                                 revision{};
+        gpu::extent_s                                                            extent{};
+        bool                                                                     active{};
+        bool                                                                     configuring{};
+        std::array<std::shared_ptr<gpu::detail::external_image_export_s>, SLOTS> images;
+        std::array<std::shared_ptr<pending_s>, SLOTS>                            pending;
     };
 
     gpu::device_s&              device;
@@ -159,9 +161,16 @@ media_input_exports_s::frame_s::frame_s(std::shared_ptr<state_s> state, std::sha
 {
 }
 
-media_input_exports_s::frame_s::~frame_s() { retire(false); }
-media_input_pool_s::ticket_s         media_input_exports_s::frame_s::ticket() const { return pending_->ticket; }
-const gpu::detail::dma_buf_export_s& media_input_exports_s::frame_s::image() const
+media_input_exports_s::frame_s::~frame_s()
+{
+    try {
+        retire(false);
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to quarantine CEF input frame");
+    }
+}
+media_input_pool_s::ticket_s                media_input_exports_s::frame_s::ticket() const { return pending_->ticket; }
+const gpu::detail::external_image_export_s& media_input_exports_s::frame_s::image() const
 {
     if (retired_) {
         throw std::logic_error("Browser input frame has already retired");
@@ -225,11 +234,11 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
         throw std::invalid_argument("Browser input extent must be in [1, 4096]");
     }
 
-    auto&                                                             state = *state_;
-    std::scoped_lock                                                  configuration_lock(state.configure_mutex);
-    uint64_t                                                          revision{};
-    size_t                                                            available{};
-    std::array<std::shared_ptr<gpu::detail::dma_buf_export_s>, SLOTS> images;
+    auto&                                                                    state = *state_;
+    std::scoped_lock                                                         configuration_lock(state.configure_mutex);
+    uint64_t                                                                 revision{};
+    size_t                                                                   available{};
+    std::array<std::shared_ptr<gpu::detail::external_image_export_s>, SLOTS> images;
     {
         std::scoped_lock lock(state.mutex);
         auto&            entry = state.inputs.at(input);
@@ -277,7 +286,7 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
     try {
         size_t allocated{};
         for (size_t slot = 0; slot < state.depth; ++slot) {
-            images.at(slot) = std::make_shared<gpu::detail::dma_buf_export_s>(state.device, extent);
+            images.at(slot) = std::make_shared<gpu::detail::external_image_export_s>(state.device, extent);
             allocated += images.at(slot)->allocation_bytes();
             if (allocated > available) {
                 throw capacity_error_s("Browser input export allocation exceeds byte budget");
@@ -305,9 +314,9 @@ bool media_input_exports_s::configure(size_t input, gpu::extent_s extent)
 bool media_input_exports_s::release(size_t input)
 {
     state_s::validate(input);
-    auto&                                                             state = *state_;
-    std::scoped_lock                                                  configuration_lock(state.configure_mutex);
-    std::array<std::shared_ptr<gpu::detail::dma_buf_export_s>, SLOTS> images;
+    auto&                                                                    state = *state_;
+    std::scoped_lock                                                         configuration_lock(state.configure_mutex);
+    std::array<std::shared_ptr<gpu::detail::external_image_export_s>, SLOTS> images;
     {
         std::scoped_lock lock(state.mutex);
         auto&            entry = state.inputs.at(input);

@@ -79,7 +79,7 @@ if(BUILD_TESTING)
         set_property(
             TARGET core_test
             PROPERTY CXX_CLANG_TIDY
-                     "${MIXIMUS_CLANG_TIDY_EXECUTABLE};--checks=-readability-function-cognitive-complexity"
+                     "${MIXIMUS_CLANG_TIDY_COMMAND};--checks=-readability-function-cognitive-complexity"
         )
     endif()
     add_sanitizers(core_test)

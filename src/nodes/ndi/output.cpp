@@ -245,6 +245,8 @@ class node_impl : public node_i
 
         target->set_program_target_time(app->frame_context().program_target_time);
         auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
+        // The stored callback owns pending; Clang's MSVC shared_ptr model reports a false leak.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
         app->defer_output([pending = std::move(pending), sender = sender_](gpu::completion_s ready) {
             pending->submit(std::move(ready));
             sender->notify_frame();

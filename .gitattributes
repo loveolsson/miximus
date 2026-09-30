@@ -1,2 +1,5 @@
 # Match the generator's deterministic LF output, including on Windows checkouts.
 /web/src/generated/json_contracts.ts text eol=lf
+
+# CEF source-build manifests verify these files by their exact SHA-256 bytes.
+/src/wrapper/cef/**/*.patch text eol=lf

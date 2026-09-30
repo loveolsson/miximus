@@ -1,5 +1,5 @@
-#include "gpu/detail/dma_buf_copy.hpp"
-#include "gpu/detail/dma_buf_export.hpp"
+#include "gpu/detail/external_image_copy.hpp"
+#include "gpu/detail/external_image_export.hpp"
 #include "gpu/device.hpp"
 #include "gpu/tests/color_compare.hpp"
 #include "logger/logger.hpp"
@@ -10,7 +10,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <vector>
@@ -35,7 +34,7 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
     options.external_image_import = true;
     gpu::device_s producer(options);
     gpu::device_s consumer(options);
-    ASSERT_TRUE(producer.external_image_import_support().enabled);
+    ASSERT_EQ(producer.external_image_import_support(), gpu::external_image_import_support_e::supported);
     auto                            producer_context = producer.create_recording_context(1);
     auto                            consumer_context = consumer.create_recording_context(1);
     constexpr gpu::extent_s         extent{.width = 640, .height = 360};
@@ -47,10 +46,10 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
     conversion.compositing = gpu::compositing_e::replace;
 
     for (size_t depth : {1U, 2U, 3U}) {
-        media_input_pool_s                                          pool(depth);
-        std::vector<std::unique_ptr<gpu::detail::dma_buf_export_s>> exports;
+        media_input_pool_s                                                 pool(depth);
+        std::vector<std::unique_ptr<gpu::detail::external_image_export_s>> exports;
         for (size_t index = 0; index < depth * media_input_pool_s::INPUT_COUNT; ++index) {
-            exports.push_back(std::make_unique<gpu::detail::dma_buf_export_s>(producer, extent));
+            exports.push_back(std::make_unique<gpu::detail::external_image_export_s>(producer, extent));
             EXPECT_GT(exports.back()->allocation_bytes(), 0U);
         }
 
@@ -102,9 +101,9 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
                 auto  record   = consumer_context.try_record();
                 ASSERT_TRUE(record);
                 // Host waits are test orchestration, never CPU pixel transfer.
-                // Producer completion above precedes any import/read of its FD.
-                const auto completion =
-                    gpu::detail::dma_buf_copy_s::submit(*record, exported.descriptor(), destination, conversion, 500ms);
+                // Producer completion above precedes any import/read of its native handle.
+                const auto completion = gpu::detail::external_image_copy_s::submit(
+                    *record, exported.descriptor(), destination, conversion, 500ms);
                 ASSERT_EQ(completion.wait(5s), gpu::wait_result_e::ready);
                 record.reset();
                 ASSERT_TRUE(pool.consumer_finished(ticket));
@@ -273,14 +272,14 @@ TEST_F(export_queue_test, ForgottenConsumerQuarantinesAcrossQueueDestruction)
     publication->commit();
     auto frame = queue->poll();
     ASSERT_TRUE(frame);
-    const int fd = frame->image().descriptor().fd;
+    const auto handle = frame->image().descriptor().handle;
     frame.reset();
     publication.reset();
     EXPECT_TRUE(queue->failed());
     EXPECT_FALSE(queue->configure(0, {16, 16}));
     queue.reset();
-    EXPECT_NE(fcntl(fd, F_GETFD), -1); // Quarantine outlives the producer queue.
-    EXPECT_FALSE(retained.expired());  // Its shared admission charge must survive too.
+    EXPECT_NO_THROW(gpu::detail::native_handle_s::duplicate(handle)); // Quarantine outlives the producer queue.
+    EXPECT_FALSE(retained.expired());                                 // Its shared admission charge must survive too.
     quarantine.reset();
     EXPECT_TRUE(retained.expired());
 }

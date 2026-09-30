@@ -422,9 +422,15 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
     void request_failure()
     {
-        if (!stop_requested_.exchange(true)) {
-            phase_ = phase_e::stopping;
-            post_control([](callback_s& self) { self.retire_playback(phase_e::failed); });
+        try {
+            if (!stop_requested_.exchange(true)) {
+                phase_ = phase_e::stopping;
+                post_control([](callback_s& self) { self.retire_playback(phase_e::failed); });
+            }
+
+        } catch (...) {
+            logger::log_error_noexcept("decklink", "Failed to schedule DeckLink output retirement");
+            std::terminate();
         }
     }
 
@@ -1101,7 +1107,15 @@ class node_impl : public node_i
     }
 
   public:
-    ~node_impl() override { stop_playback(); }
+    ~node_impl() override
+    {
+        try {
+            stop_playback();
+        } catch (...) {
+            logger::log_error_noexcept("decklink", "Failed to schedule DeckLink output shutdown");
+            std::terminate();
+        }
+    }
 
     node_impl()                            = default;
     node_impl(const node_impl&)            = delete;
@@ -1198,6 +1212,8 @@ class node_impl : public node_i
         frame_renderer_->render(app->commands(), texture, *target, fill_mode);
         target->set_program_target_time(app->frame_context().program_target_time);
         auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
+        // The stored callback owns pending; Clang's MSVC shared_ptr model reports a false leak.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
         app->defer_output([pending = std::move(pending), callback = callback_](gpu::completion_s ready) mutable {
             pending->submit(std::move(ready));
             if (callback) {

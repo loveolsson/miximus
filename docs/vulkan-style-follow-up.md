@@ -265,8 +265,8 @@ on the control worker. Validate capacity admission/rejection and pool generation
 
 ## 14. Use one small FD ownership primitive
 
-**Code:** [DMA-BUF fence import](../src/gpu/detail/dma_buf_copy.cpp),
-[image import](../src/gpu/detail/dma_buf_image.cpp), and
+**Code:** [DMA-BUF fence import](../src/gpu/detail/external_image_copy_linux.cpp),
+[image import](../src/gpu/detail/external_image_linux.cpp), and
 [accelerated probe](../src/nodes/cef/tests/accelerated_probe.cpp).
 
 Fence import defines a local owning-FD struct and transfers ownership by assigning `-1`. Image import manually

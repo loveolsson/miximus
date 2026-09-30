@@ -10,6 +10,7 @@
 #define ZLIB_CONST
 #endif
 #include <array>
+#include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -24,9 +25,10 @@
 #include <vector>
 #include <zlib.h>
 
+namespace {
+
 constexpr size_t BYTES_PER_LINE = 18;
 
-namespace {
 class deflate_scope_s
 {
     z_stream* stream_;
@@ -236,9 +238,9 @@ int bundle(const std::filesystem::path& src,
 
 int main(int argc, char* argv[])
 {
-    std::cout << "Running bundler" << '\n';
-
     try {
+        std::cout << "Running bundler" << '\n';
+
         std::string_view src;
         std::string_view dst;
         std::string_view nspace;
@@ -274,8 +276,11 @@ int main(int argc, char* argv[])
         }
 
         return bundle(miximus::utils::path_from_utf8(src), miximus::utils::path_from_utf8(dst), nspace, mapname);
-    } catch (std::exception& e) {
-        std::cout << "Exeption thrown: " << e.what() << '\n';
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "Exception thrown: %s\n", e.what());
+        return EXIT_FAILURE;
+    } catch (...) {
+        std::fputs("Unknown exception while bundling resources\n", stderr);
         return EXIT_FAILURE;
     }
 }

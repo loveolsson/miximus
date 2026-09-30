@@ -16,3 +16,12 @@ PRIVATE
 )
 
 add_sanitizers(shutdown_watchdog)
+
+add_library(shutdown_signal shutdown_signal.hpp)
+if(WIN32)
+    target_sources(shutdown_signal PRIVATE shutdown_signal_win.cpp)
+else()
+    target_sources(shutdown_signal PRIVATE shutdown_signal_linux.cpp)
+endif()
+
+add_sanitizers(shutdown_signal)

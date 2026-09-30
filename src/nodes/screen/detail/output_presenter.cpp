@@ -16,6 +16,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -170,8 +171,12 @@ class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
 
     void return_unsubmitted(size_t index) noexcept
     {
-        const std::scoped_lock lock(mutex_);
-        free_slots_.push_back(index);
+        try {
+            const std::scoped_lock lock(mutex_);
+            free_slots_.push_back(index);
+        } catch (...) {
+            std::terminate();
+        }
     }
 
     void submit(size_t index, utils::flicks program_target_time, gpu::completion_s ready)

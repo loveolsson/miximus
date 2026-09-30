@@ -461,7 +461,7 @@ diff --git a/include/internal/cef_miximus_media_input.h b/include/internal/cef_m
 new file mode 100644
 --- /dev/null
 +++ b/include/internal/cef_miximus_media_input.h
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,58 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -473,15 +473,19 @@ new file mode 100644
 +#ifdef __cplusplus
 +extern "C" {
 +#endif
-+// Private Linux media-input ABI. No stock CEF API structures are
-+// extended. Metadata only; pixels remain in the GPU allocation. RGBA8 sRGB,
-+// top-to-bottom. The caller guarantees producer completion and FOREIGN/GENERAL
-+// ownership before sending, then retains the backing allocation until a safe
-+// completion callback.
++// Private media-input ABI. Metadata only; pixels remain in the GPU allocation.
++// RGBA8 sRGB, top-to-bottom. The caller completes producer writes and retains
++// the allocation until safe completion; IPC loss requires quarantine.
++// Linux: DMA-BUF with FOREIGN/GENERAL ownership. Windows: shared NT D3D11
++// texture handle (not KMT or opaque Vulkan memory), keyed mutex key 0 if present.
 +typedef struct cef_miximus_media_frame_t {
 +  uint32_t size;
 +  uint32_t input;
++#ifdef _WIN32
++  void* texture_handle;
++#else
 +  int fd;
++#endif
 +  uint32_t width;
 +  uint32_t height;
 +  uint32_t stride;
@@ -490,7 +494,7 @@ new file mode 100644
 +  uint64_t allocation_bytes;
 +  int64_t timestamp_us;
 +  uint64_t source_generation;
-+  // 0: GPU frame, 1: invalidate, 2: transparent (no fd/dimensions).
++  // 0: GPU frame, 1: invalidate, 2: transparent (invalid handle/zero dimensions).
 +  uint32_t operation;
 +} cef_miximus_media_frame_t;
 +
@@ -502,7 +506,7 @@ new file mode 100644
 +// temporary property while installing its public asynchronous stream hook.
 +CEF_EXPORT int cef_miximus_install_media_inputs_v1(const char* document_token,
 +                                                   uint32_t destination_depth);
-+// Browser UI thread. Duplicates fd before returning. Zero = rejected before any
++// Browser UI thread. Duplicates the native handle before returning. Zero = rejected before any
 +// GPU access; callback will not run. One = accepted; callback runs on UI
 +// thread. safe_to_reuse=false includes IPC/context loss and requires
 +// quarantine, not reuse.
@@ -520,20 +524,27 @@ diff --git a/libcef/browser/browser_media_input.cc b/libcef/browser/browser_medi
 new file mode 100644
 --- /dev/null
 +++ b/libcef/browser/browser_media_input.cc
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,102 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
++#include "build/build_config.h"
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++#include "base/win/scoped_handle.h"
++#else
 +#include <fcntl.h>
++#include "base/files/scoped_file.h"
++#include "ui/gfx/native_pixmap_handle.h"
++#endif
 +
 +#include "base/compiler_specific.h"
-+#include "base/files/scoped_file.h"
 +#include "cef/include/internal/cef_miximus_media_input.h"
 +#include "cef/libcef/browser/browser_host_base.h"
 +#include "cef/libcef/browser/frame_host_impl.h"
 +#include "cef/libcef/browser/thread_util.h"
 +#include "mojo/public/cpp/bindings/callback_helpers.h"
-+#include "ui/gfx/native_pixmap_handle.h"
++#include "ui/gfx/gpu_memory_buffer_handle.h"
 +
 +namespace {
 +NO_SANITIZE("cfi-icall")
@@ -555,6 +566,16 @@ new file mode 100644
 +      frame->input >= 8 || !frame->source_generation || frame->operation > 2) {
 +    return 0;
 +  }
++#if BUILDFLAG(IS_WIN)
++  if (!frame->operation &&
++      (!frame->texture_handle || frame->texture_handle == INVALID_HANDLE_VALUE ||
++       !frame->width || !frame->height || frame->width > 4096 || frame->height > 4096)) {
++    return 0;
++  }
++  if (frame->operation && (frame->texture_handle || frame->width || frame->height)) {
++    return 0;
++  }
++#else
 +  if (!frame->operation && (frame->fd < 0 || !frame->width || !frame->height ||
 +                            frame->width > 4096 || frame->height > 4096 ||
 +                            frame->stride < frame->width * 4 ||
@@ -566,6 +587,7 @@ new file mode 100644
 +  if (frame->operation && (frame->fd != -1 || frame->width || frame->height)) {
 +    return 0;
 +  }
++#endif
 +  auto browser = CefBrowserHostBase::GetBrowserForBrowserId(browser_id);
 +  if (!browser) {
 +    return 0;
@@ -576,6 +598,15 @@ new file mode 100644
 +  }
 +  std::optional<gfx::GpuMemoryBufferHandle> handle;
 +  if (!frame->operation) {
++#if BUILDFLAG(IS_WIN)
++    HANDLE duplicate = nullptr;
++    if (!DuplicateHandle(GetCurrentProcess(), frame->texture_handle,
++                         GetCurrentProcess(), &duplicate, 0, FALSE,
++                         DUPLICATE_SAME_ACCESS)) {
++      return 0;
++    }
++    handle.emplace(gfx::DXGIHandle(base::win::ScopedHandle(duplicate)));
++#else
 +    base::ScopedFD fd(fcntl(frame->fd, F_DUPFD_CLOEXEC, 0));
 +    if (!fd.is_valid()) {
 +      return 0;
@@ -585,6 +616,7 @@ new file mode 100644
 +    pixmap.planes.emplace_back(frame->stride, frame->offset,
 +                               frame->allocation_bytes, std::move(fd));
 +    handle.emplace(std::move(pixmap));
++#endif
 +  }
 +  return static_cast<CefFrameHostImpl*>(main.get())
 +      ->SendMediaInput(
@@ -1076,7 +1108,7 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,334 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -1085,6 +1117,7 @@ new file mode 100644
 +#include <utility>
 +
 +#include "base/task/bind_post_task.h"
++#include "build/build_config.h"
 +#include "cef/libcef/renderer/render_manager.h"
 +#include "cef/libcef/renderer/thread_util.h"
 +#include "cef/libcef/renderer/v8_impl.h"
@@ -1262,7 +1295,11 @@ new file mode 100644
 +      context_token.empty() || !inputs_[input].source ||
 +      !inputs_[input].source->IsRunning() || size.IsEmpty() ||
 +      size.width() > 4096 || size.height() > 4096 ||
++#if BUILDFLAG(IS_WIN)
++      handle.type != gfx::DXGI_SHARED_HANDLE) {
++#else
 +      handle.type != gfx::NATIVE_PIXMAP) {
++#endif
 +    std::move(completion).Run(true, false);
 +    return;
 +  }

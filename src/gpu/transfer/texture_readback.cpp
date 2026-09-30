@@ -1,6 +1,7 @@
 #include "texture_readback.hpp"
 
 #include "detail/conversion_texture.hpp"
+#include "gpu/detail/fatal.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/texture_frame.hpp"
 #include "gpu/transfer/detail/frame_staging.hpp"
@@ -310,32 +311,40 @@ namespace {
 void return_target(const std::shared_ptr<detail::texture_readback_stream_state_s>& stream,
                    const std::shared_ptr<detail::texture_readback_slot_s>&         slot)
 {
-    if (!stream || !slot) {
-        return;
-    }
-    const std::scoped_lock lock(stream->mutex);
-    if (slot->state == detail::slot_state_e::rendering) {
-        --stream->active_targets;
-        slot->state = detail::slot_state_e::free;
-        if (stream->active) {
-            stream->free_slots.emplace_back(slot);
+    try {
+        if (!stream || !slot) {
+            return;
         }
+        const std::scoped_lock lock(stream->mutex);
+        if (slot->state == detail::slot_state_e::rendering) {
+            --stream->active_targets;
+            slot->state = detail::slot_state_e::free;
+            if (stream->active) {
+                stream->free_slots.emplace_back(slot);
+            }
+        }
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to retire transfer ownership");
     }
 }
 
 void return_frame(const std::shared_ptr<detail::texture_readback_stream_state_s>& stream,
                   const std::shared_ptr<detail::texture_readback_slot_s>&         slot)
 {
-    if (!stream || !slot) {
-        return;
-    }
-    const std::scoped_lock lock(stream->mutex);
-    if (slot->state == detail::slot_state_e::cpu_reading) {
-        --stream->active_frames;
-        slot->state = detail::slot_state_e::free;
-        if (stream->active) {
-            stream->free_slots.emplace_back(slot);
+    try {
+        if (!stream || !slot) {
+            return;
         }
+        const std::scoped_lock lock(stream->mutex);
+        if (slot->state == detail::slot_state_e::cpu_reading) {
+            --stream->active_frames;
+            slot->state = detail::slot_state_e::free;
+            if (stream->active) {
+                stream->free_slots.emplace_back(slot);
+            }
+        }
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to retire transfer ownership");
     }
 }
 } // namespace
@@ -468,13 +477,17 @@ texture_readback_stream_s::texture_readback_stream_s(std::shared_ptr<detail::tex
 
 texture_readback_stream_s::~texture_readback_stream_s()
 {
-    auto service = state_->service.lock();
-    {
-        const std::scoped_lock lock(state_->mutex);
-        state_->active = false;
-    }
-    if (service) {
-        service->enqueue({.type = detail::task_type_e::destroy_stream, .stream = state_, .slot = {}});
+    try {
+        auto service = state_->service.lock();
+        {
+            const std::scoped_lock lock(state_->mutex);
+            state_->active = false;
+        }
+        if (service) {
+            service->enqueue({.type = detail::task_type_e::destroy_stream, .stream = state_, .slot = {}});
+        }
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to retire transfer ownership");
     }
 }
 

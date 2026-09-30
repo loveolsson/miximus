@@ -32,16 +32,18 @@ void recording_context_state_s::initialize(uint32_t capacity)
 
     for (uint32_t index = 0; index < capacity; ++index) {
         auto&                   arena = *arenas.emplace_back(std::make_unique<arena_s>());
-        VkCommandPoolCreateInfo pool{};
-        pool.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool.queueFamilyIndex = owner->queue_family;
+        VkCommandPoolCreateInfo pool{
+            .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .queueFamilyIndex = owner->queue_family,
+        };
         check(owner->vk.vkCreateCommandPool(owner->device, &pool, nullptr, &arena.pool), "create command pool");
 
-        VkCommandBufferAllocateInfo allocation{};
-        allocation.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocation.commandPool        = arena.pool;
-        allocation.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocation.commandBufferCount = 1;
+        VkCommandBufferAllocateInfo allocation{
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool        = arena.pool,
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
         check(owner->vk.vkAllocateCommandBuffers(owner->device, &allocation, &arena.commands), "allocate commands");
         check(owner->vk.vkAllocateCommandBuffers(owner->device, &allocation, &arena.prologue), "allocate prologue");
     }
@@ -83,9 +85,10 @@ std::unique_ptr<recording_state_s> recording_context_state_s::try_record()
 
 void recording_state_s::record_prologue()
 {
-    VkCommandBufferBeginInfo begin{};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VkCommandBufferBeginInfo begin{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
     check(owner->vk.vkBeginCommandBuffer(arena->prologue, &begin), "begin resource prologue");
 
     for (const auto& [image, uses] : initial_uses) {
@@ -95,29 +98,32 @@ void recording_state_s::record_prologue()
                 continue;
             }
 
-            VkImageMemoryBarrier2 barrier{};
-            barrier.sType     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-            barrier.oldLayout = image->layouts.at(mip);
-            barrier.newLayout = use.layout;
-            if (barrier.oldLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
-                barrier.srcStageMask  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-                barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-            }
-            barrier.dstStageMask        = use.stage;
-            barrier.dstAccessMask       = use.access;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.image               = image->image;
-            barrier.subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                                           .baseMipLevel   = mip,
-                                           .levelCount     = 1,
-                                           .baseArrayLayer = 0,
-                                           .layerCount     = 1};
+            const auto            old_layout  = image->layouts.at(mip);
+            const bool            initialized = old_layout != VK_IMAGE_LAYOUT_UNDEFINED;
+            VkImageMemoryBarrier2 barrier{
+                .sType        = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask = initialized ? VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_2_NONE,
+                .srcAccessMask =
+                    initialized ? VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT : VK_ACCESS_2_NONE,
+                .dstStageMask        = use.stage,
+                .dstAccessMask       = use.access,
+                .oldLayout           = old_layout,
+                .newLayout           = use.layout,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image               = image->image,
+                .subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                        .baseMipLevel   = mip,
+                                        .levelCount     = 1,
+                                        .baseArrayLayer = 0,
+                                        .layerCount     = 1},
+            };
 
-            VkDependencyInfo dependency{};
-            dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-            dependency.imageMemoryBarrierCount = 1;
-            dependency.pImageMemoryBarriers    = &barrier;
+            VkDependencyInfo dependency{
+                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers    = &barrier,
+            };
 
             // The body always loads attachment contents. Only submission order
             // tells us whether this is a new target or an earlier draw must survive.
@@ -159,37 +165,38 @@ void recording_state_s::submit_native()
         dependency_value = std::max(dependency_value, dependency.submission_->value.load(std::memory_order_acquire));
     }
     if (dependency_value != 0) {
-        VkSemaphoreSubmitInfo wait{};
-        wait.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        wait.semaphore = owner->submissions.timeline;
-        wait.value     = dependency_value;
-        wait.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        VkSemaphoreSubmitInfo wait{
+            .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = owner->submissions.timeline,
+            .value     = dependency_value,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        };
         waits.push_back(wait);
     }
     record_prologue();
 
-    std::array<VkCommandBufferSubmitInfo, 2> commands{};
-    commands[0].sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    commands[0].commandBuffer = arena->prologue;
-    commands[1].sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    commands[1].commandBuffer = arena->commands;
-
+    std::array<VkCommandBufferSubmitInfo, 2> commands{
+        {{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = arena->prologue},
+         {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = arena->commands}}
+    };
     const auto            value = owner->submissions.last_submitted_timeline_value + 1;
-    VkSemaphoreSubmitInfo timeline{};
-    timeline.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    timeline.semaphore = owner->submissions.timeline;
-    timeline.value     = value;
-    timeline.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    VkSemaphoreSubmitInfo timeline{
+        .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = owner->submissions.timeline,
+        .value     = value,
+        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+    };
     signals.push_back(timeline);
 
-    VkSubmitInfo2 batch{};
-    batch.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
-    batch.waitSemaphoreInfoCount   = static_cast<uint32_t>(waits.size());
-    batch.pWaitSemaphoreInfos      = waits.data();
-    batch.commandBufferInfoCount   = static_cast<uint32_t>(commands.size());
-    batch.pCommandBufferInfos      = commands.data();
-    batch.signalSemaphoreInfoCount = static_cast<uint32_t>(signals.size());
-    batch.pSignalSemaphoreInfos    = signals.data();
+    VkSubmitInfo2 batch{
+        .sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .waitSemaphoreInfoCount   = static_cast<uint32_t>(waits.size()),
+        .pWaitSemaphoreInfos      = waits.data(),
+        .commandBufferInfoCount   = static_cast<uint32_t>(commands.size()),
+        .pCommandBufferInfos      = commands.data(),
+        .signalSemaphoreInfoCount = static_cast<uint32_t>(signals.size()),
+        .pSignalSemaphoreInfos    = signals.data(),
+    };
     {
         const std::scoped_lock lock(owner->submissions.queue_mutex);
         check(owner->vk.vkQueueSubmit2(owner->submissions.queue, 1, &batch, VK_NULL_HANDLE), "queue submission");
@@ -290,56 +297,62 @@ void submission_engine_s::run()
     std::vector<std::unique_ptr<recording_state_s>>         in_flight;
     std::vector<std::shared_ptr<recording_context_state_s>> active;
 
-    while (true) {
-        active.clear();
-        {
-            const std::scoped_lock lock(contexts_mutex);
-            std::erase_if(contexts, [&active](const auto& weak) {
-                if (auto context = weak.lock()) {
-                    active.push_back(std::move(context));
-                    return false;
-                }
-                return true;
-            });
-        }
-
-        bool submitted = false;
-        for (const auto& context : active) {
-            auto record = take_next_recording(*context);
-            if (!record) {
-                continue;
+    try {
+        while (true) {
+            active.clear();
+            {
+                const std::scoped_lock lock(contexts_mutex);
+                std::erase_if(contexts, [&active](const auto& weak) {
+                    if (auto context = weak.lock()) {
+                        active.push_back(std::move(context));
+                        return false;
+                    }
+                    return true;
+                });
             }
 
-            // Reserve retirement ownership before calling the driver. Even a
-            // publication callback failure cannot destroy an accepted GPU job.
-            in_flight.push_back(std::move(record));
-            submit_recording(owner, *in_flight.back());
-            submitted = true;
+            bool submitted = false;
+            for (const auto& context : active) {
+                auto record = take_next_recording(*context);
+                if (!record) {
+                    continue;
+                }
 
-            // One submission per context per pass prevents a busy producer
-            // from monopolizing the queue while the renderer is ready.
-        }
+                // Reserve retirement ownership before calling the driver. Even a
+                // publication callback failure cannot destroy an accepted GPU job.
+                in_flight.push_back(std::move(record));
+                submit_recording(owner, *in_flight.back());
+                submitted = true;
 
-        uint64_t   completed{};
-        const auto result = owner.vk.vkGetSemaphoreCounterValue(owner.device, timeline, &completed);
-        if (result != VK_SUCCESS) {
-            fatal_gpu_error(std::format("GPU completion query failed: Vulkan result {}", static_cast<int>(result)));
-        } else {
-            std::erase_if(in_flight,
-                          [completed](const auto& record) { return record->submission->value.load() <= completed; });
+                // One submission per context per pass prevents a busy producer
+                // from monopolizing the queue while the renderer is ready.
+            }
 
-            // Release CPU recording pins before exposing GPU completion to host readers.
-            completed_value.store(completed, std::memory_order_release);
-        }
-        owner.collect();
+            uint64_t   completed{};
+            const auto result = owner.vk.vkGetSemaphoreCounterValue(owner.device, timeline, &completed);
+            if (result != VK_SUCCESS) {
+                fatal_gpu_error(std::format("GPU completion query failed: Vulkan result {}", static_cast<int>(result)));
+            } else {
+                std::erase_if(in_flight, [completed](const auto& record) {
+                    return record->submission->value.load() <= completed;
+                });
 
-        if (stopping.load() && !submitted && in_flight.empty()) {
-            break;
+                // Release CPU recording pins before exposing GPU completion to host readers.
+                completed_value.store(completed, std::memory_order_release);
+            }
+            owner.collect();
+
+            if (stopping.load() && !submitted && in_flight.empty()) {
+                break;
+            }
+            if (!submitted) {
+                std::unique_lock lock(wake_mutex);
+                wake.wait_for(lock, std::chrono::microseconds(100));
+            }
         }
-        if (!submitted) {
-            std::unique_lock lock(wake_mutex);
-            wake.wait_for(lock, std::chrono::microseconds(100));
-        }
+    } catch (...) {
+        // Fail before unwinding resources that may still be in use by the GPU.
+        fatal_gpu_error("Unhandled exception in GPU submission worker");
     }
 }
 
@@ -374,13 +387,15 @@ namespace miximus::gpu::detail {
 void submission_engine_s::initialize()
 {
     // Queue acceptance assigns values; the submission worker publishes completed values.
-    VkSemaphoreTypeCreateInfo timeline_info{};
-    timeline_info.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-    timeline_info.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    VkSemaphoreTypeCreateInfo timeline_info{
+        .sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+    };
 
-    VkSemaphoreCreateInfo semaphore{};
-    semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphore.pNext = &timeline_info;
+    VkSemaphoreCreateInfo semaphore{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &timeline_info,
+    };
     check(owner.vk.vkCreateSemaphore(owner.device, &semaphore, nullptr, &timeline), "timeline semaphore");
 }
 

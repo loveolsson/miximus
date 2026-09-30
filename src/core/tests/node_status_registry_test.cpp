@@ -278,13 +278,13 @@ TEST_F(node_status_registry_test_s, concurrent_publication_reschedules_and_yield
     });
     registry.write(output, status::connected_status_s{.connected = true});
     registry.publish();
-    std::thread consumer([&] { executor.run(); });
+    auto consumer = std::async(std::launch::async, [&] { executor.run(); });
     entered.get_future().wait();
     boost::asio::post(executor, [&] { command_ran = true; });
     registry.write(output, status::connected_status_s{.connected = false});
     registry.publish();
     resume.set_value();
-    consumer.join();
+    consumer.get();
     EXPECT_EQ(received, 2);
     EXPECT_EQ(registry.get("output").at("connected"), false);
 }

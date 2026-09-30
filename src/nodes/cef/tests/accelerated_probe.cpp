@@ -1,62 +1,30 @@
-#include "gpu/detail/dma_buf_copy.hpp"
+#include "gpu/detail/external_image_copy.hpp"
 #include "gpu/device.hpp"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_task.h"
 #include "logger/logger.hpp"
+#include "nodes/cef/detail/image_transport.hpp"
 #include "nodes/cef/detail/runtime.hpp"
-#include "utils/owned_fd.hpp"
+#include "probe_platform.hpp"
 
 #include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
-#include <linux/dma-buf.h>
-#include <linux/sync_file.h>
 #include <mutex>
 #include <string_view>
-#include <sys/ioctl.h>
 #include <system_error>
-#include <unistd.h>
 #include <vector>
 
 namespace {
 using namespace std::chrono_literals;
 using namespace miximus;
-
-void log_producer_fence(int dma_buf)
-{
-    dma_buf_export_sync_file exported{};
-    exported.flags = DMA_BUF_SYNC_READ;
-    exported.fd    = -1;
-    if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0) {
-        throw std::system_error(errno, std::generic_category(), "inspect CEF producer fence");
-    }
-    utils::owned_fd_s fence{exported.fd};
-    sync_file_info    info{};
-    if (ioctl(fence.get(), SYNC_IOC_FILE_INFO, &info) < 0) {
-        throw std::system_error(errno, std::generic_category(), "inspect CEF sync-file metadata");
-    }
-    // Metadata only: this does not map or read any image memory. A signalled
-    // snapshot alone cannot prove that every producer write was published.
-    std::cout << "CEF producer sync-file: fences=" << info.num_fences << " status=" << info.status << '\n';
-    if (info.num_fences > 64) {
-        throw std::runtime_error("Unexpected producer fence count");
-    }
-    std::vector<sync_fence_info> fences(info.num_fences);
-    info.sync_fence_info = reinterpret_cast<uintptr_t>(fences.data());
-    if (ioctl(fence.get(), SYNC_IOC_FILE_INFO, &info) < 0) {
-        throw std::system_error(errno, std::generic_category(), "inspect CEF fence identities");
-    }
-    for (const auto& entry : fences) {
-        std::cout << "Producer fence: driver=" << entry.driver_name << " timeline=" << entry.obj_name
-                  << " status=" << entry.status << " timestamp_ns=" << entry.timestamp_ns << '\n';
-    }
-}
 
 class task_s final : public CefTask
 {
@@ -202,21 +170,9 @@ class client_s final
             return;
         }
         try {
-            if (info.plane_count != 1 ||
-                (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888)) {
-                throw std::runtime_error("Unsupported accelerated descriptor format/planes");
-            }
-            gpu::detail::dma_buf_image_s source;
-            source.fd     = info.planes[0].fd;
-            source.extent = {.width  = static_cast<uint32_t>(info.extra.coded_size.width),
-                             .height = static_cast<uint32_t>(info.extra.coded_size.height)};
-            source.order =
-                info.format == CEF_COLOR_TYPE_BGRA_8888 ? gpu::channel_order_e::bgra : gpu::channel_order_e::rgba;
-            source.modifier = info.modifier;
-            source.offset   = info.planes[0].offset;
-            source.stride   = info.planes[0].stride;
+            const auto source = nodes::cef::detail::capture_image(info);
             if (!fence_logged_ || copied_frames == required_frames - 1) {
-                log_producer_fence(source.fd);
+                nodes::cef::tests::log_producer_fence(source.handle);
                 fence_logged_ = true;
             }
             auto recording = context_.try_record();
@@ -227,7 +183,7 @@ class client_s final
             conversion.compositing = gpu::compositing_e::replace;
             conversion.transfer    = gpu::color_operation_e::decode_srgb_premultiplied;
             const auto complete =
-                gpu::detail::dma_buf_copy_s::submit(*recording, source, destination_, conversion, 100ms);
+                gpu::detail::external_image_copy_s::submit(*recording, source, destination_, conversion, 100ms);
             // The probe process has an external timeout. Never return this borrow
             // merely because one completion wait timed out.
             while (complete.wait(1s) != gpu::wait_result_e::ready) {
@@ -251,14 +207,14 @@ class client_s final
 };
 } // namespace
 
-int main(int argc, char* argv[])
+int main(int argc, char** argv)
 {
-    if (argc != 3 && argc != 5) {
-        return 2;
-    }
-    std::cout.setf(std::ios::unitbuf);
-    logger::init_loggers(spdlog::level::warn);
     try {
+        if (argc != 3 && argc != 5) {
+            return 2;
+        }
+        std::cout.setf(std::ios::unitbuf);
+        logger::init_loggers(spdlog::level::warn);
         gpu::extent_s dimensions{.width = 640, .height = 360};
         if (argc == 5) {
             auto parse_dimension = [](std::string_view text) {
@@ -283,7 +239,7 @@ int main(int argc, char* argv[])
             CefRefPtr<client_s> client = new client_s(device, dimensions);
             if (!CefPostTask(TID_UI, new task_s([client] {
                                  CefWindowInfo window;
-                                 window.SetAsWindowless(0);
+                                 window.SetAsWindowless(CefWindowHandle{});
                                  window.shared_texture_enabled = 1;
                                  CefBrowserSettings settings;
                                  settings.windowless_frame_rate = 60;
@@ -312,7 +268,10 @@ int main(int argc, char* argv[])
         // still alive and its validation callback installed.
         return success && device.validation_errors() == 0 ? 0 : 1;
     } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
+        std::fprintf(stderr, "%s\n", error.what());
+        return 1;
+    } catch (...) {
+        std::fputs("CEF probe failed with an unknown exception\n", stderr);
         return 1;
     }
 }

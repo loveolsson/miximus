@@ -46,7 +46,7 @@ struct captured_frame_data_s
 
 // The DeckLink SDK exposes these two independent COM interfaces on one callback object.
 // NOLINTNEXTLINE(fuchsia-multiple-inheritance)
-class callback_s
+class callback_s final
     : public IDeckLinkInputCallback
     , public IDeckLinkVideoBufferAllocatorProvider
 {
@@ -825,7 +825,15 @@ input_capture_s::input_capture_s(gpu::transfer::texture_upload_service_s*       
         upload_service, control_executor, std::move(device), std::move(reservation), std::move(device_name));
 }
 
-input_capture_s::~input_capture_s() { stop_async(); }
+input_capture_s::~input_capture_s()
+{
+    try {
+        stop_async();
+    } catch (...) {
+        logger::log_error_noexcept("decklink", "Failed to schedule DeckLink capture shutdown");
+        std::terminate();
+    }
+}
 
 void input_capture_s::start_async() { impl_->callback->start_async(); }
 

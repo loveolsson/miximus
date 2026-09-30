@@ -110,7 +110,11 @@ TEST_F(frame_pool_test, IndependentProducerCompletesBeforeConsumerUsesFrame)
             }
             published.set_value(std::move(frame));
         } catch (...) {
-            published.set_exception(std::current_exception());
+            try {
+                published.set_exception(std::current_exception());
+            } catch (...) {
+                std::terminate();
+            }
         }
     });
 

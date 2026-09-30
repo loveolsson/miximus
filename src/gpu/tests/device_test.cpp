@@ -854,7 +854,7 @@ TEST_F(device_test, NdiAlphaModesDecodeAndRoundTripAgainstIndependentReferences)
         SCOPED_TRACE(static_cast<int>(output_mode));
         constexpr std::array<uint8_t, 7> alphas{0, 1, 17, 64, 128, 254, 255};
         constexpr uint32_t               width      = 256;
-        constexpr uint32_t               height     = alphas.size();
+        constexpr auto                   height     = static_cast<uint32_t>(alphas.size());
         constexpr size_t                 components = size_t{width} * height * 4;
         auto source  = device->create_texture({.width = width, .height = height}, format_e::rgba_unorm8);
         auto linear  = device->create_texture({.width = width, .height = height}, format_e::rgba_unorm16);
@@ -890,7 +890,7 @@ TEST_F(device_test, NdiStraightAlphaOverBlackIsOpaqueAndMatchesLinearReference)
 {
     constexpr std::array<uint8_t, 7> alphas{0, 1, 17, 64, 128, 254, 255};
     constexpr uint32_t               width      = 256;
-    constexpr uint32_t               height     = alphas.size();
+    constexpr auto                   height     = static_cast<uint32_t>(alphas.size());
     constexpr size_t                 components = size_t{width} * height * 4;
     auto source = device->create_texture({.width = width, .height = height}, format_e::rgba_unorm8);
     auto target = device->create_texture({.width = width, .height = height}, format_e::rgba_unorm16);
@@ -944,9 +944,11 @@ TEST_F(device_test, NdiOutputAlphaModesMatchIndependentLinearInputIncludingIgnor
 
     // Nonzero hidden RGB at zero alpha must not cause division by zero or leak
     // into straight/premultiplied output. Ignore sends opaque black here too.
-    pixels[0]   = 32768;
-    auto source = device->create_texture({.width = alphas.size(), .height = 1}, format_e::rgba_unorm16);
-    auto target = device->create_texture({.width = alphas.size(), .height = 1}, format_e::rgba_unorm8);
+    pixels[0] = 32768;
+    auto source =
+        device->create_texture({.width = static_cast<uint32_t>(alphas.size()), .height = 1}, format_e::rgba_unorm16);
+    auto target =
+        device->create_texture({.width = static_cast<uint32_t>(alphas.size()), .height = 1}, format_e::rgba_unorm8);
     auto input  = device->create_buffer(sizeof(pixels), host_access_e::sequential_write);
     auto output = device->create_buffer(components, host_access_e::readback);
     std::memcpy(input.writable_bytes().data(), pixels.data(), sizeof(pixels));

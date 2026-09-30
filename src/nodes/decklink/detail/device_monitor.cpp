@@ -261,8 +261,10 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 class notification_callback_s final : public IDeckLinkNotificationCallback
 {
     std::atomic_ulong                ref_count_{1};
@@ -312,7 +314,9 @@ class notification_callback_s final : public IDeckLinkNotificationCallback
         return count;
     }
 };
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 constexpr std::array monitored_statuses{
     bmdDeckLinkStatusVideoInputSignalLocked,

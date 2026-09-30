@@ -5,10 +5,11 @@
 #include "detail/runtime.hpp"
 #include "include/cef_version_info.h"
 #include "utils/serial_executor.hpp"
+#include "wrapper/cef/platform.hpp"
 
 #include <algorithm>
 #include <chrono>
-#include <dlfcn.h>
+#include <exception>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -21,21 +22,12 @@ using session_t                 = detail::browser_session_s;
 constexpr size_t MAX_SESSIONS   = 16;
 constexpr size_t TEXTURE_BUDGET = 2ULL * 1024 * 1024 * 1024;
 
-std::filesystem::path runtime_directory()
-{
-    Dl_info info{};
-    if ((dladdr(reinterpret_cast<const void*>(&cef_version_info), &info) == 0) || (info.dli_fname == nullptr)) {
-        throw std::runtime_error("Cannot locate the loaded CEF runtime");
-    }
-    return std::filesystem::canonical(info.dli_fname).parent_path();
-}
-
 std::filesystem::path qualified_runtime(gpu::device_s& device, const std::filesystem::path& directory)
 {
     if (!MIXIMUS_CEF_NATIVE_CAPTURE_READY) {
         throw std::runtime_error("CEF requires the verified native-handle completion SDK");
     }
-    if (!device.external_image_import_support().enabled) {
+    if (device.external_image_import_support() != gpu::external_image_import_support_e::supported) {
         throw std::runtime_error("The selected GPU does not support accelerated CEF image import");
     }
     return directory;
@@ -53,8 +45,8 @@ struct session_request_s::state_s : std::enable_shared_from_this<state_s>
     size_t                     bytes{};
     bool                       cancelled{};
 
-    void stop()
-    {
+    void stop() noexcept
+    try {
         {
             const std::scoped_lock lock(mutex);
             if (cancelled) {
@@ -84,6 +76,10 @@ struct session_request_s::state_s : std::enable_shared_from_this<state_s>
                 self->owned.reset();
             });
         }
+    } catch (...) {
+        // Retirement must reach the control worker before CEF shuts down.
+        // Continuing after a failed enqueue would abandon live browser resources.
+        std::terminate();
     }
 };
 
@@ -152,7 +148,7 @@ std::string session_request_s::error() const
 }
 
 subsystem_s::subsystem_s(gpu::device_s& device, const std::filesystem::path& profile)
-    : subsystem_s(device, profile, runtime_directory())
+    : subsystem_s(device, profile, cef_wrapper::runtime_directory())
 {
 }
 

@@ -130,6 +130,12 @@ npm install
 npm run build
 ```
 
+`GET /api/v1/health` returns HTTP 200 with the JSON string `"ok"` and `Cache-Control: no-store`.
+This is a lightweight HTTP liveness check; it does not inspect GPU, media, or graph readiness.
+The web client polls it before its initial WebSocket connection and while disconnected, with a two-second
+request timeout and a two-second retry interval. Polling stops when a socket is opened. This avoids repeated
+failed WebSocket attempts accumulating browser reconnect delays that can survive a page reload.
+
 Native deterministic tests use GoogleTest and are registered individually with CTest. Run them with:
 
 ```bash
@@ -445,6 +451,11 @@ scripts/test_decklink_keyer_modes.sh [DECKLINK_OUTPUT_NODE_ID]
 `KEYER_MODE_DWELL_SECONDS` controls the observation time for each mode.
 
 ## Shutdown ordering
+
+The application reinstalls its shutdown handlers after SDK initialization. On Windows, Chromium installs a console
+handler that would otherwise terminate the host before settings are saved. Miximus handles Ctrl+C and Ctrl+Break by
+setting an atomic shutdown request; the main thread performs the normal teardown. Linux uses SIGINT/SIGTERM for the
+same request. Console handlers must not save configuration or destroy application resources themselves.
 
 Shutdown order is deliberate:
 

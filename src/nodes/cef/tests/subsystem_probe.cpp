@@ -5,6 +5,7 @@
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/command_messages.hpp"
 #include "nodes/cef/subsystem.hpp"
+#include "probe_platform.hpp"
 #include "utils/lookup.hpp"
 
 #include <nlohmann/json.hpp>
@@ -13,12 +14,12 @@
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <format>
 #include <iostream>
 #include <stdexcept>
-#include <sys/resource.h>
 #include <thread>
 #include <vector>
 
@@ -435,17 +436,11 @@ void exercise_color(gpu::device_s& device, session_s& session)
 
 int main(int argc, char** argv)
 {
-    if (argc != 3) {
-        return 2;
-    }
     try {
-        // This executable intentionally crashes its own renderer. Avoid lengthy
-        // systemd core collection delaying the child-exit notification. The
-        // limit applies only to this probe and its children, never the app/host.
-        const rlimit core_limit{.rlim_cur = 0, .rlim_max = 0};
-        if (setrlimit(RLIMIT_CORE, &core_limit) != 0) {
-            throw std::runtime_error("Cannot disable core dumps for the crash probe");
+        if (argc != 3) {
+            return 2;
         }
+        tests::configure_crash_probe();
         logger::init_loggers(spdlog::level::info);
         gpu::device_options_s options;
         options.external_image_import = true;
@@ -560,7 +555,10 @@ int main(int argc, char** argv)
         }
         return device.validation_errors() == 0 ? 0 : 1;
     } catch (const std::exception& error) {
-        std::cerr << "CEF subsystem probe failed: " << error.what() << '\n';
+        std::fprintf(stderr, "CEF subsystem probe failed: %s\n", error.what());
+        return 1;
+    } catch (...) {
+        std::fputs("CEF probe failed with an unknown exception\n", stderr);
         return 1;
     }
 }

@@ -12,6 +12,7 @@
 #include <array>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -95,8 +96,9 @@ struct presenter_state_s
             // following frame immediately after the previous display boundary.
             pacing = owner->present_wait ? presentation_pacing_e::display : presentation_pacing_e::application;
 
-            VkSemaphoreCreateInfo info{};
-            info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+            VkSemaphoreCreateInfo info{
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            };
             check(owner->vk.vkCreateSemaphore(owner->device, &info, nullptr, &image_acquired_semaphore),
                   "acquire semaphore");
             worker = std::jthread([this](const std::stop_token& stop) { run(stop); });
@@ -117,7 +119,7 @@ struct presenter_state_s
 
     std::unique_ptr<recording_s> try_record() { return recording_context.try_record(); }
 
-    void validate_frame(const texture_s& image, const completion_s& ready)
+    void validate_frame(const texture_s& image, const completion_s& ready) const
     {
         if (!image || !ready || image.state_->owner != owner || ready.state_ != owner) {
             throw std::invalid_argument("presentation needs an image and submitted dependency on this device");
@@ -154,10 +156,11 @@ struct presenter_state_s
                     return false;
                 }
 
-                VkSemaphoreSubmitInfo wait{};
-                wait.sType           = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-                wait.semaphore       = image_acquired_semaphore;
-                wait.stageMask       = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                VkSemaphoreSubmitInfo wait{
+                    .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+                    .semaphore = image_acquired_semaphore,
+                    .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                };
                 last_copy_completion = enqueue_recording(record->state_, std::span(&wait, 1));
                 record.reset();
                 if (last_copy_completion.wait(retirement_timeout) != wait_result_e::ready) {
@@ -167,11 +170,12 @@ struct presenter_state_s
                 acquire_wait_pending = false;
             }
 
-            VkReleaseSwapchainImagesInfoEXT release{};
-            release.sType           = VK_STRUCTURE_TYPE_RELEASE_SWAPCHAIN_IMAGES_INFO_EXT;
-            release.swapchain       = swapchain;
-            release.imageIndexCount = 1;
-            release.pImageIndices   = &*index;
+            VkReleaseSwapchainImagesInfoEXT release{
+                .sType           = VK_STRUCTURE_TYPE_RELEASE_SWAPCHAIN_IMAGES_INFO_EXT,
+                .swapchain       = swapchain,
+                .imageIndexCount = 1,
+                .pImageIndices   = &*index,
+            };
             if (owner->vk.vkReleaseSwapchainImagesEXT(owner->device, &release) != VK_SUCCESS) {
                 return false;
             }
@@ -265,26 +269,29 @@ struct presenter_state_s
                 std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
         }
 
-        VkSwapchainCreateInfoKHR info{};
-        info.sType         = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        info.surface       = surface;
-        info.minImageCount = std::max(3U, capabilities.minImageCount);
+        auto image_count = std::max(3U, capabilities.minImageCount);
         if (capabilities.maxImageCount != 0U) {
-            info.minImageCount = std::min(info.minImageCount, capabilities.maxImageCount);
+            image_count = std::min(image_count, capabilities.maxImageCount);
         }
 
-        info.imageFormat      = format;
-        info.imageColorSpace  = selected->colorSpace;
-        info.imageExtent      = {.width = extent.width, .height = extent.height};
-        info.imageArrayLayers = 1;
-        info.imageUsage       = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        info.preTransform     = capabilities.currentTransform;
         if ((capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) == 0U) {
             throw std::runtime_error("Screen surface does not support required opaque presentation");
         }
-        info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        info.presentMode    = VK_PRESENT_MODE_FIFO_KHR;
-        info.clipped        = VK_TRUE;
+
+        VkSwapchainCreateInfoKHR info{
+            .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface          = surface,
+            .minImageCount    = image_count,
+            .imageFormat      = format,
+            .imageColorSpace  = selected->colorSpace,
+            .imageExtent      = {.width = extent.width, .height = extent.height},
+            .imageArrayLayers = 1,
+            .imageUsage       = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .preTransform     = capabilities.currentTransform,
+            .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode      = VK_PRESENT_MODE_FIFO_KHR,
+            .clipped          = VK_TRUE,
+        };
         check(owner->vk.vkCreateSwapchainKHR(owner->device, &info, nullptr, &swapchain), "swapchain creation");
         check(owner->vk.vkGetSwapchainImagesKHR(owner->device, swapchain, &count, nullptr), "swapchain images");
         std::vector<VkImage> handles(count);
@@ -293,13 +300,15 @@ struct presenter_state_s
         for (uint32_t i = 0; i < count; ++i) {
             images[i].image = handles[i];
 
-            VkSemaphoreCreateInfo semaphore{};
-            semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+            VkSemaphoreCreateInfo semaphore{
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            };
             check(owner->vk.vkCreateSemaphore(owner->device, &semaphore, nullptr, &images[i].present_ready),
                   "present semaphore");
 
-            VkFenceCreateInfo fence{};
-            fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VkFenceCreateInfo fence{
+                .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            };
             check(owner->vk.vkCreateFence(owner->device, &fence, nullptr, &images[i].present_finished),
                   "present fence");
         }
@@ -333,38 +342,47 @@ struct presenter_state_s
                              VK_PIPELINE_STAGE_2_BLIT_BIT,
                              VK_ACCESS_2_TRANSFER_READ_BIT);
 
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask        = VK_PIPELINE_STAGE_2_BLIT_BIT;
-        barrier.dstStageMask        = VK_PIPELINE_STAGE_2_BLIT_BIT;
-        barrier.dstAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.oldLayout           = image.initialized ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED;
-        barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image               = image.image;
-        barrier.subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                                       .baseMipLevel   = 0,
-                                       .levelCount     = 1,
-                                       .baseArrayLayer = 0,
-                                       .layerCount     = 1};
+        VkImageMemoryBarrier2 barrier{
+            .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask        = VK_PIPELINE_STAGE_2_BLIT_BIT,
+            .dstStageMask        = VK_PIPELINE_STAGE_2_BLIT_BIT,
+            .dstAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .oldLayout           = image.initialized ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image               = image.image,
+            .subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .baseMipLevel   = 0,
+                                    .levelCount     = 1,
+                                    .baseArrayLayer = 0,
+                                    .layerCount     = 1},
+        };
 
-        VkDependencyInfo dependency{};
-        dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.imageMemoryBarrierCount = 1;
-        dependency.pImageMemoryBarriers    = &barrier;
-        const auto command_buffer          = recording.arena->commands;
+        VkDependencyInfo dependency{
+            .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers    = &barrier,
+        };
+        const auto command_buffer = recording.arena->commands;
         owner->vk.vkCmdPipelineBarrier2(command_buffer, &dependency);
 
-        VkImageBlit blit{};
-        blit.srcSubresource = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1};
-        blit.srcOffsets[1]  = {.x = static_cast<int32_t>(current.extent().width),
-                               .y = static_cast<int32_t>(current.extent().height),
-                               .z = 1};
-        blit.dstSubresource = blit.srcSubresource;
-        blit.dstOffsets[1]  = {
-             .x = static_cast<int32_t>(extent.width), .y = static_cast<int32_t>(extent.height), .z = 1};
+        VkImageBlit blit{
+            .srcSubresource = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .mipLevel       = 0,
+                               .baseArrayLayer = 0,
+                               .layerCount     = 1},
+            .srcOffsets     = {{},
+                               {.x = static_cast<int32_t>(current.extent().width),
+                                .y = static_cast<int32_t>(current.extent().height),
+                                .z = 1}},
+            .dstSubresource = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .mipLevel       = 0,
+                               .baseArrayLayer = 0,
+                               .layerCount     = 1},
+            .dstOffsets     = {{},
+                               {.x = static_cast<int32_t>(extent.width), .y = static_cast<int32_t>(extent.height), .z = 1}},
+        };
         owner->vk.vkCmdBlitImage(command_buffer,
                                  current.state_->image,
                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -381,22 +399,22 @@ struct presenter_state_s
         barrier.newLayout     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         owner->vk.vkCmdPipelineBarrier2(command_buffer, &dependency);
 
-        std::array<VkSemaphoreSubmitInfo, 2> waits{};
-        waits[0].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waits[0].semaphore = image_acquired_semaphore;
-        waits[0].stageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
-
         // Publication guarantees native submission, not GPU completion. Carry
         // the producer's timeline dependency into the consumer GPU submission.
-        waits[1].sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        waits[1].semaphore = owner->submissions.timeline;
-        waits[1].value     = ready.submission_->value.load(std::memory_order_acquire);
-        waits[1].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-
-        VkSemaphoreSubmitInfo signal{};
-        signal.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-        signal.semaphore     = image.present_ready;
-        signal.stageMask     = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        std::array<VkSemaphoreSubmitInfo, 2> waits{
+            {{.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+              .semaphore = image_acquired_semaphore,
+              .stageMask = VK_PIPELINE_STAGE_2_BLIT_BIT},
+             {.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+              .semaphore = owner->submissions.timeline,
+              .value     = ready.submission_->value.load(std::memory_order_acquire),
+              .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT}}
+        };
+        VkSemaphoreSubmitInfo signal{
+            .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .semaphore = image.present_ready,
+            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        };
         last_copy_completion = enqueue_recording(record->state_, waits, std::span(&signal, 1));
         last_copy_lease      = current_lease;
         record.reset();
@@ -404,26 +422,29 @@ struct presenter_state_s
         image.initialized    = true;
 
         ++present_id;
-        VkPresentIdKHR identity{};
-        identity.sType          = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
-        identity.swapchainCount = 1;
-        identity.pPresentIds    = &present_id;
+        VkPresentIdKHR identity{
+            .sType          = VK_STRUCTURE_TYPE_PRESENT_ID_KHR,
+            .swapchainCount = 1,
+            .pPresentIds    = &present_id,
+        };
 
-        VkSwapchainPresentFenceInfoEXT fence{};
-        fence.sType          = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT;
-        fence.pNext          = owner->present_wait ? &identity : nullptr;
-        fence.swapchainCount = 1;
-        fence.pFences        = &image.present_finished;
+        VkSwapchainPresentFenceInfoEXT fence{
+            .sType          = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT,
+            .pNext          = owner->present_wait ? &identity : nullptr,
+            .swapchainCount = 1,
+            .pFences        = &image.present_finished,
+        };
 
-        VkPresentInfoKHR present{};
-        present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        present.pNext              = &fence;
-        present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores    = &image.present_ready;
-        present.swapchainCount     = 1;
-        present.pSwapchains        = &swapchain;
-        present.pImageIndices      = &index;
-        const auto start           = std::chrono::steady_clock::now();
+        VkPresentInfoKHR present{
+            .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .pNext              = &fence,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores    = &image.present_ready,
+            .swapchainCount     = 1,
+            .pSwapchains        = &swapchain,
+            .pImageIndices      = &index,
+        };
+        const auto start = std::chrono::steady_clock::now();
 
         // A binary WSI wait requires its signal submission to have been accepted.
         // This wait belongs to the presenter, never to the graph render thread.
@@ -620,7 +641,7 @@ struct presenter_state_s
     }
 
     void run(const std::stop_token& stop) noexcept
-    {
+    try {
         try {
             run_frames(stop);
         } catch (const std::exception& error) {
@@ -643,6 +664,9 @@ struct presenter_state_s
 
         const std::scoped_lock guard(mutex);
         counters.stopped = true;
+    } catch (...) {
+        logger::log_error_noexcept("gpu", "Vulkan presenter failed while reporting or retiring an error");
+        std::terminate();
     }
 };
 } // namespace miximus::gpu::detail

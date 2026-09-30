@@ -5,6 +5,9 @@ find_package(glm REQUIRED)
 add_library(gpu
     device.hpp
     device.cpp
+    device_diagnostics.hpp
+    device_diagnostics_json.hpp
+    device_diagnostics_json.cpp
     drawing.hpp
     drawing.cpp
     resource_types.hpp
@@ -18,6 +21,8 @@ add_library(gpu
     recording.cpp
     presenter.hpp
     presenter.cpp
+    detail/native_handle.cpp
+    detail/external_memory.hpp
     detail/device.hpp
     detail/external_image_support.hpp
     detail/external_image_support.cpp
@@ -32,12 +37,25 @@ add_library(gpu
     detail/pipeline.cpp
     detail/conversion.cpp
 )
+if(WIN32)
+    target_sources(gpu PRIVATE detail/native_handle_win.cpp detail/external_memory_win.cpp
+        detail/external_image_win.cpp detail/external_image_copy_win.cpp detail/external_image_export_win.cpp)
+    target_sources(gpu PRIVATE detail/external_image_support_win.cpp
+        detail/external_image_copy.cpp detail/external_image_export.cpp)
+    target_link_libraries(gpu PRIVATE d3d11_dependencies)
+else()
+    target_sources(gpu PRIVATE detail/native_handle_linux.cpp detail/external_memory_linux.cpp)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_sources(gpu PRIVATE
-        detail/dma_buf_image.hpp detail/dma_buf_image.cpp
-        detail/dma_buf_copy.hpp detail/dma_buf_copy.cpp
-        detail/dma_buf_export.hpp detail/dma_buf_export.cpp
+        detail/external_image_support_linux.cpp
+        detail/external_image_copy.cpp detail/external_image_export.cpp
+        detail/external_image.hpp detail/external_image_linux.cpp
+        detail/external_image_copy.hpp detail/external_image_copy_linux.cpp
+        detail/external_image_export.hpp detail/external_image_export_linux.cpp
     )
+elseif(NOT WIN32)
+    target_sources(gpu PRIVATE detail/external_image_support_mac.cpp)
 endif()
 target_link_libraries(gpu PUBLIC glm::glm)
 target_include_directories(gpu PUBLIC ${PROJECT_SOURCE_DIR}/src)
@@ -63,6 +81,10 @@ if(BUILD_TESTING)
     endif()
     add_executable(gpu_vulkan_test tests/device_test.cpp tests/external_image_device_test.cpp)
     target_link_libraries(gpu_vulkan_test PRIVATE gpu logger GTest::gtest_main nlohmann_json::nlohmann_json)
+    if(WIN32)
+        target_sources(gpu_vulkan_test PRIVATE tests/external_image_win_test.cpp)
+        target_link_libraries(gpu_vulkan_test PRIVATE d3d11_dependencies)
+    endif()
     add_sanitizers(gpu_vulkan_test)
     miximus_stage_runtime_dlls(gpu_vulkan_test)
     # Hardware tests are explicit: ordinary CTest remains usable without a GPU.
@@ -109,7 +131,7 @@ endif()
 add_subdirectory(transfer)
 
 # Build the cross-machine transfer comparison tool only when explicitly requested.
-add_executable(miximus_transfer_benchmark EXCLUDE_FROM_ALL benchmarks/transfer_benchmark.cpp)
+add_executable(miximus_transfer_benchmark EXCLUDE_FROM_ALL benchmarks/transfer_benchmark.cpp benchmarks/transfer_report.cpp)
 target_link_libraries(miximus_transfer_benchmark PRIVATE gpu logger nlohmann_json::nlohmann_json)
 add_sanitizers(miximus_transfer_benchmark)
 miximus_stage_runtime_dlls(miximus_transfer_benchmark)
@@ -128,12 +150,20 @@ endif()
 if(BUILD_TESTING)
     add_executable(gpu_test
         tests/fatal_test.cpp
+        tests/native_handle_test.cpp
         tests/geometry_test.cpp
         tests/texture_test.cpp
         tests/transfer_layout_test.cpp
+        tests/device_diagnostics_test.cpp
         tests/external_image_support_test.cpp
     )
-    target_link_libraries(gpu_test PRIVATE gpu vulkan_dependencies magic_enum::magic_enum GTest::gtest_main)
+    if(WIN32)
+        target_sources(gpu_test PRIVATE tests/native_handle_test_win.cpp)
+    else()
+        target_sources(gpu_test PRIVATE tests/native_handle_test_linux.cpp)
+    endif()
+    target_link_libraries(gpu_test PRIVATE gpu vulkan_dependencies magic_enum::magic_enum
+        nlohmann_json::nlohmann_json GTest::gtest_main)
     add_sanitizers(gpu_test)
     miximus_stage_runtime_dlls(gpu_test)
     gtest_discover_tests(gpu_test)

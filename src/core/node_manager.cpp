@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <random>
@@ -679,6 +680,16 @@ node_actions_s::batch_t node_manager_s::take_frame_updates()
     removed_nodes_.clear();
     next_action_sequence_ = 0;
     return actions;
+}
+
+node_manager_s::~node_manager_s()
+{
+    try {
+        close_actions();
+    } catch (...) {
+        logger::log_error_noexcept("app", "Failed to close node actions during shutdown");
+        std::terminate();
+    }
 }
 
 void node_manager_s::close_actions()

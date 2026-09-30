@@ -112,6 +112,14 @@ void web_server_impl::handle_api_request(const server_t::connection_ptr& connect
     api_path = consume_segments(api_path, 1);
 
     try {
+        if (path_matches(api_path, {"health"})) {
+            if (prepare_api_route(connection, method, HTTP_GET)) {
+                connection->set_body(R"("ok")");
+                connection->set_status(status_code::ok);
+            }
+            return;
+        }
+
         if (path_matches(api_path, {"config"})) {
             if (prepare_api_route(connection, method, HTTP_GET)) {
                 handle_api_v1_get_config(connection);

@@ -1,6 +1,7 @@
 #include "capture_stream.hpp"
 
-#include "gpu/detail/dma_buf_copy.hpp"
+#include "gpu/detail/external_image_copy.hpp"
+#include "image_transport.hpp"
 
 namespace miximus::nodes::cef::detail {
 
@@ -32,10 +33,7 @@ bool capture_stream_s::capture(const CefAcceleratedPaintInfo& info, const std::a
     const auto arrival         = utils::flicks_now();
     const auto sequence        = ++received;
     try {
-        if (info.plane_count != 1 ||
-            (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888)) {
-            throw std::runtime_error("Unsupported CEF accelerated format or plane count");
-        }
+        const auto source = capture_image(info);
         if (info.extra.coded_size.width != dimensions_.x || info.extra.coded_size.height != dimensions_.y) {
             throw std::runtime_error("CEF paint does not match the session viewport generation");
         }
@@ -55,20 +53,11 @@ bool capture_stream_s::capture(const CefAcceleratedPaintInfo& info, const std::a
             ++dropped;
             return false;
         }
-        gpu::detail::dma_buf_image_s source;
-        source.fd     = info.planes[0].fd;
-        source.extent = {.width  = static_cast<uint32_t>(info.extra.coded_size.width),
-                         .height = static_cast<uint32_t>(info.extra.coded_size.height)};
-        source.order =
-            info.format == CEF_COLOR_TYPE_BGRA_8888 ? gpu::channel_order_e::bgra : gpu::channel_order_e::rgba;
-        source.modifier = info.modifier;
-        source.offset   = info.planes[0].offset;
-        source.stride   = info.planes[0].stride;
         gpu::draw_s conversion;
         conversion.compositing = gpu::compositing_e::replace;
         conversion.transfer    = gpu::color_operation_e::decode_srgb_premultiplied;
         const auto completion =
-            gpu::detail::dma_buf_copy_s::submit(*recording, source, frame->texture(), conversion, 100ms);
+            gpu::detail::external_image_copy_s::submit(*recording, source, frame->texture(), conversion, 100ms);
         // A timeout does not cancel GPU work. The borrowed source cannot be
         // returned while our read is pending; the app's shutdown watchdog
         // handles a device that stops making progress.

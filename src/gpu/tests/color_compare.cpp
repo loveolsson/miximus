@@ -78,52 +78,58 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
     const auto  device = state_->owner->device;
     const auto& vk     = state_->owner->vk;
 
-    VkShaderModuleCreateInfo shader{};
-    shader.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    shader.codeSize = static_cast<size_t>(bytes);
-    shader.pCode    = code.data();
+    VkShaderModuleCreateInfo shader{
+        .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = static_cast<size_t>(bytes),
+        .pCode    = code.data(),
+    };
 
     check(vk.vkCreateShaderModule(device, &shader, nullptr, &state_->shader), "create comparison shader");
     const std::array<VkDescriptorSetLayoutBinding, 2> bindings{
-        {
-         {.binding            = 0,
-             .descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-             .descriptorCount    = 1,
-             .stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT,
-             .pImmutableSamplers = nullptr},
+        {{.binding            = 0,
+          .descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .descriptorCount    = 1,
+          .stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT,
+          .pImmutableSamplers = nullptr},
          {.binding            = 1,
-             .descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-             .descriptorCount    = 1,
-             .stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT,
-             .pImmutableSamplers = nullptr},
-         }
+          .descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+          .descriptorCount    = 1,
+          .stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT,
+          .pImmutableSamplers = nullptr}}
     };
 
-    VkDescriptorSetLayoutCreateInfo descriptors{};
-    descriptors.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descriptors.bindingCount = static_cast<uint32_t>(bindings.size());
-    descriptors.pBindings    = bindings.data();
+    VkDescriptorSetLayoutCreateInfo descriptors{
+        .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings    = bindings.data(),
+    };
 
     check(vk.vkCreateDescriptorSetLayout(device, &descriptors, nullptr, &state_->descriptors),
           "create comparison descriptors");
-    const VkPushConstantRange constants{VK_SHADER_STAGE_COMPUTE_BIT, 0, 28};
+    const VkPushConstantRange constants{
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset     = 0,
+        .size       = 28,
+    };
 
-    VkPipelineLayoutCreateInfo layout{};
-    layout.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layout.setLayoutCount         = 1;
-    layout.pSetLayouts            = &state_->descriptors;
-    layout.pushConstantRangeCount = 1;
-    layout.pPushConstantRanges    = &constants;
+    VkPipelineLayoutCreateInfo layout{
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &state_->descriptors,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges    = &constants,
+    };
 
     check(vk.vkCreatePipelineLayout(device, &layout, nullptr, &state_->layout), "create comparison layout");
 
-    VkComputePipelineCreateInfo pipeline{};
-    pipeline.sType        = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    pipeline.stage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    pipeline.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
-    pipeline.stage.module = state_->shader;
-    pipeline.stage.pName  = "main";
-    pipeline.layout       = state_->layout;
+    VkComputePipelineCreateInfo pipeline{
+        .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage  = {.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                   .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
+                   .module = state_->shader,
+                   .pName  = "main"},
+        .layout = state_->layout,
+    };
 
     check(vk.vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &state_->pipeline),
           "create comparison pipeline");
@@ -167,21 +173,29 @@ void color_comparison_s::record(recording_s&         recording,
                      VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
     const auto                  descriptor = state.allocate_descriptor(state_->descriptors);
     const VkDescriptorImageInfo image{
-        state.owner->drawing->nearest_sampler, source.state_->sampled_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    const VkDescriptorBufferInfo        buffer{counters.state_->buffer, 0, 8};
-    std::array<VkWriteDescriptorSet, 2> writes{};
-    for (auto& write : writes) {
-        write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet          = descriptor;
-        write.descriptorCount = 1;
-    }
-
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[0].pImageInfo     = &image;
-    writes[1].dstBinding     = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[1].pBufferInfo    = &buffer;
-    const auto& vk           = state.owner->vk;
+        .sampler     = state.owner->drawing->nearest_sampler,
+        .imageView   = source.state_->sampled_view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    const VkDescriptorBufferInfo buffer{
+        .buffer = counters.state_->buffer,
+        .offset = 0,
+        .range  = 8,
+    };
+    std::array<VkWriteDescriptorSet, 2> writes{
+        {{.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet          = descriptor,
+          .descriptorCount = 1,
+          .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          .pImageInfo      = &image},
+         {.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet          = descriptor,
+          .dstBinding      = 1,
+          .descriptorCount = 1,
+          .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+          .pBufferInfo     = &buffer}}
+    };
+    const auto& vk = state.owner->vk;
 
     vk.vkUpdateDescriptorSets(state.owner->device, 2, writes.data(), 0, nullptr);
 

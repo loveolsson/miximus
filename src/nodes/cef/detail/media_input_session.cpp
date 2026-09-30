@@ -2,17 +2,19 @@
 
 #include "command_messages.hpp"
 #include "gpu/device.hpp"
+#include "image_transport.hpp"
 #include "media_input_exports.hpp"
 #include "media_input_renderer.hpp"
 #include "task.hpp"
 #include "wrapper/cef/media_input_abi.hpp"
+#include "wrapper/cef/platform.hpp"
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
-#include <dlfcn.h>
+#include <exception>
 #include <format>
 #include <mutex>
 #include <set>
@@ -195,7 +197,7 @@ struct media_input_session_s::impl_s
 
         state_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> owner)
             : runtime(std::move(owner))
-            , api(reinterpret_cast<cef_wrapper::send_media_frame_t>(dlsym(RTLD_DEFAULT, cef_wrapper::SEND_MEDIA_FRAME)))
+            , api(cef_wrapper::find_send_media_frame())
         {
             if (!runtime || (api == nullptr)) {
                 error = "CEF runtime does not provide GPU media input v3";
@@ -279,17 +281,11 @@ struct media_input_session_s::impl_s
 
         void post_frame(const std::shared_ptr<media_input_exports_s::frame_s>& frame)
         {
-            const auto descriptor    = frame->image().descriptor();
-            const auto ticket        = frame->ticket();
-            auto       packet        = cef_wrapper::make_media_frame();
-            packet.input             = static_cast<uint32_t>(ticket.input);
-            packet.fd                = descriptor.fd;
-            packet.width             = descriptor.extent.width;
-            packet.height            = descriptor.extent.height;
-            packet.stride            = static_cast<uint32_t>(descriptor.stride);
-            packet.offset            = descriptor.offset;
-            packet.modifier          = descriptor.modifier;
-            packet.allocation_bytes  = frame->image().allocation_bytes();
+            const auto descriptor = frame->image().descriptor();
+            const auto ticket     = frame->ticket();
+            auto       packet     = cef_wrapper::make_media_frame();
+            packet.input          = static_cast<uint32_t>(ticket.input);
+            set_media_frame_image(packet, descriptor, frame->image().allocation_bytes());
             packet.timestamp_us      = frame->timestamp_us();
             packet.source_generation = ticket.generation;
             std::string token;
@@ -389,8 +385,7 @@ struct media_input_session_s::impl_s
             entry.transparent_pending = true;
             auto       self           = shared_from_this();
             const auto revision       = entry.revision;
-            const auto token          = context;
-            auto       task           = [self, input, revision, token] {
+            auto       task           = [self, input, revision, token = context] {
                 auto packet      = cef_wrapper::make_media_frame();
                 packet.input     = static_cast<uint32_t>(input);
                 packet.operation = 2;
@@ -408,7 +403,7 @@ struct media_input_session_s::impl_s
                     packet.source_generation = self->exports->generation(input);
                 }
 
-                auto finish = [self, input, revision, token](bool delivered) {
+                auto finish = [self, input, revision, token = token](bool delivered) {
                     std::scoped_lock lock(self->mutex);
                     auto&            entry    = self->inputs.at(input);
                     entry.transparent_pending = false;
@@ -566,7 +561,15 @@ struct media_input_session_s::impl_s
         : state(std::make_shared<state_s>(device, std::move(runtime)))
     {
         if (state->exports) {
-            worker = std::jthread([state = state](const std::stop_token& stop) { state->run(stop); });
+            worker = std::jthread([state = state](const std::stop_token& stop) {
+                try {
+                    state->run(stop);
+                } catch (...) {
+                    // run() reports recoverable failures. If reporting or revoking
+                    // leases also fails, unwinding the worker cannot retire them safely.
+                    std::terminate();
+                }
+            });
         }
     }
 };

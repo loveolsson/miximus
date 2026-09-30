@@ -9,6 +9,16 @@ add_library(static_files SHARED
   include/static_files/files.hpp
 )
 
+if(WIN32)
+  # Web-only changes do not relink miximus when the DLL exports are unchanged.
+  # Refresh its runtime copy whenever the embedded assets are rebuilt.
+  add_custom_command(TARGET static_files POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:static_files> $<TARGET_FILE_DIR:miximus>
+    VERBATIM
+  )
+endif()
+
 # Validated shader binaries use the same bundler and file API as other assets.
 foreach(shader IN ITEMS quad.vert texture.frag unpack_v210.comp pack_v210.comp mix.frag)
   miximus_compile_shader(static_files "${PROJECT_SOURCE_DIR}/shaders/${shader}")
@@ -52,6 +62,7 @@ endif()
 
 # Step 2: hash web/dist; remove web_files.cpp if the bundled output needs refreshing
 add_custom_target(check_web_files_hash ALL
+  BYPRODUCTS "${WEB_HASH_FILE}"
   COMMAND ${CMAKE_COMMAND}
     -DWEB_SOURCE_DIR=${CMAKE_SOURCE_DIR}/web/dist
     -DWEB_HASH_FILE=${WEB_HASH_FILE}
@@ -82,7 +93,7 @@ add_custom_command(
   ARGS
     --src ${CMAKE_SOURCE_DIR}/web/dist/ --dst ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp --namespace ${BUNDLER_NAMESPACE} --mapname get_web_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS bundler check_web_files_hash
+  DEPENDS bundler check_web_files_hash "${WEB_HASH_FILE}"
   COMMENT "Generating web_files.cpp from web/dist/"
 )
 

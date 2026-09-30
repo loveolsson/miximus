@@ -42,7 +42,7 @@ struct node_state_s
 
         try {
             return it->get<T>();
-        } catch (nlohmann::json::exception& e) {
+        } catch (const nlohmann::json::exception&) {
             return fallback;
         }
     }

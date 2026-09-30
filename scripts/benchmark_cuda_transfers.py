@@ -13,7 +13,8 @@ import subprocess
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--binary', type=pathlib.Path, default=pathlib.Path('build/miximus_transfer_benchmark'))
+    default_binary = 'build/miximus_transfer_benchmark.exe' if os.name == 'nt' else 'build/miximus_transfer_benchmark'
+    parser.add_argument('--binary', type=pathlib.Path, default=pathlib.Path(default_binary))
     parser.add_argument('--output', type=pathlib.Path, required=True)
     parser.add_argument('--iterations', type=int, default=500)
     parser.add_argument('--repeat', type=int, default=3, help='Runs per backend; order reverses each pair')

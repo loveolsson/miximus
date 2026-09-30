@@ -2,12 +2,14 @@
 #include "gpu/texture_frame.hpp"
 #include "gpu/transfer/detail/frame_staging.hpp"
 #include "logger/logger.hpp"
+#include "transfer_report.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -38,7 +40,7 @@ void await(Predicate predicate)
     }
 }
 
-nlohmann::json measure(staging_t& staging, staging_t::direction_e direction, uint32_t iterations)
+transfer_measurement_s measure(staging_t& staging, staging_t::direction_e direction, uint32_t iterations)
 {
     // Allocation, host population and first-use initialization are outside measurement.
     std::vector<double> samples;
@@ -63,15 +65,15 @@ nlohmann::json measure(staging_t& staging, staging_t::direction_e direction, uin
         return samples[static_cast<size_t>(std::ceil(p * static_cast<double>(samples.size()))) - 1];
     };
     return {
-        {"direction",               direction == staging_t::direction_e::cpu_to_gpu ? "upload" : "readback"},
-        {"backend",                 staging.backend_name()                                                 },
-        {"samples",                 samples.size()                                                         },
-        {"mean_us",                 total / static_cast<double>(samples.size())                            },
-        {"p50_us",                  percentile(0.50)                                                       },
-        {"p95_us",                  percentile(0.95)                                                       },
-        {"p99_us",                  percentile(0.99)                                                       },
-        {"effective_GB_per_second",
-         double(staging.host_buffer_size_bytes()) * static_cast<double>(samples.size()) / (total * 1000)   }
+        .direction = direction == staging_t::direction_e::cpu_to_gpu ? "upload" : "readback",
+        .backend   = std::string(staging.backend_name()),
+        .samples   = samples.size(),
+        .mean_us   = total / static_cast<double>(samples.size()),
+        .p50_us    = percentile(0.50),
+        .p95_us    = percentile(0.95),
+        .p99_us    = percentile(0.99),
+        .effective_gb_per_second =
+            double(staging.host_buffer_size_bytes()) * static_cast<double>(samples.size()) / (total * 1000),
     };
 }
 struct probe_options_s
@@ -124,16 +126,15 @@ probe_options_s parse_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    logger::init_loggers(spdlog::level::warn);
     try {
+        logger::init_loggers(spdlog::level::warn);
         const auto [options, iterations, output] = parse_options(argc, argv);
 
-        device_s device(options);
-        auto     report   = nlohmann::json::parse(device.diagnostics_json());
-        report["method"]  = "Sequential production frame_staging transfers; host-observed submit-to-ready latency, "
-                            "including ownership hand-offs and polling; 30 warm-up transfers per case; "
-                            "host filling, allocation, color conversion, SDK and service queue delay excluded";
-        report["results"] = nlohmann::json::array();
+        device_s          device(options);
+        transfer_report_s report{.device = device.diagnostics()};
+        report.method = "Sequential production frame_staging transfers; host-observed submit-to-ready latency, "
+                        "including ownership hand-offs and polling; 30 warm-up transfers per case; "
+                        "host filling, allocation, color conversion, SDK and service queue delay excluded";
         for (const vec2i_t size : {
                  vec2i_t{1280, 720 },
                  vec2i_t{1920, 1080},
@@ -167,36 +168,40 @@ int main(int argc, char** argv)
                 }
 
                 for (auto* item : {&upload_result, &readback_result}) {
-                    (*item)["width"]           = size.x;
-                    (*item)["height"]          = size.y;
-                    (*item)["format"]          = format == host_pixel_format_e::v210 ? "v210" : "RGBA8";
-                    (*item)["bytes"]           = reference.size();
-                    (*item)["row_stride"]      = stride;
-                    (*item)["pixels_verified"] = true;
-                    report["results"].push_back(*item);
+                    item->width           = size.x;
+                    item->height          = size.y;
+                    item->format          = format == host_pixel_format_e::v210 ? "v210" : "RGBA8";
+                    item->bytes           = reference.size();
+                    item->row_stride      = stride;
+                    item->pixels_verified = true;
+                    report.results.push_back(*item);
                 }
 
                 device.collect();
             }
         }
 
-        report["validation_errors"] = device.validation_errors();
+        report.validation_errors = device.validation_errors();
         if (device.validation_errors() != 0U) {
             throw std::runtime_error("Vulkan validation errors during benchmark");
         }
 
+        const auto json = nlohmann::json(report).dump(2);
         if (!output.empty()) {
             std::ofstream file(output);
-            file << report.dump(2) << '\n';
+            file << json << '\n';
             if (!file) {
                 throw std::runtime_error("could not write benchmark report");
             }
         }
 
-        std::cout << report.dump(2) << '\n';
+        std::cout << json << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
+        return 1;
+    } catch (...) {
+        std::fputs("Unknown transfer benchmark failure\n", stderr);
         return 1;
     }
 }

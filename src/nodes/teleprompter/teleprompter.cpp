@@ -391,7 +391,7 @@ class node_impl : public node_i
 
             const std::string utf_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
             str = utils::utf8_to_utf32(utf_str);
-        } catch (const std::ifstream::failure& e) {
+        } catch (const std::ifstream::failure&) {
             return res;
         }
 

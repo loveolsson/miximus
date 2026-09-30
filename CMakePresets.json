@@ -11,7 +11,7 @@
       "displayName": "Windows x64 Release (vcpkg)",
       "description": "Run from an x64 Visual Studio developer shell with VCPKG_ROOT set.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-win",
+      "binaryDir": "${sourceDir}/build",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",

@@ -327,48 +327,56 @@ retire_current_slot(const std::shared_ptr<detail::texture_upload_stream_state_s>
 void return_unsubmitted_lease(const std::shared_ptr<detail::texture_upload_stream_state_s>& stream,
                               const std::shared_ptr<detail::texture_upload_slot_s>&         slot)
 {
-    if (!stream || !slot) {
-        return;
-    }
-    const std::scoped_lock lock(stream->mutex);
-    if (slot->state == detail::slot_state_e::cpu_writing) {
-        --stream->active_leases;
-        slot->lease_released = true;
-        slot->state          = detail::slot_state_e::free;
-        if (stream->active) {
-            stream->free_slots.emplace_back(slot);
-            stream->slot_cv.notify_one();
+    try {
+        if (!stream || !slot) {
+            return;
         }
+        const std::scoped_lock lock(stream->mutex);
+        if (slot->state == detail::slot_state_e::cpu_writing) {
+            --stream->active_leases;
+            slot->lease_released = true;
+            slot->state          = detail::slot_state_e::free;
+            if (stream->active) {
+                stream->free_slots.emplace_back(slot);
+                stream->slot_cv.notify_one();
+            }
+        }
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to retire transfer ownership");
     }
 }
 
 void release_submitted_lease(const std::shared_ptr<detail::texture_upload_stream_state_s>& stream,
                              const std::shared_ptr<detail::texture_upload_slot_s>&         slot)
 {
-    if (!stream || !slot) {
-        return;
-    }
-    bool reclaim = false;
-    {
-        const std::scoped_lock lock(stream->mutex);
-        if (!slot->lease_released) {
-            --stream->active_leases;
-            slot->lease_released = true;
+    try {
+        if (!stream || !slot) {
+            return;
         }
-        if (slot->ownership == upload_ownership_e::queued_frame) {
-            if (slot->state == detail::slot_state_e::queued) {
-                slot->discard_requested = true;
-            } else if (slot->state == detail::slot_state_e::ready) {
-                std::erase(stream->ready_slots, slot);
-                slot->state = detail::slot_state_e::reclaim;
-                reclaim     = true;
+        bool reclaim = false;
+        {
+            const std::scoped_lock lock(stream->mutex);
+            if (!slot->lease_released) {
+                --stream->active_leases;
+                slot->lease_released = true;
+            }
+            if (slot->ownership == upload_ownership_e::queued_frame) {
+                if (slot->state == detail::slot_state_e::queued) {
+                    slot->discard_requested = true;
+                } else if (slot->state == detail::slot_state_e::ready) {
+                    std::erase(stream->ready_slots, slot);
+                    slot->state = detail::slot_state_e::reclaim;
+                    reclaim     = true;
+                }
             }
         }
-    }
-    if (reclaim) {
-        if (auto service = stream->service.lock()) {
-            service->enqueue({.type = detail::task_type_e::reclaim, .stream = stream, .slot = slot});
+        if (reclaim) {
+            if (auto service = stream->service.lock()) {
+                service->enqueue({.type = detail::task_type_e::reclaim, .stream = stream, .slot = slot});
+            }
         }
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to retire transfer ownership");
     }
 }
 
@@ -455,19 +463,23 @@ texture_upload_stream_s::texture_upload_stream_s(std::shared_ptr<detail::texture
 
 texture_upload_stream_s::~texture_upload_stream_s()
 {
-    auto                                           service = state_->service.lock();
-    std::shared_ptr<detail::texture_upload_slot_s> current;
-    {
-        const std::scoped_lock lock(state_->mutex);
-        state_->active = false;
-        current        = retire_current_slot(state_);
-        state_->completion_cv.notify_all();
-    }
-    if (service) {
-        if (current) {
-            service->enqueue({.type = detail::task_type_e::reclaim, .stream = state_, .slot = std::move(current)});
+    try {
+        auto                                           service = state_->service.lock();
+        std::shared_ptr<detail::texture_upload_slot_s> current;
+        {
+            const std::scoped_lock lock(state_->mutex);
+            state_->active = false;
+            current        = retire_current_slot(state_);
+            state_->completion_cv.notify_all();
         }
-        service->enqueue({.type = detail::task_type_e::destroy_stream, .stream = state_, .slot = {}});
+        if (service) {
+            if (current) {
+                service->enqueue({.type = detail::task_type_e::reclaim, .stream = state_, .slot = std::move(current)});
+            }
+            service->enqueue({.type = detail::task_type_e::destroy_stream, .stream = state_, .slot = {}});
+        }
+    } catch (...) {
+        gpu::detail::fatal_gpu_error("Failed to retire transfer ownership");
     }
 }
 

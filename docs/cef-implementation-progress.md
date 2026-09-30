@@ -3,6 +3,69 @@
 This records implementation evidence for the [accelerated-only plan](cef-browser-sources.md), not permission to
 change existing rendering. CPU pixel transport, a browser-host process, and render/event-loop changes remain excluded.
 
+## Windows SDK smoke test (2026-09-30)
+
+The revision-11 CEF source build completed and was packaged as a local Windows SDK at
+`C:\cef\distribution\miximus_cef_windows64_native_handle_r11`. The packaged `libcef.dll` SHA-256 matches
+`miximus-source-build.json`; the DLL exports `cef_miximus_install_media_inputs_v1` and
+`cef_miximus_send_media_frame_v3`.
+
+The packaged `cefclient` and `libcef_dll_wrapper` built with MSVC, `/MD`, and the supported sandbox bootstrap.
+A local test page passed hardware WebGL2 pixel checks and canvas-capture MediaStream video playback on NVIDIA
+Quadro P2000 / ANGLE D3D11, including three reloads. Temporary logging in the sample confirmed accelerated-paint
+callbacks with non-null shared texture handles. Closing the native sample window produced exit code zero;
+DevTools `Browser.close` alone did not close the sample's native window. The temporary sample logging was removed
+after the check. Evidence is in `build/cef-browser-probe/1790773960112/` and `build/cef-sdk-build.log`.
+
+Chromium logged a missing shared-image mailbox during reload despite passing the page checks. This requires
+follow-up during capture/lifetime qualification. This smoke test does not establish Miximus Vulkan import,
+custom GPU media input, color/alpha correctness across the native transfer, or loss/recovery behavior.
+The source regression build exposed stale test signatures: the Windows layered-window mock omitted the damage
+rectangle, and the transparent-frame test omitted its timestamp. Test-only patches correct these and assert timestamp
+progression. The source regression run passed: 138 capture tests passed with two upstream skips, and all eight
+media-source tests passed (`C:\cef\test-media-final.log`). The transparent-frame assertion allows the intentional
+elapsed-time advance from the supplied timestamp. These are separate from the application-level results below.
+
+## Windows application checks (2026-09-30)
+
+The initial checks below used a launcher/shared-library arrangement. That arrangement has been removed:
+Miximus is again an ordinary CMake executable, with a separate CMake-built `miximus_cef_helper` for Chromium
+subprocesses on Linux and Windows. CEF sandboxing is explicitly disabled on both platforms. The original
+Windows `wmain` is restored; no application DLL, renamed main, CEF bootstrap, or Linux launcher remains.
+Linux retains direct libcef linkage, the isolated `cef-link` search path and signal restoration.
+Linux runtime verification remains pending.
+
+Revalidation of the restored executable/helper layout passed on Windows: all 205 registered tests and all six CEF
+probes passed with Vulkan validation, including native media input (120/120 frames), accelerated capture (120 GPU
+copies), pool exhaustion/recovery, renderer/GPU crashes and clean shutdown. The normal executable also passed a
+12-second browser-to-screen run with a Unicode settings/profile directory: HTTP health was ready in 1.06 seconds
+and shutdown returned zero. Evidence is in `build/restored-ctest.log`, `build/restored-cef-*.log`, and
+`build/restored-main-runtime.log`. CMake's file API reports `miximus` as `EXECUTABLE`; the rejected DLLs and sandbox
+ACL grants were removed. The restored CEF-enabled `build-tidy` also passes without clang-tidy diagnostics,
+and its 205 registered tests pass. The earlier measurements below describe the superseded launcher layout.
+
+The CEF-enabled Windows application build succeeded and all 205 registered CTest tests passed. Six browser probes
+passed on the Quadro P2000 with Vulkan validation enabled:
+
+- runtime initialization/shutdown retained `C:\Windows\System32\vulkan-1.dll`;
+- accelerated capture completed 120 GPU copies at 640x360;
+- session tests covered pool exhaustion/recovery, static-frame retention, resize, and textures retained after closure;
+- subsystem tests covered color/alpha comparison, JavaScript/Promise messaging, reload, renderer/GPU-process loss,
+  recovery, bounded admission and GPU retirement;
+- native media-input tests delivered 120/120 frames, checked generation rejection/replacement, and compared GPU output;
+- media-input session regressions covered multiple inputs, demand changes, queue pressure and clean shutdown.
+
+Evidence is under `build/cef-app-probes/cef_*probe-*`; registered-test results are in `build/cef-ctest.log`.
+The full `build/miximus.exe` also ran an isolated browser-to-screen graph for 12 seconds: HTTP health became available
+in 1.20 seconds, the browser reported `ready` with no error, the screen submitted 691 frames, and shutdown returned zero.
+The static test page intentionally produced one captured frame that the application reused. Evidence:
+`build/cef-app-probes/main-1790776322638441300/result.json`. The user's `build/settings.json` was not modified. A second run with a non-ASCII settings/profile folder also
+passed (HTTP ready in 0.93 seconds), recorded in `build/cef-unicode-main.log`.
+
+Chromium's USB enumeration warning was present. The subsystem probe intentionally terminates renderer/GPU processes
+and therefore logs those failures; it verifies recovery. The SDK-sample mailbox warning above was not observed in these
+application probe runs. These checks do not claim exhaustive hardware/performance coverage or Linux acceptance.
+
 ## Stage 0: existing-structure fit
 
 Implemented a private [GPU destination pool](../src/nodes/cef/detail/frame_pool.hpp) under the CEF module. It allocates
@@ -77,7 +140,7 @@ is still in flight. Any additional structural dependency gets its own explicit a
 
 ## Linux DMA-BUF image import qualification
 
-Added a private GPU helper in [`dma_buf_image.hpp`](../src/gpu/detail/dma_buf_image.hpp) and its implementation.
+Added a private GPU helper in [`external_image.hpp`](../src/gpu/detail/external_image.hpp) and its implementation.
 It creates a sampled-only, one-mip image from a borrowed DMA-BUF descriptor. The initial supported subset is
 single-memory-plane RGBA8/BGRA8 with an explicitly supported DRM modifier and filtered sampling. Unsupported
 modifiers, layouts and channel orders fail; there is no CPU path. The helper checks the selected device's exact
@@ -106,7 +169,7 @@ The importer exposes only private GPU state. Importing an FD does not make it a 
 
 ## Linux fence and GPU copy helper
 
-Added [`dma_buf_copy_s`](../src/gpu/detail/dma_buf_copy.hpp), a private ingress helper that:
+Added [`external_image_copy_s`](../src/gpu/detail/external_image_copy.hpp), a private ingress helper that:
 
 1. Imports the image and exports its currently published write fences with `DMA_BUF_IOCTL_EXPORT_SYNC_FILE`.
 2. Waits for that exact fence snapshot within an explicit caller-provided readiness budget, off the render thread.

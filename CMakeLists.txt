@@ -62,7 +62,12 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 add_subdirectory(submodules)
 
 if(MIXIMUS_ENABLE_CLANG_TIDY)
-    set(CMAKE_CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_EXECUTABLE}")
+    set(MIXIMUS_CLANG_TIDY_COMMAND "${MIXIMUS_CLANG_TIDY_EXECUTABLE}")
+    if(MSVC)
+        # Clang tooling drops the compiler's /EHsc; retain C++ exception semantics.
+        list(APPEND MIXIMUS_CLANG_TIDY_COMMAND "--extra-arg=/EHsc")
+    endif()
+    set(CMAKE_CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_COMMAND}")
 endif()
 
 # Strict warnings — applied only to our own targets, after submodules are added.

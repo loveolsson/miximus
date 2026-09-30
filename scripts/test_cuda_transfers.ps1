@@ -1,5 +1,5 @@
 param(
-    [string]$BuildDir = (Join-Path $PSScriptRoot '../build-win'),
+    [string]$BuildDir = (Join-Path $PSScriptRoot '../build'),
     [ValidateRange(1, 100)][int]$Repeats = 3
 )
 

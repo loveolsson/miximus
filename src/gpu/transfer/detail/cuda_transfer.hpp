@@ -34,6 +34,7 @@ class cuda_transfer_s final : public transfer_backend_i
     void                     record_ownership_transfer(recording_s& record, ownership_operation_e operation);
 
     bool start_transfer(const completion_s& dependency);
+    void start_copy();
 
     void select_cuda_device();
     void validate_external_resources();

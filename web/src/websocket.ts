@@ -17,6 +17,8 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   private ws?: WebSocket;
   private info?: socket_info_s;
   private ping_timer?: ReturnType<typeof setTimeout>;
+  private reconnect_timer?: ReturnType<typeof setTimeout>;
+  private health_request?: AbortController;
   private callbacks = new Map<string, message_callback_t<message_s>>();
   private subscriptions = new Map<topic_e, Set<message_callback_t<message_s>>>();
   private next_token = 0;
@@ -28,16 +30,48 @@ export class ws_wrapper extends EventEmitter<ws_events> {
     this.connect();
   }
 
-  private connect(): void {
-    if (this.closing) {
+  private async connect(): Promise<void> {
+    if (this.closing || this.ws || this.health_request) {
       return;
     }
 
-    this.ws = new WebSocket(`ws://${location.hostname}:7351/`);
-    this.ws.onopen = this.handle_open.bind(this);
-    this.ws.onclose = this.handle_close.bind(this);
-    this.ws.onmessage = this.handle_message.bind(this);
-    this.ws.onerror = this.handle_error.bind(this);
+    // Failed WebSocket attempts accumulate browser backoff that survives reloads.
+    // Poll HTTP while offline, including before the first socket on page load.
+    const controller = new AbortController();
+    this.health_request = controller;
+    const timeout = setTimeout(() => controller.abort(), 2000);
+
+    try {
+      const response = await fetch(`http://${location.hostname}:7351/api/v1/health`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const health: unknown = response.ok ? await response.json() : undefined;
+
+      if (!this.closing && !controller.signal.aborted && health === "ok") {
+        this.ws = new WebSocket(`ws://${location.hostname}:7351/`);
+        this.ws.onopen = this.handle_open.bind(this);
+        this.ws.onclose = this.handle_close.bind(this);
+        this.ws.onmessage = this.handle_message.bind(this);
+        this.ws.onerror = this.handle_error.bind(this);
+      }
+    } catch {
+      // Connection failures and timeouts are expected while the server is offline.
+    } finally {
+      clearTimeout(timeout);
+      this.health_request = undefined;
+    }
+
+    if (!this.ws) {
+      this.schedule_reconnect();
+    }
+  }
+
+  private schedule_reconnect(): void {
+    if (!this.closing) {
+      clearTimeout(this.reconnect_timer);
+      this.reconnect_timer = setTimeout(() => void this.connect(), 2000);
+    }
   }
 
   private handle_open(_ev: Event): void {
@@ -45,7 +79,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   }
 
   private handle_close(ev: CloseEvent): void {
-    clearInterval(this.ping_timer);
+    clearTimeout(this.ping_timer);
     this.callbacks.clear();
 
     if (this.info) {
@@ -58,9 +92,7 @@ export class ws_wrapper extends EventEmitter<ws_events> {
       this.ws = undefined;
     }
 
-    if (!this.closing) {
-      setTimeout(this.connect.bind(this), 2000);
-    }
+    this.schedule_reconnect();
   }
 
   private handle_message(msg: MessageEvent<string>): void {
@@ -289,6 +321,9 @@ export class ws_wrapper extends EventEmitter<ws_events> {
 
   public destroy() {
     this.closing = true;
+    clearTimeout(this.reconnect_timer);
+    clearTimeout(this.ping_timer);
+    this.health_request?.abort();
     this.ws?.close();
   }
 }

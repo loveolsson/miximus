@@ -33,6 +33,11 @@ contain no native Vulkan types; dependency integration remains in `src/wrapper/v
 separates pipeline resources, submission scheduling and deferred retirement into concrete components under
 `src/gpu/detail/`; resource and recording state have their own headers. No OpenGL context or bridge remains. Volk and VMA are pinned submodules; Vulkan headers come from the installed SDK.
 
+Device diagnostics are owned structures declared in `src/gpu/device_diagnostics.hpp`. They describe device selection,
+capabilities and allocation statistics for troubleshooting and benchmark output; they are not WebSocket node status.
+`device_s::diagnostics()` returns a typed snapshot and queries allocation statistics only when requested. JSON
+serialization lives separately and runs only at an output boundary or when reporting device-selection failure.
+
 The graph, upload service, readback service, and each presenter own independent `recording_context_s` instances.
 Each context has its own command pools and a bounded set of in-flight recordings. A producer holding an unfinished
 recording cannot reserve the graph's capacity. `try_record()` returns immediately if that context is full; transfer

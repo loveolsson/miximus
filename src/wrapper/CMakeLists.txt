@@ -14,3 +14,7 @@ add_subdirectory(cef)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(x11)
 endif()
+
+if(WIN32)
+    add_subdirectory(d3d11)
+endif()

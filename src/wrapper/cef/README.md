@@ -6,20 +6,29 @@ failed with that artifact. Do not claim accelerated support from its successful 
 
 Windows full-feature implementation, toolchain setup, custom SDK packaging and qualification are covered in
 [the Windows handoff](../../../docs/windows-development.md#required-custom-cef-build-and-windows-implementation).
-The Linux-only scripts below are the starting implementation to port; custom CEF remains a required Windows deliverable.
+The source builder supports Linux and Windows through one manifest and shared patch series. Application startup uses
+a normal CMake executable and a separate CEF subprocess helper on both platforms.
 
 ## Regular application build
 
-CEF-enabled application builds require the current `source-build.json` revision (9), including GPU texture inputs. No library-path override
-or separate runtime is needed. The packaged helper, resources and library are staged together into `build/cef`.
+CEF-enabled application builds require the current `source-build.json` revision, including GPU texture inputs.
 A missing or outdated SDK is a configure error; `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON` is only for diagnostic probes.
+
+Miximus and `miximus_cef_helper` are ordinary executables built by this project's CMake on both platforms.
+CEF sandboxing is disabled (`CefSettings.no_sandbox = 1`); the helper handles Chromium child processes only.
+Select `miximus` as the IDE launch target. The main program retains its normal entry point and is not built by CEF.
+
+CEF runtime files and the helper are staged under `build/cef`. Linux retains direct libcef linkage and `cef-link`
+with only libcef and resource symlinks, keeping bundled Vulkan/ANGLE libraries out of the application's search path.
+Windows delay-loads libcef from the staged runtime with CEF's library loader. No bootstrap executable or application
+DLL is used. Linux runtime verification of the Windows-port branch remains pending testing on Linux.
 
 After preparing/building the pinned source tree, package and select the SDK:
 
 ```sh
 python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no-archive
 cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
-  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9"
+  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11"
 cmake --build build -j
 ./build/miximus
 ```
@@ -82,13 +91,18 @@ Revision 9 validates retirement tokens with CEF's canonical frame-identifier par
 identifiers are hexadecimal; decimal prefix matching incorrectly rejected valid lifecycle messages once IDs exceeded 9.
 The navigation regression now crosses that boundary before checking allocation, delivery, and retirement.
 
+Revision 10 adds platform-gated D3D11 NT texture transport to the same media-input patch and v3 entry point.
+The Linux descriptor ABI and DMA-BUF transport remain unchanged. Windows-specific GN arguments and the unused
+updater-test dependency omission live in the manifest's platform overrides; production/test patches are shared.
+The Windows artifact is still awaiting build and hardware qualification.
+
 This header is required even when unqualified provenance is explicitly allowed for diagnostics.
 
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
 `CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility
 patch is applied only by the test stage and changes no production code.
 The test patches also register native media-source tests and update a navigation-throttle mock.
-Source licenses and upstream attribution are retained; sandbox policy is unchanged. Replace the custom build only after a stock stable SDK contains the
+Source licenses and upstream attribution are retained. Miximus disables CEF sandboxing on all supported platforms. Replace the custom build only after a stock stable SDK contains the
 allocation/capture fixes and provides a qualified producer-completion contract for the native-handle callback.
 
 Use a disk-backed directory with sufficient space for Chromium, its toolchain, dependencies and build outputs.
@@ -104,7 +118,7 @@ python3 src/wrapper/cef/source_build.py test --work-dir "$PWD/build-cef-source" 
 python3 src/wrapper/cef/source_build.py package --work-dir "$PWD/build-cef-source"
 ```
 
-The build targets the library, resources and sandbox required by the SDK; it does not build the GTK sample application.
+The build targets the library, resources and support artifacts required by upstream SDK packaging; it does not build the GTK sample application.
 Stages stop on failure. `sync` explicitly bootstraps the pinned depot_tools Python and uses CEF's pinned automation
 and shallow Chromium history; do not resync a prepared
 tree because upstream sync can revert Chromium modifications. `prepare` registers the Chromium patch with CEF's
@@ -114,23 +128,28 @@ GPU capture qualification.
 
 The package stage emits a standard-layout release SDK, a `miximus-source-build.json` provenance file with the
 `libcef.so` digest, and an archive digest. Builds use Chromium's pinned sysroot/toolchain and Ninja, omit debug symbols,
-and retain official-build ThinLTO, PGO, control-flow integrity and sandbox support. The sync stage restores the
+and retain official-build ThinLTO, PGO and control-flow integrity. Upstream sandbox/bootstrap artifacts may be
+packaged with the SDK but are not used by Miximus. The sync stage restores the
 DEPS-pinned siso revision that upstream automation otherwise overrides with `latest`, and fetches the PGO profile.
-The build and test stages also limit their own CPU affinity to at most `--jobs` available CPUs. Ninja's job count
+On Linux, the build and test stages also limit their own CPU affinity to at most `--jobs` available CPUs. Ninja's job count
 alone does not constrain LLVM's internal ThinLTO workers; LLVM respects this Linux affinity limit when Chromium
 requests all available threads. This bounds worker concurrency, not total memory consumption, and does not disable
 any optimization or change other processes' affinity. Choose the job count with memory headroom for the final link.
+On Windows, `--jobs` limits Ninja concurrency without restricting CPU affinity, so the scheduler can spread jobs
+across physical cores. Use `--jobs 8` on the current 8-core/16-thread workstation and monitor memory during the link.
+To use autoninja's automatic concurrency instead, pass `--auto-jobs` without `--jobs`. This also skips the Linux
+affinity restriction; it is opt-in and does not change the default memory-conservative invocation.
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r9.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r11.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r9.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```
@@ -140,7 +159,7 @@ it does not silently acquire the custom build. Preserve the generated manifest a
 
 Before promoting the artifact, verify the provenance and package digest, configure the application against that SDK,
 and run the fresh-profile runtime and accelerated probes under Vulkan validation. Require actual accelerated delivery
-and completed GPU copies; no software paint, CPU pixel fallback or sandbox disabling is acceptable. Adapter identity,
+and completed GPU copies; no software paint or CPU pixel fallback is acceptable. Adapter identity,
 producer-fence publication, color conversion and lifecycle qualification remain separate requirements.
 
 The private browser session is enabled only when the SDK's recorded source revision, patches and build arguments

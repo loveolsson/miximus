@@ -6,8 +6,8 @@
 #include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/window.hpp"
-#if MIXIMUS_ENABLE_CEF
 #include "logger/logger.hpp"
+#if MIXIMUS_ENABLE_CEF
 #include "nodes/cef/subsystem.hpp"
 #endif
 #include "nodes/decklink/registry.hpp"
@@ -138,7 +138,14 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
         getlog("app")->error("CEF browser subsystem unavailable: {}", cef_error_);
     }
 #endif
-    cfg_thread_ = std::thread([this] { cfg_executor_.run(); });
+    cfg_thread_ = std::thread([this] {
+        try {
+            cfg_executor_.run();
+        } catch (...) {
+            logger::log_error_noexcept("app", "Configuration worker failed");
+            std::terminate();
+        }
+    });
 }
 
 app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s command_line_options)
@@ -183,7 +190,12 @@ app_state_s::~app_state_s()
     window_system_.reset();
     utils::report_shutdown_step_completed();
     utils::begin_shutdown_step("application worker services");
-    cfg_executor_.stop();
+    try {
+        cfg_executor_.stop();
+    } catch (...) {
+        logger::log_error_noexcept("app", "Failed to stop configuration worker");
+        std::terminate();
+    }
     cfg_thread_.join();
     thread_pool_->close_queue();
     thread_pool_.reset();

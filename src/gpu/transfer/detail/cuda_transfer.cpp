@@ -1,7 +1,8 @@
 #include "cuda_transfer.hpp"
 
-#include "gpu/detail/cuda_external.hpp"
+#include "cuda_external.hpp"
 #include "gpu/detail/device.hpp"
+#include "gpu/detail/external_memory.hpp"
 #include "gpu/detail/fatal.hpp"
 #include "gpu/detail/recording.hpp"
 #include "gpu/detail/resource.hpp"
@@ -18,32 +19,11 @@
 #include <memory>
 #include <span>
 #include <thread>
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
 #include <utility>
 #include <vector>
 
 namespace miximus::gpu::transfer::detail {
 namespace {
-
-#ifdef _WIN32
-struct exported_handle_s
-{
-    HANDLE value{};
-    exported_handle_s()                                    = default;
-    exported_handle_s(const exported_handle_s&)            = delete;
-    exported_handle_s& operator=(const exported_handle_s&) = delete;
-    ~exported_handle_s()
-    {
-        if (value != nullptr) {
-            CloseHandle(value);
-        }
-    }
-};
-#endif
 
 void check_cuda(cudaError_t result, const char* operation)
 {
@@ -91,6 +71,7 @@ struct cuda_transfer_s::state_s
     enum class phase_e : uint8_t
     {
         idle,
+        releasing,
         copying,
         acquiring,
         submitted
@@ -314,12 +295,14 @@ void cuda_transfer_s::validate_external_resources()
 {
     auto& state = *state_;
 
-    VkPhysicalDeviceExternalSemaphoreInfo semaphore_info{};
-    semaphore_info.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO;
-    semaphore_info.handleType = gpu::detail::cuda_semaphore_handle_type;
+    VkPhysicalDeviceExternalSemaphoreInfo semaphore_info{
+        .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO,
+        .handleType = gpu::detail::cuda_semaphore_handle_type,
+    };
 
-    VkExternalSemaphoreProperties semaphore_properties{};
-    semaphore_properties.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES;
+    VkExternalSemaphoreProperties semaphore_properties{
+        .sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES,
+    };
     state.owner->instance_vk.vkGetPhysicalDeviceExternalSemaphoreProperties(
         state.owner->physical, &semaphore_info, &semaphore_properties);
     if ((semaphore_properties.externalSemaphoreFeatures & VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT) == 0U) {
@@ -379,38 +362,12 @@ void cuda_transfer_s::import_frame_memory()
         throw std::invalid_argument("CUDA transfer frame was not allocated for external access");
     }
 
-    cudaExternalMemoryHandleDesc import{};
-#ifdef _WIN32
-    VkMemoryGetWin32HandleInfoKHR handle_info{};
-    handle_info.sType      = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
-    handle_info.memory     = memory;
-    handle_info.handleType = gpu::detail::cuda_memory_handle_type;
-    exported_handle_s handle;
-    check(state.owner->vk.vkGetMemoryWin32HandleKHR(state.owner->device, &handle_info, &handle.value),
-          "export Vulkan allocation Win32 handle");
-    import.type                = cudaExternalMemoryHandleTypeOpaqueWin32;
-    import.handle.win32.handle = handle.value;
-#else
-    VkMemoryGetFdInfoKHR fd_info{};
-    fd_info.sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
-    fd_info.memory     = memory;
-    fd_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
-    int fd{-1};
-    check(state.owner->vk.vkGetMemoryFdKHR(state.owner->device, &fd_info, &fd), "export Vulkan allocation FD");
-
-    import.type      = cudaExternalMemoryHandleTypeOpaqueFd;
-    import.handle.fd = fd;
-#endif
-    import.size              = state.device_allocation_bytes;
-    import.flags             = cudaExternalMemoryDedicated;
-    const auto import_result = cudaImportExternalMemory(&state.imported_memory, &import);
-#ifndef _WIN32
-    if (import_result != cudaSuccess) {
-        (void)::close(fd); // Successful CUDA import owns the FD.
-    }
-#endif
-
-    check_cuda(import_result, "import Vulkan allocation into CUDA");
+    const auto& resource = state.frame.buffer()
+                               ? static_cast<const gpu::detail::resource_state_s&>(*state.frame.buffer().state_)
+                               : static_cast<const gpu::detail::resource_state_s&>(*state.frame.texture()->state_);
+    check_cuda(
+        import_external_memory(&state.imported_memory, resource.external_memory_handle, state.device_allocation_bytes),
+        "import Vulkan allocation into CUDA");
 
     if (state.frame.buffer()) {
         cudaExternalMemoryBufferDesc mapped{};
@@ -435,47 +392,21 @@ void cuda_transfer_s::create_external_semaphores()
     auto& state = *state_;
 
     const auto make_semaphore = [&](VkSemaphore& semaphore, cudaExternalSemaphore_t& cuda_semaphore) {
-        VkExportSemaphoreCreateInfo export_semaphore{};
-        export_semaphore.sType       = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
-        export_semaphore.handleTypes = gpu::detail::cuda_semaphore_handle_type;
+        VkExportSemaphoreCreateInfo export_semaphore{
+            .sType       = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+            .handleTypes = static_cast<VkExternalSemaphoreHandleTypeFlags>(gpu::detail::cuda_semaphore_handle_type),
+        };
 
-        VkSemaphoreCreateInfo create{};
-        create.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        create.pNext = &export_semaphore;
+        VkSemaphoreCreateInfo create{
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            .pNext = &export_semaphore,
+        };
         check(state.owner->vk.vkCreateSemaphore(state.owner->device, &create, nullptr, &semaphore),
               "CUDA shared semaphore");
 
-        cudaExternalSemaphoreHandleDesc desc{};
-#ifdef _WIN32
-        VkSemaphoreGetWin32HandleInfoKHR get{};
-        get.sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
-        get.semaphore  = semaphore;
-        get.handleType = gpu::detail::cuda_semaphore_handle_type;
-        exported_handle_s handle;
-        check(state.owner->vk.vkGetSemaphoreWin32HandleKHR(state.owner->device, &get, &handle.value),
-              "export Vulkan semaphore Win32 handle");
-        desc.type                = cudaExternalSemaphoreHandleTypeOpaqueWin32;
-        desc.handle.win32.handle = handle.value;
-#else
-        VkSemaphoreGetFdInfoKHR get{};
-        get.sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
-        get.semaphore  = semaphore;
-        get.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
-        int semaphore_fd{-1};
-        check(state.owner->vk.vkGetSemaphoreFdKHR(state.owner->device, &get, &semaphore_fd),
-              "export Vulkan semaphore FD");
-
-        desc.type      = cudaExternalSemaphoreHandleTypeOpaqueFd;
-        desc.handle.fd = semaphore_fd;
-#endif
-        const auto result = cudaImportExternalSemaphore(&cuda_semaphore, &desc);
-#ifndef _WIN32
-        if (result != cudaSuccess) {
-            (void)::close(semaphore_fd);
-        }
-#endif
-
-        check_cuda(result, "import Vulkan semaphore into CUDA");
+        check_cuda(
+            import_external_semaphore(&cuda_semaphore, gpu::detail::export_semaphore_handle(*state.owner, semaphore)),
+            "import Vulkan semaphore into CUDA");
     };
 
     make_semaphore(state.to_cuda, state.cuda_wait);
@@ -520,22 +451,25 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
     const auto target_access =
         releasing ? VK_ACCESS_2_NONE : VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
 
-    VkDependencyInfo dependency{};
-    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+    };
     VkBufferMemoryBarrier2 buffer_barrier{};
     VkImageMemoryBarrier2  image_barrier{};
     if (state.frame.buffer()) {
         const auto& buffer = state.frame.buffer().state_;
         record.state_->retain(buffer);
-        buffer_barrier.sType                = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-        buffer_barrier.srcStageMask         = source_stage;
-        buffer_barrier.srcAccessMask        = source_access;
-        buffer_barrier.dstStageMask         = target_stage;
-        buffer_barrier.dstAccessMask        = target_access;
-        buffer_barrier.srcQueueFamilyIndex  = source_family;
-        buffer_barrier.dstQueueFamilyIndex  = target_family;
-        buffer_barrier.buffer               = buffer->buffer;
-        buffer_barrier.size                 = VK_WHOLE_SIZE;
+        buffer_barrier = {
+            .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+            .srcStageMask        = source_stage,
+            .srcAccessMask       = source_access,
+            .dstStageMask        = target_stage,
+            .dstAccessMask       = target_access,
+            .srcQueueFamilyIndex = source_family,
+            .dstQueueFamilyIndex = target_family,
+            .buffer              = buffer->buffer,
+            .size                = VK_WHOLE_SIZE,
+        };
         dependency.bufferMemoryBarrierCount = 1;
         dependency.pBufferMemoryBarriers    = &buffer_barrier;
     } else {
@@ -560,21 +494,23 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
                 record.state_->mip_dirty[image.get()] = true;
             }
         }
-        image_barrier.sType                = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        image_barrier.srcStageMask         = source_stage;
-        image_barrier.srcAccessMask        = source_access;
-        image_barrier.dstStageMask         = target_stage;
-        image_barrier.dstAccessMask        = target_access;
-        image_barrier.srcQueueFamilyIndex  = source_family;
-        image_barrier.dstQueueFamilyIndex  = target_family;
-        image_barrier.oldLayout            = VK_IMAGE_LAYOUT_GENERAL;
-        image_barrier.newLayout            = VK_IMAGE_LAYOUT_GENERAL;
-        image_barrier.image                = image->image;
-        image_barrier.subresourceRange     = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                                              .baseMipLevel   = 0,
-                                              .levelCount     = image->mip_levels,
-                                              .baseArrayLayer = 0,
-                                              .layerCount     = 1};
+        image_barrier = {
+            .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask        = source_stage,
+            .srcAccessMask       = source_access,
+            .dstStageMask        = target_stage,
+            .dstAccessMask       = target_access,
+            .oldLayout           = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout           = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = source_family,
+            .dstQueueFamilyIndex = target_family,
+            .image               = image->image,
+            .subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                    .baseMipLevel   = 0,
+                                    .levelCount     = image->mip_levels,
+                                    .baseArrayLayer = 0,
+                                    .layerCount     = 1},
+        };
         dependency.imageMemoryBarrierCount = 1;
         dependency.pImageMemoryBarriers    = &image_barrier;
     }
@@ -585,11 +521,12 @@ completion_s cuda_transfer_s::submit(recording_s& record, ownership_operation_e 
 {
     auto& state = *state_;
 
-    VkSemaphoreSubmitInfo semaphore{};
-    semaphore.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-    semaphore.semaphore = operation == ownership_operation_e::release_to_cuda ? state.to_cuda : state.to_vulkan;
-    semaphore.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    const auto span     = std::span(&semaphore, 1);
+    VkSemaphoreSubmitInfo semaphore{
+        .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .semaphore = operation == ownership_operation_e::release_to_cuda ? state.to_cuda : state.to_vulkan,
+        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+    };
+    const auto span = std::span(&semaphore, 1);
     return operation == ownership_operation_e::release_to_cuda
                ? gpu::detail::enqueue_recording(record.state_, {}, span)
                : gpu::detail::enqueue_recording(record.state_, span, {});
@@ -609,6 +546,13 @@ bool cuda_transfer_s::start_transfer(const completion_s& dependency)
     record_ownership_transfer(*record, ownership_operation_e::release_to_cuda);
     state.last_submission  = submit(*record, ownership_operation_e::release_to_cuda);
     state.transfer_started = std::chrono::steady_clock::now();
+    state.phase            = state_s::phase_e::releasing;
+    return true;
+}
+
+void cuda_transfer_s::start_copy()
+{
+    auto& state = *state_;
 
     cudaExternalSemaphoreWaitParams wait{};
     check_cuda(cudaWaitExternalSemaphoresAsync(&state.cuda_wait, &wait, 1, state.stream),
@@ -655,7 +599,6 @@ bool cuda_transfer_s::start_transfer(const completion_s& dependency)
                "CUDA signal Vulkan acquire");
     check_cuda(cudaEventRecord(state.copy_completed_event, state.stream), "CUDA copy completion event");
     state.phase = state_s::phase_e::copying;
-    return true;
 }
 
 completion_s cuda_transfer_s::completion() const { return state_->last_submission; }
@@ -666,6 +609,16 @@ bool cuda_transfer_s::submit_transfer(const completion_s& dependency)
     check_cuda(cudaSetDevice(state.cuda_device_index), "select CUDA transfer device");
     if (state.phase == state_s::phase_e::idle && !start_transfer(dependency)) {
         return false;
+    }
+
+    if (state.phase == state_s::phase_e::releasing) {
+        // CUDA binary waits require the Vulkan signal to have been submitted.
+        // Poll queue acceptance without waiting for GPU completion or blocking other streams.
+        if (!state.last_submission.submitted()) {
+            state.check_progress("Vulkan release submission");
+            return false;
+        }
+        start_copy();
     }
 
     // Do not queue a Vulkan wait until CUDA has actually signalled it. A stalled

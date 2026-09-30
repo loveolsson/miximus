@@ -1,7 +1,6 @@
+#include "gpu/detail/external_image_support.hpp"
 #include "gpu/device.hpp"
 #include "logger/logger.hpp"
-
-#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cstdlib>
@@ -40,46 +39,35 @@ TEST_F(external_image_device, OptionalImportPreservesDeviceAndOrdinaryRendering)
 {
     auto       options = test_options();
     device_s   baseline(options);
-    const auto before = nlohmann::json::parse(baseline.diagnostics_json());
-    EXPECT_FALSE(baseline.external_image_import_support().requested);
-    EXPECT_FALSE(baseline.external_image_import_support().enabled);
+    const auto before = baseline.diagnostics();
+    EXPECT_EQ(baseline.external_image_import_support(), external_image_import_support_e::not_requested);
 
     options.external_image_import = true;
     device_s   importing(options);
-    const auto after = nlohmann::json::parse(importing.diagnostics_json());
-    EXPECT_EQ(before.at("selected_uuid"), after.at("selected_uuid"));
-    EXPECT_EQ(before.at("separate_present_queue"), after.at("separate_present_queue"));
-    EXPECT_EQ(before.at("swapchain_maintenance"), after.at("swapchain_maintenance"));
-    EXPECT_EQ(before.at("present_wait"), after.at("present_wait"));
+    const auto after = importing.diagnostics();
+    EXPECT_EQ(before.selected_uuid, after.selected_uuid);
+    EXPECT_EQ(before.separate_present_queue, after.separate_present_queue);
+    EXPECT_EQ(before.swapchain_maintenance, after.swapchain_maintenance);
+    EXPECT_EQ(before.present_wait, after.present_wait);
     EXPECT_FALSE(importing.uses_cuda_transfers());
     const auto support = importing.external_image_import_support();
-    EXPECT_TRUE(support.requested);
+    EXPECT_NE(support, external_image_import_support_e::not_requested);
 
-    bool available = false;
-#ifdef __linux__
-    for (const auto& candidate : after.at("devices")) {
-        if (candidate.at("uuid") != after.at("selected_uuid")) {
-            continue;
-        }
-        available = true;
-        for (const auto* name : {"VK_KHR_external_memory_fd",
-                                 "VK_EXT_external_memory_dma_buf",
-                                 "VK_EXT_image_drm_format_modifier",
-                                 "VK_EXT_queue_family_foreign",
-                                 "VK_KHR_external_semaphore_fd"}) {
-            bool found = false;
-            for (const auto& extension : candidate.at("extensions")) {
-                if (extension == name) {
-                    found = true;
-                }
+    std::vector<std::string_view> available;
+    const auto&                   candidates = after.devices;
+    for (const auto& candidate : candidates) {
+        if (candidate.uuid == after.selected_uuid) {
+            for (const auto& extension : candidate.extensions) {
+                available.emplace_back(extension);
             }
-            available &= found;
         }
     }
-#endif
-    EXPECT_EQ(support.enabled, available);
-    EXPECT_EQ(support.enabled_extensions.size(), available ? 5U : 0U);
-    EXPECT_EQ(support.missing_support.empty(), available);
+    EXPECT_EQ(support, detail::probe_external_image_import(true, available));
+    const bool  enabled    = support == external_image_import_support_e::supported;
+    const auto& diagnostic = after.external_image_import;
+    EXPECT_EQ(diagnostic.enabled, enabled);
+    EXPECT_EQ(diagnostic.enabled_extensions.size(), enabled ? detail::external_image_import_extensions().size() : 0U);
+    EXPECT_EQ(diagnostic.missing_support.empty(), enabled);
 
     auto texture = importing.create_texture({.width = 32, .height = 32});
     auto context = importing.create_recording_context();
@@ -91,7 +79,6 @@ TEST_F(external_image_device, OptionalImportPreservesDeviceAndOrdinaryRendering)
     EXPECT_EQ(baseline.validation_errors(), 0U);
 }
 
-#ifdef __linux__
 TEST_F(external_image_device, ImportAndCudaRequestsCanCoexist)
 {
     auto options                  = test_options();
@@ -100,7 +87,7 @@ TEST_F(external_image_device, ImportAndCudaRequestsCanCoexist)
     // CUDA qualification may legitimately fail on this machine/build. Import
     // support must remain independent, with no duplicate device extensions.
     device_s device(options);
-    EXPECT_TRUE(device.external_image_import_support().requested);
+    EXPECT_NE(device.external_image_import_support(), external_image_import_support_e::not_requested);
     auto texture = device.create_texture({.width = 32, .height = 32});
     auto record  = device.try_record();
     ASSERT_TRUE(record);
@@ -108,6 +95,5 @@ TEST_F(external_image_device, ImportAndCudaRequestsCanCoexist)
     EXPECT_EQ(record->submit().wait(5s), wait_result_e::ready);
     EXPECT_EQ(device.validation_errors(), 0U);
 }
-#endif
 
 }} // namespace miximus::gpu
