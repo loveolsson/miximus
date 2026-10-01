@@ -2,6 +2,7 @@
 #include "utils/owned_fd.hpp"
 
 #include <cerrno>
+#include <cstdint>
 #include <iostream>
 #include <linux/dma-buf.h>
 #include <linux/sync_file.h>

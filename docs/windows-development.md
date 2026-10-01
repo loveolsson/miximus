@@ -442,7 +442,60 @@ The 2026-10-01 formatting follow-up used clang-format 22.1.3 on the branch's tou
 check and `git diff --check` pass. The full `build-tidy` build with clang-tidy 21.1.8 passed at four jobs,
 followed by all 205 ordinary tests from that directory. No clang-tidy findings were reported; MSVC emitted
 `getenv` deprecation warnings. Logs: `build/tidy-review-followup.log` and `build/tidy-review-followup-ctest.log`.
-Linux regression validation remains outstanding.
+Linux regression validation is recorded below.
+
+### Linux regression review (2026-10-01)
+
+Reviewed `9278a10` (`main`) through `9b8d714` (`windows-setup`) on Linux with Clang 21.1.8,
+CUDA 11.4, NVIDIA driver 580.178.04, a Quadro P2000, DeckLink Duo, and NDI 6.3.2.
+The review fixed three Linux build regressions:
+
+- FFmpeg discovery now checks components independently, exposing an unused `libpostproc` requirement.
+  Remove that requirement; no project code uses postproc.
+- The Linux DMA-BUF test's designated initializer narrowed runtime `int` flags to `VkImageUsageFlags`.
+  Use an unsigned zero in the conditional expression.
+- The extracted Linux CEF probe helper used `uintptr_t` without including `<cstdint>`.
+
+The existing revision-9 CEF SDK is correctly rejected by this branch. The local source tree was updated,
+built, and packaged as `miximus_cef_linux64_native_handle_r11`; `build` now selects that qualified SDK.
+The old SDK artifacts were preserved. Do not bypass provenance checks to reuse revision 9.
+
+| Check | Result |
+| --- | --- |
+| Native builds, CEF enabled and disabled | Passed; full build uses `cmake --build build -j` |
+| Ordinary CTest | 204/204 passed in each build |
+| Web tests and production build | 9/9 passed; `npm run build` passed |
+| Vulkan renderer / Linux DMA-BUF / display tests | 33 / 5 / 7 passed |
+| Transfer tests | 14 staging tests passed; 14 CUDA tests passed on each of three repetitions, with actual CUDA uploads/readbacks and no staging fallback |
+| CEF GPU export / ingress tests | 10 / 5 passed |
+| Chromium capture tests | 166 passed; 2 default-buffer-format parameterizations intentionally skipped |
+| Native CEF media-source tests | 8/8 passed |
+| CEF hardware probes | Runtime, 120 HD and 120 UHD accelerated copies, session lifecycle, renderer/GPU-process recovery, color/alpha comparisons, four-input serial/async transfer, and session retirement passed |
+| Full-app integrations | Browser replacement/disable/enable, eight inputs/live edits/reload, cross-origin navigation, WebSocket actions/cache clearing, and screen failure/reconfiguration passed |
+| Transfer benchmark | Both backends verified pixels and generated the expected reports; three iterations are a correctness check, not performance evidence |
+
+Hardware suites used the documented Vulkan SDK 1.4.357 synchronization validation layer outside the agent sandbox.
+No Vulkan validation errors were reported. Default sandboxed CEF initialization and shutdown preserved the system
+Vulkan loader. An explicit `--disable-cef-sandbox` run also captured browser frames, delivered media inputs, and
+shut down cleanly. Both transfer backends also completed 30-second DeckLink capture/output and local NDI loopback runs,
+followed by combined DeckLink/NDI-to-CEF-to-screen runs, with clean SIGINT/SIGTERM shutdown. The single-screen
+combined runs delivered 3,321/3,301 CEF input frames (staging/CUDA), with zero transfer failures, GPU recording
+capacity drops, screen render-slot misses, DeckLink output drops, or NDI receiver drops.
+
+Display coverage is X11/XWayland, which the production Linux window service explicitly selects. The three-window
+combined run showed substantial presentation stalls; the single-screen runs still skipped 7/2 display intervals.
+An isolated three-output comparison with CEF disabled reproduced this on both branches: the third output
+presented only 26 frames on `main` versus 24 on `windows-setup` in 15 seconds, while the other two outputs
+presented about 890 frames each. This establishes an existing multi-window limitation, not a new port regression.
+These short tests do not qualify sustained display cadence, occluded windows, or native Wayland.
+
+A separate malformed-configuration shutdown crash was reproduced on freshly built `main` and `windows-setup`
+(CEF disabled): an invalid connection is rejected, then asynchronous web-server teardown segfaults. The backtrace
+passes through destruction of a weak server callback on the configuration thread. This is a pre-existing issue,
+not a Windows-port regression, and remains unresolved by this review.
+
+Local logs, copied hardware settings, status samples, benchmark reports, and a machine-readable summary are under
+`build/integration-tests/linux-review/`. The review changes do not alter the user's saved `build/settings.json`.
 
 ### Clang-tidy
 

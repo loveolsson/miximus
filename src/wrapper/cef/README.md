@@ -23,7 +23,8 @@ Select `miximus` as the IDE launch target. The main program retains its normal e
 CEF runtime files and the helper are staged under `build/cef`. Linux retains direct libcef linkage and `cef-link`
 with only libcef and resource symlinks, keeping bundled Vulkan/ANGLE libraries out of the application's search path.
 Windows delay-loads libcef from the staged runtime with CEF's library loader. No bootstrap executable or application
-DLL is used. Linux runtime verification of the Windows-port branch remains pending testing on Linux.
+DLL is used. Linux verification of the Windows-port branch is recorded in the
+[Linux regression review](../../../docs/windows-development.md#linux-regression-review-2026-10-01).
 
 After preparing/building the pinned source tree, package and select the SDK:
 
@@ -82,8 +83,9 @@ On a Linux desktop with the qualified SDK and GPU, check both startup paths usin
 
 Require successful CEF initialization and graceful shutdown in both runs; exit code zero alone is insufficient
 because Miximus can continue after a recoverable CEF initialization failure. Also exercise browser rendering and
-the CEF hardware probes using the validation setup in the development guide. These Linux checks remain pending;
-the Windows results do not validate namespace permissions or sandboxed Linux subprocesses.
+the CEF hardware probes using the validation setup in the development guide. These checks passed on the reviewed
+Linux host with revision 11, including default sandboxing and the explicit opt-out; see the [Linux regression review](../../../docs/windows-development.md#linux-regression-review-2026-10-01).
+Other hosts still need their own namespace and sandbox setup.
 
 ## Approved source build
 

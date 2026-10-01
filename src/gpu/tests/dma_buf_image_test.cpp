@@ -114,7 +114,8 @@ class external_image_test : public testing::Test
                 .format = format,
                 .type   = VK_IMAGE_TYPE_2D,
                 .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
-                .usage  = VK_IMAGE_USAGE_SAMPLED_BIT | (writable ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : 0),
+                .usage =
+                    VK_IMAGE_USAGE_SAMPLED_BIT | (writable ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VkImageUsageFlags{0}),
             };
 
             VkExternalImageFormatProperties external_properties{
