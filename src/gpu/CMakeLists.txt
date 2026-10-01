@@ -60,6 +60,7 @@ endif()
 target_link_libraries(gpu PUBLIC glm::glm)
 target_include_directories(gpu PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(gpu PRIVATE
+    Boost::headers
     static_files
     vulkan_dependencies
     magic_enum::magic_enum

@@ -505,7 +505,7 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
         } else {
             // The matching release left every level in GENERAL. Seed local layouts
             // without a prologue: Vulkan must acquire ownership before touching it.
-            record.state_->layouts.emplace(image.get(), std::vector(image->mip_levels, VK_IMAGE_LAYOUT_GENERAL));
+            record.state_->layouts.try_emplace(image.get(), image->mip_levels, VK_IMAGE_LAYOUT_GENERAL);
             if (state.direction == transfer_direction_e::cpu_to_gpu) {
                 image->content_version.fetch_add(1, std::memory_order_relaxed);
                 record.state_->mip_dirty[image.get()] = true;

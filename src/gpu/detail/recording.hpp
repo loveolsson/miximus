@@ -4,6 +4,8 @@
 #include "pipeline.hpp"
 #include "resource.hpp"
 
+#include <boost/container/small_vector.hpp>
+
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -57,21 +59,26 @@ struct recording_state_s
         VkPipelineStageFlags2 stage{};
         VkAccessFlags2        access{};
     };
-    std::unordered_map<texture_state_s*, std::vector<initial_use_s>> initial_uses;
-    std::unordered_map<texture_state_s*, std::vector<VkImageLayout>> layouts;
-    std::unordered_map<texture_state_s*, bool>                       mip_dirty;
-    std::unordered_map<texture_state_s*, uint64_t>                   generated_mips;
-    std::vector<VkSemaphoreSubmitInfo>                               waits;
-    std::vector<completion_s>                                        dependencies;
-    std::vector<VkSemaphoreSubmitInfo>                               signals;
-    std::vector<std::function<void(completion_s)>>                   publications;
-    std::shared_ptr<submission_state_s>                              submission;
-    uint64_t                                                         sequence{};
-    size_t                                                           descriptor_requests{};
-    bool                                                             submission_attempted{};
+    std::unordered_map<texture_state_s*, boost::container::small_vector<initial_use_s, 1>> initial_uses;
+    std::unordered_map<texture_state_s*, image_layouts_t>                                  layouts;
+    std::unordered_map<texture_state_s*, bool>                                             mip_dirty;
+    std::unordered_map<texture_state_s*, uint64_t>                                         generated_mips;
+    boost::container::small_vector<VkSemaphoreSubmitInfo, 3>                               waits;
+    std::vector<completion_s>                                                              dependencies;
+    boost::container::small_vector<VkSemaphoreSubmitInfo, 2>                               signals;
+    std::vector<std::function<void(completion_s)>>                                         publications;
+    std::shared_ptr<submission_state_s>                                                    submission;
+    uint64_t                                                                               sequence{};
+    size_t                                                                                 descriptor_requests{};
+    bool                                                                                   submission_attempted{};
 
     recording_state_s(std::shared_ptr<recording_context_state_s> recording_context, arena_s* slot);
     ~recording_state_s();
+
+    recording_state_s(const recording_state_s&)            = delete;
+    recording_state_s& operator=(const recording_state_s&) = delete;
+    recording_state_s(recording_state_s&&)                 = delete;
+    recording_state_s& operator=(recording_state_s&&)      = delete;
 
     void retain(const std::shared_ptr<resource_state_s>& resource);
     void transition(const std::shared_ptr<texture_state_s>& image,

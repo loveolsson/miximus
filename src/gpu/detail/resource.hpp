@@ -3,6 +3,8 @@
 #include "gpu/device.hpp"
 #include "native_handle.hpp"
 
+#include <boost/container/small_vector.hpp>
+
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -11,6 +13,9 @@
 #include <volk.h>
 
 namespace miximus::gpu::detail {
+
+// Keep common mip chains inline while allowing larger images to grow.
+using image_layouts_t = boost::container::small_vector<VkImageLayout, 16>;
 
 struct resource_state_s
 {
@@ -26,19 +31,19 @@ struct resource_state_s
 
 struct texture_state_s : resource_state_s
 {
-    VkImage                    image{};
-    VkImageView                view{};
-    VkImageView                sampled_view{};
-    VmaAllocation              allocation{};
-    VkDeviceMemory             external_memory{};
-    size_t                     external_allocation_bytes{};
-    extent_s                   extent;
-    format_e                   format{};
-    sampling_e                 sampling{};
-    uint32_t                   mip_levels{1};
-    std::vector<VkImageLayout> layouts;
-    std::atomic_uint64_t       content_version{};
-    std::atomic_uint64_t       mip_version{UINT64_MAX};
+    VkImage              image{};
+    VkImageView          view{};
+    VkImageView          sampled_view{};
+    VmaAllocation        allocation{};
+    VkDeviceMemory       external_memory{};
+    size_t               external_allocation_bytes{};
+    extent_s             extent;
+    format_e             format{};
+    sampling_e           sampling{};
+    uint32_t             mip_levels{1};
+    image_layouts_t      layouts;
+    std::atomic_uint64_t content_version{};
+    std::atomic_uint64_t mip_version{UINT64_MAX};
 
     ~texture_state_s();
 };

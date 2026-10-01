@@ -44,7 +44,7 @@ completion_s external_image_copy_s::submit(recording_s&              record,
 
     // As in the CUDA bridge, prevent the submission prologue from transitioning
     // the imported image before the explicit ownership-acquire barrier.
-    state.layouts.emplace(image.get(), std::vector{VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+    state.layouts.try_emplace(image.get(), 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     VkImageMemoryBarrier2 barrier{
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,

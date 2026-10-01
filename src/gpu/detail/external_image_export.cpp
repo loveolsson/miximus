@@ -31,7 +31,7 @@ void external_image_export_s::copy(recording_s& record, const texture_s& source,
     recording.retain(image);
     // Seed the local layout: the ordinary prologue must not run ahead of this
     // explicit foreign-ownership acquire. First use starts uninitialized.
-    recording.layouts.emplace(image.get(), std::vector{VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL});
+    recording.layouts.try_emplace(image.get(), 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     const bool foreign = state_->foreign.load();
 
     VkImageMemoryBarrier2 barrier{
