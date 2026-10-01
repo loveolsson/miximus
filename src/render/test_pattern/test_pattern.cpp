@@ -2,6 +2,7 @@
 
 #include "gpu/types.hpp"
 #include "render/detail/color_lut.hpp"
+#include "render/detail/rec709_quantizer.hpp"
 #include "render/image_asset/image_asset.hpp"
 #include "render/surface/surface.hpp"
 
@@ -28,10 +29,10 @@ constexpr std::array            LOGO_PATHS{
     std::string_view{"images/miximus_32x32.png"},
 };
 
-[[nodiscard]] constexpr uint8_t rec709_to_linear(double encoded) noexcept
+[[nodiscard]] uint8_t rec709_to_linear(double encoded) noexcept
 {
     encoded             = std::clamp(encoded, 0.0, 1.0);
-    const double linear = detail::rec709_to_linear(encoded);
+    const double linear = encoded < 0.081 ? encoded / 4.5 : std::pow((encoded + 0.099) / 1.099, 1.0 / 0.45);
     return detail::normalized_to_u8(linear);
 }
 
@@ -209,15 +210,18 @@ void draw_zone_plate(surface_s* surface)
         return;
     }
 
+    const detail::rec709_quantizer_s quantize;
+
     const double scale_x = 2.0 / dimensions.x;
     const double scale_y = 2.0 / dimensions.y;
     const auto   pixels  = surface->pixels();
     for (int y = 0; y < dimensions.y; ++y) {
         const double ny = ((y + 0.5) * scale_y) - 1.0;
         for (int x = 0; x < dimensions.x; ++x) {
-            const double nx    = ((x + 0.5) * scale_x) - 1.0;
-            const double phase = (nx * nx + ny * ny) * std::min(dimensions.x, dimensions.y) * std::numbers::pi;
-            const auto   value = rec709_to_linear((std::cos(phase) * 0.5) + 0.5);
+            const double nx      = ((x + 0.5) * scale_x) - 1.0;
+            const double phase   = (nx * nx + ny * ny) * std::min(dimensions.x, dimensions.y) * std::numbers::pi;
+            const double encoded = (std::cos(phase) * 0.5) + 0.5;
+            const auto   value   = quantize(static_cast<float>(encoded));
             pixels[(static_cast<size_t>(y) * static_cast<size_t>(dimensions.x)) + static_cast<size_t>(x)] = {
                 .r = value, .g = value, .b = value, .a = 255};
         }

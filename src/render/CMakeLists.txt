@@ -1,6 +1,6 @@
 add_library(render)
 
-target_sources(render PRIVATE detail/color_lut.hpp)
+target_sources(render PRIVATE detail/color_lut.hpp detail/rec709_quantizer.hpp)
 
 add_subdirectory(font)
 add_subdirectory(image_asset)

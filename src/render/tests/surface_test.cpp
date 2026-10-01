@@ -1,5 +1,7 @@
 #include "render/detail/color_lut.hpp"
+#include "render/detail/rec709_quantizer.hpp"
 #include "render/surface/surface.hpp"
+#include "render/test_pattern/test_pattern.hpp"
 
 #include <algorithm>
 #include <array>
@@ -7,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <numbers>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -163,6 +166,52 @@ TEST(Surface, InvalidDrawingGeometryIsANoOp)
         {255, 255, 255, 255});
 
     EXPECT_EQ(destination, std::vector(4, original));
+}
+
+TEST(Surface, Rec709CutoffsAgreeWithShaderFormulaWithinRoundingPrecision)
+{
+    const render::detail::rec709_quantizer_s quantize;
+    int                                      maximum_error = 0;
+    bool                                     monotonic     = true;
+    uint8_t                                  previous      = 0;
+    for (int i = 0; i <= 65536; ++i) {
+        const float encoded  = static_cast<float>(i) / 65536.0F;
+        const float linear   = encoded < 0.081F ? encoded / 4.5F : std::pow((encoded + 0.099F) / 1.099F, 1.0F / 0.45F);
+        const auto  expected = static_cast<int>(std::lround(linear * 255.0F));
+        const auto  value    = quantize(encoded);
+        maximum_error        = std::max(maximum_error, std::abs(static_cast<int>(value) - expected));
+        monotonic            = monotonic && value >= previous;
+        previous             = value;
+    }
+    EXPECT_LE(maximum_error, 1);
+    EXPECT_TRUE(monotonic);
+    EXPECT_EQ(quantize(0.0F), 0);
+    EXPECT_EQ(quantize(1.0F), 255);
+}
+
+TEST(Surface, ZonePlateMatchesContinuousReferenceWithinRoundingPrecision)
+{
+    constexpr gpu::vec2i_t dimensions{1920, 1080};
+    std::vector<pixel_t>   pixels(static_cast<size_t>(dimensions.x) * dimensions.y);
+    render::surface_s      surface(dimensions, pixels);
+    render::render_test_pattern(surface, render::test_pattern_e::zone_plate);
+
+    int  maximum_error    = 0;
+    bool opaque_grayscale = true;
+    for (size_t i = 0; i < pixels.size(); ++i) {
+        const auto   row      = i / dimensions.x;
+        const double nx       = ((static_cast<double>(i % dimensions.x) + 0.5) * (2.0 / dimensions.x)) - 1.0;
+        const double ny       = ((static_cast<double>(row) + 0.5) * (2.0 / dimensions.y)) - 1.0;
+        const double phase    = (nx * nx + ny * ny) * std::min(dimensions.x, dimensions.y) * std::numbers::pi;
+        const double encoded  = (std::cos(phase) * 0.5) + 0.5;
+        const double linear   = encoded < 0.081 ? encoded / 4.5 : std::pow((encoded + 0.099) / 1.099, 1.0 / 0.45);
+        const auto   expected = static_cast<int>(std::lround(linear * 255.0));
+        const auto   pixel    = pixels[i];
+        maximum_error         = std::max(maximum_error, std::abs(static_cast<int>(pixel.r) - expected));
+        opaque_grayscale      = opaque_grayscale && pixel.r == pixel.g && pixel.g == pixel.b && pixel.a == 255;
+    }
+    EXPECT_LE(maximum_error, 1);
+    EXPECT_TRUE(opaque_grayscale);
 }
 
 } // namespace
