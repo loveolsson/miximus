@@ -4,6 +4,7 @@
 import argparse
 import functools
 import http.server
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -15,6 +16,8 @@ def main():
     parser.add_argument("--build-dir", type=Path, default=Path("build"))
     args = parser.parse_args()
     build = args.build_dir.resolve()
+    probe = build / ("cef_media_input_session_probe.exe" if os.name == "nt"
+                     else "src/nodes/cef/cef_media_input_session_probe")
     with tempfile.TemporaryDirectory(prefix="miximus-navigation-") as profile:
         Path(profile, "blank.html").write_text("<!doctype html><title>Other origin</title>")
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=profile)
@@ -23,7 +26,7 @@ def main():
             worker.start()
             try:
                 subprocess.run(
-                    [str(build / "src/nodes/cef/cef_media_input_session_probe"),
+                    [str(probe),
                      str(build / "cef"), profile, "--navigation",
                      f"http://127.0.0.1:{server.server_port}"],
                     check=True, timeout=90,

@@ -526,8 +526,10 @@ settings. Test each feature and finally the combined graph:
    Require actual accelerated browser output and GPU-only browser texture inputs, pixel/alpha/color checks,
    multi-input load, stop/clone/reacquisition, transparent/disconnected streams, navigation beyond the process-ID
    regression boundary, browser crash/reload, bounded pools and orderly subprocess shutdown.
-   Port `scripts/test_cef_browser.py`, `test_cef_inputs.py`, `test_cef_load.py`, and
-   `test_cef_media_input_navigation.py`; some assume Linux binary paths and signals. The manual input page is
+   Run `scripts/test_cef_browser.py`, `test_cef_inputs.py`, `test_cef_load.py`, and
+   `test_cef_media_input_navigation.py` with Python 3 from the repository root. The runners support Windows
+   executable paths. On Windows, they request graceful shutdown with a console break event in a dedicated
+   process group (run them from a console); Linux retains SIGINT shutdown. The manual input page is
    `http://127.0.0.1:7351/cef-inputs.html`.
 5. **NDI and DeckLink:** discovery, input/output, format/mode changes, unplug/reconnect, alpha/keying where supported,
    frame-rate conversion, buffered cadence and sustained playback. Verify direct backend-owned DeckLink DMA leases

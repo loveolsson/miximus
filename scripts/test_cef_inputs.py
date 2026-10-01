@@ -4,12 +4,13 @@
 import argparse
 import json
 import pathlib
-import signal
 import subprocess
 import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from cef_test_process import PROCESS_CREATION_FLAGS, stop_process
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 API = "http://127.0.0.1:7351/api/v1"
@@ -253,6 +254,7 @@ def main():
             cwd=ROOT,
             stdout=log,
             stderr=subprocess.STDOUT,
+            creationflags=PROCESS_CREATION_FLAGS,
         )
 
         def wait(label, predicate, allow_recovery=False, idle_graph=False):
@@ -424,14 +426,8 @@ def main():
                 ),
             )
         finally:
-            if app.poll() is None:
-                app.send_signal(signal.SIGINT)
             try:
-                result = app.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                app.kill()
-                app.wait()
-                raise
+                result = stop_process(app, timeout=20)
             finally:
                 server.shutdown()
                 server.server_close()

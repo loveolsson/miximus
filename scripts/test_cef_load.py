@@ -4,12 +4,13 @@
 import argparse
 import json
 import pathlib
-import signal
 import shutil
 import subprocess
 import time
 import urllib.parse
 import urllib.request
+
+from cef_test_process import PROCESS_CREATION_FLAGS, stop_process
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 API = "http://127.0.0.1:7351/api/v1/config"
@@ -56,7 +57,8 @@ def run_case(work, count, size, args):
             str(ROOT / "build/miximus"), "--settings", str(settings),
             "--stop-after", str(args.duration), "--test-render-delay-ms", str(args.delay_ms),
             "--test-render-delay-every", "120",
-        ], stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
+        ], stdout=log, stderr=subprocess.STDOUT, cwd=ROOT,
+            creationflags=PROCESS_CREATION_FLAGS)
         start = time.monotonic()
         try:
             while process.poll() is None and time.monotonic() - start < args.duration + 15:
@@ -74,16 +76,11 @@ def run_case(work, count, size, args):
                                            "gpu": query.stdout, "error": query.stderr})
                 time.sleep(0.5)
         finally:
-            if process.poll() is None:
-                process.send_signal(signal.SIGINT)
             try:
-                result = process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                raise
-            (case / "samples.json").write_text(json.dumps(samples, indent=2))
-            (case / "system.json").write_text(json.dumps(system_samples, indent=2))
+                result = stop_process(process)
+            finally:
+                (case / "samples.json").write_text(json.dumps(samples, indent=2))
+                (case / "system.json").write_text(json.dumps(system_samples, indent=2))
     stable = [sample for sample in samples if sample["elapsed"] >= args.warmup]
     if result or len(stable) < 5:
         raise RuntimeError("Failed case " + str(case))
