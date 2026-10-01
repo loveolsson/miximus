@@ -18,6 +18,8 @@ void configure_runtime_command_line(const CefRefPtr<CefCommandLine>& command_lin
 
 bool initialize_runtime(CefSettings& settings, const CefRefPtr<CefApp>& app, const std::filesystem::path& /* runtime */)
 {
+    // The ordinary executable/helper layout cannot use the Windows CEF sandbox bootstrap.
+    settings.no_sandbox = 1;
     const CefMainArgs args(GetModuleHandleW(nullptr));
     return CefInitialize(args, settings, app, nullptr);
 }

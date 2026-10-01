@@ -63,8 +63,10 @@ if(NOT EXISTS "${CEF_ROOT}/include/internal/cef_miximus_media_input.h")
     message(FATAL_ERROR "CEF SDK must package include/internal/cef_miximus_media_input.h; use source-build revision 4 or newer.")
 endif()
 # Scope all upstream settings to this directory and its wrapper child.
-set(USE_SANDBOX OFF)
+set(USE_SANDBOX ON)
 if(WIN32)
+    # Our ordinary executable/helper layout does not use the Windows bootstrap.
+    set(USE_SANDBOX OFF)
     set(CEF_RUNTIME_LIBRARY_FLAG "/MD" CACHE STRING "CEF wrapper runtime matches Miximus" FORCE)
 endif()
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
@@ -83,7 +85,9 @@ foreach(config "" _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
 endforeach()
 
 set(CEF_STAGE "${CMAKE_BINARY_DIR}/cef")
-file(MAKE_DIRECTORY "${CEF_STAGE}")
+if(WIN32 AND CMAKE_CONFIGURATION_TYPES)
+    set(CEF_STAGE "${CMAKE_BINARY_DIR}/$<CONFIG>/cef")
+endif()
 set(CEF_STAGE_COMMANDS)
 set(CEF_STAGE_DEPENDENCIES
     "${CMAKE_CURRENT_SOURCE_DIR}/sdk.json"
@@ -129,6 +133,7 @@ else()
         "${CEF_STAGE}/miximus-source-build.json")
 endif()
 add_custom_command(OUTPUT "${CEF_STAGE}/.staged"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CEF_STAGE}"
     ${CEF_STAGE_COMMANDS}
     COMMAND "${CMAKE_COMMAND}" -E touch "${CEF_STAGE}/.staged"
     DEPENDS ${CEF_STAGE_DEPENDENCIES}
@@ -185,11 +190,13 @@ if(MIXIMUS_ENABLE_CLANG_TIDY)
     set_property(TARGET miximus_cef_helper PROPERTY CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_COMMAND}")
 endif()
 set_target_properties(miximus_cef_helper PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CEF_STAGE}"
+    # A generator expression prevents CMake appending a second configuration
+    # directory; the helper must sit beside libcef and its resources.
+    RUNTIME_OUTPUT_DIRECTORY "${CEF_STAGE}/$<0:>"
     BUILD_RPATH "$ORIGIN"
     BUILD_RPATH_USE_ORIGIN ON
     INSTALL_RPATH "$ORIGIN"
 )
 install(TARGETS miximus_cef_helper RUNTIME DESTINATION cef)
 install(DIRECTORY "${CEF_STAGE}/" DESTINATION cef USE_SOURCE_PERMISSIONS
-    PATTERN ".staged" EXCLUDE PATTERN "miximus_cef_helper" EXCLUDE)
+    PATTERN ".staged" EXCLUDE PATTERN "${CEF_HELPER_NAME}" EXCLUDE)

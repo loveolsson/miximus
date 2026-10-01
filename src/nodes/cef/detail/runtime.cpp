@@ -74,7 +74,9 @@ struct runtime_s::state_s
     std::thread::id                   owner               = std::this_thread::get_id();
 };
 
-runtime_s::runtime_s(const std::filesystem::path& runtime_directory, const std::filesystem::path& profile_directory)
+runtime_s::runtime_s(const std::filesystem::path& runtime_directory,
+                     const std::filesystem::path& profile_directory,
+                     bool                         disable_sandbox)
     : state_(std::make_unique<state_s>())
 {
     const auto runtime = std::filesystem::canonical(runtime_directory);
@@ -82,7 +84,7 @@ runtime_s::runtime_s(const std::filesystem::path& runtime_directory, const std::
     std::filesystem::create_directories(profile);
     cef_wrapper::load_runtime(runtime);
     CefSettings settings;
-    settings.no_sandbox                   = 1;
+    settings.no_sandbox                   = static_cast<int>(disable_sandbox);
     settings.multi_threaded_message_loop  = 1;
     settings.windowless_rendering_enabled = 1;
     settings.command_line_args_disabled   = 1;

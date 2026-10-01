@@ -30,7 +30,9 @@ elapsed-time advance from the supplied timestamp. These are separate from the ap
 
 The initial checks below used a launcher/shared-library arrangement. That arrangement has been removed:
 Miximus is again an ordinary CMake executable, with a separate CMake-built `miximus_cef_helper` for Chromium
-subprocesses on Linux and Windows. CEF sandboxing is explicitly disabled on both platforms. The original
+subprocesses on Linux and Windows. That checkpoint disabled CEF sandboxing on both platforms. The review follow-up
+restores Linux sandboxing by default, with `--disable-cef-sandbox` as an explicit opt-out; Windows remains unsandboxed.
+The original
 Windows `wmain` is restored; no application DLL, renamed main, CEF bootstrap, or Linux launcher remains.
 Linux retains direct libcef linkage, the isolated `cef-link` search path and signal restoration.
 Linux runtime verification remains pending.

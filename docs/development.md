@@ -113,11 +113,18 @@ under a debugger or another environment that uses `ptrace`; leave leak detection
 Run:
 
 ```bash
-./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda]
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda] [--disable-cef-sandbox]
 ```
 
 Host transfers use Vulkan staging by default. `--use-cuda` enables CUDA only after all startup checks pass; see [CUDA
 transfers and benchmarking](cuda-transfers.md).
+
+CEF sandboxing is enabled by default on Linux; `--disable-cef-sandbox` opts out for that run.
+Before the first CEF-enabled Linux launch, follow the
+[Linux sandbox setup](../src/wrapper/cef/README.md#linux-sandbox-setup). Restricted user namespaces require host
+configuration; copying the SDK's `chrome-sandbox` alone does not provide a usable setuid sandbox.
+Windows always disables the sandbox because Miximus uses an ordinary executable/helper layout rather than
+CEF's sandbox bootstrap. The flag has no additional effect there.
 
 The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the
 given positive number of seconds and is useful for repeatable runtime and sanitizer checks.

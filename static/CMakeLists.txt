@@ -9,16 +9,6 @@ add_library(static_files SHARED
   include/static_files/files.hpp
 )
 
-if(WIN32)
-  # Web-only changes do not relink miximus when the DLL exports are unchanged.
-  # Refresh its runtime copy whenever the embedded assets are rebuilt.
-  add_custom_command(TARGET static_files POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_FILE:static_files> $<TARGET_FILE_DIR:miximus>
-    VERBATIM
-  )
-endif()
-
 # Validated shader binaries use the same bundler and file API as other assets.
 foreach(shader IN ITEMS quad.vert texture.frag unpack_v210.comp pack_v210.comp mix.frag)
   miximus_compile_shader(static_files "${PROJECT_SOURCE_DIR}/shaders/${shader}")

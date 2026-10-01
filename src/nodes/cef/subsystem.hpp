@@ -8,6 +8,11 @@
 
 namespace miximus::nodes::cef {
 
+struct runtime_options_s
+{
+    bool disable_sandbox{};
+};
+
 // A node's request owns no SDK work. Destruction schedules retirement without
 // waiting; release acquired sessions and frame leases before destroying it.
 class session_request_s
@@ -35,11 +40,12 @@ class subsystem_s
     std::unique_ptr<impl_s> impl_;
 
   public:
-    subsystem_s(gpu::device_s& device, const std::filesystem::path& profile_directory);
+    subsystem_s(gpu::device_s& device, const std::filesystem::path& profile_directory, runtime_options_s options = {});
     // Explicit runtime location for isolated hardware probes.
     subsystem_s(gpu::device_s&               device,
                 const std::filesystem::path& profile_directory,
-                const std::filesystem::path& runtime_directory);
+                const std::filesystem::path& runtime_directory,
+                runtime_options_s            options = {});
     // Asynchronous shared HTTP-cache eviction. False means already pending.
     bool clear_http_cache();
     bool cache_clear_pending() const;

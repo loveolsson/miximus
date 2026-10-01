@@ -26,6 +26,7 @@ program_options::options_description make_options_description()
     add_option("log-debug", "Enable debug logging");
     add_option("log-trace", "Enable trace logging");
     add_option("use-cuda", "Enable CUDA transfers if startup checks pass (default: Vulkan staging)");
+    add_option("disable-cef-sandbox", "Disable the CEF sandbox on Linux (always disabled on Windows)");
     if constexpr (std::same_as<typename String::value_type, wchar_t>) {
         add_option("settings", program_options::wvalue<String>(), "Path to the settings file");
     } else {
@@ -66,9 +67,10 @@ command_line_options_s parse_command_line_options_impl(int argc, Character** arg
     }
 
     // Use the map API exported by Boost DLLs built with pre-C++20 defaults.
-    const auto has_option = [&values](const char* name) { return values.count(name) != 0; };
-    result.show_help      = has_option("help");
-    result.use_cuda       = has_option("use-cuda");
+    const auto has_option      = [&values](const char* name) { return values.count(name) != 0; };
+    result.show_help           = has_option("help");
+    result.use_cuda            = has_option("use-cuda");
+    result.disable_cef_sandbox = has_option("disable-cef-sandbox");
 
     if (has_option("log-debug") && has_option("log-trace")) {
         throw_invalid_option("--log-debug and --log-trace cannot be used together");

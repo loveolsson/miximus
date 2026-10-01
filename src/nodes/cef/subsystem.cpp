@@ -93,9 +93,12 @@ struct subsystem_s::impl_s
     // the node request and its queued allocation/retirement work have ended.
     std::vector<std::weak_ptr<session_request_s::state_s>> requests;
 
-    impl_s(gpu::device_s& gpu, const std::filesystem::path& profile, const std::filesystem::path& directory)
+    impl_s(gpu::device_s&               gpu,
+           const std::filesystem::path& profile,
+           const std::filesystem::path& directory,
+           bool                         disable_sandbox)
         : device(gpu)
-        , runtime(qualified_runtime(gpu, directory), profile)
+        , runtime(qualified_runtime(gpu, directory), profile, disable_sandbox)
     {
     }
 
@@ -147,15 +150,16 @@ std::string session_request_s::error() const
     return state_->failure;
 }
 
-subsystem_s::subsystem_s(gpu::device_s& device, const std::filesystem::path& profile)
-    : subsystem_s(device, profile, cef_wrapper::runtime_directory())
+subsystem_s::subsystem_s(gpu::device_s& device, const std::filesystem::path& profile, runtime_options_s options)
+    : subsystem_s(device, profile, cef_wrapper::runtime_directory(), options)
 {
 }
 
 subsystem_s::subsystem_s(gpu::device_s&               device,
                          const std::filesystem::path& profile,
-                         const std::filesystem::path& directory)
-    : impl_(std::make_unique<impl_s>(device, profile, directory))
+                         const std::filesystem::path& directory,
+                         runtime_options_s            options)
+    : impl_(std::make_unique<impl_s>(device, profile, directory, options.disable_sandbox))
 {
 }
 

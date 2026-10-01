@@ -15,7 +15,9 @@ CEF-enabled application builds require the current `source-build.json` revision,
 A missing or outdated SDK is a configure error; `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=ON` is only for diagnostic probes.
 
 Miximus and `miximus_cef_helper` are ordinary executables built by this project's CMake on both platforms.
-CEF sandboxing is disabled (`CefSettings.no_sandbox = 1`); the helper handles Chromium child processes only.
+CEF sandboxing is disabled on Windows because the ordinary executable/helper layout does not use the required
+sandbox bootstrap. Linux enables sandboxing by default; `--disable-cef-sandbox` explicitly disables it.
+The flag has no additional effect on Windows. The helper handles Chromium child processes only.
 Select `miximus` as the IDE launch target. The main program retains its normal entry point and is not built by CEF.
 
 CEF runtime files and the helper are staged under `build/cef`. Linux retains direct libcef linkage and `cef-link`
@@ -30,10 +32,58 @@ python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no
 cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
   -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11"
 cmake --build build -j
+# Complete the Linux sandbox setup below before the first launch.
 ./build/miximus
 ```
 
 The manual four-input page is `http://127.0.0.1:7351/cef-inputs.html`.
+
+### Linux sandbox setup
+
+Run Miximus as an ordinary user. The default sandbox requires permission to create unprivileged user namespaces
+or an administrator-installed setuid sandbox. CMake copies `chrome-sandbox` as an ordinary SDK artifact; it does
+not install it with root ownership and mode `4755`. When neither sandbox is usable, Chromium can abort the entire
+process during initialization, rather than return a recoverable browser-node error.
+
+For Ubuntu systems with AppArmor user-namespace restrictions, use a profile scoped to the actual Miximus executables.
+The following adapts [Chromium's AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
+Have an administrator save this as `/etc/apparmor.d/miximus-dev`, replacing `/home/USER/Projects/miximus/build`
+with the absolute build directory (resolve any symlinks first):
+
+```text
+abi <abi/4.0>,
+include <tunables/global>
+
+profile miximus-dev "/home/USER/Projects/miximus/build/miximus" flags=(unconfined) {
+  userns,
+}
+
+profile miximus-cef-helper-dev "/home/USER/Projects/miximus/build/cef/miximus_cef_helper" flags=(unconfined) {
+  userns,
+}
+```
+
+Load it with `sudo apparmor_parser -r /etc/apparmor.d/miximus-dev`. Update the paths when moving the build or
+running an installed copy. Only grant this exception to trusted executables: replacing either binary also replaces
+the code receiving the namespace permission. Standalone CEF probes need their own executable-path entries.
+This addresses AppArmor restrictions; kernel or container policies that disable user namespaces need separate
+administrator configuration. A setuid installation is an alternative described in
+[Chromium's SUID sandbox guide](https://chromium.googlesource.com/chromium/src/+/main/docs/linux/suid_sandbox_development.md).
+
+If host configuration is unavailable, `--disable-cef-sandbox` is an explicit diagnostic opt-out for trusted local
+content. It disables Chromium sandbox isolation for that run; Miximus never automatically falls back to it.
+
+On a Linux desktop with the qualified SDK and GPU, check both startup paths using separate scratch settings:
+
+```sh
+./build/miximus --settings "$PWD/build/sandbox-check.json" --stop-after 5
+./build/miximus --settings "$PWD/build/unsandboxed-check.json" --stop-after 5 --disable-cef-sandbox
+```
+
+Require successful CEF initialization and graceful shutdown in both runs; exit code zero alone is insufficient
+because Miximus can continue after a recoverable CEF initialization failure. Also exercise browser rendering and
+the CEF hardware probes using the validation setup in the development guide. These Linux checks remain pending;
+the Windows results do not validate namespace permissions or sandboxed Linux subprocesses.
 
 ## Approved source build
 
@@ -102,7 +152,8 @@ The separately listed `test_patches` entry updates Chromium's `MockDisplayClient
 `CreateLayeredWindowUpdater` declaration introduced by CEF's existing `viz_osr_2575` patch. This local compatibility
 patch is applied only by the test stage and changes no production code.
 The test patches also register native media-source tests and update a navigation-throttle mock.
-Source licenses and upstream attribution are retained. Miximus disables CEF sandboxing on all supported platforms. Replace the custom build only after a stock stable SDK contains the
+Source licenses and upstream attribution are retained. Windows CEF sandboxing remains disabled; Linux enables it
+unless `--disable-cef-sandbox` is supplied. Replace the custom build only after a stock stable SDK contains the
 allocation/capture fixes and provides a qualified producer-completion contract for the native-handle callback.
 
 Use a disk-backed directory with sufficient space for Chromium, its toolchain, dependencies and build outputs.

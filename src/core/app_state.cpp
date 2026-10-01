@@ -131,7 +131,10 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     try {
         auto profile = command_line_options_.settings_path;
         profile += ".cef";
-        cef_subsystem_ = std::make_shared<nodes::cef::subsystem_s>(*gpu_, profile);
+        cef_subsystem_ = std::make_shared<nodes::cef::subsystem_s>(
+            *gpu_,
+            profile,
+            nodes::cef::runtime_options_s{.disable_sandbox = command_line_options_.disable_cef_sandbox});
         cef_error_.clear();
     } catch (const std::exception& failure) {
         cef_error_ = failure.what();

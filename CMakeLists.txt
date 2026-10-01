@@ -92,14 +92,17 @@ endif()
 
 function(miximus_stage_runtime_dlls runtime_target)
   if(WIN32)
-    # Stage linked project/SDK DLLs before POST_BUILD GoogleTest discovery.
-    # vcpkg additionally stages transitive DLL imports from its installed tree.
-    add_custom_command(TARGET ${runtime_target} PRE_LINK
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:${runtime_target}> $<TARGET_FILE_DIR:${runtime_target}>
-        COMMAND_EXPAND_LISTS
+    # Refresh DLLs even when their import libraries do not change and the
+    # executable does not relink. Also run before GoogleTest discovery.
+    add_custom_target(${runtime_target}_runtime_dlls
+        COMMAND ${CMAKE_COMMAND}
+            "-DRUNTIME_DLLS=$<TARGET_RUNTIME_DLLS:${runtime_target}>"
+            "-DRUNTIME_DIRECTORY=$<TARGET_FILE_DIR:${runtime_target}>"
+            -P "${PROJECT_SOURCE_DIR}/cmake/stage_runtime_dlls.cmake"
+        DEPENDS $<TARGET_RUNTIME_DLLS:${runtime_target}>
         VERBATIM
     )
+    add_dependencies(${runtime_target} ${runtime_target}_runtime_dlls)
   endif()
 endfunction()
 
