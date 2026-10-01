@@ -189,6 +189,37 @@ TEST(Surface, Rec709CutoffsAgreeWithShaderFormulaWithinRoundingPrecision)
     EXPECT_EQ(quantize(1.0F), 255);
 }
 
+TEST(Surface, ZonePlateMirrorsOddEvenAndSinglePixelDimensions)
+{
+    constexpr std::array dimensions_list{
+        gpu::vec2i_t{1, 1},
+        gpu::vec2i_t{1, 7},
+        gpu::vec2i_t{8, 1},
+        gpu::vec2i_t{7, 5},
+        gpu::vec2i_t{8, 6},
+        gpu::vec2i_t{7, 6},
+        gpu::vec2i_t{8, 5}
+    };
+    for (const auto dimensions : dimensions_list) {
+        const auto           width  = static_cast<size_t>(dimensions.x);
+        const auto           height = static_cast<size_t>(dimensions.y);
+        std::vector<pixel_t> pixels(width * height);
+        render::surface_s    surface(dimensions, pixels);
+        render::render_test_pattern(surface, render::test_pattern_e::zone_plate);
+        bool symmetric = true;
+        bool opaque    = true;
+        for (size_t i = 0; i < pixels.size(); ++i) {
+            const size_t x = i % width;
+            const size_t y = i / width;
+            symmetric      = symmetric && pixels[i] == pixels[(y * width) + width - 1 - x] &&
+                        pixels[i] == pixels[((height - 1 - y) * width) + x];
+            opaque = opaque && pixels[i].a == 255;
+        }
+        EXPECT_TRUE(symmetric);
+        EXPECT_TRUE(opaque);
+    }
+}
+
 TEST(Surface, ZonePlateMatchesContinuousReferenceWithinRoundingPrecision)
 {
     constexpr gpu::vec2i_t dimensions{1920, 1080};

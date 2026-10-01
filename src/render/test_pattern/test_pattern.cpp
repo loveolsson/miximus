@@ -215,15 +215,23 @@ void draw_zone_plate(surface_s* surface)
     const double scale_x = 2.0 / dimensions.x;
     const double scale_y = 2.0 / dimensions.y;
     const auto   pixels  = surface->pixels();
-    for (int y = 0; y < dimensions.y; ++y) {
-        const double ny = ((y + 0.5) * scale_y) - 1.0;
-        for (int x = 0; x < dimensions.x; ++x) {
-            const double nx      = ((x + 0.5) * scale_x) - 1.0;
+    const auto   width   = static_cast<size_t>(dimensions.x);
+    const auto   height  = static_cast<size_t>(dimensions.y);
+    // Pixel centers are symmetric about both axes. Compute one quadrant,
+    // mirror each row horizontally, then copy it to the opposite row.
+    for (size_t y = 0; y < (height + 1) / 2; ++y) {
+        const double ny  = ((static_cast<double>(y) + 0.5) * scale_y) - 1.0;
+        const auto   row = pixels.subspan(y * width, width);
+        for (size_t x = 0; x < (width + 1) / 2; ++x) {
+            const double nx      = ((static_cast<double>(x) + 0.5) * scale_x) - 1.0;
             const double phase   = (nx * nx + ny * ny) * std::min(dimensions.x, dimensions.y) * std::numbers::pi;
             const double encoded = (std::cos(phase) * 0.5) + 0.5;
             const auto   value   = quantize(static_cast<float>(encoded));
-            pixels[(static_cast<size_t>(y) * static_cast<size_t>(dimensions.x)) + static_cast<size_t>(x)] = {
-                .r = value, .g = value, .b = value, .a = 255};
+            row[x] = row[width - 1 - x] = {.r = value, .g = value, .b = value, .a = 255};
+        }
+        const size_t opposite_y = height - 1 - y;
+        if (opposite_y != y) {
+            std::ranges::copy(row, pixels.subspan(opposite_y * width, width).begin());
         }
     }
 }
