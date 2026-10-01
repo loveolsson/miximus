@@ -2,6 +2,7 @@
 
 #include "detail/device_monitor.hpp"
 #include "logger/logger.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
@@ -230,8 +231,7 @@ decklink_registry_s::decklink_registry_s()
             }
 
         } catch (...) {
-            logger::log_error_noexcept("decklink", "DeckLink statistics worker failed");
-            std::terminate();
+            utils::request_failure_shutdown("DeckLink statistics worker failed");
         }
     });
 }

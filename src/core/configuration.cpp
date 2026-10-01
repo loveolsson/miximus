@@ -6,6 +6,7 @@
 #include "nodes/node.hpp"
 #include "nodes/system/register.hpp"
 #include "types/connection.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/lookup.hpp"
 #include "utils/string_map.hpp"
@@ -239,10 +240,8 @@ void configuration_s::load_file(const std::filesystem::path& path)
     load(std::move(config));
 }
 
-json configuration_s::serialize(bool include_status) const
+json configuration_s::serialize_graph_locked() const
 {
-    std::unique_lock lock(node_manager_.nodes_mutex_);
-
     auto nodes       = json::array();
     auto connections = json::array();
 
@@ -259,16 +258,20 @@ json configuration_s::serialize(bool include_status) const
         connections.emplace_back(connection);
     }
 
-    // Status snapshots belong to this configuration executor; copying their
-    // catalogues must not hold the graph lock needed at the next render frame.
-    lock.unlock();
-
     json result{
         {"schema_version", SCHEMA_VERSION        },
         {"nodes",          std::move(nodes)      },
         {"connections",    std::move(connections)},
     };
 
+    return result;
+}
+
+json configuration_s::serialize(bool include_status) const
+{
+    std::unique_lock lock(node_manager_.nodes_mutex_);
+    auto             result = serialize_graph_locked();
+    lock.unlock();
     if (include_status) {
         result["status"] =
             node_manager_.status_registry_ != nullptr ? node_manager_.status_registry_->get_all() : json::object();
@@ -309,20 +312,19 @@ std::optional<json> configuration_s::get_node_status(std::string_view id) const
     return node_manager_.status_registry_ != nullptr ? node_manager_.status_registry_->get(id) : json::object();
 }
 
+void configuration_s::enable_recovery(const std::filesystem::path& path)
+{
+    const std::unique_lock lock(node_manager_.nodes_mutex_);
+    node_manager_.configuration_changed_ = [manager = &node_manager_, path] {
+        const configuration_s config(*manager);
+        utils::publish_recovery_settings(path, config.serialize_graph_locked().dump(2));
+    };
+    node_manager_.checkpoint_configuration_locked();
+}
+
 void configuration_s::save_file(const std::filesystem::path& path) const
 {
-    auto log = getlog("app");
-    log->info("Writing settings to {}", utils::path_to_utf8(path));
-
-    std::ofstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error(std::format("Failed to open settings file {} for writing", utils::path_to_utf8(path)));
-    }
-
-    file << std::setfill(' ') << std::setw(2) << get_config();
-    if (!file) {
-        throw std::runtime_error(std::format("Failed to write settings file {}", utils::path_to_utf8(path)));
-    }
+    utils::write_settings_atomically({.path = path, .contents = get_config().dump(2)});
 }
 
 } // namespace miximus::core

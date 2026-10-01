@@ -68,7 +68,8 @@ recording_context_state_s::~recording_context_state_s()
 
 std::unique_ptr<recording_state_s> recording_context_state_s::try_record()
 {
-    if (owner->submissions.submission_failed.load() || owner->submissions.stopping.load()) {
+    if (utils::failure_shutdown_requested() || owner->submissions.submission_failed.load() ||
+        owner->submissions.stopping.load()) {
         throw std::runtime_error("GPU submission service is unavailable");
     }
 
@@ -313,7 +314,7 @@ void submit_recording(device_state_s& device, recording_state_s& recording)
     } catch (const std::exception& error) {
         recording.submission->failed.store(true);
         device.submissions.submission_failed.store(true);
-        fatal_gpu_error(std::format("GPU submission failed: {}", error.what()));
+        fatal_gpu_error("GPU submission failed", error.what());
     }
 }
 
@@ -358,7 +359,7 @@ void submission_engine_s::run()
             uint64_t   completed{};
             const auto result = owner.vk.vkGetSemaphoreCounterValue(owner.device, timeline, &completed);
             if (result != VK_SUCCESS) {
-                fatal_gpu_error(std::format("GPU completion query failed: Vulkan result {}", static_cast<int>(result)));
+                fatal_gpu_error("GPU completion query failed");
             } else {
                 std::erase_if(in_flight, [completed](const auto& record) {
                     return record->submission->value.load() <= completed;

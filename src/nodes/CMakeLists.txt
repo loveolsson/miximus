@@ -48,6 +48,7 @@ PRIVATE
     media
     miximus_types
     logger
+    shutdown_watchdog
     Boost::fiber
     magic_enum::magic_enum
 PUBLIC

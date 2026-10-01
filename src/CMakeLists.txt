@@ -32,6 +32,10 @@ PRIVATE
     magic_enum::magic_enum
 )
 
+if(BUILD_TESTING)
+    target_compile_definitions(miximus PRIVATE MIXIMUS_ENABLE_FAILURE_TESTS=1)
+endif()
+
 add_sanitizers(miximus)
 miximus_stage_runtime_dlls(miximus)
 

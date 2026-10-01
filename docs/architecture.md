@@ -160,8 +160,10 @@ status is added only to client snapshots and is not written to disk.
 Unversioned documents and nodes are the version 1 baseline. When a node schema changes, its registered transitions migrate the options JSON in place. Connections replay the output-interface migrations for their source node and the input-interface migrations for their destination node over the same version range. Migration completes before the existing node and connection construction paths are called; any missing transition or construction error aborts startup.
 
 `main.cpp` loads settings before installing adapters so the initial import does not broadcast mutation events. On
-shutdown it removes adapters, saves the authoritative graph, and clears nodes on the render thread before draining media
-and GPU services.
+shutdown it removes adapters, freezes the cached authoritative graph, and clears nodes on the render thread before
+draining media and GPU services. Successful teardown atomically saves the retained snapshot to the normal settings
+file. Detected failures instead trigger an independent writer of uniquely named recovery files; it uses snapshots
+published after validated configuration mutations and does not need the render or configuration thread to respond.
 
 ## WebSocket and web-client synchronization
 

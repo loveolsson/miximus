@@ -4,6 +4,7 @@
 #include "detail/recording.hpp"
 #include "detail/resource.hpp"
 #include "logger/logger.hpp"
+#include "utils/failure_shutdown.hpp"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -695,15 +696,14 @@ struct presenter_state_s
             }
             last_copy_lease.reset();
         } catch (const std::exception& error) {
-            logger::log_error_noexcept("gpu", "Vulkan presentation retirement failed: {}", error.what());
-            std::terminate(); // Outstanding WSI uses cannot be destroyed safely.
+            utils::fail_without_unwinding("Failed to retire Vulkan presentation resources",
+                                          error.what()); // Outstanding WSI uses cannot be destroyed safely.
         }
 
         const std::scoped_lock guard(mutex);
         counters.stopped = true;
     } catch (...) {
-        logger::log_error_noexcept("gpu", "Vulkan presenter failed while reporting or retiring an error");
-        std::terminate();
+        utils::fail_without_unwinding("Vulkan presenter failed while reporting or retiring an error");
     }
 };
 } // namespace miximus::gpu::detail

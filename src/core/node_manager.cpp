@@ -11,6 +11,7 @@
 #include "nodes/node.hpp"
 #include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/flicks.hpp"
 #include "web_server/server.hpp"
 
@@ -190,6 +191,9 @@ error_e node_manager_s::handle_add_node_locked(std::string_view                 
                                                const json&                         options,
                                                const std::optional<origin_info_s>& origin)
 {
+    if (utils::failure_shutdown_requested()) {
+        return error_e::cancelled;
+    }
     _log()->info("Creating {} node with id {}", type, id);
 
     const bool is_settings_id   = id == nodes::system::SETTINGS_NODE_ID;
@@ -236,6 +240,7 @@ error_e node_manager_s::handle_add_node_locked(std::string_view                 
     assert(inserted);
     pending_nodes_.try_emplace(id_str);
 
+    checkpoint_configuration_locked();
     for (auto& adapter : adapters_) {
         adapter->emit_add_node(type, id, node_it->second.state.options, origin);
     }
@@ -248,6 +253,9 @@ error_e node_manager_s::handle_remove_node(std::string_view id, const std::optio
     std::deque<node_actions_s::request_s> cancelled;
     std::unique_lock                      lock(nodes_mutex_);
 
+    if (utils::failure_shutdown_requested()) {
+        return error_e::cancelled;
+    }
     if (id == nodes::system::SETTINGS_NODE_ID) {
         return error_e::invalid_type;
     }
@@ -288,6 +296,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, const std::optio
         pending_nodes_.erase(pending);
     }
     nodes_.erase(node_it);
+    checkpoint_configuration_locked();
     lock.unlock();
     for (auto& action : cancelled) {
         action.fail(error_e::not_found, "Target node was removed before frame delivery");
@@ -307,6 +316,9 @@ error_e node_manager_s::handle_add_connection(connection_s con, const std::optio
 {
     using dir_e = nodes::interface_i::dir_e;
     const std::unique_lock lock(nodes_mutex_);
+    if (utils::failure_shutdown_requested()) {
+        return error_e::cancelled;
+    }
 
     _log()->info(
         "Adding connection between {}:{}, {}:{}", con.from_node, con.from_interface, con.to_node, con.to_interface);
@@ -378,6 +390,7 @@ error_e node_manager_s::handle_add_connection(connection_s con, const std::optio
         remove_connection_locked(rcon, origin);
     }
 
+    checkpoint_configuration_locked();
     for (auto& adapter : adapters_) {
         adapter->emit_add_connection(con, origin);
     }
@@ -428,6 +441,7 @@ error_e node_manager_s::remove_connection_locked(const connection_s& con, const 
     }
 
     connections_.erase(con_it);
+    checkpoint_configuration_locked();
 
     pending_nodes_.try_emplace(con.from_node);
     pending_nodes_.try_emplace(con.to_node);
@@ -438,6 +452,9 @@ error_e node_manager_s::remove_connection_locked(const connection_s& con, const 
 error_e node_manager_s::handle_remove_connection(const connection_s& con, const std::optional<origin_info_s>& origin)
 {
     const std::unique_lock lock(nodes_mutex_);
+    if (utils::failure_shutdown_requested()) {
+        return error_e::cancelled;
+    }
     return remove_connection_locked(con, origin);
 }
 
@@ -539,6 +556,9 @@ void node_manager_s::admit_action_locked(app_state_s*                        app
 void node_manager_s::emit_option_updates_locked(const update_notices_t&             notices,
                                                 const std::optional<origin_info_s>& origin)
 {
+    if (!notices.empty()) {
+        checkpoint_configuration_locked();
+    }
     for (const auto& [id, notice] : notices) {
         for (auto& adapter : adapters_) {
             // Action-derived values must also reach their requesting editor;
@@ -593,7 +613,7 @@ nodes::set_options_result_s node_manager_s::handle_control_batch(app_state_s*   
     nodes::set_options_result_s result{};
     {
         const std::unique_lock lock(nodes_mutex_);
-        if (actions_closed_) {
+        if (actions_closed_ || utils::failure_shutdown_requested()) {
             return reject({.error = error_e::cancelled, .has_corrected_values = false});
         }
         utils::unordered_string_map_t<json> candidates;
@@ -687,8 +707,7 @@ node_manager_s::~node_manager_s()
     try {
         close_actions();
     } catch (...) {
-        logger::log_error_noexcept("app", "Failed to close node actions during shutdown");
-        std::terminate();
+        utils::fail_without_unwinding("Failed to close node actions during shutdown");
     }
 }
 
@@ -723,6 +742,13 @@ void node_manager_s::add_adapter(std::unique_ptr<adapter_i>&& adapter)
     const std::unique_lock lock(nodes_mutex_);
     if (adapter) {
         adapters_.emplace_back(std::move(adapter));
+    }
+}
+
+void node_manager_s::checkpoint_configuration_locked()
+{
+    if (configuration_changed_) {
+        configuration_changed_();
     }
 }
 

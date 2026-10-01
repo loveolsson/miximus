@@ -475,16 +475,39 @@ same request. Console handlers must not save configuration or destroy applicatio
 Shutdown order is deliberate:
 
 1. Stop the web server and clear adapters.
-2. Save authoritative settings.
+2. Freeze the cached authoritative settings snapshot before destroying the graph.
 3. Abort pending recordings and clear nodes on the render thread.
 4. Uninstall device discovery and drain DeckLink/NDI control workers and SDK leases.
 5. Drain transfer services and retire GPU resources/device.
 6. Destroy GLFW windows, terminate GLFW, and stop/join application service threads.
+7. Only after successful teardown, atomically replace the normal settings file from the retained snapshot.
 
 `web_server` is declared after `app_state_s`, so it is destroyed first; websocketpp retains a raw pointer to the app's
 Asio executor. A no-progress watchdog forces exit if teardown hangs in any build configuration, using a ten-second
 deadline normally and a 60-second deadline under sanitizers. Each completed shutdown step resets its deadline, so
 cumulative SDK and network teardown time is not treated as a lockup.
+The monitor and recovery worker start before application/SDK initialization and remain available while the application
+runs. `request_failure_shutdown()` records the first failure and asks the main loop to shut down with a failure status.
+`fail_without_unwinding()` additionally parks the calling thread when unwinding could free live SDK/GPU resources;
+blocked joins remain bounded by the watchdog. The application's terminate handler uses this same non-unwinding path.
+Normal signal handlers only request shutdown and never perform file I/O.
+
+After configuration loading succeeds, accepted graph mutations publish an owned, serialized recovery snapshot.
+Recovery never takes graph/SDK locks or accesses destroyed application objects. An independent worker writes that
+snapshot on failure, before diagnostic logging, to `settings.json.recovery-<time>-<pid>-<sequence>.json` alongside the
+configured file. Creation and publication are exclusive; previous settings and recovery files are never overwritten.
+An unrecoverable error permanently disables normal settings saves for the rest of the process, even if every
+subsystem subsequently shuts down successfully. Recovery reports the dump destination on stderr.
+If the configured directory is unavailable, recovery tries the system temporary directory. Incomplete writes retain a
+`.partial` suffix. Failed initial configuration loads never publish a partially loaded graph. Recovery uses the last
+successfully published snapshot if a mutation fails before checkpointing.
+
+If shutdown times out without an earlier reported failure, the watchdog requests recovery and allows one final second
+for the independent writer before `_Exit(EXIT_FAILURE)`. It never waits on filesystem or logger locks. Saving remains
+best-effort under storage failure, memory corruption, OS termination, or loss of power; native signals such as SIGSEGV
+are not converted into C++ recovery. Render-loop exceptions are caught before configuration objects unwind. A normal
+save serializes before touching disk, flushes a unique temporary file, and replaces the original only on success.
+
 Completion reports are limited to large application-subsystem boundaries, with no more than ten across the application.
 Each boundary is announced before teardown starts and logged again when complete, allowing a timeout to identify the
 subsystem currently stalled.
@@ -496,3 +519,14 @@ of the subsystem whose completed shutdown is being monitored. Do not casually re
 Use the [node action contract](node-actions.md) for transient controls such as browser reload. Add an action handler
 to the native node and a `NodeActionInterface` or custom web control; action names and payload schemas belong to the
 node, not a central enum. Run `npm test` in `web/` when changing WebSocket reply handling.
+
+### Failure-shutdown regression
+
+With a display session and a build configured with `BUILD_TESTING=ON`, run
+`python3 scripts/test_failure_shutdown.py build/miximus`. It refuses to run alongside an existing server,
+uses private temporary settings, and checks normal shutdown, malformed settings, a render-thread exception,
+a configuration-worker exception, a teardown exception, and a main thread that cannot safely unwind. Failure cases must leave the
+original file byte-for-byte unchanged; initialized graphs must produce a separate valid recovery file.
+The last case deliberately waits for the watchdog. Logs and files are retained in the printed temporary directory.
+`MIXIMUS_TEST_SHUTDOWN_FAILURE` is an explicit test hook (`render`, `configuration`, `shutdown`, or `park`), compiled out
+when `BUILD_TESTING=OFF`; it is not a runtime recovery setting.

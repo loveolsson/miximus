@@ -6,11 +6,13 @@
 #include "core/frame_scheduler.hpp"
 #include "core/node_manager.hpp"
 #include "core/node_status_registry.hpp"
+#include "core/test_instrumentation/failure_shutdown.hpp"
 #include "core/test_instrumentation/render_thread_delay.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
 #include "types/node_status_json.hpp"
 #include "types/web_message_json.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"
 #include "utils/shutdown_signal.hpp"
@@ -29,6 +31,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 using namespace miximus;
 using namespace std::chrono_literals;
@@ -47,10 +50,24 @@ struct exception_shutdown_guard_s
     ~exception_shutdown_guard_s()
     {
         if (std::uncaught_exceptions() != 0) {
-            utils::start_shutdown_watchdog();
+            utils::request_failure_shutdown("Exception during application shutdown");
         }
     }
 };
+
+template <typename Work>
+void shutdown_step(std::string name, Work&& work) noexcept
+{
+    try {
+        utils::begin_shutdown_step(std::move(name));
+        std::forward<Work>(work)();
+        utils::report_shutdown_step_completed();
+    } catch (const std::exception& error) {
+        utils::request_failure_shutdown(error.what());
+    } catch (...) {
+        utils::request_failure_shutdown("Unhandled exception during a shutdown step");
+    }
+}
 
 void publish_scheduler_status(core::app_state_s*                     app,
                               const core::node_status_handle_s&      status_handle,
@@ -90,6 +107,8 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
         return EXIT_SUCCESS;
     }
 
+    utils::initialize_shutdown_monitor();
+    utils::start_shutdown_watchdog(60s);
     logger::init_loggers(command_line_options.log_level);
     getlog("app")->info("Process ID: {}", utils::process_id());
     utils::set_max_thread_priority();
@@ -108,93 +127,119 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
             // websocketpp endpoint holds a raw pointer to cfg_executor_ and must
             // not outlive it.
             auto web_server = web_server::create_web_server();
-            web_server->start(HTTP_PORT, app.cfg_executor());
 
             core::node_manager_s             node_manager(app.status_registry());
             core::configuration_s            configuration(node_manager);
             const exception_shutdown_guard_s exception_shutdown_guard;
-            configuration.load_file(app.command_line_options().settings_path);
-
-            app.status_registry()->set_callback(
-                [server = std::weak_ptr<web_server::server_s>(web_server)](const auto& updates) {
-                    if (const auto endpoint = server.lock()) {
-                        for (const auto& update : updates) {
-                            endpoint->broadcast_message(web_message::node_status_command_s{
-                                .id     = update.node_id,
-                                .status = update.status,
-                            });
+            try {
+                web_server->start(HTTP_PORT, app.cfg_executor());
+                configuration.load_file(app.command_line_options().settings_path);
+                configuration.enable_recovery(app.command_line_options().settings_path);
+                app.status_registry()->set_callback(
+                    [server = std::weak_ptr<web_server::server_s>(web_server)](const auto& updates) {
+                        if (const auto endpoint = server.lock()) {
+                            for (const auto& update : updates) {
+                                endpoint->broadcast_message(web_message::node_status_command_s{
+                                    .id     = update.node_id,
+                                    .status = update.status,
+                                });
+                            }
                         }
-                    }
+                    });
+
+                // Set up web server config getters
+                web_server->set_config_getters({
+                    .node_config   = std::bind_front(&core::configuration_s::get_snapshot, &configuration),
+                    .node_statuses = [status_registry = app.status_registry()] { return status_registry->get_all(); },
+                    .node          = std::bind_front(&core::configuration_s::get_node, &configuration),
+                    .node_status   = std::bind_front(&core::configuration_s::get_node_status, &configuration),
                 });
 
-            // Set up web server config getters
-            web_server->set_config_getters({
-                .node_config   = std::bind_front(&core::configuration_s::get_snapshot, &configuration),
-                .node_statuses = [status_registry = app.status_registry()] { return status_registry->get_all(); },
-                .node          = std::bind_front(&core::configuration_s::get_node, &configuration),
-                .node_status   = std::bind_front(&core::configuration_s::get_node_status, &configuration),
-            });
+                // Add adapters _after_ config is loaded to prevent spam to the adapters during load
+                node_manager.add_adapter(core::create_websocket_adapter(
+                    &app, node_manager, configuration, web_server, *app.font_registry()));
 
-            // Add adapters _after_ config is loaded to prevent spam to the adapters during load
-            node_manager.add_adapter(
-                core::create_websocket_adapter(&app, node_manager, configuration, web_server, *app.font_registry()));
+#ifdef MIXIMUS_ENABLE_FAILURE_TESTS
+                core::test_instrumentation::inject_shutdown_failure(app);
+#endif
 
-            core::steady_clock_source_s                            frame_clock;
-            core::frame_scheduler_s                                frame_scheduler(frame_clock);
-            core::test_instrumentation::render_thread_delay_test_s render_thread_delay_test(app);
+                core::steady_clock_source_s                            frame_clock;
+                core::frame_scheduler_s                                frame_scheduler(frame_clock);
+                core::test_instrumentation::render_thread_delay_test_s render_thread_delay_test(app);
 
-            std::optional<std::chrono::steady_clock::time_point> stop_time;
-            if (app.command_line_options().stop_after.has_value()) {
-                stop_time =
-                    std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                                           *app.command_line_options().stop_after);
-            }
+                std::optional<std::chrono::steady_clock::time_point> stop_time;
+                if (app.command_line_options().stop_after.has_value()) {
+                    stop_time = std::chrono::steady_clock::now() +
+                                std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                    *app.command_line_options().stop_after);
+                }
 
-            while (!utils::shutdown_requested() &&
-                   (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
-                render_thread_delay_test.inject_before_render_frame();
-                node_manager.tick_one_frame(&app, frame_scheduler);
+                while (!utils::shutdown_requested() &&
+                       (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
+                    render_thread_delay_test.inject_before_render_frame();
+                    node_manager.tick_one_frame(&app, frame_scheduler);
 
-                gpu::window_s::poll();
+                    gpu::window_s::poll();
 
-                const auto& metrics = frame_scheduler.finish_frame();
-                publish_scheduler_status(&app, node_manager.settings_status_handle(), frame_scheduler, metrics);
-                render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
-            }
+                    const auto& metrics = frame_scheduler.finish_frame();
+                    publish_scheduler_status(&app, node_manager.settings_status_handle(), frame_scheduler, metrics);
+                    render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
+                }
 
-            if (stop_time.has_value() && !utils::shutdown_requested()) {
-                getlog("app")->info("Stopping after requested runtime");
-            }
+                if (stop_time.has_value() && !utils::shutdown_requested()) {
+                    getlog("app")->info("Stopping after requested runtime");
+                }
 
-            getlog("app")->info("Exiting...");
-            utils::start_shutdown_watchdog();
-            utils::begin_shutdown_step("web subsystem");
-            app.status_registry()->stop();
-            web_server->stop();
-            node_manager.clear_adapters();
-            web_server.reset();
-            utils::report_shutdown_step_completed();
-            utils::begin_shutdown_step("configuration save");
-            try {
-                configuration.save_file(app.command_line_options().settings_path);
             } catch (const std::exception& error) {
-                getlog("app")->error("Failed to save configuration: {}", error.what());
+                utils::request_failure_shutdown(error.what());
+            } catch (...) {
+                utils::request_failure_shutdown("Unhandled application failure");
             }
-            utils::report_shutdown_step_completed();
-            utils::begin_shutdown_step("render graph");
-            node_manager.clear_nodes(&app);
-            utils::report_shutdown_step_completed();
+
+            utils::start_shutdown_watchdog();
+            getlog("app")->info("Exiting...");
+            shutdown_step("web subsystem", [&] {
+                app.status_registry()->stop();
+                web_server->stop();
+                node_manager.clear_adapters();
+            });
+            web_server.reset();
+            // Retain the last complete graph snapshot across all subsystem destruction.
+            // Normal settings are replaced only after every subsystem shuts down successfully.
+            utils::freeze_recovery_settings();
+            shutdown_step("render graph", [&] {
+                node_manager.clear_nodes(&app);
+#ifdef MIXIMUS_ENABLE_FAILURE_TESTS
+                core::test_instrumentation::inject_teardown_failure();
+#endif
+            });
         }
         utils::report_shutdown_step_completed();
-    } catch (std::exception& e) {
-        std::cerr << "Panic: " << e.what() << '\n';
+    } catch (const std::exception& e) {
+        utils::request_failure_shutdown(e.what());
+        exit_code = EXIT_FAILURE;
+    } catch (...) {
+        utils::request_failure_shutdown("Unhandled application shutdown failure");
         exit_code = EXIT_FAILURE;
     }
 
-    utils::finish_shutdown_watchdog();
     getlog("app")->info("Application shutdown complete");
     spdlog::shutdown();
-    return exit_code;
+
+    if (!utils::failure_shutdown_requested()) {
+        try {
+            if (const auto settings = utils::recovery_settings()) {
+                utils::write_settings_atomically(*settings);
+            }
+        } catch (const std::exception& error) {
+            utils::request_failure_shutdown(error.what());
+        }
+    }
+    if (utils::failure_shutdown_requested()) {
+        exit_code = EXIT_FAILURE;
+    }
+    utils::finish_shutdown_watchdog();
+    return utils::failure_shutdown_requested() ? EXIT_FAILURE : exit_code;
 }
 
 } // namespace

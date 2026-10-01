@@ -1,3 +1,4 @@
+#include "failure_shutdown.hpp"
 #include "shutdown_signal.hpp"
 
 #include <Windows.h>
@@ -56,6 +57,9 @@ void install_shutdown_signal_handlers()
     installed = true;
 }
 
-bool shutdown_requested() noexcept { return get_shutdown_request().load(std::memory_order_relaxed); }
+bool shutdown_requested() noexcept
+{
+    return get_shutdown_request().load(std::memory_order_relaxed) || failure_shutdown_requested();
+}
 
 } // namespace miximus::utils

@@ -1,4 +1,5 @@
 #include "runtime_platform.hpp"
+#include "utils/failure_shutdown.hpp"
 
 #include <array>
 #include <csignal>
@@ -34,7 +35,7 @@ class preserved_signals_s
     {
         for (size_t index = 0; index < signals.size(); ++index) {
             if (sigaction(signals.at(index), &actions_.at(index), nullptr) != 0) {
-                std::terminate();
+                utils::fail_without_unwinding("Failed to restore application signal handlers after CEF startup");
             }
         }
     }

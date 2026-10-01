@@ -4,6 +4,7 @@
 #include "nodes/action.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "utils/failure_shutdown.hpp"
 
 #include <boost/asio/io_context.hpp>
 
@@ -266,6 +267,40 @@ struct action_manager_test_s : testing::Test
         return access::config(*manager).at(std::string(id)).state.options.at("value").get<int>();
     }
 };
+
+TEST_F(action_manager_test_s, RecoverySnapshotTracksAcceptedGraphChanges)
+{
+    configuration_s configuration(*manager);
+    configuration.enable_recovery("settings.json");
+    const auto initial = utils::recovery_settings();
+    ASSERT_NE(initial, nullptr);
+    EXPECT_EQ(nlohmann::json::parse(initial->contents), configuration.get_config());
+    ASSERT_EQ(manager
+                  ->handle_update_node("n",
+                                       {
+                                           {"value", 12}
+    })
+                  .error,
+              error_e::no_error);
+    EXPECT_EQ(nlohmann::json::parse(utils::recovery_settings()->contents), configuration.get_config());
+    EXPECT_NE(utils::recovery_settings()->contents, initial->contents);
+    ASSERT_EQ(manager->handle_add_node("action_test", "other", nlohmann::json::object()), error_e::no_error);
+    EXPECT_EQ(nlohmann::json::parse(utils::recovery_settings()->contents), configuration.get_config());
+    const connection_s connection{.from_node = "n", .from_interface = "out", .to_node = "other", .to_interface = "in"};
+    ASSERT_EQ(manager->handle_add_connection(connection), error_e::no_error);
+    EXPECT_EQ(nlohmann::json::parse(utils::recovery_settings()->contents), configuration.get_config());
+    ASSERT_EQ(manager->handle_remove_node("other"), error_e::no_error);
+    EXPECT_EQ(nlohmann::json::parse(utils::recovery_settings()->contents), configuration.get_config());
+    const auto accepted = utils::recovery_settings();
+    EXPECT_NE(manager
+                  ->handle_update_node("n",
+                                       {
+                                           {"value", -1}
+    })
+                  .error,
+              error_e::no_error);
+    EXPECT_EQ(utils::recovery_settings(), accepted);
+}
 
 TEST_F(action_manager_test_s, ConfigAdmissionAndFrameDeliveryUseTheirOwnThreadsAndOwnedPayload)
 {

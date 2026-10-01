@@ -1,3 +1,4 @@
+#include "failure_shutdown.hpp"
 #include "shutdown_signal.hpp"
 
 #include <csignal>
@@ -23,6 +24,6 @@ void install_shutdown_signal_handlers()
     }
 }
 
-bool shutdown_requested() noexcept { return get_shutdown_request() != 0; }
+bool shutdown_requested() noexcept { return get_shutdown_request() != 0 || failure_shutdown_requested(); }
 
 } // namespace miximus::utils

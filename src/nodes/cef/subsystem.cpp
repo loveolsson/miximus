@@ -4,6 +4,7 @@
 #include "detail/media_input_session.hpp"
 #include "detail/runtime.hpp"
 #include "include/cef_version_info.h"
+#include "utils/failure_shutdown.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/cef/platform.hpp"
 
@@ -79,7 +80,7 @@ struct session_request_s::state_s : std::enable_shared_from_this<state_s>
     } catch (...) {
         // Retirement must reach the control worker before CEF shuts down.
         // Continuing after a failed enqueue would abandon live browser resources.
-        std::terminate();
+        utils::fail_without_unwinding("Failed to schedule CEF session retirement");
     }
 };
 

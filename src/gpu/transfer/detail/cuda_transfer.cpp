@@ -7,6 +7,7 @@
 #include "gpu/detail/recording.hpp"
 #include "gpu/detail/resource.hpp"
 #include "logger/logger.hpp"
+#include "utils/failure_shutdown.hpp"
 
 #include <magic_enum/magic_enum.hpp>
 
@@ -31,7 +32,7 @@ void check_cuda(cudaError_t result, const char* operation)
         result == cudaErrorLaunchFailure || result == cudaErrorHardwareStackError ||
         result == cudaErrorIllegalInstruction || result == cudaErrorMisalignedAddress ||
         result == cudaErrorInvalidAddressSpace || result == cudaErrorInvalidPc || result == cudaErrorECCUncorrectable) {
-        gpu::detail::fatal_gpu_error(std::format("{}: {}", operation, cudaGetErrorString(result)));
+        gpu::detail::fatal_gpu_error(operation, cudaGetErrorString(result));
     }
     if (result != cudaSuccess) {
         throw std::runtime_error(std::format("{}: {}", operation, cudaGetErrorString(result)));
@@ -82,8 +83,7 @@ struct cuda_transfer_s::state_s
         // A fatal liveness limit, not a frame deadline. Never recycle memory
         // which either API may still own or switch the selected backend.
         if (std::chrono::steady_clock::now() - transfer_started > std::chrono::seconds(30)) {
-            gpu::detail::fatal_gpu_error(
-                std::format("CUDA transfer did not complete within 30 seconds during {}", stage));
+            gpu::detail::fatal_gpu_error("CUDA transfer did not complete within 30 seconds", stage);
         }
     }
 
@@ -115,22 +115,24 @@ struct cuda_transfer_s::state_s
             }
 
             if (cuda_device_index >= 0) {
-                (void)cudaSetDevice(cuda_device_index);
+                check_cuda(cudaSetDevice(cuda_device_index), "select CUDA device for retirement");
             }
 
             if (stream != nullptr) {
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::hours(1);
-                while (cudaStreamQuery(stream) == cudaErrorNotReady) {
+                const auto  deadline = std::chrono::steady_clock::now() + std::chrono::hours(1);
+                cudaError_t result{};
+                while ((result = cudaStreamQuery(stream)) == cudaErrorNotReady) {
                     if (std::chrono::steady_clock::now() >= deadline) {
                         throw std::runtime_error("CUDA transfer retirement timed out");
                     }
 
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
+                check_cuda(result, "query CUDA stream for retirement");
             }
         } catch (const std::exception& error) {
-            logger::log_error_noexcept("gpu", "{}", error.what());
-            std::terminate(); // Freeing an outstanding DMA allocation is not safe.
+            utils::fail_without_unwinding("Failed to retire CUDA transfer resources",
+                                          error.what()); // Freeing an outstanding DMA allocation is not safe.
         }
 
         if (copy_completed_event != nullptr) {
@@ -650,7 +652,7 @@ bool cuda_transfer_s::submit_transfer(const completion_s& dependency)
         try {
             (void)state.last_submission.submitted();
         } catch (const std::exception& error) {
-            gpu::detail::fatal_gpu_error(std::format("CUDA Vulkan release failed: {}", error.what()));
+            gpu::detail::fatal_gpu_error("CUDA Vulkan release failed", error.what());
         }
         const auto ready = cudaEventQuery(state.copy_completed_event);
         if (ready == cudaErrorNotReady) {

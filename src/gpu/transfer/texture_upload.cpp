@@ -735,10 +735,9 @@ texture_upload_wait_result_e texture_upload_stream_s::wait_for_upload(texture_up
                    (*slot)->transfer_completed;
         });
     if (!completed) {
-        gpu::detail::fatal_gpu_error(
-            std::format("Upload {} did not become {} within 30 seconds",
-                        upload_id.sequence,
-                        availability == availability_e::submitted ? "submitted" : "completed"));
+        gpu::detail::fatal_gpu_error("Upload did not become ready within 30 seconds",
+                                     availability == availability_e::submitted ? "awaiting submission"
+                                                                               : "awaiting completion");
     }
     if (!state_->active) {
         return texture_upload_wait_result_e::stopped;

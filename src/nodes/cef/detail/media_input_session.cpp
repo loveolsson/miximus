@@ -6,6 +6,7 @@
 #include "media_input_exports.hpp"
 #include "media_input_renderer.hpp"
 #include "task.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "wrapper/cef/media_input_abi.hpp"
 #include "wrapper/cef/platform.hpp"
 
@@ -567,7 +568,7 @@ struct media_input_session_s::impl_s
                 } catch (...) {
                     // run() reports recoverable failures. If reporting or revoking
                     // leases also fails, unwinding the worker cannot retire them safely.
-                    std::terminate();
+                    utils::fail_without_unwinding("CEF input worker could not retire its leases");
                 }
             });
         }

@@ -18,8 +18,9 @@ a window on another target.
 Screen-output failures are latched in `screen_error` with `connected=false`. They stop demanding graph execution;
 changing the enabled state or window/monitor configuration explicitly clears the failure. Resize and monitor
 refresh-rate notifications do not retry a failed endpoint. GPU device loss, submission/completion-query failure,
-and poisoned CUDA contexts terminate the process with a stderr diagnostic and failure exit code, without waiting
-for unsafe resource retirement. Pending CUDA transfers and synchronous upload waits have a 30-second fatal
+and poisoned CUDA contexts request application failure shutdown. Unsafe failure paths park the failing thread
+without unwinding GPU resources; an independent worker saves cached settings to a unique recovery file, while
+the main thread stops other subsystems where possible. Only the shutdown watchdog forces process exit. Pending CUDA transfers and synchronous upload waits have a 30-second fatal
 liveness limit, independent of frame deadlines. Normal short `cudaErrorNotReady` periods remain expected.
 Initialization has a 60-second watchdog; exceptional graph teardown uses the normal shutdown watchdog.
 

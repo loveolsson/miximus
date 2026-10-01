@@ -17,6 +17,7 @@ class configuration_s
     node_manager_s& node_manager_;
 
     nlohmann::json serialize(bool include_status) const;
+    nlohmann::json serialize_graph_locked() const;
 
   public:
     explicit configuration_s(node_manager_s& node_manager)
@@ -24,6 +25,8 @@ class configuration_s
     {
     }
 
+    // Enable only after loading succeeds; failed loads never publish a partial snapshot.
+    void enable_recovery(const std::filesystem::path& path);
     void load(nlohmann::json config);
     void load_file(const std::filesystem::path& path);
 

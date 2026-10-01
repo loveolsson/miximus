@@ -6,6 +6,7 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
 #include "media/frame_fingerprint.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
 #include <atomic>
@@ -834,8 +835,7 @@ input_capture_s::~input_capture_s()
     try {
         stop_async();
     } catch (...) {
-        logger::log_error_noexcept("decklink", "Failed to schedule DeckLink capture shutdown");
-        std::terminate();
+        utils::fail_without_unwinding("Failed to schedule DeckLink capture shutdown");
     }
 }
 

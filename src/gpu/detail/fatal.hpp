@@ -1,20 +1,16 @@
 #pragma once
 
-#include <cstdio>
-#include <cstdlib>
+#include "utils/failure_shutdown.hpp"
+
 #include <string_view>
 
 namespace miximus::gpu::detail {
 
-// GPU ownership/completion is no longer trustworthy. Do not unwind through
-// resource retirement or attempt to reuse the device after this point.
-[[noreturn]] inline void fatal_gpu_error(std::string_view message) noexcept
+// Preserve uncertain GPU ownership while the main thread shuts down and the
+// independent recovery worker saves settings. Only the watchdog forces exit.
+[[noreturn]] inline void fatal_gpu_error(std::string_view message, std::string_view detail = {}) noexcept
 {
-    std::fputs("Fatal GPU error: ", stderr);
-    std::fwrite(message.data(), 1, message.size(), stderr);
-    std::fputc('\n', stderr);
-    std::fflush(stderr);
-    std::_Exit(EXIT_FAILURE);
+    utils::fail_without_unwinding(message, detail);
 }
 
 } // namespace miximus::gpu::detail

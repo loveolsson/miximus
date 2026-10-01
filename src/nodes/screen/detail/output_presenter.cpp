@@ -9,6 +9,7 @@
 #include "media/presentation_clock.hpp"
 #include "media/timed_output_queue.hpp"
 #include "types/output_buffer_limits.hpp"
+#include "utils/failure_shutdown.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -165,7 +166,7 @@ class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
             const std::scoped_lock lock(mutex_);
             retired_slots_.push_back({.index = index, .released = std::move(released)});
         } catch (...) {
-            std::terminate();
+            utils::fail_without_unwinding("Failed to retire screen output slot");
         }
     }
 
@@ -175,7 +176,7 @@ class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
             const std::scoped_lock lock(mutex_);
             free_slots_.push_back(index);
         } catch (...) {
-            std::terminate();
+            utils::fail_without_unwinding("Failed to return unsubmitted screen output slot");
         }
     }
 

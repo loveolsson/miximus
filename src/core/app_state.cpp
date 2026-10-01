@@ -7,6 +7,7 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
+#include "utils/failure_shutdown.hpp"
 #if MIXIMUS_ENABLE_CEF
 #include "nodes/cef/subsystem.hpp"
 #endif
@@ -142,11 +143,14 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     }
 #endif
     cfg_thread_ = std::thread([this] {
-        try {
-            cfg_executor_.run();
-        } catch (...) {
-            logger::log_error_noexcept("app", "Configuration worker failed");
-            std::terminate();
+        while (!cfg_executor_.stopped()) {
+            try {
+                cfg_executor_.run();
+            } catch (...) {
+                // Asio permits re-entering run() after a handler throws. Keep
+                // servicing shutdown callbacks; new graph work is now rejected.
+                utils::request_failure_shutdown("Configuration worker failed");
+            }
         }
     });
 }
@@ -196,8 +200,7 @@ app_state_s::~app_state_s()
     try {
         cfg_executor_.stop();
     } catch (...) {
-        logger::log_error_noexcept("app", "Failed to stop configuration worker");
-        std::terminate();
+        utils::request_failure_shutdown("Failed to stop configuration worker");
     }
     cfg_thread_.join();
     thread_pool_->close_queue();

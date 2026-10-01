@@ -71,6 +71,8 @@ class node_manager_s
     nodes::con_set_t                                         connections_;
     nodes::node_definition_map_t                             node_definitions_;
     adapter_list_t                                           adapters_;
+    std::function<void()>                                    configuration_changed_;
+    void                                                     checkpoint_configuration_locked();
     node_status_registry_s*                                  status_registry_{nullptr};
     node_status_handle_s                                     settings_status_handle_;
     utils::observed_value_s<uint64_t>                        reported_status_epoch_;

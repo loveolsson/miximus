@@ -22,6 +22,7 @@
 #include "types/node_status_json.hpp"
 #include "types/output_buffer_limits.hpp"
 #include "types/settings_option.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/lookup.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/serial_executor.hpp"
@@ -429,8 +430,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             }
 
         } catch (...) {
-            logger::log_error_noexcept("decklink", "Failed to schedule DeckLink output retirement");
-            std::terminate();
+            utils::fail_without_unwinding("Failed to schedule DeckLink output retirement");
         }
     }
 
@@ -1116,8 +1116,7 @@ class node_impl : public node_i
         try {
             stop_playback();
         } catch (...) {
-            logger::log_error_noexcept("decklink", "Failed to schedule DeckLink output shutdown");
-            std::terminate();
+            utils::fail_without_unwinding("Failed to schedule DeckLink output shutdown");
         }
     }
 

@@ -4,6 +4,7 @@
 #include "include/cef_request_context.h"
 #include "runtime_platform.hpp"
 #include "task.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "wrapper/cef/platform.hpp"
 
 #include <atomic>
@@ -126,7 +127,7 @@ bool runtime_s::cache_clear_pending() const { return *state_->cache_clear_pendin
 runtime_s::~runtime_s()
 {
     if (std::this_thread::get_id() != state_->owner) {
-        std::terminate();
+        utils::fail_without_unwinding("CEF runtime destroyed on the wrong thread");
     }
     CefShutdown();
 }

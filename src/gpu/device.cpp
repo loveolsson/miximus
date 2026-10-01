@@ -28,7 +28,7 @@ namespace miximus::gpu::detail {
 void check(VkResult result, const char* operation)
 {
     if (result == VK_ERROR_DEVICE_LOST) {
-        fatal_gpu_error(std::format("{}: Vulkan device lost", operation));
+        fatal_gpu_error(operation, "Vulkan device lost");
     }
     if (result != VK_SUCCESS) {
         throw std::runtime_error(std::format("{} failed: Vulkan result {}", operation, static_cast<int>(result)));

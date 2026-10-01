@@ -1,5 +1,7 @@
 #pragma once
 
+#include "failure_shutdown.hpp"
+
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -33,7 +35,11 @@ class serial_executor_s
                 task = std::move(tasks_.front());
                 tasks_.pop_front();
             }
-            task();
+            try {
+                task();
+            } catch (...) {
+                fail_without_unwinding("Control worker task failed; remaining tasks retained");
+            }
         }
     }
 
