@@ -1,14 +1,19 @@
 find_package(Vulkan 1.3 REQUIRED GLOBAL COMPONENTS glslangValidator)
-set(MIXIMUS_GLSLANG_VERSION "16.2.0" CACHE STRING "Pinned glslang compiler version")
+set(MIXIMUS_GLSLANG_VERSION "16.2.0" CACHE STRING "Minimum glslang compiler version")
 execute_process(
     COMMAND "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" --version
     OUTPUT_VARIABLE MIXIMUS_GLSLANG_REPORTED
     COMMAND_ERROR_IS_FATAL ANY
 )
-string(FIND "${MIXIMUS_GLSLANG_REPORTED}" "glslang Khronos. ${MIXIMUS_GLSLANG_VERSION}" MIXIMUS_GLSLANG_MATCH)
-if(MIXIMUS_GLSLANG_MATCH LESS 0)
-    message(FATAL_ERROR "Expected glslang ${MIXIMUS_GLSLANG_VERSION}. Select a different toolchain explicitly with MIXIMUS_GLSLANG_VERSION.")
+string(REGEX MATCH "Glslang Version: [0-9]+:([0-9]+\\.[0-9]+\\.[0-9]+)" MIXIMUS_GLSLANG_MATCH "${MIXIMUS_GLSLANG_REPORTED}")
+if(NOT MIXIMUS_GLSLANG_MATCH)
+    message(FATAL_ERROR "Cannot determine glslang version from ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}: ${MIXIMUS_GLSLANG_REPORTED}")
 endif()
+set(MIXIMUS_GLSLANG_FOUND_VERSION "${CMAKE_MATCH_1}")
+if(MIXIMUS_GLSLANG_FOUND_VERSION VERSION_LESS MIXIMUS_GLSLANG_VERSION)
+    message(FATAL_ERROR "glslang ${MIXIMUS_GLSLANG_VERSION} or newer is required; found ${MIXIMUS_GLSLANG_FOUND_VERSION} at ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}")
+endif()
+message(STATUS "glslang ${MIXIMUS_GLSLANG_FOUND_VERSION} (minimum ${MIXIMUS_GLSLANG_VERSION}): ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}")
 
 find_program(MIXIMUS_SPIRV_VAL NAMES spirv-val REQUIRED)
 find_package(glfw3 3.4 CONFIG REQUIRED GLOBAL)
@@ -19,6 +24,9 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/submodules/volk ${CMAKE_CURRENT_BINARY_DI
 add_subdirectory(${PROJECT_SOURCE_DIR}/submodules/vma ${CMAKE_CURRENT_BINARY_DIR}/vma EXCLUDE_FROM_ALL)
 set_target_properties(volk VulkanMemoryAllocator PROPERTIES SYSTEM TRUE)
 target_link_libraries(volk PUBLIC Vulkan::Headers)
+if(WIN32)
+    target_compile_definitions(volk PUBLIC VK_USE_PLATFORM_WIN32_KHR)
+endif()
 
 add_library(vulkan_dependencies STATIC allocator.cpp)
 target_link_libraries(vulkan_dependencies PUBLIC volk::volk GPUOpen::VulkanMemoryAllocator)

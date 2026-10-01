@@ -1,24 +1,19 @@
 #include "media_input_renderer.hpp"
 
 #include "wrapper/cef/media_input_abi.hpp"
+#include "wrapper/cef/platform.hpp"
 
 #include <charconv>
 #include <cstdlib>
 #include <string_view>
-
-#ifdef __linux__
-#include <dlfcn.h>
-#endif
 
 namespace miximus::nodes::cef::detail {
 void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
                           const CefRefPtr<CefV8Context>& context,
                           const std::string&             token)
 {
-#ifdef __linux__
-    const auto install =
-        reinterpret_cast<cef_wrapper::install_media_inputs_t>(dlsym(RTLD_DEFAULT, cef_wrapper::INSTALL_MEDIA_INPUTS));
-    uint32_t depth = 3;
+    const auto install = cef_wrapper::find_install_media_inputs();
+    uint32_t   depth   = 3;
     // Diagnostic override only; page JavaScript cannot increase pool capacity.
     // The helper reads its immutable environment during renderer startup.
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -30,8 +25,7 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
         }
     }
 
-    if (install == nullptr || dlsym(RTLD_DEFAULT, cef_wrapper::SEND_MEDIA_FRAME) == nullptr ||
-        install(token.c_str(), depth) == 0) {
+    if (install == nullptr || cef_wrapper::find_send_media_frame() == nullptr || install(token.c_str(), depth) == 0) {
         return;
     }
 
@@ -85,12 +79,6 @@ void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
     if (context->Eval(script, "miximus-media-input", 1, setup, exception)) {
         setup->ExecuteFunction(nullptr, {create});
     }
-
-#else
-    (void)frame;
-    (void)context;
-    (void)token;
-#endif
 }
 
 } // namespace miximus::nodes::cef::detail

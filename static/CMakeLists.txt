@@ -52,6 +52,7 @@ endif()
 
 # Step 2: hash web/dist; remove web_files.cpp if the bundled output needs refreshing
 add_custom_target(check_web_files_hash ALL
+  BYPRODUCTS "${WEB_HASH_FILE}"
   COMMAND ${CMAKE_COMMAND}
     -DWEB_SOURCE_DIR=${CMAKE_SOURCE_DIR}/web/dist
     -DWEB_HASH_FILE=${WEB_HASH_FILE}
@@ -82,7 +83,7 @@ add_custom_command(
   ARGS
     --src ${CMAKE_SOURCE_DIR}/web/dist/ --dst ${CMAKE_CURRENT_BINARY_DIR}/web_files.cpp --namespace ${BUNDLER_NAMESPACE} --mapname get_web_files
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS bundler check_web_files_hash
+  DEPENDS bundler check_web_files_hash "${WEB_HASH_FILE}"
   COMMENT "Generating web_files.cpp from web/dist/"
 )
 

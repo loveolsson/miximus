@@ -7,14 +7,39 @@ Chromium, CUDA/Vulkan transfers, DeckLink, NDI, screen outputs, text/fonts, and 
 required work in this port even though their CMake switches are optional for other builds. A build with either
 feature disabled is only an intermediate diagnostic checkpoint, not completion.
 
-This guide was checked against the repository on 2026-09-29. These Windows commands and the proposed dependency
-baseline have not been run on Windows. Existing Linux results do not qualify Windows. Some Windows implementations
-already exist (DeckLink COM/MIDL, font discovery, monitor discovery, Unicode paths); CEF and CUDA still have explicit
-Linux restrictions and require implementation, not just library installation.
+This guide was checked against the repository on 2026-09-30. The manifest dependencies install successfully on
+Windows and pass an isolated MSVC C++20 compile/link/runtime check, including a local WebSocket echo exchange,
+Boost.Fiber, and all eight requested FFmpeg libraries. All 93 installed WebSocket++ headers match the documented
+Linux binary package byte-for-byte. Windows configuration now reads the NDI runtime DLL's version resource;
+the full-feature configuration below supports the packaged custom Windows CEF SDK and CUDA transfers.
+The CEF-enabled build, six browser probes and browser-to-screen smoke run pass, as recorded in
+[CEF implementation progress](cef-implementation-progress.md#windows-application-checks-2026-09-30).
+On 2026-10-01, the user confirmed working DeckLink and NDI input/output on Windows. Combined-graph acceptance
+remains outstanding. Existing Linux results do not qualify Windows.
 
 Read [development](development.md), [architecture](architecture.md), [GPU/media](gpu-and-media.md),
 [frame timing](frame-timing-and-synchronization.md), and the nearest `AGENTS.md` before modifying their subsystems.
 Preserve Linux support while adding Windows paths. Put SDK discovery/linkage in `src/wrapper/`.
+The Windows preset opts into vcpkg; ordinary Linux CMake configuration continues to use its existing dependencies.
+Windows validation does not substitute for a Linux build when shared source or build logic changes.
+
+The Windows Release checkpoint now configures and builds successfully, including the bundled web UI and validated
+SPIR-V shaders. All 199 ordinary CTest tests pass, and `miximus.exe --help` launches with the staged DLLs.
+NDI SDK 6.3.2.0 was verified through both its DLL version resource and `NDIlib_version()`.
+Linux-style FFmpeg discovery was checked with clean and stale-cache fixtures, and the existing NDI version-file
+parser was checked with supported, too-old and malformed versions. These are discovery checks, not a Linux build.
+CUDA Toolkit 13.4 is detected and Windows direct transfers pass repeated validation. The 199-test results here
+describe the earlier checkpoint; the subsequent CEF-enabled checkpoint passes 205 ordinary tests.
+With the installed SDK 1.4.357.0 validation layer, all 32 device tests and 14 Vulkan staging-transfer tests pass
+using binaries/shaders rebuilt with glslang 16.4.0 from that SDK. All five shaders compiled and passed `spirv-val`,
+and all 199 ordinary tests passed again. These runs isolated third-party implicit layers via
+`VK_IMPLICIT_LAYER_PATH` pointing to an empty directory: stale TikTok LIVE Studio registry entries otherwise
+reported two missing layer manifests per device. Khronos synchronization validation remained enabled via
+`VK_LAYER_PATH=C:\VulkanSDK\1.4.357.0\Bin` and `MIXIMUS_VULKAN_VALIDATION=1`; no registry entries were changed.
+These staging/device runs do not qualify CEF, physical DeckLink/NDI I/O, or screen presentation; separate CUDA results are below.
+The wrapper now requires glslang >=16.2.0, preserving support for the existing Linux compiler. Windows was tested
+with 16.2.0 previously and 16.4.0 after this change; Linux was not rebuilt here. Cached SDK paths were refreshed
+to 1.4.357.0. Historical logs are in `build/validation-history/sdk357-{configure,build,ctest,device,transfer}.log`.
 
 ## Machine and toolchains
 
@@ -33,10 +58,10 @@ Install the following before starting the port:
 | CMake and Ninja | CMake **3.28+** and Ninja on `PATH`. Use Ninja initially to keep executable paths independent of build configuration subdirectories. |
 | Node.js/npm | Install a current Node 22 release **at least 22.12**, or a compatible newer LTS. `package.json` says 22+, but the locked Vite dependency requires at least 22.12 on that line. Use `npm ci`. |
 | Python | Python **3.11+** for repository scripts (`source_build.py` uses `hashlib.file_digest`). Chromium also supplies its own pinned Python through depot_tools. |
-| Vulkan SDK | [LunarG Windows SDK](https://vulkan.lunarg.com/sdk/home): headers/loader >=1.3, `glslangValidator`, `spirv-val`, Vulkan tools, and Khronos validation layer. The wrapper pins glslang **16.2.0**. Verify the installed compiler; the SDK version alone is not proof of a match. |
+| Vulkan SDK | [LunarG Windows SDK](https://vulkan.lunarg.com/sdk/home): headers/loader >=1.3, `glslangValidator` **16.2.0 or newer**, `spirv-val`, Vulkan tools, and Khronos validation layer. Verify the installed compiler; configuration reports its version and path. |
 | CUDA Toolkit | Install the [NVIDIA Windows CUDA Toolkit](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html), including runtime development headers/import libraries and tools. Select a toolkit whose compiler/driver support table matches the installed MSVC and GPU. Record the exact toolkit and driver versions. `CUDAToolkit_ROOT` can select a nondefault installation. |
 | Blackmagic DeckLink SDK | Download **Desktop Video SDK 16.0** from [Blackmagic support](https://www.blackmagicdesign.com/support/family/capture-and-playback); this is the repository's current SDK baseline. Install the separate Desktop Video driver for runtime testing. The old README's 12.1 baseline is obsolete. |
-| NDI SDK | Obtain the Windows **NDI SDK 6.2 or newer** from [NDI developers](https://ndi.video/for-developers/ndi-sdk/). Miximus needs headers, x64 import library, runtime DLL, and `Version.txt`; NDI Tools alone is insufficient. |
+| NDI SDK | Obtain the Windows **NDI SDK 6.2 or newer** from [NDI developers](https://ndi.video/for-developers/ndi-sdk/). Miximus needs headers, x64 import library, and the SDK runtime DLL with its version resource; NDI Tools alone is insufficient. |
 | NVIDIA Video Codec SDK | Obtain the [Video Codec SDK](https://developer.nvidia.com/nvidia-video-codec-sdk/download). The local SDK inventory is **13.1.15**. This wrapper is separate from CUDA transfers; include it in full dependency discovery, but its successful discovery does not establish an implemented encoder/decoder feature. |
 | Custom CEF/Chromium | Build the pinned, patched Windows SDK as described below. A stock downloaded CEF SDK is not a replacement for the custom media-input API. |
 | Open-source native libraries | Install through vcpkg as below. Submodules already supply stb, fiberpool, sanitizers-cmake, magic_enum, GoogleTest, spdlog, Volk, and VMA; do not replace these with unrelated installed versions. |
@@ -69,13 +94,18 @@ Clone the branch/commit containing this handoff. Preserve LF bytes in CEF patch 
 verified by the source builder. A clean clone does not contain local `3rd-party` SDKs, `build/tools`, CEF build
 artifacts, `node_modules`, or the developer's settings. Obtain them explicitly; do not copy a Linux build cache.
 
-Use a dedicated vcpkg checkout. The following **proposed, unqualified Windows baseline** uses tag `2025.06.13`, whose
-ports include GLFW 3.4 and FFmpeg 7.1.1 with `postproc`. This avoids depending on a moving FFmpeg feature set while
-bringing up the existing wrapper. Record its resolved commit and installed package versions. This is a porting
-baseline, not a claim that these versions are current or tested together with Miximus.
-Sources: [vcpkg classic mode](https://learn.microsoft.com/en-us/vcpkg/consume/classic-mode),
-[pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/ffmpeg/vcpkg.json),
-[pinned GLFW port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/glfw3/vcpkg.json).
+The checked-in `vcpkg.json` lists packages and `vcpkg-configuration.json` pins the default registry to commit
+`ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0` (tag `2025.06.13`), including GLFW 3.4 and FFmpeg 7.1.1
+with `postproc`. The registry reference also selects that tag, so version history does not depend on a moving HEAD.
+The manifest installs the directly used Boost packages, FFmpeg components, FreeType, GLFW,
+GLM, nlohmann-json, websocketpp and zlib. Submodule dependencies and vendor SDKs remain separate.
+
+Boost packages use a separate registry pin at `66c0373dc7fca549e5803087b9487edfe3aca0a1`
+(tag `2026.01.16`), selecting Boost **1.90.0** consistently across all Boost modules. The other libraries
+retain the default registry pin, including FFmpeg 7.1.1 with `postproc`.
+
+Use the vcpkg bundled with Visual Studio 2026, or an existing standalone vcpkg installation. There is no need
+to clone another copy when Visual Studio already provides it. Set `VCPKG_ROOT` for the current shell:
 
 **Boost/WebSocket++ compatibility:** The working Linux installation uses Boost **1.90.0** (package
 `1.90.0-6ubuntu1`) and **patched** WebSocket++ package `0.8.2+git20250909-2` (headers report **0.8.3**).
@@ -85,13 +115,45 @@ supply those fixes by itself. Before building on Windows, provide an explicitly 
 set with equivalent fixes, for example through a vcpkg overlay port, and verify it against the selected Boost version.
 
 ```powershell
-git clone --branch 2025.06.13 https://github.com/microsoft/vcpkg.git C:\src\vcpkg-miximus
-$env:VCPKG_ROOT = 'C:\src\vcpkg-miximus'
-& "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
-& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows boost-fiber boost-program-options boost-url boost-asio boost-container boost-describe boost-locale boost-mp11 glfw3 glm nlohmann-json websocketpp freetype zlib 'ffmpeg[avcodec,avdevice,avfilter,avformat,swresample,swscale,postproc]'
-git -C $env:VCPKG_ROOT rev-parse HEAD
+# Run from the Miximus checkout in an x64 Developer PowerShell.
+$vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+$env:VCPKG_ROOT = Join-Path $vsInstall 'VC\vcpkg'
+# For standalone vcpkg, set VCPKG_ROOT to that checkout instead.
+& "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows --host-triplet x64-windows
+if ($LASTEXITCODE -ne 0) { throw 'vcpkg installation failed' }
 & "$env:VCPKG_ROOT\vcpkg.exe" list
+
+cmake --preset windows-release
+if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+cmake --build --preset windows-release --parallel
 ```
+
+`CMakePresets.json` uses Ninja, MSVC, Release, `build/` and the vcpkg toolchain. Both the explicit install and the preset
+share the ignored `vcpkg_installed/` directory in the checkout; downloaded sources and compiled packages are
+not committed. vcpkg builds missing binaries from source for both Release and Debug, then reuses its binary
+cache on subsequent matching installs. The FFmpeg manifest features select development libraries without the
+command-line programs. CMake also installs missing manifest packages automatically. The preset sets the CMake 4
+compatibility floor needed by older submodules before their first `cmake_minimum_required()` call.
+Machine-specific overrides belong in the ignored `CMakeUserPresets.json`.
+
+**Boost/WebSocket++ compatibility:** Upstream main documents the working Linux installation as Boost
+**1.90.0** (Ubuntu package `1.90.0-6ubuntu1`) and patched WebSocket++ package
+`0.8.2+git20250909-2` (headers report **0.8.3-dev**). Its distribution changelog identifies upstream
+PR **1190** as providing the modern Boost.Asio fixes.
+
+The overlay under `src/wrapper/vcpkg-ports/websocketpp/` downloads that exact distribution source archive
+and packaging archive, verifies their SHA-512 hashes, and applies the complete, unchanged `1190.patch`
+from the package's patch series. It contains no locally rebased Asio or C++20 patches. See its README
+for provenance and checksums. The Windows Boost release matches Linux, but the vcpkg recipes are not
+the same as Ubuntu's packaging patches or ABI. Stock WebSocket++ 0.8.2 is not an equivalent replacement.
+
+This is the ordinary dependency/bootstrap configuration, not full Windows feature acceptance: CEF retains
+its default OFF, while CUDA is compiled and requires `--use-cuda` to select it after startup qualification. The full-feature configuration
+below requires the custom CEF SDK. Installation success does not establish application
+or hardware correctness.
+
+Sources: [vcpkg manifest/CMake integration](https://learn.microsoft.com/en-us/vcpkg/users/buildsystems/cmake-integration),
+[pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/ffmpeg/vcpkg.json).
 
 Use `x64-windows` consistently (dynamic CRT/libraries); avoid mixing x86, static-CRT, MinGW, Debug and Release
 artifacts. FFmpeg's `postproc` feature selects GPL code in this baseline. The current wrapper requests avcodec,
@@ -125,13 +187,17 @@ Set NDI to the actual installed SDK root:
 $env:NDI_ROOT = 'C:\Program Files\NDI\NDI 6 SDK'
 Test-Path "$env:NDI_ROOT\Include\Processing.NDI.Lib.h"
 Test-Path "$env:NDI_ROOT\Lib\x64\Processing.NDI.Lib.x64.lib"
-Get-Content "$env:NDI_ROOT\Version.txt"
+([System.Diagnostics.FileVersionInfo]::GetVersionInfo("$env:NDI_ROOT\Bin\x64\Processing.NDI.Lib.x64.dll")).ProductVersion
 Get-ChildItem $env:NDI_ROOT -Recurse -Filter Processing.NDI.Lib.x64.dll
 ```
 
-The first `Version.txt` line must contain a version such as `v6.2.0`. Use the real SDK version file; if a newer
-vendor layout changes it, adapt the wrapper's discovery/parser rather than fabricating metadata. Record the actual
-runtime DLL directory and prepend it to `PATH` for launching the app and tests.
+Windows SDKs need not contain `Version.txt`. The wrapper reads the numeric product version from the matching
+SDK DLL under `Bin/x64` (or `Bin/x86`) using PowerShell and
+[FileVersionInfo](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.fileversioninfo).
+It does not load a DLL from `PATH` or execute target code. Linux/macOS retain the existing `Version.txt` check
+(first line containing a version such as `v6.2.0`); all platforms require at least 6.2.
+This checks the installed SDK runtime, not which DLL an eventual process loads. Record the actual runtime DLL
+directory and prepend it to `PATH` for launching the app and tests.
 
 After installing Vulkan/CUDA, open a new developer shell and check:
 
@@ -146,9 +212,11 @@ $env:CUDA_PATH
 nvidia-smi
 ```
 
-Ensure Vulkan `Bin` is on `PATH`. If glslang differs from 16.2.0, select a matching compiler explicitly with
-`Vulkan_GLSLANG_VALIDATOR_EXECUTABLE`, or make a deliberate toolchain update using `MIXIMUS_GLSLANG_VERSION` and
-revalidate all shaders. Do not merely bypass the version check. The shader compiler and validation layer can come
+Ensure Vulkan `Bin` is on `PATH`. The wrapper accepts glslang 16.2.0 or newer; `MIXIMUS_GLSLANG_VERSION` is the
+minimum version, not an exact pin. `Vulkan_GLSLANG_VALIDATOR_EXECUTABLE` can select a specific compiler.
+After replacing an SDK, clear cached discovery paths with
+`cmake --preset windows-release -U 'Vulkan_*' -U MIXIMUS_SPIRV_VAL`, rebuild all shaders and rerun GPU validation.
+Newer compilers can change SPIR-V output, so record the compiler used for each qualification. The shader compiler and validation layer can come
 from separate SDK versions; the Linux validation notes identify problems with the older 1.4.341 layer. Qualify the
 installed Windows layer independently and record its version.
 
@@ -158,12 +226,15 @@ Start with [the wrapper README](../src/wrapper/cef/README.md), [browser design](
 [media-input plan](cef-media-input-plan.md), and [implementation progress](cef-implementation-progress.md).
 The checked-in source inputs are:
 
-- `src/wrapper/cef/source-build.json`: revision **9**, exact CEF/Chromium/depot_tools revisions, automation digest,
+- `src/wrapper/cef/source-build.json`: revision **11**, exact CEF/Chromium/depot_tools revisions, automation digest,
   GN arguments, production and test patch digests.
 - `src/wrapper/cef/sdk.json`: CEF **152.0.8+g1ce985c+chromium-152.0.7977.134**, API **15200**. Its URL, checksum and
   platform describe a stock **Linux** SDK; they must not be reused for a Windows custom artifact.
-- `src/wrapper/cef/source_build.py`: resumable `sync`, `prepare`, `build`, `test`, `package` stages. It currently
-  rejects Windows. Port the stages and manifest selection, preserving reproducibility and Linux behavior.
+- The same manifest contains Windows build-argument and dependency-sync overrides. Both platforms use the
+  same production/test patches and private v3 media-input API; the Windows SDK build and source regressions pass.
+- `src/wrapper/cef/source_build.py`: resumable `sync`, `prepare`, `build`, `test`, `package` stages using the
+  shared manifest with host-platform build overrides. The local Windows revision-11 package and its application
+  qualification results are recorded below; the stock Linux artifact metadata does not describe that package.
 - `patches/cef-linux-native-handle.patch`, `chromium-native-handle-capture.patch`,
   `chromium-native-handle-completion.patch`, and `cef-media-input.patch` under the wrapper, plus the manifest's
   `test_patches`. Inspect every patch for platform scope rather than assuming a successful application implements
@@ -175,7 +246,7 @@ provenance. Preserve the semantic fixes for allocation, producer completion, nat
 copy completion, transparent frames, and destination retirement. Linux-only capture patches may remain guarded;
 Windows needs equivalent qualified behavior. Do not remove the custom input API or substitute CPU image transport.
 
-Use this sequence for the source-build port:
+The source builder implements the following Windows build sequence:
 
 1. Install the pinned Chromium toolchain prerequisites listed above. Bootstrap Windows depot_tools in **cmd.exe**,
    per [upstream instructions](https://chromiumembedded.github.io/cef/master_build_quick_start.html#windows-setup),
@@ -185,29 +256,29 @@ Use this sequence for the source-build port:
    existing builder's `--branch`, `--checkout`, `--x64-build`, `--no-build`, `--no-distrib`, and pinned dependency
    options. Verify both source HEADs. Preserve DEPS-pinned tools/PGO profiles. Read the checked-out Chromium Windows
    requirements before building; do not use an unpinned master checkout just because the quick-start example does.
-3. Add a platform-specific source-build manifest (or a platform selection in the manifest schema). Retain explicit
-   Windows GN arguments, toolchain identity, patch digests and API version. Remove Linux `use_sysroot` assumptions;
-   preserve the intended release/sandbox configuration. Adapt `ensure_bootstrap`, `python-bin/python3`, shell
-   commands, Linux affinity calls and executable suffixes. Bound build/link concurrency for memory on Windows.
+3. Use the manifest's `windows64` platform selection, which supplies Windows GN arguments without Linux
+   `use_sysroot` assumptions. The builder selects Windows bootstrap, Python/batch entry points and executable
+   suffixes. Preserve toolchain identity, patch digests and API version; bound build/link concurrency for memory.
 4. Apply and verify production patches in the correct CEF/Chromium roots. Preserve the prepared-tree guard against
-   destructive resync. Port the custom media-input patch's native GPU handle representation, cross-process
-   transport, Windows exports and import/completion logic. The current ABI has an `fd` field; changing its meaning
-   silently or stuffing a Win32 `HANDLE` into it is not a compatible Windows implementation. Version the private
-   ABI and package the matching header when its layout changes.
+   destructive resync. The custom media-input patch uses `texture_handle` on Windows and retains `fd` on Linux,
+   with matching native transport, exports and completion logic. Package the authoritative platform-matched
+   header with the binary; a Win32 handle must never be placed into the Linux descriptor layout.
 5. Generate CEF's x64 release projects and build Windows `libcef`, resource and sandbox targets using the pinned
    toolchain. The existing `chrome_sandbox` target is Linux-specific: select Windows targets from the pinned GN
-   files and include `cef_sandbox.lib` as required by the CEF Windows integration. Build/run the capture and native
+   files and build `bootstrap`/`bootstrapc`, which upstream SDK packaging includes; Miximus does not use those executables or enable the sandbox.
+   Build/run the capture and native
    media-source regression tests from the manifest, porting their platform assumptions as necessary.
 6. Package a standard Windows SDK using CEF's distribution tooling, including headers, `libcef.dll` and its import
-   library, wrapper sources, required sandbox library, resources/locales, ICU/snapshot data and runtime DLLs.
+   library, wrapper sources, sandbox bootstrap executables, resources/locales, ICU/snapshot data and runtime DLLs.
    Copy the authoritative custom media-input header. Produce Windows artifact metadata, exact patch/build identity,
    the **Windows DLL's** SHA-256, and archive checksum; retain licenses. Do not relabel `libcef.so` provenance.
-7. Port `src/wrapper/cef/CMakeLists.txt` and `acquire.cmake` as needed to verify/select the Windows artifact, build
-   the helper, and stage a complete usable runtime. Replace ELF `RUNPATH`, `dladdr`, `libcef.so` and symlink logic
-   with deliberate Windows loading/staging. Resolve private API exports on Windows and preserve sandbox startup
-   for browser/subprocesses. Keep Chromium's bundled Vulkan/ANGLE loader files from accidentally replacing the
+7. Configure `src/wrapper/cef/CMakeLists.txt` with the packaged SDK. It verifies provenance, builds the helper
+   and stages the runtime. Windows uses delayed DLL loading and native private-export lookup; Linux retains
+   its isolated ELF search path. Use a normal CMake-built application and subprocess helper,
+   with CEF sandboxing disabled on Windows. Linux enables it by default and accepts `--disable-cef-sandbox`
+   as an explicit opt-out. The flag has no additional effect on Windows. Keep Chromium's bundled Vulkan/ANGLE loader files from accidentally replacing the
    application's Vulkan loader. Do not enable `MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK` for acceptance.
-8. Port `src/nodes/cef/` runtime, renderer, capture and media-input export paths and their CMake platform guards.
+8. Qualify `src/nodes/cef/` runtime, renderer, capture and media-input export paths on the target hardware.
    Browser-to-Miximus capture must import the actual D3D shared texture handle type, match DXGI/Vulkan adapters,
    establish producer completion and retain borrowed resources until the GPU copy is complete. Miximus-to-browser
    inputs need Windows GPU export/import and cross-process handle ownership with completion acknowledgements,
@@ -216,25 +287,82 @@ Use this sequence for the source-build port:
 
 NT shared handles, legacy KMT handles and opaque Vulkan handles are different contracts. Follow the
 [Windows import qualification rules](cef-browser-sources.md#platform-import-qualification); do not assume a keyed
-mutex protocol or treat D3D `Flush` as GPU completion. The current DMA-BUF helpers in `src/gpu/detail/` are Linux
-implementations, not Windows interoperability support.
+mutex protocol or treat D3D `Flush` as GPU completion. The shared external-image interfaces in `src/gpu/detail/`
+select separate Linux DMA-BUF and Windows D3D11 implementations.
 
-No ready-to-run Windows source-build command exists yet. The Windows agent should implement this workflow and
-replace this paragraph with the verified commands, manifest, artifact name and test results once it works. The
-normal application configure must not silently download/build Chromium.
+Windows source synchronization is available with
+`python src/wrapper/cef/source_build.py sync --work-dir C:\cef`. It bootstraps the pinned Windows depot_tools,
+keeps Git configuration process-local, and verifies source patch digests. The repository enforces LF for those
+patches. The Windows sync patch omits the unused x86 Chrome updater test fixture blocked by Windows Security;
+it does not change Defender settings or permit the flagged package. This fixture is not part of the x64 CEF
+library or the selected capture/media tests. On 2026-09-29, sync and preparation completed in `C:\cef`:
+all 117 Chromium patches applied and x64 Release generation succeeded. On 2026-09-30 the SDK build completed,
+including `libcef.dll`, `bootstrap.exe` and `bootstrapc.exe` (`C:\cef\build-auto-jobs.log`). The local revision-11
+SDK is packaged at `C:\cef\distribution\miximus_cef_windows64_native_handle_r11`; its DLL hash matches provenance
+and both private media-input exports are present. See the Windows SDK smoke-test evidence in
+[CEF implementation progress](cef-implementation-progress.md#windows-sdk-smoke-test-2026-09-30).
+The CEF-enabled Miximus build, six browser acceptance probes, 205 registered tests and a browser-to-screen application run now pass on Windows; see [the application results](cef-implementation-progress.md#windows-application-checks-2026-09-30).
+The source regressions also pass (138 capture tests, two upstream skips, and eight media-source tests).
+The revised Linux startup still requires verification.
+Revision 10 folds native Windows transport into the existing media-input patch with compile-time platform guards.
+The Linux descriptor layout and v3 exports are unchanged. There is no Windows-only entry point or overlay.
+Preparation checks patches in place and preserves the existing object files for an incremental rebuild.
+The normal application configure never downloads/builds Chromium.
+
+### Native image sharing checkpoint
+
+The GPU layer now uses shared `external_image` copy/export interfaces with CMake-selected Linux and Windows implementations.
+Linux retains DMA-BUF reservation-fence waits and FOREIGN ownership. Windows allocates or opens NT D3D11 textures on
+an adapter matched to Vulkan by LUID, imports the actual D3D11 allocation, and uses EXTERNAL ownership. The Windows
+contract currently accepts non-keyed RGBA/BGRA textures, matching the pinned CEF accelerated-paint contract.
+Producer GPU completion and the exclusive consumer borrow remain mandatory; an NT handle carries no readiness fence.
+
+`probe_external_image_import` returns a typed status, with platform extension requirements in separate compilation
+units. Human-readable diagnostics are assembled only for the diagnostic JSON. CUDA capability is independent.
+
+Source-build revision 11 extends the existing asynchronous native-capture completion patch to Windows; it does not
+change Linux completion behavior or the media-input ABI. The CEF transport adapters use the same native-image API
+on both platforms. Windows application startup/runtime results with the packaged SDK are recorded above;
+other hardware and the revised Linux startup still require qualification.
+
+The shared media-input hardware suite passed all ten tests on Windows with Vulkan validation: eight-input pixel
+comparisons across separate Vulkan devices, bounded slots, publication ordering, abandonment, resize, quarantine,
+and byte-budget retirement. These GPU tests complement the browser/Chromium runtime results recorded above.
+
+The Windows device suite also passed all 34 tests, including a D3D11 render-target write followed by actual GPU
+completion and Vulkan import/pixel readback. That test checks descriptor rejection and borrowed-handle lifetime;
+both devices reported zero Vulkan validation errors. The native and tidy builds each passed 203 ordinary tests.
 
 ## Required CUDA transfer port
 
-Read [CUDA transfers](cuda-transfers.md) and [the DeckLink direct-memory contract](decklink-direct-memory.md).
-Installing CUDA is necessary but not sufficient: `src/wrapper/cuda/CMakeLists.txt` only creates `cuda_dependencies`
-on Linux today. The Windows task includes enabling discovery/linkage **and implementing Win32 interoperability**.
+The Win32 implementation passes all 14 transfer tests three times on Quadro P2000/582.78 with CUDA Toolkit 13.4
+and SDK 1.4.357.0 synchronization validation. Each allocation retains one native memory handle across
+registrations on both platforms. CUDA receives a duplicate; successful Linux import consumes that duplicate,
+while Windows import leaves its duplicate owned by the caller. CUDA binary waits begin only after the Vulkan signal is submitted, without blocking the worker.
+The PowerShell runner `scripts/test_cuda_transfers.ps1` requires completed CUDA uploads/readbacks and rejects
+staging fallback. Logs: `build/validation-history/integration-tests/cuda-transfers-20260929T201209-14748/`.
+The native build, 199 ordinary tests, 32 device tests and 14 staging-transfer tests pass too (`cuda-fixed-*.log`).
+The Windows benchmark runner completed all 12 pixel-checked cases per backend (720p/1080p/4K, RGBA8/v210,
+upload/readback), using 20 iterations and one repetition as a smoke check, not a performance qualification.
+Results: `build/validation-history/windows-transfer-benchmark/`. Linux FD handling remains separate and has not been rebuilt here.
+CUDA-disabled configuration/build and all 199 tests also pass. The wrapper stages the matching CUDA runtime DLL;
+all 14 CUDA transfer tests pass with CUDA removed from `PATH` (`cuda-transfers-20260929T203748-9396`).
+The Windows screen recovery/shutdown test passes without Vulkan validation diagnostics (`windows-screen-check.log`).
+After the shared-handle refactor on 2026-09-30, the native build and all 202 ordinary tests passed, including
+three native-handle ownership tests. All 32 device tests, 14 staging tests and three CUDA transfer repetitions
+passed with synchronization validation (`build/shared-handle-*.log` and
+`build/integration-tests/cuda-transfers-20260930T002602-27168/`). Preprocessor comparisons confirmed unchanged
+Linux CEF ABI declarations and media-input function bodies; a Linux build/runtime run remains outstanding.
+DeckLink and NDI input/output on Windows were confirmed by the user on 2026-10-01. Combined-graph acceptance
+remains outstanding; the requirements below describe that contract.
 
-- Update the wrapper, GPU capability/allocator code in `src/gpu/device.cpp`, and
-  `src/gpu/transfer/detail/cuda_transfer.cpp`. Existing memory/semaphore capability queries, export flags and calls
-  use `OPAQUE_FD`, `vkGetMemoryFdKHR`, `vkGetSemaphoreFdKHR`, and POSIX close semantics.
-- Implement matching Vulkan Win32 external-memory/semaphore queries, extensions, export calls and CUDA import
-  descriptors. Define owned-handle RAII and failure cleanup according to the selected NT handle contracts; Linux
-  FD ownership rules cannot simply be reused. Match the CUDA and Vulkan devices by identity.
+Read [CUDA transfers](cuda-transfers.md) and [the DeckLink direct-memory contract](decklink-direct-memory.md).
+Discovery/linkage and direct transfers now work on Linux and Windows. Preserve the following requirements
+when extending the implementation and qualifying further hardware:
+
+- Keep the platform-specific memory/semaphore queries, extensions, export calls and CUDA descriptors matched.
+  Linux uses opaque FDs and POSIX ownership; Windows uses opaque NT handles with owned-handle RAII and failure
+  cleanup. Match the CUDA and Vulkan devices by identity.
 - Preserve direct imports of the actual RGBA8 image (including mipmaps) or padded v210 word buffer, dedicated
   allocations where required, external queue ownership, per-slot imports, completion events, and host alignment/
   registration. No intermediate CUDA device frame or SDK-to-staging CPU copy.
@@ -242,7 +370,7 @@ on Linux today. The Windows task includes enabling discovery/linkage **and imple
   default and `--use-cuda` requests CUDA. Once CUDA is selected, per-stream fallback is forbidden. Windows CUDA
   acceptance must demonstrate actual CUDA uploads **and** readbacks; startup fallback on an incapable device is a
   separate behavior test, not proof of working CUDA support.
-- Port the verification/benchmark runners' executable paths, process handling and shell assumptions. Video Codec
+- Keep the verification/benchmark runners' executable paths and process handling platform-aware. Video Codec
   SDK discovery does not enable these transfers, and NVIDIA DVP is not needed for this implementation.
 
 ## Configure, build, and load the runtime
@@ -257,16 +385,17 @@ npm.cmd test
 Pop-Location
 ```
 
-The following is the **full-feature configuration target**, to use after preparing the patched Windows SDK and
-implementing the platform gates above. At the current commit it is expected to fail at the CEF Linux-only check;
-CUDA can otherwise report unavailable even with `MIXIMUS_ENABLE_CUDA=ON`. Those are porting tasks, not missing flags.
-Set `$cefSdk` to the actual packaged Windows SDK root; the example path is an intended location, not a supplied artifact.
+The following is the **full-feature configuration**, to use after preparing the patched Windows SDK.
+CEF and CUDA both build on Windows; the wrapper checks the SDK's version, patch provenance and DLL hash.
+Set `$cefSdk` to the actual packaged SDK root; the example is the locally validated revision-11 package.
 
 ```powershell
-$cefSdk = 'C:\cef\distribution\miximus-cef-windows64'
-cmake -S . -B build-win -G Ninja `
+$cefSdk = 'C:\cef\distribution\miximus_cef_windows64_native_handle_r11'
+cmake -S . -B build -G Ninja `
   "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
   -DVCPKG_TARGET_TRIPLET=x64-windows `
+  "-DVCPKG_INSTALLED_DIR=$PWD/vcpkg_installed" `
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
   -DCMAKE_BUILD_TYPE=RelWithDebInfo `
   "-DNDI_ROOT=$env:NDI_ROOT" `
   "-DCUDAToolkit_ROOT=$env:CUDA_PATH" `
@@ -277,7 +406,7 @@ cmake -S . -B build-win -G Ninja `
   -DMIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK=OFF `
   -DMIXIMUS_TUNE_NATIVE=OFF `
   -DBUILD_TESTING=ON
-cmake --build build-win --parallel
+cmake --build build --parallel
 ```
 
 A separate `build-win-core` directory with CEF/CUDA/Video Codec discovery temporarily disabled can isolate compiler
@@ -286,34 +415,130 @@ corresponding disable switches. Do not finish the Windows task at this checkpoin
 
 Use a fresh build directory when changing compiler, architecture or toolchain. If using Visual Studio or Ninja
 Multi-Config instead, pass `--config RelWithDebInfo` to builds and `-C RelWithDebInfo` to CTest, and account for the
-configuration subdirectory in all executable paths.
+configuration subdirectory in all executable paths. For example, `build/RelWithDebInfo/miximus.exe` uses
+`build/RelWithDebInfo/cef/`, containing both the CEF runtime and `miximus_cef_helper.exe`.
+Single-configuration Ninja builds retain `build/miximus.exe` and `build/cef/`.
 
 For a single-config RelWithDebInfo developer run, prepend the vcpkg release runtime directory and the discovered
 NDI/CUDA runtime directories to the same shell's `PATH`:
 
 ```powershell
 $ndiRuntime = 'C:\Program Files\NDI\NDI 6 SDK\Bin\x64' # Verify against the installed SDK.
-$env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$ndiRuntime;$env:CUDA_PATH\bin;$env:PATH"
-.\build-win\miximus.exe --help
+$env:PATH = "$PWD\vcpkg_installed\x64-windows\bin;$ndiRuntime;$env:CUDA_PATH\bin;$env:PATH"
+.\build\miximus.exe --help
 ```
 
-For Debug use the matching vcpkg `debug\bin`. CMake copies `static_files` and selected Boost targets next to Miximus;
-do not assume every other dependency is staged. Use `dumpbin /dependents` on executables/DLLs when diagnosing
-loading, including generated build tools and test binaries. Missing DLLs may fail GoogleTest discovery during the
-build. Ensure `static_files.dll` is beside each executable that needs it, and implement repeatable CMake staging for
-the app, tests and tools as needed. Follow the qualified CEF runtime layout from its Windows port, not a blanket
-addition of CEF's directory to global `PATH`.
+For Debug use the matching vcpkg `debug\bin`. Windows CMake targets stage their linked project/SDK DLLs, including
+`static_files`, NDI and CUDA, before linking so GoogleTest discovery can load them. Staging also runs when an
+executable is already up to date, so shader/asset-only rebuilds refresh the DLLs beside tests as well as the application.
+Copies to a shared destination are serialized. vcpkg also stages transitive DLL imports
+from its installed tree. Use `dumpbin /dependents` on executables/DLLs when diagnosing loading, including generated
+build tools and test binaries. Newly added executables using project/SDK DLLs should call
+`miximus_stage_runtime_dlls`. Follow the qualified CEF runtime layout from its Windows port, not a blanket addition
+of CEF's directory to global `PATH`.
+
+The 2026-09-30 review follow-up passed the native build and all 205 ordinary tests, including narrow/wide
+command-line parsing of `--disable-cef-sandbox`. An asset-only rebuild refreshed `static_files.dll` in every
+application/test runtime directory without relinking `gpu_vulkan_test`. CEF startup/shutdown passed with Vulkan
+validation in both the existing single-configuration build and a fresh Ninja Multi-Config Release probe build.
+The probe runs used the empty implicit-layer directory described above to exclude stale TikTok registrations.
+Logs are in `build/review-{ctest,staging-result,cef-runtime,multi-runtime}.log`; Linux sandbox runtime validation
+remains outstanding.
+
+The 2026-10-01 formatting follow-up used clang-format 22.1.3 on the branch's touched C++ files. The formatter
+check and `git diff --check` pass. The full `build-tidy` build with clang-tidy 21.1.8 passed at four jobs,
+followed by all 205 ordinary tests from that directory. No clang-tidy findings were reported; MSVC emitted
+`getenv` deprecation warnings. Logs: `build/tidy-review-followup.log` and `build/tidy-review-followup-ctest.log`.
+Linux regression validation is recorded below.
+
+### Linux regression review (2026-10-01)
+
+Reviewed `9278a10` (`main`) through `9b8d714` (`windows-setup`) on Linux with Clang 21.1.8,
+CUDA 11.4, NVIDIA driver 580.178.04, a Quadro P2000, DeckLink Duo, and NDI 6.3.2.
+The review fixed three Linux build regressions:
+
+- FFmpeg discovery now checks components independently, exposing an unused `libpostproc` requirement.
+  Remove that requirement; no project code uses postproc.
+- The Linux DMA-BUF test's designated initializer narrowed runtime `int` flags to `VkImageUsageFlags`.
+  Use an unsigned zero in the conditional expression.
+- The extracted Linux CEF probe helper used `uintptr_t` without including `<cstdint>`.
+
+The existing revision-9 CEF SDK is correctly rejected by this branch. The local source tree was updated,
+built, and packaged as `miximus_cef_linux64_native_handle_r11`; `build` now selects that qualified SDK.
+The old SDK artifacts were preserved. Do not bypass provenance checks to reuse revision 9.
+
+| Check | Result |
+| --- | --- |
+| Native builds, CEF enabled and disabled | Passed; full build uses `cmake --build build -j` |
+| Ordinary CTest | 204/204 passed in each build |
+| Web tests and production build | 9/9 passed; `npm run build` passed |
+| Vulkan renderer / Linux DMA-BUF / display tests | 33 / 5 / 7 passed |
+| Transfer tests | 14 staging tests passed; 14 CUDA tests passed on each of three repetitions, with actual CUDA uploads/readbacks and no staging fallback |
+| CEF GPU export / ingress tests | 10 / 5 passed |
+| Chromium capture tests | 166 passed; 2 default-buffer-format parameterizations intentionally skipped |
+| Native CEF media-source tests | 8/8 passed |
+| CEF hardware probes | Runtime, 120 HD and 120 UHD accelerated copies, session lifecycle, renderer/GPU-process recovery, color/alpha comparisons, four-input serial/async transfer, and session retirement passed |
+| Full-app integrations | Browser replacement/disable/enable, eight inputs/live edits/reload, cross-origin navigation, WebSocket actions/cache clearing, and screen failure/reconfiguration passed |
+| Transfer benchmark | Both backends verified pixels and generated the expected reports; three iterations are a correctness check, not performance evidence |
+
+Hardware suites used the documented Vulkan SDK 1.4.357 synchronization validation layer outside the agent sandbox.
+No Vulkan validation errors were reported. Default sandboxed CEF initialization and shutdown preserved the system
+Vulkan loader. An explicit `--disable-cef-sandbox` run also captured browser frames, delivered media inputs, and
+shut down cleanly. Both transfer backends also completed 30-second DeckLink capture/output and local NDI loopback runs,
+followed by combined DeckLink/NDI-to-CEF-to-screen runs, with clean SIGINT/SIGTERM shutdown. The single-screen
+combined runs delivered 3,321/3,301 CEF input frames (staging/CUDA), with zero transfer failures, GPU recording
+capacity drops, screen render-slot misses, DeckLink output drops, or NDI receiver drops.
+
+Display coverage is X11/XWayland, which the production Linux window service explicitly selects. The three-window
+combined run showed substantial presentation stalls; the single-screen runs still skipped 7/2 display intervals.
+An isolated three-output comparison with CEF disabled reproduced this on both branches: the third output
+presented only 26 frames on `main` versus 24 on `windows-setup` in 15 seconds, while the other two outputs
+presented about 890 frames each. This establishes an existing multi-window limitation, not a new port regression.
+These short tests do not qualify sustained display cadence, occluded windows, or native Wayland.
+
+A separate malformed-configuration shutdown crash was reproduced on freshly built `main` and `windows-setup`
+(CEF disabled): an invalid connection is rejected, then asynchronous web-server teardown segfaults. The backtrace
+passes through destruction of a weak server callback on the configuration thread. This is a pre-existing issue,
+not a Windows-port regression, and remains unresolved by this review.
+
+Local logs, copied hardware settings, status samples, benchmark reports, and a machine-readable summary are under
+`build/integration-tests/linux-review/`. The review changes do not alter the user's saved `build/settings.json`.
+
+### Clang-tidy
+
+Use **clang-tidy 21** to match Linux. Install LLVM 21 separately if Visual Studio bundles another version.
+From the x64 developer shell, configure a separate `build-tidy` directory with the same toolchain, SDK paths
+and CEF/CUDA options as the full-feature configuration above. Add these options to that configure command:
+
+```powershell
+-DMIXIMUS_ENABLE_CLANG_TIDY=ON `
+"-DMIXIMUS_CLANG_TIDY_EXECUTABLE=C:/Program Files/LLVM-21/bin/clang-tidy.exe"
+```
+
+For an already configured full-feature `build-tidy` directory:
+
+```powershell
+& 'C:/Program Files/LLVM-21/bin/clang-tidy.exe' --version
+cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON `
+  "-DMIXIMUS_CLANG_TIDY_EXECUTABLE=C:/Program Files/LLVM-21/bin/clang-tidy.exe"
+cmake --build build-tidy -j4
+ctest --test-dir build-tidy --output-on-failure
+```
+
+Adjust the executable path for your installation; the locally verified version is 21.1.8. CMake does not enforce
+the major version. Keep tidy builds at four jobs, with no other build running concurrently. Precompiled headers
+are disabled automatically. Keep the ordinary `build` directory separate from tidy configuration and compilation.
 
 ## Likely first build issues
 
 | Symptom | Inspect/fix |
 | --- | --- |
-| FFmpeg discovery reports the same library for every component | `src/wrapper/ffmpeg/CMakeLists.txt` reuses cached `INCLUDE_DIRS` and `LIBRARIES` inside its macro. Give each component distinct cache variables/imported targets and correct Debug/Release selection; confirm every requested component independently. |
+| FFmpeg discovery | Each component now uses independent `FFMPEG_<component>_*` cache variables on every platform; Windows additionally selects the matching Debug/Release import library. Old shared `INCLUDE_DIRS`/`LIBRARIES` entries are ignored. |
 | Missing `postproc` | Confirm the chosen FFmpeg build supplies the requested development component. The proposed vcpkg baseline includes it; any removal from Miximus needs an explicit dependency cleanup, not a fake success. |
-| Missing Boost headers | Check all directly used header packages as well as Fiber, Program_options and URL; the install list includes Asio, Container, Describe, Locale and Mp11. |
+| Missing Boost headers | Check all directly used header packages as well as Fiber, Program_options and URL; the install list includes Asio, Container, Describe, Locale, Mp11 and UUID (used by the asset bundler). |
 | MIDL not found / DeckLink header errors | Use the x64 developer environment, correct SDK root and full IDL set. Confirm generated files are dependencies of every consumer. |
 | MSVC errors in Windows-only code | Check `font_registry_win.cpp`, monitor and COM code, const correctness, Win32 macro collisions, Unicode paths, and required Windows system libraries. Fix target/platform ownership rather than globally weakening diagnostics. |
-| Native build succeeds but web UI is absent | Native bundling can report web failure only as a final warning. Inspect `build-win/static/web_build_failed.txt`, `web/dist`, and npm invocation (`npm.cmd` on Windows). |
+| Native build succeeds but web UI is absent | Native bundling can report web failure only as a final warning. Inspect `build/static/web_build_failed.txt`, `web/dist`, and npm invocation (`npm.cmd` on Windows). |
 | Shader tool mismatch | Inspect the selected glslang path/version and `MIXIMUS_SPIRV_VAL`; clear stale tool paths on SDK changes. |
 | CEF initialization succeeds but no browser texture/inputs | Check the patched Windows DLL/header/provenance, private exports, helper loading, adapter identity and GPU completion. A stock SDK or software rendering is not acceptance. |
 | CUDA is requested but staging runs | Check the wrapper's platform gate and Win32 resource qualification. Require completed `cuda-vulkan-direct` transfers, not just CUDA Toolkit discovery. |
@@ -323,11 +548,11 @@ addition of CEF's directory to global `PATH`.
 First run deterministic tests, then explicit GPU tests with the installed Windows validation layer available:
 
 ```powershell
-ctest --test-dir build-win --output-on-failure
+ctest --test-dir build --output-on-failure
 $env:MIXIMUS_VULKAN_VALIDATION = '1'
-.\build-win\src\gpu\gpu_vulkan_test.exe
-.\build-win\src\gpu\gpu_transfer_vulkan_test.exe
-.\build-win\src\gpu\gpu_transfer_vulkan_test.exe --use-cuda --log-debug --gtest_repeat=3
+.\build\src\gpu\gpu_vulkan_test.exe
+.\build\src\gpu\gpu_transfer_vulkan_test.exe
+.\build\src\gpu\gpu_transfer_vulkan_test.exe --use-cuda --log-debug --gtest_repeat=3
 ```
 
 Record every exit code. The CUDA run must log completed `backend=cuda-vulkan-direct` uploads and readbacks and no
@@ -340,10 +565,10 @@ Use private settings, initially an empty graph, rather than `resources/settings.
 monitor/device names and enabled hardware nodes. Do not overwrite an existing test graph on subsequent runs:
 
 ```powershell
-if (-not (Test-Path .\build-win\windows-smoke.json)) {
-  '{"schema_version":1,"nodes":[],"connections":[]}' | Set-Content -Encoding ascii .\build-win\windows-smoke.json
+if (-not (Test-Path .\build\windows-smoke.json)) {
+  '{"schema_version":1,"nodes":[],"connections":[]}' | Set-Content -Encoding ascii .\build\windows-smoke.json
 }
-.\build-win\miximus.exe --settings .\build-win\windows-smoke.json --log-debug --stop-after 60
+.\build\miximus.exe --settings .\build\windows-smoke.json --log-debug --stop-after 60
 ```
 
 While it runs, open `http://127.0.0.1:7351/`. The API exposes `/api/v1/config` and `/api/v1/status`; capture these with
@@ -360,9 +585,11 @@ settings. Test each feature and finally the combined graph:
    `cef_subsystem_probe`, and media-input probes/tests. Port Linux-specific assumptions before using them as evidence.
    Require actual accelerated browser output and GPU-only browser texture inputs, pixel/alpha/color checks,
    multi-input load, stop/clone/reacquisition, transparent/disconnected streams, navigation beyond the process-ID
-   regression boundary, browser crash/reload, bounded pools and orderly sandboxed subprocess shutdown.
-   Port `scripts/test_cef_browser.py`, `test_cef_inputs.py`, `test_cef_load.py`, and
-   `test_cef_media_input_navigation.py`; some assume Linux binary paths and signals. The manual input page is
+   regression boundary, browser crash/reload, bounded pools and orderly subprocess shutdown.
+   Run `scripts/test_cef_browser.py`, `test_cef_inputs.py`, `test_cef_load.py`, and
+   `test_cef_media_input_navigation.py` with Python 3 from the repository root. The runners support Windows
+   executable paths. On Windows, they request graceful shutdown with a console break event in a dedicated
+   process group (run them from a console); Linux retains SIGINT shutdown. The manual input page is
    `http://127.0.0.1:7351/cef-inputs.html`.
 5. **NDI and DeckLink:** discovery, input/output, format/mode changes, unplug/reconnect, alpha/keying where supported,
    frame-rate conversion, buffered cadence and sustained playback. Verify direct backend-owned DeckLink DMA leases

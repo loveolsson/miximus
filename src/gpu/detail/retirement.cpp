@@ -12,7 +12,7 @@ void retirement_queue_s::retire(uint64_t after, std::function<void()> destroy)
     }
 
     const std::scoped_lock guard(mutex_);
-    pending_.push_back({after, std::move(destroy)});
+    pending_.push_back({.completion = after, .destroy = std::move(destroy)});
 }
 
 void retirement_queue_s::collect(uint64_t completed)

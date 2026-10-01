@@ -1,0 +1,2 @@
+add_library(d3d11_dependencies INTERFACE)
+target_link_libraries(d3d11_dependencies INTERFACE d3d11 dxgi)

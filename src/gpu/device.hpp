@@ -1,5 +1,6 @@
 #pragma once
 
+#include "device_diagnostics.hpp"
 #include "recording.hpp"
 
 #include <stdexcept>
@@ -29,12 +30,12 @@ struct device_options_s
     bool external_image_import{};
 };
 
-struct external_image_import_support_s
+enum class external_image_import_support_e
 {
-    bool                     requested{};
-    bool                     enabled{};
-    std::vector<std::string> enabled_extensions;
-    std::vector<std::string> missing_support;
+    not_requested,
+    unsupported_platform,
+    missing_extensions,
+    supported,
 };
 
 class device_s
@@ -43,7 +44,7 @@ class device_s
     std::unique_ptr<recording_context_s>    default_context_;
     friend struct detail::presenter_state_s;
     friend class transfer::detail::cuda_transfer_s;
-    friend class detail::dma_buf_export_s;
+    friend class detail::external_image_export_s;
 
   public:
     explicit device_s(const device_options_s& options = {});
@@ -65,10 +66,10 @@ class device_s
     // An exhausted context returns immediately; workers have independent contexts.
     std::unique_ptr<recording_s>    try_record();
     void                            collect();
-    std::string                     diagnostics_json() const;
+    device_diagnostics_s            diagnostics() const;
     uint64_t                        validation_errors() const noexcept;
     bool                            uses_cuda_transfers() const noexcept;
-    external_image_import_support_s external_image_import_support() const;
+    external_image_import_support_e external_image_import_support() const;
 };
 
 } // namespace miximus::gpu

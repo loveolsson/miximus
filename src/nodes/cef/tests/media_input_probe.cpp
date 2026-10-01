@@ -1,24 +1,26 @@
-#include "gpu/detail/dma_buf_copy.hpp"
-#include "gpu/detail/dma_buf_export.hpp"
+#include "gpu/detail/external_image_copy.hpp"
+#include "gpu/detail/external_image_export.hpp"
 #include "gpu/device.hpp"
 #include "gpu/tests/color_compare.hpp"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_parser.h"
 #include "logger/logger.hpp"
+#include "nodes/cef/detail/image_transport.hpp"
 #include "nodes/cef/detail/media_input_exports.hpp"
 #include "nodes/cef/detail/media_input_renderer.hpp"
 #include "nodes/cef/detail/runtime.hpp"
 #include "nodes/cef/detail/task.hpp"
 #include "wrapper/cef/media_input_abi.hpp"
+#include "wrapper/cef/platform.hpp"
 
 #include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <format>
 #include <functional>
 #include <future>
@@ -201,29 +203,15 @@ class client_s final
         }
 
         try {
-            if (info.plane_count != 1 ||
-                (info.format != CEF_COLOR_TYPE_RGBA_8888 && info.format != CEF_COLOR_TYPE_BGRA_8888)) {
-                throw std::runtime_error("Unexpected browser output layout");
-            }
-
-            gpu::detail::dma_buf_image_s descriptor{
-                .fd     = info.planes[0].fd,
-                .extent = {.width  = static_cast<uint32_t>(info.extra.coded_size.width),
-                           .height = static_cast<uint32_t>(info.extra.coded_size.height)},
-                .order =
-                    info.format == CEF_COLOR_TYPE_BGRA_8888 ? gpu::channel_order_e::bgra : gpu::channel_order_e::rgba,
-                .modifier = info.modifier,
-                .offset   = info.planes[0].offset,
-                .stride   = info.planes[0].stride
-            };
+            const auto descriptor = nodes::cef::detail::capture_image(info);
 
             gpu::draw_s conversion;
             conversion.compositing = gpu::compositing_e::replace;
             conversion.transfer    = gpu::color_operation_e::decode_srgb_premultiplied;
             auto record            = context_.try_record();
             if (!record ||
-                gpu::detail::dma_buf_copy_s::submit(*record, descriptor, destination_, conversion, 500ms).wait(5s) !=
-                    gpu::wait_result_e::ready) {
+                gpu::detail::external_image_copy_s::submit(*record, descriptor, destination_, conversion, 500ms)
+                        .wait(5s) != gpu::wait_result_e::ready) {
                 throw std::runtime_error("Browser output GPU copy failed");
             }
 
@@ -331,19 +319,14 @@ class client_s final
     }
 };
 
-cef_wrapper::media_frame_s describe(const gpu::detail::dma_buf_export_s& exported, uint32_t input, int64_t timestamp)
+cef_wrapper::media_frame_s
+describe(const gpu::detail::external_image_export_s& exported, uint32_t input, int64_t timestamp)
 {
-    const auto d            = exported.descriptor();
-    auto       packet       = cef_wrapper::make_media_frame();
-    packet.input            = input;
-    packet.fd               = d.fd;
-    packet.width            = d.extent.width;
-    packet.height           = d.extent.height;
-    packet.stride           = static_cast<uint32_t>(d.stride);
-    packet.offset           = d.offset;
-    packet.modifier         = d.modifier;
-    packet.allocation_bytes = exported.allocation_bytes();
-    packet.timestamp_us     = timestamp;
+    const auto d      = exported.descriptor();
+    auto       packet = cef_wrapper::make_media_frame();
+    packet.input      = input;
+    nodes::cef::detail::set_media_frame_image(packet, d, exported.allocation_bytes());
+    packet.timestamp_us = timestamp;
     return packet;
 }
 
@@ -386,11 +369,11 @@ std::future<std::pair<int, int>> enqueue(cef_wrapper::send_media_frame_t  api,
     return future;
 }
 
-bool send(cef_wrapper::send_media_frame_t      api,
-          const CefRefPtr<client_s>&           client,
-          const gpu::detail::dma_buf_export_s& exported,
-          int64_t                              timestamp,
-          uint32_t                             input)
+bool send(cef_wrapper::send_media_frame_t             api,
+          const CefRefPtr<client_s>&                  client,
+          const gpu::detail::external_image_export_s& exported,
+          int64_t                                     timestamp,
+          uint32_t                                    input)
 {
     auto future = enqueue(api, client, describe(exported, input, timestamp));
     if (future.wait_for(10s) != std::future_status::ready) {
@@ -460,8 +443,10 @@ void transfer_frames(const std::stop_token&             stop,
                 auto       description =
                     describe(frame->image(), static_cast<uint32_t>(frame->ticket().input), frame->timestamp_us());
                 description.source_generation = frame->ticket().generation;
-                pending.push_back(
-                    {enqueue(api, client, description, [frame](bool safe) { frame->retire(safe); }), started});
+                pending.push_back({
+                    .result  = enqueue(api, client, description, [frame](bool safe) { frame->retire(safe); }),
+                    .started = started,
+                });
             }
 
             if (stop.stop_requested()) {
@@ -539,12 +524,12 @@ void run_async(cef_detail::media_input_exports_s& queue,
 
     std::cout << '\n';
 }
-void run_serial(const std::vector<std::unique_ptr<gpu::detail::dma_buf_export_s>>& exports,
-                gpu::texture_s&                                                    source,
-                gpu::recording_context_s&                                          context,
-                cef_wrapper::send_media_frame_t                                    api,
-                const CefRefPtr<client_s>&                                         client,
-                uint32_t                                                           inputs)
+void run_serial(const std::vector<std::unique_ptr<gpu::detail::external_image_export_s>>& exports,
+                gpu::texture_s&                                                           source,
+                gpu::recording_context_s&                                                 context,
+                cef_wrapper::send_media_frame_t                                           api,
+                const CefRefPtr<client_s>&                                                client,
+                uint32_t                                                                  inputs)
 {
     gpu::draw_s conversion;
     conversion.compositing         = gpu::compositing_e::replace;
@@ -584,10 +569,10 @@ void run_serial(const std::vector<std::unique_ptr<gpu::detail::dma_buf_export_s>
               << " p95=" << hold_us[(hold_us.size() * 95 / 100) - 1] << " max=" << hold_us.back() << '\n';
 }
 
-void check_generations(cef_wrapper::send_media_frame_t      api,
-                       const CefRefPtr<client_s>&           client,
-                       const gpu::detail::dma_buf_export_s& exported,
-                       bool                                 reject_invalid_import)
+void check_generations(cef_wrapper::send_media_frame_t             api,
+                       const CefRefPtr<client_s>&                  client,
+                       const gpu::detail::external_image_export_s& exported,
+                       bool                                        reject_invalid_import)
 {
     // Metadata invalidation must reject a subsequently arriving old
     // frame without importing it or manufacturing a GPU completion.
@@ -714,7 +699,7 @@ void create_browser(const CefRefPtr<client_s>& client, uint32_t inputs)
 )HTML";
     auto create = [client, page] {
         CefWindowInfo window;
-        window.SetAsWindowless(0);
+        window.SetAsWindowless(CefWindowHandle{});
         window.shared_texture_enabled = true;
         CefBrowserSettings settings;
         settings.windowless_frame_rate = 60;
@@ -776,14 +761,14 @@ probe_options_s parse_options(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    if (argc < 3 || argc > 5) {
-        std::cerr << "Usage: cef_media_input_probe RUNTIME_DIRECTORY PROFILE_DIRECTORY [INPUT_COUNT=1] "
-                     "[ASYNC_EXPORT_DEPTH=1..8 | --reject-invalid-import | --size=N]\n";
-        return 2;
-    }
-
-    std::cout.setf(std::ios::unitbuf);
     try {
+        if (argc < 3 || argc > 5) {
+            std::cerr << "Usage: cef_media_input_probe RUNTIME_DIRECTORY PROFILE_DIRECTORY [INPUT_COUNT=1] "
+                         "[ASYNC_EXPORT_DEPTH=1..8 | --reject-invalid-import | --size=N]\n";
+            return 2;
+        }
+
+        std::cout.setf(std::ios::unitbuf);
         const auto [inputs, async_depth, square_size, reject_invalid_import] = parse_options(argc, argv);
 
         logger::init_loggers(spdlog::level::warn);
@@ -791,13 +776,13 @@ int main(int argc, char** argv)
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
         options.external_image_import = true;
-        gpu::device_s                                               gpu(options);
-        const gpu::extent_s                                         export_size = (square_size != 0U)
-                                                                                      ? gpu::extent_s{.width = square_size, .height = square_size}
-                                                                                      : gpu::extent_s{.width = 640, .height = 360};
-        std::vector<std::unique_ptr<gpu::detail::dma_buf_export_s>> exports;
+        gpu::device_s       gpu(options);
+        const gpu::extent_s export_size = (square_size != 0U)
+                                              ? gpu::extent_s{.width = square_size, .height = square_size}
+                                              : gpu::extent_s{.width = 640, .height = 360};
+        std::vector<std::unique_ptr<gpu::detail::external_image_export_s>> exports;
         for (uint32_t input = 0; (async_depth == 0U) && input < inputs; ++input) {
-            exports.push_back(std::make_unique<gpu::detail::dma_buf_export_s>(gpu, export_size));
+            exports.push_back(std::make_unique<gpu::detail::external_image_export_s>(gpu, export_size));
         }
 
         auto                                             source  = gpu.create_texture({.width = 640, .height = 360});
@@ -815,8 +800,7 @@ int main(int argc, char** argv)
 
         // Runtime shuts down before exporter destruction, including failure paths.
         cef_detail::runtime_s runtime(argv[1], argv[2]);
-        const auto            api =
-            reinterpret_cast<cef_wrapper::send_media_frame_t>(dlsym(RTLD_DEFAULT, cef_wrapper::SEND_MEDIA_FRAME));
+        const auto            api = cef_wrapper::find_send_media_frame();
         if (api == nullptr) {
             throw std::runtime_error("Runtime does not provide the experimental media-input bridge");
         }
@@ -850,7 +834,11 @@ int main(int argc, char** argv)
         std::cout << "Native input tracks painted both ordered per-input color patterns through GPU-only ingress and "
                      "accelerated output\n";
     } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
+        std::fprintf(stderr, "%s\n", error.what());
+        return 1;
+    } catch (...) {
+        std::fputs("CEF probe failed with an unknown exception\n", stderr);
         return 1;
     }
+    return 0;
 }

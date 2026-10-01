@@ -13,12 +13,12 @@
 #include "types/web_message_json.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"
+#include "utils/shutdown_signal.hpp"
 #include "utils/shutdown_watchdog.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -51,14 +51,6 @@ struct exception_shutdown_guard_s
         }
     }
 };
-
-auto& get_signal_status() noexcept
-{
-    static volatile std::sig_atomic_t signal_status = 0;
-    return signal_status;
-}
-
-void signal_handler(int /*signal*/) noexcept { get_signal_status() = 1; }
 
 void publish_scheduler_status(core::app_state_s*                     app,
                               const core::node_status_handle_s&      status_handle,
@@ -93,9 +85,6 @@ void publish_scheduler_status(core::app_state_s*                     app,
 
 int miximus_main(core::command_line_options_s command_line_options, std::string_view executable_name)
 {
-    (void)std::signal(SIGINT, signal_handler);
-    (void)std::signal(SIGTERM, signal_handler);
-
     if (command_line_options.show_help) {
         std::cout << core::get_command_line_help(executable_name);
         return EXIT_SUCCESS;
@@ -107,10 +96,13 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
 
     int exit_code = EXIT_SUCCESS;
     try {
+        utils::install_shutdown_signal_handlers();
         {
             utils::start_shutdown_watchdog(60s);
             utils::begin_shutdown_step("application initialization");
             core::app_state_s app(std::move(command_line_options));
+            // SDK initialization can install process-wide handlers of its own.
+            utils::install_shutdown_signal_handlers();
             utils::finish_shutdown_watchdog();
             // web_server declared AFTER app so it is destroyed BEFORE app — the
             // websocketpp endpoint holds a raw pointer to cfg_executor_ and must
@@ -158,7 +150,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                                                            *app.command_line_options().stop_after);
             }
 
-            while (get_signal_status() == 0 &&
+            while (!utils::shutdown_requested() &&
                    (!stop_time.has_value() || std::chrono::steady_clock::now() < *stop_time)) {
                 render_thread_delay_test.inject_before_render_frame();
                 node_manager.tick_one_frame(&app, frame_scheduler);
@@ -170,7 +162,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                 render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
             }
 
-            if (stop_time.has_value() && get_signal_status() == 0) {
+            if (stop_time.has_value() && !utils::shutdown_requested()) {
                 getlog("app")->info("Stopping after requested runtime");
             }
 
@@ -208,7 +200,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
 } // namespace
 
 #ifdef _WIN32
-int wmain(int argc, wchar_t* argv[])
+int wmain(int argc, wchar_t** argv)
 {
     try {
         return miximus_main(core::parse_command_line_options(argc, argv),

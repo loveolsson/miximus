@@ -15,7 +15,9 @@ class runtime_s
   public:
     // Construct and destroy on the same startup/shutdown thread. CEF owns its
     // supported threaded UI loop; the application never pumps browser events.
-    runtime_s(const std::filesystem::path& runtime_directory, const std::filesystem::path& profile_directory);
+    runtime_s(const std::filesystem::path& runtime_directory,
+              const std::filesystem::path& profile_directory,
+              bool                         disable_sandbox = false);
     // Asynchronous shared HTTP-cache eviction. False means already pending.
     bool clear_http_cache();
     bool cache_clear_pending() const;

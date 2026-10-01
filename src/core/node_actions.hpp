@@ -28,10 +28,18 @@ class node_actions_s
     {
         // An entry also marks this node's settings/connections dirty.
         std::deque<request_s> actions;
+
+        pending_s()                            = default;
+        pending_s(const pending_s&)            = delete;
+        pending_s& operator=(const pending_s&) = delete;
+        pending_s(pending_s&&)                 = default;
+        pending_s& operator=(pending_s&&)      = default;
     };
     class batch_t
     {
-        std::vector<std::deque<request_s>> groups_;
+        // Explicitly move-only: MSVC's deque move can throw, so vector would
+        // otherwise try to copy the deque's non-copyable action elements.
+        std::vector<pending_s> groups_;
         friend class node_manager_s;
 
       public:

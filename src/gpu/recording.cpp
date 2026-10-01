@@ -20,9 +20,10 @@ recording_state_s::recording_state_s(std::shared_ptr<recording_context_state_s> 
     for (auto pool : arena->descriptor_pools) {
         check(owner->vk.vkResetDescriptorPool(owner->device, pool, 0), "reset descriptor arena");
     }
-    VkCommandBufferBeginInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VkCommandBufferBeginInfo info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+    };
     check(owner->vk.vkBeginCommandBuffer(arena->commands, &info), "begin recording");
 }
 
@@ -59,18 +60,17 @@ VkDescriptorSet recording_state_s::allocate_descriptor(VkDescriptorSetLayout lay
     if (page_index == arena->descriptor_pools.size()) {
         const auto                                sets = owner->options.descriptor_page_size;
         const std::array<VkDescriptorPoolSize, 3> sizes{
-            {
-             {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = sets * 2},
+            {{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = sets * 2},
              {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = sets},
-             {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = sets},
-             }
+             {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = sets}}
         };
 
-        VkDescriptorPoolCreateInfo create{};
-        create.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        create.maxSets       = sets;
-        create.poolSizeCount = static_cast<uint32_t>(sizes.size());
-        create.pPoolSizes    = sizes.data();
+        VkDescriptorPoolCreateInfo create{
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .maxSets       = sets,
+            .poolSizeCount = static_cast<uint32_t>(sizes.size()),
+            .pPoolSizes    = sizes.data(),
+        };
 
         // Establish ownership before allocating so a failed allocation or an
         // abandoned recording cannot leak a native descriptor pool.
@@ -85,11 +85,12 @@ VkDescriptorSet recording_state_s::allocate_descriptor(VkDescriptorSetLayout lay
         }
     }
 
-    VkDescriptorSetAllocateInfo allocate{};
-    allocate.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocate.descriptorPool     = arena->descriptor_pools.at(page_index);
-    allocate.descriptorSetCount = 1;
-    allocate.pSetLayouts        = &layout;
+    VkDescriptorSetAllocateInfo allocate{
+        .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool     = arena->descriptor_pools.at(page_index),
+        .descriptorSetCount = 1,
+        .pSetLayouts        = &layout,
+    };
 
     VkDescriptorSet descriptor{};
     const auto      result = owner->vk.vkAllocateDescriptorSets(owner->device, &allocate, &descriptor);
@@ -115,30 +116,32 @@ void recording_state_s::transition(const std::shared_ptr<texture_state_s>& image
     static_cast<void>(inserted);
     auto& previous = it->second.at(mip);
 
-    VkImageMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barrier.srcStageMask =
-        previous == VK_IMAGE_LAYOUT_UNDEFINED ? VK_PIPELINE_STAGE_2_NONE : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    barrier.srcAccessMask       = previous == VK_IMAGE_LAYOUT_UNDEFINED
-                                      ? VK_ACCESS_2_NONE
-                                      : VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
-    barrier.dstStageMask        = stage;
-    barrier.dstAccessMask       = access;
-    barrier.oldLayout           = previous;
-    barrier.newLayout           = layout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image               = image->image;
-    barrier.subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                                   .baseMipLevel   = mip,
-                                   .levelCount     = 1,
-                                   .baseArrayLayer = 0,
-                                   .layerCount     = 1};
+    VkImageMemoryBarrier2 barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask =
+            previous == VK_IMAGE_LAYOUT_UNDEFINED ? VK_PIPELINE_STAGE_2_NONE : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .srcAccessMask       = previous == VK_IMAGE_LAYOUT_UNDEFINED
+                                   ? VK_ACCESS_2_NONE
+                                   : VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+        .dstStageMask        = stage,
+        .dstAccessMask       = access,
+        .oldLayout           = previous,
+        .newLayout           = layout,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image               = image->image,
+        .subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                .baseMipLevel   = mip,
+                                .levelCount     = 1,
+                                .baseArrayLayer = 0,
+                                .layerCount     = 1},
+    };
 
-    VkDependencyInfo dependency{};
-    dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.imageMemoryBarrierCount = 1;
-    dependency.pImageMemoryBarriers    = &barrier;
+    VkDependencyInfo dependency{
+        .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .imageMemoryBarrierCount = 1,
+        .pImageMemoryBarriers    = &barrier,
+    };
     if (previous == VK_IMAGE_LAYOUT_UNDEFINED) {
         auto [uses, unused] = initial_uses.try_emplace(image.get(), image->mip_levels);
         static_cast<void>(unused);
@@ -181,13 +184,18 @@ void recording_state_s::prepare_sampled(const std::shared_ptr<texture_state_s>& 
             const int32_t next_width  = std::max(1, width / 2);
             const int32_t next_height = std::max(1, height / 2);
 
-            VkImageBlit blit{};
-            blit.srcSubresource = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = mip - 1, .baseArrayLayer = 0, .layerCount = 1};
-            blit.srcOffsets[1]  = {.x = width, .y = height, .z = 1};
-            blit.dstSubresource = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = mip, .baseArrayLayer = 0, .layerCount = 1};
-            blit.dstOffsets[1] = {.x = next_width, .y = next_height, .z = 1};
+            VkImageBlit blit{
+                .srcSubresource = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                   .mipLevel       = mip - 1,
+                                   .baseArrayLayer = 0,
+                                   .layerCount     = 1},
+                .srcOffsets     = {{}, {.x = width, .y = height, .z = 1}},
+                .dstSubresource = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                                   .mipLevel       = mip,
+                                   .baseArrayLayer = 0,
+                                   .layerCount     = 1},
+                .dstOffsets     = {{}, {.x = next_width, .y = next_height, .z = 1}},
+            };
             owner->vk.vkCmdBlitImage(arena->commands,
                                      image->image,
                                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -220,21 +228,23 @@ void recording_state_s::buffer_barrier(const std::shared_ptr<buffer_state_s>& bu
     retain(buffer);
     buffer->flush_host_writes();
 
-    VkBufferMemoryBarrier2 barrier{};
-    barrier.sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-    barrier.srcStageMask  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
-    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT;
-    barrier.dstStageMask  = stage;
-    barrier.dstAccessMask = access;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer              = buffer->buffer;
-    barrier.size                = VK_WHOLE_SIZE;
+    VkBufferMemoryBarrier2 barrier{
+        .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+        .srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT,
+        .srcAccessMask       = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT,
+        .dstStageMask        = stage,
+        .dstAccessMask       = access,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer              = buffer->buffer,
+        .size                = VK_WHOLE_SIZE,
+    };
 
-    VkDependencyInfo dependency{};
-    dependency.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.bufferMemoryBarrierCount = 1;
-    dependency.pBufferMemoryBarriers    = &barrier;
+    VkDependencyInfo dependency{
+        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers    = &barrier,
+    };
     owner->vk.vkCmdPipelineBarrier2(arena->commands, &dependency);
 }
 
@@ -280,11 +290,14 @@ VkBufferImageCopy copy_region(const detail::texture_state_s& image, size_t buffe
         throw std::invalid_argument("invalid transfer stride or buffer extent");
     }
 
-    VkBufferImageCopy region{};
-    region.bufferRowLength  = static_cast<uint32_t>(stride / bpp);
-    region.imageSubresource = {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1};
-    region.imageExtent = {.width = image.extent.width, .height = image.extent.height, .depth = 1};
+    VkBufferImageCopy region{
+        .bufferRowLength  = static_cast<uint32_t>(stride / bpp),
+        .imageSubresource = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                             .mipLevel       = 0,
+                             .baseArrayLayer = 0,
+                             .layerCount     = 1},
+        .imageExtent      = {.width = image.extent.width, .height = image.extent.height, .depth = 1},
+    };
     return region;
 }
 } // namespace
@@ -347,7 +360,11 @@ void recording_s::copy(const buffer_s& source, const buffer_s& destination, size
     state_->buffer_barrier(source.state_, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
     state_->buffer_barrier(destination.state_, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
 
-    const VkBufferCopy region{0, 0, bytes};
+    const VkBufferCopy region{
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size      = bytes,
+    };
     state_->owner->vk.vkCmdCopyBuffer(
         state_->arena->commands, source.state_->buffer, destination.state_->buffer, 1, &region);
     if (destination.state_->mapped != nullptr) {
@@ -374,10 +391,18 @@ void recording_s::clear(const texture_s& target, std::array<float, 4> color)
             throw std::invalid_argument("integer clear accepts only zero");
         }
     } else {
-        std::ranges::copy(color, value.float32);
+        value = {
+            .float32 = {color[0], color[1], color[2], color[3]}
+        };
     }
 
-    const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    const VkImageSubresourceRange range{
+        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel   = 0,
+        .levelCount     = 1,
+        .baseArrayLayer = 0,
+        .layerCount     = 1,
+    };
     state_->owner->vk.vkCmdClearColorImage(
         state_->arena->commands, target.state_->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
 }

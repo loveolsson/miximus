@@ -1,0 +1,33 @@
+{
+  "name": "miximus",
+  "dependencies": [
+    "boost-asio",
+    "boost-container",
+    "boost-describe",
+    "boost-fiber",
+    "boost-locale",
+    "boost-mp11",
+    "boost-program-options",
+    "boost-url",
+    "boost-uuid",
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avdevice",
+        "avfilter",
+        "avformat",
+        "postproc",
+        "swresample",
+        "swscale"
+      ]
+    },
+    "freetype",
+    "glfw3",
+    "glm",
+    "nlohmann-json",
+    "websocketpp",
+    "zlib"
+  ]
+}

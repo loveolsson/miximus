@@ -2,51 +2,19 @@
 
 #include "include/cef_app.h"
 #include "include/cef_request_context.h"
+#include "runtime_platform.hpp"
 #include "task.hpp"
+#include "wrapper/cef/platform.hpp"
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <csignal>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
 
 namespace miximus::nodes::cef::detail {
 namespace {
-// Chrome's browser main parts install shutdown handlers independently of
-// CefSettings::disable_signal_handlers. Preserve the embedding application's
-// dispositions after initialization, without changing its signal/main loop.
-class preserved_signals_s
-{
-    static constexpr std::array                  signals{SIGINT, SIGTERM, SIGHUP};
-    std::array<struct sigaction, signals.size()> actions_{};
-
-  public:
-    preserved_signals_s()
-    {
-        for (size_t index = 0; index < signals.size(); ++index) {
-            if (sigaction(signals.at(index), nullptr, &actions_.at(index)) != 0) {
-                throw std::runtime_error("Cannot preserve application signal handlers before CEF startup");
-            }
-        }
-    }
-    preserved_signals_s(const preserved_signals_s& other)            = delete;
-    preserved_signals_s& operator=(const preserved_signals_s& other) = delete;
-    preserved_signals_s(preserved_signals_s&& other)                 = delete;
-    preserved_signals_s& operator=(preserved_signals_s&& other)      = delete;
-
-    ~preserved_signals_s()
-    {
-        for (size_t index = 0; index < signals.size(); ++index) {
-            if (sigaction(signals.at(index), &actions_.at(index), nullptr) != 0) {
-                std::terminate();
-            }
-        }
-    }
-};
-
 class cache_clear_callback_s final : public CefCompletionCallback
 {
     std::shared_ptr<std::atomic_bool> pending_;
@@ -80,11 +48,7 @@ class browser_app_s final
     void OnBeforeCommandLineProcessing(const CefString& /* process_type */,
                                        CefRefPtr<CefCommandLine> command_line) override
     {
-        // Match the application's existing X11/XWayland platform. This switch
-        // affects Chromium only; no GLFW or process-wide environment changes.
-        command_line->AppendSwitchWithValue("ozone-platform", "x11");
-        // Linux shared-texture OSR needs ANGLE's native EGL import path.
-        command_line->AppendSwitchWithValue("use-angle", "gl-egl");
+        configure_runtime_command_line(command_line);
         // Embedded sources must never show standalone Chrome onboarding or
         // default-browser prompts, including for a fresh per-instance profile.
         command_line->AppendSwitch("no-first-run");
@@ -110,28 +74,30 @@ struct runtime_s::state_s
     std::thread::id                   owner               = std::this_thread::get_id();
 };
 
-runtime_s::runtime_s(const std::filesystem::path& runtime_directory, const std::filesystem::path& profile_directory)
+runtime_s::runtime_s(const std::filesystem::path& runtime_directory,
+                     const std::filesystem::path& profile_directory,
+                     bool                         disable_sandbox)
     : state_(std::make_unique<state_s>())
 {
     const auto runtime = std::filesystem::canonical(runtime_directory);
     const auto profile = std::filesystem::absolute(profile_directory);
     std::filesystem::create_directories(profile);
+    cef_wrapper::load_runtime(runtime);
     CefSettings settings;
+    settings.no_sandbox                   = static_cast<int>(disable_sandbox);
     settings.multi_threaded_message_loop  = 1;
     settings.windowless_rendering_enabled = 1;
     settings.command_line_args_disabled   = 1;
     // Keep the host application's existing SIGINT/SIGTERM handlers in charge.
     settings.disable_signal_handlers             = 1;
-    CefString(&settings.browser_subprocess_path) = (runtime / "miximus_cef_helper").string();
-    CefString(&settings.resources_dir_path)      = runtime.string();
-    CefString(&settings.locales_dir_path)        = (runtime / "locales").string();
-    CefString(&settings.root_cache_path)         = profile.string();
-    CefString(&settings.log_file)                = (profile / "cef.log").string();
-    std::array<char, 8>       name{"miximus"};
-    std::array<char*, 2>      argv{name.data(), nullptr};
-    const CefMainArgs         args(1, argv.data());
-    const preserved_signals_s application_signals;
-    if (!CefInitialize(args, settings, state_->app, nullptr)) {
+    const auto helper                            = runtime / MIXIMUS_CEF_HELPER_NAME;
+    CefString(&settings.browser_subprocess_path) = helper.native();
+    CefString(&settings.resources_dir_path)      = runtime.native();
+    CefString(&settings.locales_dir_path)        = (runtime / "locales").native();
+    CefString(&settings.root_cache_path)         = profile.native();
+    CefString(&settings.log_file)                = (profile / "cef.log").native();
+    const runtime_initialization_s initialization;
+    if (!initialize_runtime(settings, state_->app, runtime)) {
         throw std::runtime_error("CEF initialization failed");
     }
     if (!state_->app->wait_initialized()) {

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -139,14 +140,14 @@ void exhaust_and_recover(browser_session_s& session)
 }
 } // namespace
 
-int main(int argc, char* argv[])
+int main(int argc, char** argv)
 {
-    if (argc != 3) {
-        return 2;
-    }
-    std::cout.setf(std::ios::unitbuf);
-    logger::init_loggers(spdlog::level::warn);
     try {
+        if (argc != 3) {
+            return 2;
+        }
+        std::cout.setf(std::ios::unitbuf);
+        logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
         options.external_image_import = true;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -208,7 +209,10 @@ int main(int argc, char* argv[])
         }
         return device.validation_errors() == 0 ? 0 : 1;
     } catch (const std::exception& error) {
-        std::cerr << "CEF session probe failed: " << error.what() << '\n';
+        std::fprintf(stderr, "CEF session probe failed: %s\n", error.what());
+        return 1;
+    } catch (...) {
+        std::fputs("CEF probe failed with an unknown exception\n", stderr);
         return 1;
     }
 }

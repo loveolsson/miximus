@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gpu/device.hpp"
+#include "native_handle.hpp"
 
 #include <atomic>
 #include <functional>
@@ -14,6 +15,8 @@ namespace miximus::gpu::detail {
 struct resource_state_s
 {
     std::shared_ptr<device_state_s> owner;
+    // One exported reference per allocation, retained across external registrations.
+    native_handle_s external_memory_handle;
 
     // CPU leases and recorded GPU uses are separate reasons an allocation remains live.
     std::atomic_uint64_t last_use_timeline_value{};

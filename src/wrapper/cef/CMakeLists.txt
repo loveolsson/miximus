@@ -5,8 +5,8 @@ if(NOT MIXIMUS_ENABLE_CEF)
     return()
 endif()
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
-    message(FATAL_ERROR "CEF currently has a pinned Linux x64 SDK only; other platforms require their own qualification")
+if(NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux") OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    message(FATAL_ERROR "CEF requires a matching source-built Linux or Windows x64 SDK")
 endif()
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sdk.json" CEF_MANIFEST)
 string(JSON MIXIMUS_CEF_VERSION GET "${CEF_MANIFEST}" version)
@@ -19,15 +19,24 @@ file(STRINGS "${CEF_ROOT}/include/cef_version.h" CEF_VERSION_LINE REGEX "^#defin
 if(NOT CEF_VERSION_LINE STREQUAL "#define CEF_VERSION \"${MIXIMUS_CEF_VERSION}\"")
     message(FATAL_ERROR "CEF SDK does not match the pinned version: ${CEF_VERSION_LINE}")
 endif()
+if(WIN32)
+    set(CEF_LIBRARY_NAME libcef.dll)
+else()
+    set(CEF_LIBRARY_NAME libcef.so)
+endif()
 # Stock SDKs remain usable for diagnostic probes, but real sessions require the
 # recorded native allocation and producer-completion patches and matching binary.
 set(CEF_NATIVE_CAPTURE_READY 0)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/source-build.json" "${CEF_ROOT}/Release/libcef.so")
+    "${CMAKE_CURRENT_SOURCE_DIR}/source-build.json" "${CEF_ROOT}/Release/${CEF_LIBRARY_NAME}")
 if(EXISTS "${CEF_ROOT}/miximus-source-build.json")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CEF_ROOT}/miximus-source-build.json")
     file(READ "${CEF_ROOT}/miximus-source-build.json" CEF_SOURCE_PROVENANCE)
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/source-build.json" CEF_REQUIRED_SOURCE)
+    if(WIN32)
+        string(JSON CEF_WINDOWS_DEFINES GET "${CEF_REQUIRED_SOURCE}" platforms windows64 gn_defines)
+        string(JSON CEF_REQUIRED_SOURCE SET "${CEF_REQUIRED_SOURCE}" gn_defines "\"${CEF_WINDOWS_DEFINES}\"")
+    endif()
     set(CEF_SOURCE_MATCH TRUE)
     foreach(KEY revision cef_revision chromium_revision gn_defines patches)
         string(JSON CEF_ACTUAL ERROR_VARIABLE CEF_JSON_ERROR GET "${CEF_SOURCE_PROVENANCE}" ${KEY})
@@ -38,7 +47,7 @@ if(EXISTS "${CEF_ROOT}/miximus-source-build.json")
     endforeach()
     string(JSON CEF_RECORDED_HASH ERROR_VARIABLE CEF_JSON_ERROR GET "${CEF_SOURCE_PROVENANCE}" libcef_sha256)
     if(CEF_SOURCE_MATCH AND NOT CEF_JSON_ERROR)
-        file(SHA256 "${CEF_ROOT}/Release/libcef.so" CEF_ACTUAL_HASH)
+        file(SHA256 "${CEF_ROOT}/Release/${CEF_LIBRARY_NAME}" CEF_ACTUAL_HASH)
         if(CEF_ACTUAL_HASH STREQUAL CEF_RECORDED_HASH)
             set(CEF_NATIVE_CAPTURE_READY 1)
         endif()
@@ -55,7 +64,15 @@ if(NOT EXISTS "${CEF_ROOT}/include/internal/cef_miximus_media_input.h")
 endif()
 # Scope all upstream settings to this directory and its wrapper child.
 set(USE_SANDBOX ON)
+if(WIN32)
+    # Our ordinary executable/helper layout does not use the Windows bootstrap.
+    set(USE_SANDBOX OFF)
+    set(CEF_RUNTIME_LIBRARY_FLAG "/MD" CACHE STRING "CEF wrapper runtime matches Miximus" FORCE)
+endif()
 list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+foreach(config "" _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
+    set(MIXIMUS_CEF_SAVED_CXX_FLAGS${config} "${CMAKE_CXX_FLAGS${config}}")
+endforeach()
 find_package(CEF REQUIRED)
 # Upstream wrapper sources use upstream warning settings, not Miximus' strict
 # first-party warning set. Restore the latter for our helper below.
@@ -63,9 +80,14 @@ get_directory_property(MIXIMUS_CEF_PARENT_OPTIONS COMPILE_OPTIONS)
 set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "")
 add_subdirectory("${CEF_LIBCEF_DLL_WRAPPER_PATH}" libcef_dll_wrapper)
 set_property(DIRECTORY PROPERTY COMPILE_OPTIONS "${MIXIMUS_CEF_PARENT_OPTIONS}")
+foreach(config "" _DEBUG _RELEASE _RELWITHDEBINFO _MINSIZEREL)
+    set(CMAKE_CXX_FLAGS${config} "${MIXIMUS_CEF_SAVED_CXX_FLAGS${config}}")
+endforeach()
 
 set(CEF_STAGE "${CMAKE_BINARY_DIR}/cef")
-file(MAKE_DIRECTORY "${CEF_STAGE}")
+if(WIN32 AND CMAKE_CONFIGURATION_TYPES)
+    set(CEF_STAGE "${CMAKE_BINARY_DIR}/$<CONFIG>/cef")
+endif()
 set(CEF_STAGE_COMMANDS)
 set(CEF_STAGE_DEPENDENCIES
     "${CMAKE_CURRENT_SOURCE_DIR}/sdk.json"
@@ -111,44 +133,70 @@ else()
         "${CEF_STAGE}/miximus-source-build.json")
 endif()
 add_custom_command(OUTPUT "${CEF_STAGE}/.staged"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CEF_STAGE}"
     ${CEF_STAGE_COMMANDS}
     COMMAND "${CMAKE_COMMAND}" -E touch "${CEF_STAGE}/.staged"
     DEPENDS ${CEF_STAGE_DEPENDENCIES}
     VERBATIM
 )
 add_custom_target(cef_runtime_files DEPENDS "${CEF_STAGE}/.staged")
-# libcef must be a direct executable dependency (its close interposer uses
-# RTLD_NEXT). Expose only libcef to that executable's RUNPATH, never the bundled
-# Vulkan/ANGLE libraries. Chromium children still run from the complete cef/ tree.
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/cef-link")
-# CEF resolves ICU/snapshot assets relative to the dladdr path of libcef even
-# when resources_dir_path is set. Expose data links here, but no other libraries.
-foreach(FILE libcef.so v8_context_snapshot.bin ${CEF_RESOURCE_FILES})
-    file(CREATE_LINK "../cef/${FILE}" "${CMAKE_BINARY_DIR}/cef-link/${FILE}" SYMBOLIC)
-    install(FILES "${CMAKE_BINARY_DIR}/cef-link/${FILE}" DESTINATION cef-link)
-endforeach()
-add_library(cef_binary SHARED IMPORTED GLOBAL)
-set_target_properties(cef_binary PROPERTIES IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/cef-link/libcef.so")
+if(WIN32)
+    # Import-library-only target: keep the runtime DLL in cef/, out of the
+    # application's generic DLL staging and Vulkan loader search directory.
+    add_library(cef_binary UNKNOWN IMPORTED GLOBAL)
+    set_target_properties(cef_binary PROPERTIES IMPORTED_LOCATION "${CEF_ROOT}/Release/libcef.lib")
+else()
+    # libcef must be a direct executable dependency (its close interposer uses
+    # RTLD_NEXT). Expose only libcef to that executable's RUNPATH, never the bundled
+    # Vulkan/ANGLE libraries. Chromium children run from the complete cef/ tree.
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/cef-link")
+    # CEF resolves ICU/snapshot assets relative to the dladdr path of libcef even
+    # when resources_dir_path is set. Expose data links here, but no other libraries.
+    foreach(FILE libcef.so v8_context_snapshot.bin ${CEF_RESOURCE_FILES})
+        file(CREATE_LINK "../cef/${FILE}" "${CMAKE_BINARY_DIR}/cef-link/${FILE}" SYMBOLIC)
+        install(FILES "${CMAKE_BINARY_DIR}/cef-link/${FILE}" DESTINATION cef-link)
+    endforeach()
+    add_library(cef_binary SHARED IMPORTED GLOBAL)
+    set_target_properties(cef_binary PROPERTIES IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/cef-link/libcef.so")
+endif()
 add_dependencies(cef_binary cef_runtime_files)
+set(CEF_HELPER_NAME "miximus_cef_helper${CMAKE_EXECUTABLE_SUFFIX}")
+if(WIN32)
+    add_library(cef_platform STATIC media_input_abi_win.cpp platform_win.cpp)
+else()
+    add_library(cef_platform STATIC media_input_abi_linux.cpp platform_linux.cpp)
+endif()
+target_include_directories(cef_platform SYSTEM PRIVATE "${CEF_ROOT}")
+target_compile_definitions(cef_platform PRIVATE CEF_API_VERSION=${api_version})
+target_link_libraries(cef_platform PRIVATE ${CMAKE_DL_LIBS})
+if(MIXIMUS_ENABLE_CLANG_TIDY)
+    set_property(TARGET cef_platform PROPERTY CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_COMMAND}")
+endif()
+
 add_library(cef_sdk INTERFACE)
 target_include_directories(cef_sdk SYSTEM INTERFACE "${CEF_ROOT}")
-target_compile_definitions(cef_sdk INTERFACE CEF_API_VERSION=${api_version}
+target_compile_definitions(cef_sdk INTERFACE MIXIMUS_CEF_HELPER_NAME="${CEF_HELPER_NAME}" CEF_API_VERSION=${api_version}
     MIXIMUS_CEF_NATIVE_CAPTURE_READY=${CEF_NATIVE_CAPTURE_READY})
-target_link_libraries(cef_sdk INTERFACE libcef_dll_wrapper cef_binary ${CEF_STANDARD_LIBS})
+target_link_libraries(cef_sdk INTERFACE cef_platform libcef_dll_wrapper cef_binary ${CEF_STANDARD_LIBS})
+
+if(WIN32)
+    target_link_options(cef_sdk INTERFACE /DELAYLOAD:libcef.dll)
+    target_link_libraries(cef_sdk INTERFACE delayimp)
+endif()
 
 add_executable(miximus_cef_helper helper.cpp)
 target_link_libraries(miximus_cef_helper PRIVATE cef_sdk ${CMAKE_DL_LIBS})
-# The wrapper directory exempts external libraries from tidy, but this helper
-# and its renderer callbacks are Miximus code.
 if(MIXIMUS_ENABLE_CLANG_TIDY)
-    set_property(TARGET miximus_cef_helper PROPERTY CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_EXECUTABLE}")
+    set_property(TARGET miximus_cef_helper PROPERTY CXX_CLANG_TIDY "${MIXIMUS_CLANG_TIDY_COMMAND}")
 endif()
 set_target_properties(miximus_cef_helper PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CEF_STAGE}"
+    # A generator expression prevents CMake appending a second configuration
+    # directory; the helper must sit beside libcef and its resources.
+    RUNTIME_OUTPUT_DIRECTORY "${CEF_STAGE}/$<0:>"
     BUILD_RPATH "$ORIGIN"
     BUILD_RPATH_USE_ORIGIN ON
     INSTALL_RPATH "$ORIGIN"
 )
 install(TARGETS miximus_cef_helper RUNTIME DESTINATION cef)
 install(DIRECTORY "${CEF_STAGE}/" DESTINATION cef USE_SOURCE_PERMISSIONS
-    PATTERN ".staged" EXCLUDE PATTERN "miximus_cef_helper" EXCLUDE)
+    PATTERN ".staged" EXCLUDE PATTERN "${CEF_HELPER_NAME}" EXCLUDE)

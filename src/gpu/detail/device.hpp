@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <vk_mem_alloc.h>
 #include <volk.h>
 
@@ -20,6 +21,8 @@ completion_s enqueue_recording(std::unique_ptr<recording_state_s>&    recording,
 
 VkFormat native_format(format_e format);
 uint32_t texel_bytes(format_e format);
+
+struct external_image_platform_s;
 
 struct device_state_s : std::enable_shared_from_this<device_state_s>
 {
@@ -41,7 +44,10 @@ struct device_state_s : std::enable_shared_from_this<device_state_s>
     int                              cuda_device_index{-1};
     std::vector<std::string>         cuda_missing_support;
     bool                             buffer_conversion{};
-    external_image_import_support_s  external_image_import;
+    external_image_import_support_e  external_image_import{external_image_import_support_e::not_requested};
+
+    std::mutex                                 external_image_mutex;
+    std::shared_ptr<external_image_platform_s> external_image_platform;
 
     uint32_t            queue_family{};
     submission_engine_s submissions{*this};
@@ -51,7 +57,7 @@ struct device_state_s : std::enable_shared_from_this<device_state_s>
 
     std::atomic_uint64_t errors{};
     device_options_s     options;
-    std::string          diagnostics;
+    device_diagnostics_s diagnostics;
 
     ~device_state_s();
 

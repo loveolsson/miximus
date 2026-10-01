@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Manual Linux/NVIDIA CEF node lifecycle test using isolated settings."""
+"""Manual CEF node lifecycle test using isolated settings."""
 
 import json
 import pathlib
-import signal
 import subprocess
 import time
 import urllib.request
+
+from cef_test_process import PROCESS_CREATION_FLAGS, stop_process
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 API = "http://127.0.0.1:7351/api/v1"
@@ -77,6 +78,7 @@ def main():
         process = subprocess.Popen(
             [str(ROOT / "build/miximus"), "--settings", str(settings), "--stop-after", "35"],
             cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+            creationflags=PROCESS_CREATION_FLAGS,
         )
         try:
             await_status(lambda s: s.get("cef_copies", 0) >= 60 and s.get("connected"))
@@ -88,14 +90,7 @@ def main():
             update({"enabled": True})
             await_status(lambda s: s.get("cef_copies", 0) > 0 and s.get("connected"))
         finally:
-            if process.poll() is None:
-                process.send_signal(signal.SIGINT)
-            try:
-                result = process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                raise
+            result = stop_process(process)
         if result:
             raise RuntimeError("App exited " + str(result))
     text = (work / "app.log").read_text()

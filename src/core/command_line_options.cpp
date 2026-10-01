@@ -26,7 +26,12 @@ program_options::options_description make_options_description()
     add_option("log-debug", "Enable debug logging");
     add_option("log-trace", "Enable trace logging");
     add_option("use-cuda", "Enable CUDA transfers if startup checks pass (default: Vulkan staging)");
-    add_option("settings", program_options::value<String>(), "Path to the settings file");
+    add_option("disable-cef-sandbox", "Disable the CEF sandbox on Linux (always disabled on Windows)");
+    if constexpr (std::same_as<typename String::value_type, wchar_t>) {
+        add_option("settings", program_options::wvalue<String>(), "Path to the settings file");
+    } else {
+        add_option("settings", program_options::value<String>(), "Path to the settings file");
+    }
     add_option("stop-after", program_options::value<double>(), "Stop after a positive number of seconds");
     add_option("test-render-delay-ms",
                program_options::value<uint64_t>(),
@@ -61,19 +66,22 @@ command_line_options_s parse_command_line_options_impl(int argc, Character** arg
         throw_invalid_option(error.what());
     }
 
-    result.show_help = values.contains("help");
-    result.use_cuda  = values.contains("use-cuda");
+    // Use the map API exported by Boost DLLs built with pre-C++20 defaults.
+    const auto has_option      = [&values](const char* name) { return values.count(name) != 0; };
+    result.show_help           = has_option("help");
+    result.use_cuda            = has_option("use-cuda");
+    result.disable_cef_sandbox = has_option("disable-cef-sandbox");
 
-    if (values.contains("log-debug") && values.contains("log-trace")) {
+    if (has_option("log-debug") && has_option("log-trace")) {
         throw_invalid_option("--log-debug and --log-trace cannot be used together");
     }
-    if (values.contains("log-debug")) {
+    if (has_option("log-debug")) {
         result.log_level = spdlog::level::debug;
-    } else if (values.contains("log-trace")) {
+    } else if (has_option("log-trace")) {
         result.log_level = spdlog::level::trace;
     }
 
-    if (values.contains("settings")) {
+    if (has_option("settings")) {
         if constexpr (std::same_as<Character, char>) {
             result.settings_path = utils::path_from_utf8(values["settings"].as<string_t>());
         } else {
@@ -81,7 +89,7 @@ command_line_options_s parse_command_line_options_impl(int argc, Character** arg
         }
     }
 
-    if (values.contains("stop-after")) {
+    if (has_option("stop-after")) {
         const auto seconds = values["stop-after"].as<double>();
         if (!std::isfinite(seconds) || seconds <= 0.0) {
             throw_invalid_option("--stop-after requires a positive number of seconds");
@@ -89,8 +97,8 @@ command_line_options_s parse_command_line_options_impl(int argc, Character** arg
         result.stop_after = std::chrono::duration<double>{seconds};
     }
 
-    const bool has_render_delay  = values.contains("test-render-delay-ms");
-    const bool has_render_period = values.contains("test-render-delay-every");
+    const bool has_render_delay  = has_option("test-render-delay-ms");
+    const bool has_render_period = has_option("test-render-delay-every");
     if (has_render_delay != has_render_period) {
         throw_invalid_option("--test-render-delay-ms and --test-render-delay-every must be used together");
     }

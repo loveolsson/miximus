@@ -105,7 +105,7 @@ class client_s final
             return;
         }
         CefWindowInfo window;
-        window.SetAsWindowless(0);
+        window.SetAsWindowless(CefWindowHandle{});
         window.shared_texture_enabled = 1;
         CefBrowserSettings settings;
         settings.windowless_frame_rate = options_.frame_rate;
@@ -174,7 +174,7 @@ class client_s final
                        int /* popup_id */,
                        const CefString& /* target_url */,
                        const CefString& /* target_frame_name */,
-                       WindowOpenDisposition /* target_disposition */,
+                       CefLifeSpanHandler::WindowOpenDisposition /* target_disposition */,
                        bool /* user_gesture */,
                        const CefPopupFeatures& /* popup_features */,
                        CefWindowInfo& /* window_info */,
@@ -189,7 +189,7 @@ class client_s final
     bool OnOpenURLFromTab(CefRefPtr<CefBrowser> /* browser */,
                           CefRefPtr<CefFrame> /* frame */,
                           const CefString& /* target_url */,
-                          WindowOpenDisposition disposition,
+                          CefRequestHandler::WindowOpenDisposition disposition,
                           bool /* user_gesture */) override
     {
         return disposition != CEF_WOD_CURRENT_TAB;

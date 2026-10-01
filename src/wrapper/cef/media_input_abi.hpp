@@ -10,14 +10,7 @@ using media_done_t           = cef_miximus_media_done_t;
 using install_media_inputs_t = decltype(&cef_miximus_install_media_inputs_v1);
 using send_media_frame_t     = decltype(&cef_miximus_send_media_frame_v3);
 
-inline media_frame_s make_media_frame()
-{
-    media_frame_s frame{};
-    frame.size              = sizeof(frame);
-    frame.fd                = -1;
-    frame.source_generation = 1;
-    return frame;
-}
+media_frame_s make_media_frame();
 
 inline constexpr auto INSTALL_MEDIA_INPUTS = "cef_miximus_install_media_inputs_v1";
 inline constexpr auto SEND_MEDIA_FRAME     = "cef_miximus_send_media_frame_v3";

@@ -46,7 +46,7 @@ struct captured_frame_data_s
 
 // The DeckLink SDK exposes these two independent COM interfaces on one callback object.
 // NOLINTNEXTLINE(fuchsia-multiple-inheritance)
-class callback_s
+class callback_s final
     : public IDeckLinkInputCallback
     , public IDeckLinkVideoBufferAllocatorProvider
 {
@@ -66,7 +66,7 @@ class callback_s
     mutable std::mutex                                      upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     media::timed_source_queue_s<captured_frame_data_s>      frame_queue_{
-             {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = SOURCE_PLAYOUT_DELAY_FRAMES}
+        {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = SOURCE_PLAYOUT_DELAY_FRAMES}
     };
 
     std::atomic<BMDDisplayMode> pending_display_mode_{bmdModeUnknown};
@@ -341,7 +341,8 @@ class callback_s
     {
     }
 
-    ~callback_s() override
+    // Windows COM interfaces have no virtual destructor; Release deletes this concrete type.
+    ~callback_s()
     {
         if (allocator_) {
             log()->error("DeckLink input callback destroyed before its allocator was retired");
@@ -824,7 +825,15 @@ input_capture_s::input_capture_s(gpu::transfer::texture_upload_service_s*       
         upload_service, control_executor, std::move(device), std::move(reservation), std::move(device_name));
 }
 
-input_capture_s::~input_capture_s() { stop_async(); }
+input_capture_s::~input_capture_s()
+{
+    try {
+        stop_async();
+    } catch (...) {
+        logger::log_error_noexcept("decklink", "Failed to schedule DeckLink capture shutdown");
+        std::terminate();
+    }
+}
 
 void input_capture_s::start_async() { impl_->callback->start_async(); }
 

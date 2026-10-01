@@ -14,3 +14,7 @@ build*
 # Python test and benchmark runners
 __pycache__/
 *.pyc
+
+# Local CMake settings and installed vcpkg packages
+CMakeUserPresets.json
+vcpkg_installed/

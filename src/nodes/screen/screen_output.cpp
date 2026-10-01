@@ -209,6 +209,8 @@ class node_impl : public node_i
 
         auto       pending     = std::make_shared<output_presenter_s::render_frame_s>(std::move(*frame));
         const auto target_time = app->frame_context().program_target_time;
+        // The stored callback owns pending; Clang's MSVC shared_ptr model reports a false leak.
+        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
         app->defer_output([pending = std::move(pending), target_time](gpu::completion_s ready) {
             pending->submit(target_time, std::move(ready));
         });

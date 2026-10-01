@@ -18,6 +18,11 @@ PRIVATE
 
 if(TARGET cuda_dependencies)
     target_sources(gpu PRIVATE detail/cuda_transfer.cpp)
+    if(WIN32)
+        target_sources(gpu PRIVATE detail/cuda_external_win.cpp)
+    else()
+        target_sources(gpu PRIVATE detail/cuda_external_linux.cpp)
+    endif()
     target_link_libraries(gpu PRIVATE cuda_dependencies)
     target_compile_definitions(gpu PRIVATE MIXIMUS_HAS_CUDA=1)
 endif()

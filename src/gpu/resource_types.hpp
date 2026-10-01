@@ -10,8 +10,8 @@ class cuda_transfer_s;
 
 namespace detail {
 
-class dma_buf_copy_s;
-class dma_buf_export_s;
+class external_image_copy_s;
+class external_image_export_s;
 class color_comparison_s;
 struct device_state_s;
 struct texture_state_s;

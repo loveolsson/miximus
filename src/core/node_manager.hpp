@@ -87,7 +87,7 @@ class node_manager_s
   public:
     explicit node_manager_s(node_status_registry_s* status_registry = nullptr);
     const node_status_handle_s& settings_status_handle() const { return settings_status_handle_; }
-    ~node_manager_s() { close_actions(); }
+    ~node_manager_s();
 
     error_e handle_add_node(std::string_view                    type,
                             std::string_view                    id,

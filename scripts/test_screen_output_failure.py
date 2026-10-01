@@ -5,6 +5,7 @@ Usage: python3 scripts/test_screen_output_failure.py [build/miximus]
 Requires an idle local API port, Vulkan presentation, and a display session.
 """
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -32,7 +33,8 @@ def main():
     else:
         raise RuntimeError("A Miximus instance is already using the test API port")
 
-    binary = Path(sys.argv[1] if len(sys.argv) > 1 else "build/miximus").resolve()
+    default_binary = "build/miximus.exe" if os.name == "nt" else "build/miximus"
+    binary = Path(sys.argv[1] if len(sys.argv) > 1 else default_binary).resolve()
     with tempfile.TemporaryDirectory(prefix="miximus-screen-failure-") as directory:
         settings = Path(directory) / "settings.json"
         settings.write_text(json.dumps({"nodes": [{"id": "test-screen", "type": "screen_output", "schema_version": 3, "options": {
@@ -73,17 +75,24 @@ def main():
                 request("/control", {"action": "command", "topic": "update_node", "id": "test-screen",
                                      "options": {"enabled": False}})
                 wait_for(lambda s: s.get("connected") is False and s.get("screen_error") == "")
+                if os.name == "nt":
+                    # terminate() uses TerminateProcess on Windows, bypassing shutdown.
+                    # Let --stop-after exercise the application's normal teardown.
+                    app.wait(timeout=35)
             except BaseException:
                 print(log.read_text(), file=sys.stderr)
                 raise
             finally:
-                app.terminate()
+                if app.poll() is None:
+                    app.terminate()
                 try:
                     app.wait(timeout=15)
                 except subprocess.TimeoutExpired:
                     app.kill()
                     app.wait()
             assert app.returncode == 0, f"Application exit: {app.returncode}"
+            diagnostics = log.read_text()
+            assert "Vulkan validation:" not in diagnostics, diagnostics
     print("PASS: unavailable monitor reported, failure retained, explicit reconfiguration presents, disable disconnects")
 
 

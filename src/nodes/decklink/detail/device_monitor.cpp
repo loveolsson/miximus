@@ -129,8 +129,8 @@ struct monitor_state_s
 
 std::optional<bool> read_flag(IDeckLinkStatus* status, BMDDeckLinkStatusID id)
 {
-    bool value{};
-    return status != nullptr && status->GetFlag(id, &value) == S_OK ? std::optional(value) : std::nullopt;
+    BOOL value{};
+    return status != nullptr && status->GetFlag(id, &value) == S_OK ? std::optional(value != 0) : std::nullopt;
 }
 
 std::optional<int64_t> read_int(IDeckLinkStatus* status, BMDDeckLinkStatusID id)
@@ -216,19 +216,19 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
             break;
         case bmdDeckLinkStatusDetectedVideoInputColorspace: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.detected_colorspace,
+            changed = assign_if_changed(&snapshot.detected_colorspace,
                                         value.has_value() ? std::optional(colorspace_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusDetectedVideoInputDynamicRange: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.detected_dynamic_range,
+            changed = assign_if_changed(&snapshot.detected_dynamic_range,
                                         value.has_value() ? std::optional(dynamic_range_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusDetectedVideoInputFieldDominance: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.detected_field_dominance,
+            changed = assign_if_changed(&snapshot.detected_field_dominance,
                                         value.has_value() ? std::optional(field_dominance_name(*value)) : std::nullopt);
             break;
         }
@@ -241,13 +241,13 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
         }
         case bmdDeckLinkStatusCurrentVideoInputPixelFormat: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.current_input_pixel_format,
+            changed = assign_if_changed(&snapshot.current_input_pixel_format,
                                         value.has_value() ? std::optional(pixel_format_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusLastVideoOutputPixelFormat: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.last_output_pixel_format,
+            changed = assign_if_changed(&snapshot.last_output_pixel_format,
                                         value.has_value() ? std::optional(pixel_format_name(*value)) : std::nullopt);
             break;
         }
@@ -261,8 +261,10 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
 class notification_callback_s final : public IDeckLinkNotificationCallback
 {
     std::atomic_ulong                ref_count_{1};
@@ -312,7 +314,9 @@ class notification_callback_s final : public IDeckLinkNotificationCallback
         return count;
     }
 };
+#if defined(__GNUC__) || defined(__clang__)
 #pragma GCC diagnostic pop
+#endif
 
 constexpr std::array monitored_statuses{
     bmdDeckLinkStatusVideoInputSignalLocked,

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gpu/detail/dma_buf_export.hpp"
+#include "gpu/detail/external_image_export.hpp"
 #include "media_input_pool.hpp"
 
 #include <memory>
@@ -69,9 +69,9 @@ class media_input_exports_s
         frame_s(const frame_s&)            = delete;
         frame_s& operator=(const frame_s&) = delete;
 
-        media_input_pool_s::ticket_s         ticket() const;
-        const gpu::detail::dma_buf_export_s& image() const;
-        int64_t                              timestamp_us() const;
+        media_input_pool_s::ticket_s                ticket() const;
+        const gpu::detail::external_image_export_s& image() const;
+        int64_t                                     timestamp_us() const;
 
         // Only the transport's proven GPU-copy completion permits true.
         // False/destruction quarantines; it never manufactures completion.

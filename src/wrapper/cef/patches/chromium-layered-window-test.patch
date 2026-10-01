@@ -1,0 +1,32 @@
+diff --git a/components/viz/service/display_embedder/software_output_device_win_unittest.cc b/components/viz/service/display_embedder/software_output_device_win_unittest.cc
+--- a/components/viz/service/display_embedder/software_output_device_win_unittest.cc
++++ b/components/viz/service/display_embedder/software_output_device_win_unittest.cc
+@@ -38,7 +38,7 @@
+               (const gfx::Size& size,
+                base::UnsafeSharedMemoryRegion memory_region),
+               (override));
+-  MOCK_METHOD(void, Draw, (DrawCallback), (override));
++  MOCK_METHOD(void, Draw, (const gfx::Rect&, DrawCallback), (override));
+ 
+  private:
+   mojo::Receiver<mojom::LayeredWindowUpdater> receiver_{this};
+@@ -78,7 +78,8 @@
+   // Verify that calling BeginPaint() then EndPaint() triggers the Draw() IPC
+   // and then run the DrawCallback.
+   device_.BeginPaint(gfx::Rect(kDefaultSize));
+-  EXPECT_CALL(updater_, Draw(_)).WillOnce(RunOnceClosure<0>());
++  EXPECT_CALL(updater_, Draw(gfx::Rect(kDefaultSize), _))
++      .WillOnce(RunOnceClosure<1>());
+   device_.EndPaint();
+   updater_.FlushForTesting();
+   testing::Mock::VerifyAndClearExpectations(&updater_);
+@@ -101,7 +102,8 @@
+   // Verify that calling BeginPaint() then EndPaint() triggers the Draw() IPC
+   // and then run the DrawCallback.
+   device_.BeginPaint(gfx::Rect(kDefaultSize));
+-  EXPECT_CALL(updater_, Draw(_)).WillOnce(RunOnceClosure<0>());
++  EXPECT_CALL(updater_, Draw(gfx::Rect(kDefaultSize), _))
++      .WillOnce(RunOnceClosure<1>());
+   device_.EndPaint();
+   updater_.FlushForTesting();
+   testing::Mock::VerifyAndClearExpectations(&updater_);

@@ -1,0 +1,44 @@
+--- a/DEPS
++++ b/DEPS
+@@ -1363,41 +1363,30 @@
+       'condition': 'checkout_mac',
+       'packages': [
+         {
+           'package': 'chromium/third_party/updater/chrome_mac_universal_prod',
+           'version': 'version:2@152.0.7933.0',
+         },
+       ],
+   },
+ 
+   'src/third_party/updater/chrome_win_arm64/cipd': {
+       'dep_type': 'cipd',
+       'condition': 'checkout_win',
+       'packages': [
+         {
+           'package': 'chromium/third_party/updater/chrome_win_arm64',
+-          'version': 'version:2@152.0.7933.0',
+-        },
+-      ],
+-  },
+-
+-  'src/third_party/updater/chrome_win_x86/cipd': {
+-      'dep_type': 'cipd',
+-      'condition': 'checkout_win',
+-      'packages': [
+-        {
+-          'package': 'chromium/third_party/updater/chrome_win_x86',
+           'version': 'version:2@152.0.7933.0',
+         },
+       ],
+   },
+ 
+   'src/third_party/updater/chrome_win_x86_64/cipd': {
+       'dep_type': 'cipd',
+       'condition': 'checkout_win',
+       'packages': [
+         {
+           'package': 'chromium/third_party/updater/chrome_win_x86_64',
+           'version': 'version:2@152.0.7933.0',
+         },
+       ],
+   },

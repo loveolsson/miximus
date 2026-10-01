@@ -35,12 +35,12 @@ PRIVATE
     gpu
     render
     nodes
-    miximus_types
     shutdown_watchdog
     magic_enum::magic_enum
-    Boost::headers
     Boost::program_options
 PUBLIC
+    miximus_types
+    Boost::headers
     logger
 )
 
@@ -79,9 +79,10 @@ if(BUILD_TESTING)
         set_property(
             TARGET core_test
             PROPERTY CXX_CLANG_TIDY
-                     "${MIXIMUS_CLANG_TIDY_EXECUTABLE};--checks=-readability-function-cognitive-complexity"
+                     "${MIXIMUS_CLANG_TIDY_COMMAND};--checks=-readability-function-cognitive-complexity"
         )
     endif()
     add_sanitizers(core_test)
+    miximus_stage_runtime_dlls(core_test)
     gtest_discover_tests(core_test)
 endif()

@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <functional>
+#include <future>
 #include <gtest/gtest.h>
 #include <memory>
 #include <optional>
@@ -270,7 +271,7 @@ TEST_F(action_manager_test_s, ConfigAdmissionAndFrameDeliveryUseTheirOwnThreadsA
 {
     const auto producer_id = [&] {
         std::thread::id id;
-        std::thread     producer([&] {
+        auto            producer = std::async(std::launch::async, [&] {
             id                     = std::this_thread::get_id();
             nlohmann::json payload = {
                 {"nested", {1, 2, 3}}
@@ -278,7 +279,7 @@ TEST_F(action_manager_test_s, ConfigAdmissionAndFrameDeliveryUseTheirOwnThreadsA
             send("echo", payload);
             payload["nested"] = false;
         });
-        producer.join();
+        producer.get();
         return id;
     }();
     EXPECT_TRUE(replies.empty());
@@ -307,8 +308,8 @@ TEST_F(action_manager_test_s, RejectsAllExplicitSettingsBeforeInvokingAnyAction)
 {
     ASSERT_EQ(manager->handle_add_node("action_test", "other", nlohmann::json::object()), error_e::no_error);
     const std::vector<node_manager_s::option_update_s> updates{
-        {"n",     {{"value", 7}} },
-        {"other", {{"value", -1}}}
+        {.id = "n",     .options = {{"value", 7}} },
+        {.id = "other", .options = {{"value", -1}}}
     };
     EXPECT_EQ(manager->handle_control_batch(nullptr, updates, {request("increment")}).error, error_e::invalid_options);
     EXPECT_EQ(value(), 0);
@@ -321,7 +322,7 @@ TEST_F(action_manager_test_s, RejectsAllExplicitSettingsBeforeInvokingAnyAction)
 TEST_F(action_manager_test_s, ActionsMutateEvolvingConfigAndFailIndependently)
 {
     const std::vector<node_manager_s::option_update_s> updates{
-        {"n", {{"value", 8}}}
+        {.id = "n", .options = {{"value", 8}}}
     };
     auto result = manager->handle_control_batch(nullptr,
                                                 updates,
@@ -359,7 +360,7 @@ TEST_F(action_manager_test_s, CanDeriveSettingsFromAuthoritativeConnectionsAndOt
                   {.from_node = "source", .from_interface = "out", .to_node = "n", .to_interface = "in"}),
               error_e::no_error);
     const std::vector<node_manager_s::option_update_s> updates{
-        {"source", {{"value", 42}}}
+        {.id = "source", .options = {{"value", 42}}}
     };
     EXPECT_EQ(manager->handle_control_batch(nullptr, updates, {request("first_input")}).error, error_e::no_error);
     EXPECT_EQ(value(), 42);
@@ -608,7 +609,7 @@ TEST_F(action_manager_test_s, ActionSettingsBroadcastToOriginAndPersistWithoutTr
     manager->add_adapter(std::make_unique<recording_adapter_s>(updates));
     const origin_info_s                                origin{.id = 17, .token = "request"};
     const std::vector<node_manager_s::option_update_s> options{
-        {"n", {{"value", 7}}}
+        {.id = "n", .options = {{"value", 7}}}
     };
     EXPECT_EQ(manager->handle_control_batch(nullptr, options, {request("patch_frame", 101)}, origin).error,
               error_e::no_error);
@@ -648,8 +649,8 @@ TEST_F(action_manager_test_s, SettingsAndActionsAcrossNodesShareOneSnapshotAndLa
 {
     ASSERT_EQ(manager->handle_add_node("action_test", "other", nlohmann::json::object()), error_e::no_error);
     const std::vector<node_manager_s::option_update_s> updates{
-        {"n",     {{"value", 7}}},
-        {"other", {{"value", 8}}}
+        {.id = "n",     .options = {{"value", 7}}},
+        {.id = "other", .options = {{"value", 8}}}
     };
     EXPECT_EQ(
         manager->handle_control_batch(nullptr, updates, {request("echo"), request("echo", nullptr, "other")}).error,
@@ -836,9 +837,9 @@ TEST(NodeAction, TimeoutAndWorkerCompletionRaceHasOneWinner)
         std::atomic<size_t>     replies{};
         action_s                action("n", "test", {}, [&](const action_result_s&) { ++replies; });
         action.set_deadline(action_s::clock_t::now(), executor.get_executor());
-        std::thread timer([&] { executor.run(); });
+        auto timer = std::async(std::launch::async, [&] { executor.run(); });
         action.complete();
-        timer.join();
+        timer.get();
         action.fail(error_e::cancelled);
         EXPECT_EQ(replies.load(), 1);
     }
@@ -864,7 +865,7 @@ TEST_F(action_manager_test_s, RejectedBatchAnswersEveryUnprocessedAction)
         actions.push_back(std::move(entry));
     }
     const std::vector<node_manager_s::option_update_s> updates{
-        {"n", {{"value", -1}}}
+        {.id = "n", .options = {{"value", -1}}}
     };
     EXPECT_EQ(manager->handle_control_batch(nullptr, updates, std::move(actions)).error, error_e::invalid_options);
     EXPECT_EQ(tokens, (std::vector<size_t>{0, 1, 2}));

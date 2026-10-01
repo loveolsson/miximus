@@ -79,11 +79,12 @@ wait_result_e completion_s::wait(std::chrono::milliseconds timeout, const std::s
         }
         const auto value = submission_->value.load(std::memory_order_acquire);
         if (value != 0) {
-            VkSemaphoreWaitInfo info{};
-            info.sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-            info.semaphoreCount = 1;
-            info.pSemaphores    = &state_->submissions.timeline;
-            info.pValues        = &value;
+            VkSemaphoreWaitInfo info{
+                .sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                .semaphoreCount = 1,
+                .pSemaphores    = &state_->submissions.timeline,
+                .pValues        = &value,
+            };
             const auto duration = std::min(std::chrono::duration_cast<std::chrono::nanoseconds>(remaining),
                                            std::chrono::nanoseconds(std::chrono::milliseconds(5)));
             const auto result =

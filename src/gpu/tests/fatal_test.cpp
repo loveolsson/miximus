@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include <stdexcept>
 
-namespace miximus::gpu::detail {
+namespace miximus::gpu::detail { namespace {
 
 TEST(GpuFailure, DeviceLossExitsWithDiagnostic)
 {
@@ -35,4 +35,4 @@ TEST(GpuFailure, FatalExitDoesNotWaitForResourceDestruction)
         "Fatal GPU error: test stalled transfer");
 }
 
-} // namespace miximus::gpu::detail
+}} // namespace miximus::gpu::detail

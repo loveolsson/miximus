@@ -48,12 +48,20 @@ Release builds do not enable interprocedural optimization by default. Enable IPO
 libraries and their executable consumers with `-DMIXIMUS_ENABLE_RELEASE_IPO=ON`. External dependencies and the
 separately loaded `static_files` shared library are not included.
 
-Use a separate build directory for clang-tidy so normal builds remain unaffected:
+Use **clang-tidy 21** on Linux and Windows so both platforms use the same major version of the checks.
+Select it explicitly; CMake's default `clang-tidy` lookup does not enforce a version. Use a separate build
+directory so normal builds remain unaffected:
 
 ```bash
-cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON
+cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON \
+    -DMIXIMUS_CLANG_TIDY_EXECUTABLE="$(command -v clang-tidy-21)"
 cmake --build build-tidy -j4
 ```
+
+On Windows, follow the [clang-tidy setup](windows-development.md#clang-tidy) and select the LLVM 21 executable
+instead of the potentially different version bundled with Visual Studio. Verify the selected executable with
+`--version`; the local Windows installation is 21.1.8. This tool selection is independent of the native compiler
+and clang-format.
 
 Limit tidy builds to four jobs and avoid running another build or tidy pass concurrently. Clang-tidy disables
 precompiled headers and can use considerably more memory than an ordinary compile. The four-job limit applies to
@@ -113,11 +121,18 @@ under a debugger or another environment that uses `ptrace`; leave leak detection
 Run:
 
 ```bash
-./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda]
+./build/miximus [--log-debug | --log-trace] [--settings path/to/settings.json] [--stop-after seconds] [--use-cuda] [--disable-cef-sandbox]
 ```
 
 Host transfers use Vulkan staging by default. `--use-cuda` enables CUDA only after all startup checks pass; see [CUDA
 transfers and benchmarking](cuda-transfers.md).
+
+CEF sandboxing is enabled by default on Linux; `--disable-cef-sandbox` opts out for that run.
+Before the first CEF-enabled Linux launch, follow the
+[Linux sandbox setup](../src/wrapper/cef/README.md#linux-sandbox-setup). Restricted user namespaces require host
+configuration; copying the SDK's `chrome-sandbox` alone does not provide a usable setuid sandbox.
+Windows always disables the sandbox because Miximus uses an ordinary executable/helper layout rather than
+CEF's sandbox bootstrap. The flag has no additional effect there.
 
 The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the
 given positive number of seconds and is useful for repeatable runtime and sanitizer checks.
@@ -129,6 +144,12 @@ cd web
 npm install
 npm run build
 ```
+
+`GET /api/v1/health` returns HTTP 200 with the JSON string `"ok"` and `Cache-Control: no-store`.
+This is a lightweight HTTP liveness check; it does not inspect GPU, media, or graph readiness.
+The web client polls it before its initial WebSocket connection and while disconnected, with a two-second
+request timeout and a two-second retry interval. Polling stops when a socket is opened. This avoids repeated
+failed WebSocket attempts accumulating browser reconnect delays that can survive a page reload.
 
 Native deterministic tests use GoogleTest and are registered individually with CTest. Run them with:
 
@@ -242,7 +263,9 @@ Current wrappers include:
 - system FFmpeg components;
 - stb implementation sources.
 
-The Vulkan wrapper requires SDK headers/loader discovery, GLFW 3.4, glslang 16.2.0, and `spirv-val`. VMA 3.3.0 and Volk
+The Vulkan wrapper requires SDK headers/loader discovery, GLFW 3.4, glslang 16.2.0 or newer, and `spirv-val`.
+`MIXIMUS_GLSLANG_VERSION` sets the minimum compiler version; configuration reports the selected version and path.
+VMA 3.3.0 and Volk
 SDK 1.4.341.0 are pinned submodules; no upstream implementation/header is copied into `src/`. Shader modules are
 validated
 and bundled into `static_files` during the native build using the existing file bundler. The macOS package baseline is
@@ -443,6 +466,11 @@ scripts/test_decklink_keyer_modes.sh [DECKLINK_OUTPUT_NODE_ID]
 `KEYER_MODE_DWELL_SECONDS` controls the observation time for each mode.
 
 ## Shutdown ordering
+
+The application reinstalls its shutdown handlers after SDK initialization. On Windows, Chromium installs a console
+handler that would otherwise terminate the host before settings are saved. Miximus handles Ctrl+C and Ctrl+Break by
+setting an atomic shutdown request; the main thread performs the normal teardown. Linux uses SIGINT/SIGTERM for the
+same request. Console handlers must not save configuration or destroy application resources themselves.
 
 Shutdown order is deliberate:
 

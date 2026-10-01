@@ -5,30 +5,41 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Shlobj.h>
 #include <Windows.h>
+#include <array>
 #include <filesystem>
+#include <limits>
 #include <string_view>
 #include <vector>
 
 namespace miximus::render {
+namespace {
 
 struct init_data_s
 {
-    HDC                                 hdc;
+    HDC                                 hdc{};
     utils::string_map_t<font_variant_s> files;
     utils::string_map_t<font_info_s>    fonts;
-    font_info_s*                        font;
+    font_info_s*                        font{};
 };
 
-static std::string wchar_to_string(std::wstring_view wstr)
+std::string wchar_to_string(std::wstring_view wstr)
 {
-    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), wstr.size(), NULL, 0, NULL, NULL);
+    if (wstr.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+
+    const int size =
+        WideCharToMultiByte(CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), nullptr, 0, nullptr, nullptr);
     if (size <= 0) {
         return "";
     }
 
-    std::string str(size, '\0');
+    std::string str(static_cast<size_t>(size), '\0');
 
-    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), wstr.size(), str.data(), size, NULL, NULL);
+    if (WideCharToMultiByte(
+            CP_UTF8, 0, wstr.data(), static_cast<int>(wstr.size()), str.data(), size, nullptr, nullptr) != size) {
+        return {};
+    }
 
     if (!str.empty() && str.front() == '@') {
         return str.substr(1);
@@ -37,28 +48,41 @@ static std::string wchar_to_string(std::wstring_view wstr)
     return str;
 }
 
-static std::filesystem::path fonts_path()
+std::filesystem::path fonts_path()
 {
-    wchar_t str[MAX_PATH] = {};
-    SHGetSpecialFolderPathW(0, str, CSIDL_FONTS, FALSE);
-    return str;
+    std::array<wchar_t, MAX_PATH> str{};
+    if (SHGetSpecialFolderPathW(nullptr, str.data(), CSIDL_FONTS, FALSE) == FALSE) {
+        return {};
+    }
+
+    return str.data();
 }
 
-static void read_registry_fonts(init_data_s* data)
+void read_registry_fonts(init_data_s* data)
 {
-    static const LPWSTR fontRegistryPath = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
-    HKEY                hKey;
-    LONG                result;
-    std::wstring        res;
+    static constexpr auto fontRegistryPath = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+    HKEY                  hKey{};
 
     // Open Windows font registry key
-    result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, fontRegistryPath, 0, KEY_READ, &hKey);
+    auto result = RegOpenKeyExW(HKEY_LOCAL_MACHINE, fontRegistryPath, 0, KEY_READ, &hKey);
     if (result != ERROR_SUCCESS) {
         return;
     }
 
-    DWORD maxValueNameSize, maxValueDataSize;
-    result = RegQueryInfoKeyW(hKey, 0, 0, 0, 0, 0, 0, 0, &maxValueNameSize, &maxValueDataSize, 0, 0);
+    DWORD maxValueNameSize{};
+    DWORD maxValueDataSize{};
+    result = RegQueryInfoKeyW(hKey,
+                              nullptr,
+                              nullptr,
+                              nullptr,
+                              nullptr,
+                              nullptr,
+                              nullptr,
+                              nullptr,
+                              &maxValueNameSize,
+                              &maxValueDataSize,
+                              nullptr,
+                              nullptr);
     if (result != ERROR_SUCCESS) {
         RegCloseKey(hKey);
         return;
@@ -67,26 +91,28 @@ static void read_registry_fonts(init_data_s* data)
     DWORD                valueIndex = 0;
     std::vector<WCHAR>   valueName(maxValueNameSize + 1); // +1 for null terminator (not counted by RegQueryInfoKeyW)
     std::vector<uint8_t> valueData(maxValueDataSize);
-    DWORD                valueNameSize, valueDataSize, valueType;
+    DWORD                valueNameSize{};
+    DWORD                valueDataSize{};
+    DWORD                valueType{};
 
     auto path = fonts_path();
 
-    do {
+    while (result != ERROR_NO_MORE_ITEMS) {
         valueDataSize = maxValueDataSize;
-        valueNameSize = maxValueNameSize;
+        valueNameSize = static_cast<DWORD>(valueName.size());
 
         result = RegEnumValueW(
-            hKey, valueIndex, valueName.data(), &valueNameSize, 0, &valueType, valueData.data(), &valueDataSize);
+            hKey, valueIndex, valueName.data(), &valueNameSize, nullptr, &valueType, valueData.data(), &valueDataSize);
 
         valueIndex++;
 
-        if (result != ERROR_SUCCESS || valueType != REG_SZ) {
+        if (result != ERROR_SUCCESS || valueType != REG_SZ || valueDataSize < sizeof(WCHAR)) {
             continue;
         }
 
         std::wstring_view wsValueName(valueName.data(), valueNameSize);
         std::wstring_view wsValueData(reinterpret_cast<const wchar_t*>(valueData.data()),
-                                      valueDataSize / sizeof(WCHAR) - 1);
+                                      (valueDataSize / sizeof(WCHAR)) - 1);
 
         auto end_pos = wsValueName.find(L" (");
         if (end_pos == std::wstring_view::npos) {
@@ -97,7 +123,7 @@ static void read_registry_fonts(init_data_s* data)
 
         int i = 0;
 
-        do {
+        while (true) {
             end_pos = wsValueName.find(L" & ");
 
             auto val = wsValueName.substr(0, end_pos);
@@ -109,22 +135,24 @@ static void read_registry_fonts(init_data_s* data)
 
             data->files.emplace(wchar_to_string(val), std::move(v));
 
-            if (end_pos != std::wstring_view::npos) {
-                wsValueName = wsValueName.substr(end_pos + 3);
+            if (end_pos == std::wstring_view::npos) {
+                break;
             }
 
-        } while (end_pos != std::wstring_view::npos);
-
-    } while (result != ERROR_NO_MORE_ITEMS);
+            wsValueName = wsValueName.substr(end_pos + 3);
+        }
+    }
 
     RegCloseKey(hKey);
 }
 
-static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
-                                             const TEXTMETRICW* lpntme,
-                                             DWORD              FontType,
-                                             LPARAM             lParam)
+int CALLBACK font_enum_style_callback(const LOGFONTW* lpelfe,
+                                      const TEXTMETRICW* /* lpntme */,
+                                      DWORD /* FontType */,
+                                      LPARAM lParam)
 {
+    // Win32 passes the caller-owned context through LPARAM.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     auto data = reinterpret_cast<init_data_s*>(lParam);
     auto info = reinterpret_cast<const ENUMLOGFONTEXW*>(lpelfe);
 
@@ -141,8 +169,13 @@ static int CALLBACK font_enum_style_callback(const LOGFONTW*    lpelfe,
     return 1;
 }
 
-static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW* lpntme, DWORD FontType, LPARAM lParam)
+int CALLBACK font_enum_callback(const LOGFONTW* lpelfe,
+                                const TEXTMETRICW* /* lpntme */,
+                                DWORD /* FontType */,
+                                LPARAM lParam)
 {
+    // Win32 passes the caller-owned context through LPARAM.
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     auto data = reinterpret_cast<init_data_s*>(lParam);
     auto name = wchar_to_string(lpelfe->lfFaceName);
 
@@ -163,6 +196,8 @@ static int CALLBACK font_enum_callback(const LOGFONTW* lpelfe, const TEXTMETRICW
     return 1;
 }
 
+} // namespace
+
 font_registry_s::font_map_t font_registry_s::scan_fonts()
 {
     init_data_s data = {};
@@ -174,7 +209,7 @@ font_registry_s::font_map_t font_registry_s::scan_fonts()
         return {};
     }
 
-    EnumFontFamiliesExW(data.hdc, NULL, font_enum_callback, (LPARAM)&data, 0);
+    EnumFontFamiliesExW(data.hdc, nullptr, font_enum_callback, reinterpret_cast<LPARAM>(&data), 0);
     ReleaseDC(nullptr, data.hdc);
 
     return std::move(data.fonts);

@@ -17,7 +17,10 @@ const compile = (source) =>
 
 // Exercise the real wrapper with deterministic transport/timers. Only Vite's
 // environment constant is substituted; protocol enums come from generated code.
-function harness() {
+async function harness({
+  fetchHealth = async () => ({ ok: true, json: async () => "ok" }),
+  connected = true,
+} = {}) {
   const contracts = { exports: {} };
   vm.runInNewContext(
     compile(readFileSync(new URL("../src/generated/json_contracts.ts", import.meta.url), "utf8")),
@@ -55,6 +58,8 @@ function harness() {
       module,
       require: (name) => (name === "./messages" ? contracts.exports : require(name)),
       WebSocket: Socket,
+      AbortController,
+      fetch: fetchHealth,
       location: { hostname: "localhost" },
       console: { log() {}, warn() {}, error() {}, info() {} },
       setTimeout: (fn, ms) => {
@@ -67,8 +72,9 @@ function harness() {
     },
   );
   const ws = new module.exports.ws_wrapper();
+  await flush();
   const socket = sockets[0];
-  socket.receive({ action: "socket_info", id: 1, bundle_hash: "test" });
+  if (connected) socket.receive({ action: "socket_info", id: 1, bundle_hash: "test" });
   return {
     ws,
     socket,
@@ -81,6 +87,8 @@ function harness() {
     },
   };
 }
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 const command = {
   action: "command",
   topic: "node_action",
@@ -90,7 +98,7 @@ const command = {
 };
 
 test("correlates action results and server errors with cleanup", async () => {
-  const { ws, socket, timers } = harness();
+  const { ws, socket, timers } = await harness();
   const result = ws.request(command);
   const sent = socket.sent.at(-1);
   assert.equal(sent.name, "reload");
@@ -110,7 +118,7 @@ test("correlates action results and server errors with cleanup", async () => {
 });
 
 test("routes out-of-order replies independently and ignores duplicate replies", async () => {
-  const { ws, socket } = harness();
+  const { ws, socket } = await harness();
   const first = ws.request(command);
   const firstToken = socket.sent.at(-1).token;
   const second = ws.request({ ...command, id: "another-node" });
@@ -125,19 +133,20 @@ test("routes out-of-order replies independently and ignores duplicate replies", 
 });
 
 test("disconnect settles pending waits and reconnect does not replay actions", async () => {
-  const { ws, socket, sockets, fire } = harness();
+  const { ws, socket, sockets, fire } = await harness();
   const result = ws.request(command);
   const rejected = assert.rejects(result, /Disconnected; action outcome unknown/);
   socket.onclose({ code: 1006, reason: "test" });
   await rejected;
   fire(2000);
+  await flush();
   sockets[1].receive({ action: "socket_info", id: 2, bundle_hash: "test" });
   assert.equal(sockets[1].sent.filter((message) => message.topic === "node_action").length, 0);
   assert.equal(ws.callbacks.size, 0);
 });
 
 test("timeout and cancellation release waits without retrying", async () => {
-  const { ws, socket, fire } = harness();
+  const { ws, socket, fire } = await harness();
   const result = ws.request(command);
   const rejected = assert.rejects(result, /Reply timed out; action outcome unknown/);
   fire(10000);
@@ -152,7 +161,7 @@ test("timeout and cancellation release waits without retrying", async () => {
 });
 
 test("bounds outstanding waits and cleans serialization failures", async () => {
-  const { ws } = harness();
+  const { ws } = await harness();
   const abort = new AbortController();
   const pending = Array.from({ length: 64 }, () => ws.request(command, abort.signal));
   const settled = Promise.allSettled(pending);
@@ -164,4 +173,98 @@ test("bounds outstanding waits and cleans serialization failures", async () => {
   await assert.rejects(ws.request({ ...command, payload: circular }), /circular/i);
   assert.equal(ws.callbacks.size, 0);
   assert.equal(ws.listenerCount("on_disconnected"), 0);
+});
+
+test("polls health while offline and opens one socket after recovery", async () => {
+  let online = false;
+  let calls = 0;
+  const { ws, sockets, fire } = await harness({
+    connected: false,
+    fetchHealth: async (url, options) => {
+      calls++;
+      assert.equal(url, "http://localhost:7351/api/v1/health");
+      assert.equal(options.cache, "no-store");
+      if (!online) throw new TypeError("Offline");
+      return { ok: true, json: async () => "ok" };
+    },
+  });
+  assert.equal(sockets.length, 0);
+  fire(2000);
+  await flush();
+  assert.equal(calls, 2);
+  assert.equal(sockets.length, 0);
+  online = true;
+  fire(2000);
+  await flush();
+  assert.equal(sockets.length, 1);
+  online = false;
+  sockets[0].onclose({ code: 1006, reason: "offline" });
+  fire(2000);
+  await flush();
+  assert.equal(sockets.length, 1);
+  ws.destroy();
+});
+
+test("rejects unsuccessful or malformed health responses", async () => {
+  for (const response of [
+    { ok: false },
+    { ok: true, json: async () => null },
+    { ok: true, json: async () => "unavailable" },
+    { ok: true, json: async () => ({ status: "ok" }) },
+    {
+      ok: true,
+      json: async () => {
+        throw new SyntaxError("Invalid JSON");
+      },
+    },
+  ]) {
+    const { ws, sockets, timers } = await harness({
+      connected: false,
+      fetchHealth: async () => response,
+    });
+    assert.equal(sockets.length, 0);
+    assert.equal(timers.size, 1);
+    ws.destroy();
+    assert.equal(timers.size, 0);
+  }
+});
+
+test("times out a stalled health request before retrying", async () => {
+  let signal;
+  const { ws, sockets, fire, timers } = await harness({
+    connected: false,
+    fetchHealth: (_url, options) =>
+      new Promise((_resolve, reject) => {
+        signal = options.signal;
+        signal.addEventListener("abort", () => reject(new Error("Aborted")), { once: true });
+      }),
+  });
+  assert.equal(signal.aborted, false);
+  fire(2000);
+  await flush();
+  assert.equal(signal.aborted, true);
+  assert.equal(sockets.length, 0);
+  assert.equal(timers.size, 1);
+  ws.destroy();
+  assert.equal(timers.size, 0);
+});
+
+test("destroy cancels polling and prevents a late response opening a socket", async () => {
+  let resolve;
+  let signal;
+  const { ws, sockets, timers } = await harness({
+    connected: false,
+    fetchHealth: (_url, options) => {
+      signal = options.signal;
+      return new Promise((done) => {
+        resolve = done;
+      });
+    },
+  });
+  ws.destroy();
+  assert.equal(signal.aborted, true);
+  resolve({ ok: true, json: async () => "ok" });
+  await flush();
+  assert.equal(sockets.length, 0);
+  assert.equal(timers.size, 0);
 });

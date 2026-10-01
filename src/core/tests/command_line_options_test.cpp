@@ -34,6 +34,7 @@ TEST(CommandLineOptions, DefaultsSettingsPathRelativeToExecutable)
     EXPECT_EQ(options.log_level, spdlog::level::info);
     EXPECT_FALSE(options.stop_after.has_value());
     EXPECT_FALSE(options.use_cuda);
+    EXPECT_FALSE(options.disable_cef_sandbox);
     EXPECT_FALSE(options.render_thread_delay_test.has_value());
 }
 
@@ -43,6 +44,7 @@ TEST(CommandLineOptions, ParsesRuntimeAndTestOptions)
         std::string{"miximus"},
         std::string{"--log-trace"},
         std::string{"--use-cuda"},
+        std::string{"--disable-cef-sandbox"},
         std::string{"--settings"},
         std::string{"/tmp/test settings.json"},
         std::string{"--stop-after"},
@@ -58,6 +60,7 @@ TEST(CommandLineOptions, ParsesRuntimeAndTestOptions)
 
     EXPECT_EQ(options.log_level, spdlog::level::trace);
     EXPECT_TRUE(options.use_cuda);
+    EXPECT_TRUE(options.disable_cef_sandbox);
     EXPECT_EQ(options.settings_path, "/tmp/test settings.json");
     ASSERT_TRUE(options.stop_after.has_value());
     EXPECT_DOUBLE_EQ(options.stop_after.value_or(std::chrono::duration<double>{}).count(), 2.5);
@@ -98,12 +101,14 @@ TEST(CommandLineOptions, PreservesNativeWindowsSettingsPath)
         std::wstring{L"miximus"},
         std::wstring{L"--settings"},
         std::wstring{L"C:\\r\u00E4ksm\u00F6rg\u00E5s.json"},
+        std::wstring{L"--disable-cef-sandbox"},
     };
     auto arguments = make_arguments(argument_values);
 
     const auto options = core::parse_command_line_options(static_cast<int>(arguments.size()), arguments.data());
 
     EXPECT_EQ(options.settings_path.native(), argument_values[2]);
+    EXPECT_TRUE(options.disable_cef_sandbox);
 }
 #endif
 

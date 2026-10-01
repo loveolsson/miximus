@@ -1,0 +1,21 @@
+{
+  "name": "websocketpp",
+  "description": "Library that implements RFC6455 The WebSocket Protocol",
+  "homepage": "https://github.com/zaphoyd/websocketpp",
+  "documentation": "http://docs.websocketpp.org/",
+  "default-features": [
+    "recommended"
+  ],
+  "features": {
+    "recommended": {
+      "description": "Use recommended dependencies",
+      "dependencies": [
+        "boost-asio",
+        "boost-random",
+        "openssl",
+        "zlib"
+      ]
+    }
+  },
+  "version-string": "0.8.2+git20250909-2"
+}
