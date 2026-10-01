@@ -4,7 +4,6 @@
     "boost-asio",
     "boost-container",
     "boost-describe",
-    "boost-fiber",
     "boost-locale",
     "boost-mp11",
     "boost-program-options",

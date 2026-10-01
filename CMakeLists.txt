@@ -33,11 +33,7 @@ find_package(Threads REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_DEBUG_LIBS ON)
 set(Boost_USE_RELEASE_LIBS ON)
-find_package(Boost REQUIRED COMPONENTS fiber program_options url CONFIG)
-
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/submodules/fiberpool/include
-)
+find_package(Boost REQUIRED COMPONENTS program_options url CONFIG)
 
 option(MIXIMUS_TUNE_NATIVE "Enable architecture-specific compiler tuning" OFF)
 

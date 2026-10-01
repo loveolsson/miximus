@@ -9,7 +9,7 @@ feature disabled is only an intermediate diagnostic checkpoint, not completion.
 
 This guide was checked against the repository on 2026-09-30. The manifest dependencies install successfully on
 Windows and pass an isolated MSVC C++20 compile/link/runtime check, including a local WebSocket echo exchange,
-Boost.Fiber, and all eight requested FFmpeg libraries. All 93 installed WebSocket++ headers match the documented
+and all eight requested FFmpeg libraries. All 93 installed WebSocket++ headers match the documented
 Linux binary package byte-for-byte. Windows configuration now reads the NDI runtime DLL's version resource;
 the full-feature configuration below supports the packaged custom Windows CEF SDK and CUDA transfers.
 The CEF-enabled build, six browser probes and browser-to-screen smoke run pass, as recorded in
@@ -64,7 +64,7 @@ Install the following before starting the port:
 | NDI SDK | Obtain the Windows **NDI SDK 6.2 or newer** from [NDI developers](https://ndi.video/for-developers/ndi-sdk/). Miximus needs headers, x64 import library, and the SDK runtime DLL with its version resource; NDI Tools alone is insufficient. |
 | NVIDIA Video Codec SDK | Obtain the [Video Codec SDK](https://developer.nvidia.com/nvidia-video-codec-sdk/download). The local SDK inventory is **13.1.15**. This wrapper is separate from CUDA transfers; include it in full dependency discovery, but its successful discovery does not establish an implemented encoder/decoder feature. |
 | Custom CEF/Chromium | Build the pinned, patched Windows SDK as described below. A stock downloaded CEF SDK is not a replacement for the custom media-input API. |
-| Open-source native libraries | Install through vcpkg as below. Submodules already supply stb, fiberpool, sanitizers-cmake, magic_enum, GoogleTest, spdlog, Volk, and VMA; do not replace these with unrelated installed versions. |
+| Open-source native libraries | Install through vcpkg as below. Submodules already supply stb, sanitizers-cmake, magic_enum, GoogleTest, spdlog, Volk, and VMA; do not replace these with unrelated installed versions. |
 
 For Chromium, use a short ASCII path on a local NTFS SSD, for example `C:\cef`. Reserve substantial additional
 space beyond Miximus: upstream CEF's starting guidance is 150 GB for a debug tree and 32 GB+ RAM recommended.
@@ -535,7 +535,7 @@ are disabled automatically. Keep the ordinary `build` directory separate from ti
 | --- | --- |
 | FFmpeg discovery | Each component now uses independent `FFMPEG_<component>_*` cache variables on every platform; Windows additionally selects the matching Debug/Release import library. Old shared `INCLUDE_DIRS`/`LIBRARIES` entries are ignored. |
 | Missing `postproc` | Confirm the chosen FFmpeg build supplies the requested development component. The proposed vcpkg baseline includes it; any removal from Miximus needs an explicit dependency cleanup, not a fake success. |
-| Missing Boost headers | Check all directly used header packages as well as Fiber, Program_options and URL; the install list includes Asio, Container, Describe, Locale, Mp11 and UUID (used by the asset bundler). |
+| Missing Boost headers | Check all directly used header packages as well as Program_options and URL; the install list includes Asio, Container, Describe, Locale, Mp11 and UUID (used by the asset bundler). |
 | MIDL not found / DeckLink header errors | Use the x64 developer environment, correct SDK root and full IDL set. Confirm generated files are dependencies of every consumer. |
 | MSVC errors in Windows-only code | Check `font_registry_win.cpp`, monitor and COM code, const correctness, Win32 macro collisions, Unicode paths, and required Windows system libraries. Fix target/platform ownership rather than globally weakening diagnostics. |
 | Native build succeeds but web UI is absent | Native bundling can report web failure only as a final warning. Inspect `build/static/web_build_failed.txt`, `web/dist`, and npm invocation (`npm.cmd` on Windows). |

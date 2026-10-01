@@ -4,9 +4,6 @@
 [submodule "submodules/sanitizers-cmake"]
 	path = submodules/sanitizers-cmake
 	url = https://github.com/arsenm/sanitizers-cmake.git
-[submodule "submodules/fiberpool"]
-	path = submodules/fiberpool
-	url = https://github.com/moneroexamples/fiberpool.git
 [submodule "submodules/magic_enum"]
 	path = submodules/magic_enum
 	url = https://github.com/Neargye/magic_enum.git

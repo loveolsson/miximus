@@ -113,8 +113,7 @@ app_state_s::app_state_s()
 app_state_s::app_state_s(command_line_options_s command_line_options)
     : command_line_options_(std::move(command_line_options))
     , cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
-    //    , thread_pool_(std::make_unique<thread_pool_t>(std::max(std::thread::hardware_concurrency(), 3u) - 2u))
-    , thread_pool_(std::make_unique<thread_pool_t>(4))
+    , cpu_task_worker_(std::make_unique<utils::cpu_task_worker_s>())
     , window_system_(std::make_unique<gpu::window_system_s>())
     , gpu_(std::make_unique<gpu::device_s>(gpu_options(command_line_options_)))
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
@@ -169,6 +168,7 @@ app_state_s::~app_state_s()
         return;
     }
 
+    cpu_task_worker_->request_stop();
     decklink_registry_->uninstall();
     cfg_work_ = nullptr;
 
@@ -187,6 +187,9 @@ app_state_s::~app_state_s()
     cef_subsystem_.reset();
     utils::report_shutdown_step_completed();
 #endif
+    utils::begin_shutdown_step("CPU task worker");
+    cpu_task_worker_.reset();
+    utils::report_shutdown_step_completed();
     utils::begin_shutdown_step("GPU subsystem");
     abort_gpu();
     texture_readback_service_.reset();
@@ -203,8 +206,6 @@ app_state_s::~app_state_s()
         utils::request_failure_shutdown("Failed to stop configuration worker");
     }
     cfg_thread_.join();
-    thread_pool_->close_queue();
-    thread_pool_.reset();
 }
 
 } // namespace miximus::core

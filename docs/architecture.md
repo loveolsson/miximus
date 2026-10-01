@@ -28,7 +28,7 @@ this document continues to describe the current runtime until each migration sta
 
 - the Vulkan device, explicit recordings, bounded transfer services, and GLFW window service;
 - the configuration `boost::asio::io_context`, work guard, and configuration thread;
-- a small FiberPool used for explicitly submitted background work;
+- one dedicated CPU task worker for heavy work independent of frame boundaries;
 - DeckLink, NDI, and font registries;
 - the typed node-status mailbox and configuration-thread snapshot store.
 
@@ -38,7 +38,25 @@ The main thread is the render thread. Normal node `prepare`, `execute`, and `com
 - DeckLink and SDK callbacks run on SDK-owned threads.
 - NDI discovery, capture, and output use dedicated threads.
 - GPU transfer services, submission, and presentation have explicit workers and independent recording contexts.
-- Teleprompter/font work may be submitted to the application pool.
+- CPU-heavy work that does not depend on a frame boundary runs on the CPU task worker, including text,
+  teleprompter, and test-pattern generation, as well as future utility and debugging tasks. Callers poll cancellable task handles;
+  tasks own their inputs and upload leases, so node destruction does not wait for CPU rendering.
+  Shutdown discards queued CPU tasks before shared transfer services are destroyed; only an already-running task
+  is joined to keep its dependencies alive.
+
+`cpu_task_worker()->submit(priority, callable, args...)` returns an optional move-only `utils::cpu_task_s<T>`.
+There is no pending-task limit. An empty optional means the worker is shutting down. Priorities use
+`utils::cpu_task_priority_e`: `background`, `normal`, and `interactive`, declared from lowest to highest.
+Extend or reorder that enum to change scheduling centrally; its values are neither persisted nor part of the protocol.
+Higher priorities start first, with FIFO ordering among equal priorities. Text and teleprompter work use `normal`;
+test-pattern generation uses `background`.
+Priority does not interrupt running work. The handle exposes `valid()`, `wait_for()`, `get()`, and `cancel()`.
+Cancellation succeeds only while queued, releases captured inputs, and makes
+`get()` throw `utils::cpu_task_cancelled_s`. A task is considered started when the worker claims it under the queue
+lock. Dropping a handle does not cancel work; nodes explicitly cancel obsolete queued tasks on replacement or
+removal. Handles can outlive the worker. `request_stop()` rejects new submissions and discards queued tasks, whose
+results report cancellation. Destruction requests stop and joins only the already-running task; queued work is never
+drained at shutdown. Running C++ callables cannot be forcibly stopped safely.
 
 Each explicit background path owns its locks, queues, completion signals, and shutdown procedure.
 
@@ -97,7 +115,7 @@ exact PTS-selected upload at FIFO consumption.
 - destructor: node destruction stays on the render thread; native GPU allocations retire after completion.
 
 Submission is conservative for routing controlled by a connected interface: a submitted node is not guaranteed to
-execute in that evaluation. Work started by `submit()` must therefore remain owned by a bounded service or queue until
+execute in that evaluation. Work started by `submit()` must therefore remain owned by a service or queue until
 it is consumed, superseded, cancelled, or shut down. `complete()` must not assume that submission implies execution.
 
 ## Nodes, interfaces, and connections

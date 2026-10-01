@@ -198,6 +198,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
 
             utils::start_shutdown_watchdog();
             getlog("app")->info("Exiting...");
+            app.cpu_task_worker()->request_stop();
             shutdown_step("web subsystem", [&] {
                 app.status_registry()->stop();
                 web_server->stop();

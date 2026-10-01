@@ -19,14 +19,15 @@
 #include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <iterator>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -36,14 +37,12 @@ namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace std::chrono_literals;
-using namespace boost::fibers;
 
 class node_impl : public node_i
 {
     struct line_info_s
     {
-        std::mutex                                              mtx;
-        ::future<bool>                                          ready;
+        utils::cpu_task_s<bool>                                 ready;
         int                                                     line_no{-1};
         gpu::transfer::texture_upload_id_s                      upload_id{};
         std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream;
@@ -52,7 +51,7 @@ class node_impl : public node_i
     struct text_s
     {
         std::vector<std::u32string>              lines;
-        std::unique_ptr<render::font_instance_s> font;
+        std::shared_ptr<render::font_instance_s> font;
     };
 
     input_interface_s<gpu::rect_s>      iface_rect_in_{*this, "rect"};
@@ -60,9 +59,7 @@ class node_impl : public node_i
     input_interface_s<gpu::texture_s*>  iface_fb_in_{*this, "fb_in"};
     output_interface_s<gpu::texture_s*> iface_fb_out_{*this, "fb_out"};
 
-    ::mutex                                   font_mtx_;
-    std::shared_ptr<render::font_loader_s>    font_loader_ = std::make_shared<render::font_loader_s>();
-    ::future<text_s>                          text_future_;
+    utils::cpu_task_s<text_s>                 text_future_;
     text_s                                    text_;
     std::vector<std::unique_ptr<line_info_s>> render_lines_;
     std::vector<gpu::texture_frame_ptr>       rendered_line_frames_;
@@ -87,13 +84,9 @@ class node_impl : public node_i
 
     ~node_impl() override
     {
-        for (auto& rl : render_lines_) {
-            if (rl->ready.valid()) {
-                try {
-                    (void)rl->ready.get();
-                } catch (...) { // NOLINT(bugprone-empty-catch) -- destructor must not throw
-                }
-            }
+        (void)text_future_.cancel();
+        for (auto& line : render_lines_) {
+            (void)line->ready.cancel();
         }
     }
 
@@ -162,8 +155,16 @@ class node_impl : public node_i
             font_variant_.would_change(font_variant) || font_size_.would_change(font_size);
 
         if (render_settings_changed) {
+            if (text_future_.cancel()) {
+                text_future_ = {};
+            }
+            for (auto& line : render_lines_) {
+                if (line->ready.cancel()) {
+                    line->ready = {};
+                }
+            }
             if (text_future_.valid()) {
-                if (text_future_.wait_for(0ms) != ::future_status::ready) {
+                if (text_future_.wait_for(0ms) != std::future_status::ready) {
                     return;
                 }
                 (void)text_future_.get();
@@ -175,7 +176,7 @@ class node_impl : public node_i
                 if (!line->ready.valid()) {
                     continue;
                 }
-                if (line->ready.wait_for(0ms) != ::future_status::ready) {
+                if (line->ready.wait_for(0ms) != std::future_status::ready) {
                     return;
                 }
                 (void)line->ready.get();
@@ -202,18 +203,25 @@ class node_impl : public node_i
                 return;
             }
 
-            auto future = app->thread_pool()->submit(
-                load_file, font_loader_, *font_info, file_path_.value(), font_size_.value(), viewport.size.x);
+            auto future = app->cpu_task_worker()->submit(utils::cpu_task_priority_e::normal,
+                                                         load_file,
+                                                         *font_info,
+                                                         file_path_.value(),
+                                                         font_size_.value(),
+                                                         viewport.size.x);
 
             if (future) {
                 text_future_ = std::move(*future);
             }
 
-            assert(text_future_.valid());
+            if (!text_future_.valid()) {
+                file_path_.reset(); // The worker is shutting down.
+                return;
+            }
         }
 
         if (text_future_.valid()) {
-            if (text_future_.wait_for(0ms) == ::future_status::ready) {
+            if (text_future_.wait_for(0ms) == std::future_status::ready) {
                 text_ = text_future_.get();
             } else {
                 return;
@@ -236,8 +244,11 @@ class node_impl : public node_i
 
             while (render_lines_.size() > static_cast<size_t>(visible_lines_plus_four)) {
                 auto& rl = render_lines_.back();
+                if (rl->ready.cancel()) {
+                    rl->ready = {};
+                }
                 if (rl->ready.valid()) {
-                    if (rl->ready.wait_for(0ms) != ::future_status::ready) {
+                    if (rl->ready.wait_for(0ms) != std::future_status::ready) {
                         break;
                     }
                     (void)rl->ready.get();
@@ -260,6 +271,11 @@ class node_impl : public node_i
             }
 
             auto& rl = render_lines_[txt_line_index % render_lines_.size()];
+
+            if (rl->line_no != txt_line_index && rl->ready.cancel()) {
+                rl->ready   = {};
+                rl->line_no = -1;
+            }
 
             if (rl->line_no != txt_line_index && !rl->ready.valid()) {
                 if (!rl->upload_stream || rl->upload_stream->configuration().host_layout.image_dimensions != tx_dim) {
@@ -290,12 +306,18 @@ class node_impl : public node_i
 
                 auto t = text_.lines[txt_line_index];
 
-                auto future = app->thread_pool()->submit(
-                    &node_impl::process_line, this, rl.get(), std::move(t), tx_dim, std::move(*upload));
-                assert(future);
+                auto future = app->cpu_task_worker()->submit(utils::cpu_task_priority_e::normal,
+                                                             process_line,
+                                                             text_.font,
+                                                             font_size_.value(),
+                                                             std::move(t),
+                                                             tx_dim,
+                                                             std::move(*upload));
 
                 if (future) {
                     rl->ready = std::move(*future);
+                } else {
+                    rl->line_no = -1;
                 }
                 continue;
             }
@@ -303,7 +325,7 @@ class node_impl : public node_i
             if (rl->ready.valid()) {
                 // Render line has active processing
 
-                if (rl->ready.wait_for(0ms) == ::future_status::ready) {
+                if (rl->ready.wait_for(0ms) == std::future_status::ready) {
                     // Processing is done
                     if (!rl->ready.get()) {
                         rl->line_no = -1;
@@ -319,7 +341,6 @@ class node_impl : public node_i
                 }
             }
 
-            const std::unique_lock lock(rl->mtx);
             auto frame = rl->upload_stream ? rl->upload_stream->select_latest_completed_upload() : nullptr;
             if (!frame || rl->upload_stream->retained_upload_id() != rl->upload_id) {
                 continue;
@@ -374,11 +395,8 @@ class node_impl : public node_i
 
     std::string_view type() const final { return "teleprompter"; }
 
-    static text_s load_file(const std::shared_ptr<render::font_loader_s>& loader,
-                            const render::font_variant_s&                 font_info,
-                            const std::string&                            path_utf8,
-                            int                                           font_size,
-                            int                                           width)
+    static text_s
+    load_file(const render::font_variant_s& font_info, const std::string& path_utf8, int font_size, int width)
     {
         text_s         res = {};
         std::u32string str;
@@ -395,7 +413,8 @@ class node_impl : public node_i
             return res;
         }
 
-        res.font = loader->load_font(&font_info);
+        auto loader = std::make_shared<render::font_loader_s>();
+        res.font    = loader->load_font(&font_info);
 
         if (!res.font) {
             return res;
@@ -407,24 +426,25 @@ class node_impl : public node_i
 
         while (pos < str.size()) {
             auto info = res.font->flow_line(str.substr(pos), width);
-            res.lines.emplace_back(str.data() + pos, info.consumed_chars);
-            pos += info.consumed_chars;
+            // An overwide first glyph must still advance, otherwise one narrow
+            // viewport can keep the shared CPU task worker busy indefinitely.
+            const auto consumed = std::max<size_t>(info.consumed_chars, 1);
+            res.lines.emplace_back(str.data() + pos, consumed);
+            pos += consumed;
         }
 
         return res;
     }
 
-    [[nodiscard]] bool process_line(line_info_s*                          line,
-                                    const std::u32string&                 str,
-                                    const gpu::vec2i_t&                   dim,
-                                    gpu::transfer::texture_upload_lease_s upload)
+    [[nodiscard]] static bool process_line(const std::shared_ptr<render::font_instance_s>& font,
+                                           int                                             font_size,
+                                           const std::u32string&                           str,
+                                           const gpu::vec2i_t&                             dim,
+                                           gpu::transfer::texture_upload_lease_s           upload)
     {
-        const std::unique_lock line_lock(line->mtx);
-        const std::unique_lock font_lock(font_mtx_);
-
         render::surface_s surface(dim, upload.writable_host_bytes());
         surface.clear({0, 0, 0, 0});
-        text_.font->render_string(str, &surface, {0, font_size_.value()});
+        font->render_string(str, &surface, {0, font_size});
         return upload.submit();
     }
 };

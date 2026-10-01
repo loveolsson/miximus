@@ -20,8 +20,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <future>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 
@@ -29,7 +29,6 @@ namespace {
 using namespace miximus;
 using namespace miximus::nodes;
 using namespace std::chrono_literals;
-using namespace boost::fibers;
 
 class node_impl : public node_i
 {
@@ -48,15 +47,23 @@ class node_impl : public node_i
     input_interface_s<gpu::texture_s*>  iface_fb_in_{*this, "fb_in"};
     output_interface_s<gpu::texture_s*> iface_fb_out_{*this, "fb_out"};
 
-    std::shared_ptr<render::font_loader_s>   font_loader_{std::make_shared<render::font_loader_s>()};
-    std::unique_ptr<text_render_info_s>      text_info_{std::make_unique<text_render_info_s>()};
-    ::mutex                                  font_mtx_;
-    std::unique_ptr<render::font_instance_s> font_instance_;
-    utils::observed_value_s<uint64_t>        font_version_;
-    utils::observed_value_s<std::string>     status_font_name_;
-    gpu::texture_frame_ptr                   rendered_text_frame_;
+    std::unique_ptr<text_render_info_s>                    text_info_{std::make_unique<text_render_info_s>()};
+    utils::cpu_task_s<std::unique_ptr<text_render_info_s>> render_future_;
+    uint64_t                                               requested_generation_{};
+    uint64_t                                               rendering_generation_{};
+    utils::observed_value_s<uint64_t>                      font_version_;
+    utils::observed_value_s<std::string>                   status_font_name_;
+    gpu::texture_frame_ptr                                 rendered_text_frame_;
 
   public:
+    node_impl()                            = default;
+    node_impl(const node_impl&)            = delete;
+    node_impl(node_impl&&)                 = delete;
+    node_impl& operator=(const node_impl&) = delete;
+    node_impl& operator=(node_impl&&)      = delete;
+
+    ~node_impl() override { (void)render_future_.cancel(); }
+
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
     {
         const auto font_version      = app->font_registry()->get_font_list_version();
@@ -90,80 +97,102 @@ class node_impl : public node_i
         render_settings_changed |= text_info_->font_variant.observe(font_variant);
         render_settings_changed |= text_info_->font_size.observe(font_size);
 
-        if (render_settings_changed) {
+        if (render_settings_changed || font_list_changed) {
+            ++requested_generation_;
+            if (render_future_.cancel()) {
+                render_future_ = {};
+            }
             text_info_->needs_update = true;
+            // A new generation must not reuse an obsolete task's upload stream.
+            text_info_->upload_stream.reset();
 
             if (text.empty()) {
-                text_info_->upload_stream.reset();
                 text_info_->surface_size = {};
             }
         }
 
         if (text_info_->needs_update && !text_info_->text.value().empty()) {
-            render_text(app, state);
+            schedule_render(app);
         }
     }
 
-    void render_text(core::app_state_s* app, [[maybe_unused]] const node_state_s& state)
+    void schedule_render(core::app_state_s* app)
     {
-        // Load font if needed
-        {
-            const std::unique_lock<::mutex> font_lock(font_mtx_);
-
-            std::optional<render::font_variant_s> font_info;
-
-            spdlog::get("app")->info("Text rendering: '{}' with font '{}' size {}",
-                                     text_info_->text.value(),
-                                     text_info_->font_name.value(),
-                                     text_info_->font_size.value());
-
-            if (!text_info_->font_name.value().empty()) {
-                font_info = app->font_registry()->find_font_variant(text_info_->font_name.value(),
-                                                                    text_info_->font_variant.value());
+        if (render_future_.valid()) {
+            if (render_future_.wait_for(0ms) != std::future_status::ready) {
+                return;
             }
-
-            if (!font_info) {
-                font_info = app->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
-            }
-
-            if (!font_info) {
-                // Try any available font
-                auto font_names = app->font_registry()->get_font_names();
-                if (!font_names.empty()) {
-                    font_info = app->font_registry()->find_font_variant(font_names[0], "Regular");
+            try {
+                auto result = render_future_.get();
+                if (rendering_generation_ == requested_generation_) {
+                    text_info_ = std::move(result);
+                }
+            } catch (const std::exception& error) {
+                getlog("app")->error("Text rendering failed: {}", error.what());
+                if (rendering_generation_ == requested_generation_) {
+                    text_info_->needs_update = false;
                 }
             }
-
-            if (!font_info) {
-                return;
-            }
-
-            // Load font instance
-            font_instance_ = font_loader_->load_font(&*font_info);
-            if (!font_instance_) {
-                return;
-            }
-
-            // Set the font size
-            font_instance_->set_size(text_info_->font_size.value());
+        }
+        if (!text_info_->needs_update || text_info_->text.value().empty()) {
+            return;
         }
 
+        auto font_info =
+            app->font_registry()->find_font_variant(text_info_->font_name.value(), text_info_->font_variant.value());
+        if (!font_info) {
+            font_info = app->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
+        }
+        if (!font_info) {
+            const auto names = app->font_registry()->get_font_names();
+            if (!names.empty()) {
+                font_info = app->font_registry()->find_font_variant(names.front(), "Regular");
+            }
+        }
+        if (!font_info) {
+            return;
+        }
+
+        auto snapshot = std::make_unique<text_render_info_s>(*text_info_);
+        auto future   = app->cpu_task_worker()->submit(
+            utils::cpu_task_priority_e::normal,
+            [info = std::move(snapshot), font = *font_info, uploads = app->texture_upload_service()]() mutable {
+                render_text(uploads, *info, font);
+                return std::move(info);
+            });
+        if (future) {
+            rendering_generation_ = requested_generation_;
+            render_future_        = std::move(*future);
+        }
+    }
+
+    static void render_text(gpu::transfer::texture_upload_service_s* uploads,
+                            text_render_info_s&                      info,
+                            const render::font_variant_s&            font_info)
+    {
+        auto loader        = std::make_shared<render::font_loader_s>();
+        auto font_instance = loader->load_font(&font_info);
+        if (!font_instance) {
+            info.needs_update = false;
+            return;
+        }
+        font_instance->set_size(info.font_size.value());
         // Convert text to UTF-32
-        auto utf32_text = utils::utf8_to_utf32(text_info_->text.value());
+        auto utf32_text = utils::utf8_to_utf32(info.text.value());
 
         // Calculate text dimensions
-        auto text_dim = font_instance_->flow_line(utf32_text, INT_MAX);
+        auto text_dim = font_instance->flow_line(utf32_text, INT_MAX);
 
         // Create surface with generous padding to ensure no character cutoff
         // Use font size as height reference and add extra width padding
-        const int padding = std::max(40, text_info_->font_size.value() / 2);
+        const int padding = std::max(40, info.font_size.value() / 2);
 
         const gpu::vec2i_t surface_size{static_cast<int>(text_dim.pixels_advanced) +
                                             (padding * 2), // More generous padding
-                                        text_info_->font_size.value() + (padding * 2)};
+                                        info.font_size.value() + (padding * 2)};
 
-        if (!text_info_->upload_stream || text_info_->surface_size != surface_size) {
-            text_info_->surface_size          = surface_size;
+        if (!info.upload_stream || info.surface_size != surface_size) {
+            info.surface_size                 = surface_size;
             const auto host_buffer_size_bytes = sizeof(render::surface_s::pixel_t) *
                                                 static_cast<size_t>(surface_size.x) *
                                                 static_cast<size_t>(surface_size.y);
@@ -175,14 +204,18 @@ class node_impl : public node_i
                 .address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
                 .memory_access           = gpu::transfer::host_memory_access_e::read_write,
             };
-            text_info_->upload_stream = app->texture_upload_service()->create_stream({
+            info.upload_stream = uploads->create_stream({
                 .host_layout = host_layout,
-                .max_slots   = 3,
+                .max_slots   = 1,
             });
         }
 
-        auto upload = text_info_->upload_stream->try_acquire_upload_buffer();
+        auto upload = info.upload_stream->try_acquire_upload_buffer();
         if (!upload) {
+            if (info.upload_stream->allocation_failed()) {
+                getlog("app")->error("Unable to allocate text surface");
+                info.needs_update = false;
+            }
             return;
         }
 
@@ -190,12 +223,12 @@ class node_impl : public node_i
         surface.clear({0, 0, 0, 0});
 
         // Position text with adequate padding from the top-left
-        const gpu::vec2i_t text_position{padding, text_info_->font_size.value() + (padding / 2)};
+        const gpu::vec2i_t text_position{padding, info.font_size.value() + (padding / 2)};
 
         // Render text in white
-        font_instance_->render_string(utf32_text, &surface, text_position);
+        font_instance->render_string(utf32_text, &surface, text_position);
         if (upload->submit()) {
-            text_info_->needs_update = false;
+            info.needs_update = false;
         }
     }
 
@@ -216,12 +249,6 @@ class node_impl : public node_i
         }
 
         spdlog::get("app")->debug("Text node executing with text: '{}'", text_info_->text.value());
-
-        // Update text if needed
-        if (text_info_->needs_update) {
-            spdlog::get("app")->debug("Text node: Updating text rendering");
-            render_text(app, state);
-        }
 
         auto frame = text_info_->upload_stream ? text_info_->upload_stream->select_latest_completed_upload() : nullptr;
         if (!frame) {

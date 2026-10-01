@@ -356,8 +356,8 @@ The font registry may refresh from the configuration thread. It uses a shared mu
 Do not reintroduce pointer/view results whose lifetime crosses the registry lock.
 
 `render::surface_s` is a non-owning CPU pixel span. Text and teleprompter rendering construct it over an upload lease,
-so font work never owns GPU recordings and can run in the fiber pool. Copy and blend operations accept checked strided image
-views, keeping storage extent, dimensions, and signed row stride together. Their templated helper clips once before pixel
+so font work never owns GPU recordings and runs on the dedicated CPU task worker. Copy and blend operations accept
+checked strided image views, keeping storage extent, dimensions, and signed row stride together. Their templated helper clips once before pixel
 loops; preserve the separation between clipping and pixel operations to avoid per-pixel boundary branches.
 
 Surface-producing upload streams request `surface_s::DATA_ALIGNMENT`. The transfer factory verifies the exposed host

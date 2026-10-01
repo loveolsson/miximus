@@ -1,3 +1,6 @@
+add_library(cpu_task_worker INTERFACE cpu_task_worker.hpp)
+target_link_libraries(cpu_task_worker INTERFACE Threads::Threads)
+
 add_library(shutdown_watchdog
     shutdown_watchdog.hpp
     shutdown_watchdog.cpp
@@ -30,6 +33,12 @@ target_link_libraries(shutdown_signal PRIVATE shutdown_watchdog)
 add_sanitizers(shutdown_signal)
 
 if(BUILD_TESTING)
+    add_executable(cpu_task_worker_test tests/cpu_task_worker_test.cpp)
+    target_link_libraries(cpu_task_worker_test PRIVATE cpu_task_worker GTest::gtest_main)
+    add_sanitizers(cpu_task_worker_test)
+    miximus_stage_runtime_dlls(cpu_task_worker_test)
+    gtest_discover_tests(cpu_task_worker_test)
+
     add_executable(shutdown_test tests/failure_shutdown_test.cpp)
     target_link_libraries(shutdown_test PRIVATE shutdown_watchdog GTest::gtest_main)
     add_sanitizers(shutdown_test)

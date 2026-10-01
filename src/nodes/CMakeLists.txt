@@ -41,6 +41,7 @@ find_package(nlohmann_json REQUIRED)
 
 target_link_libraries(nodes
 PRIVATE
+    cpu_task_worker
     gpu
     decklink
     ndi
@@ -49,7 +50,6 @@ PRIVATE
     miximus_types
     logger
     shutdown_watchdog
-    Boost::fiber
     magic_enum::magic_enum
 PUBLIC
     nlohmann_json::nlohmann_json

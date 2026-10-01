@@ -39,6 +39,7 @@ PRIVATE
     magic_enum::magic_enum
     Boost::program_options
 PUBLIC
+    cpu_task_worker
     miximus_types
     Boost::headers
     logger

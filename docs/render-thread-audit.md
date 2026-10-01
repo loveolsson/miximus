@@ -6,7 +6,7 @@ unbounded CPU, filesystem, SDK, network, and thread waits. Revisit it when node 
 ## Rules
 
 - Discovery, filesystem access, network I/O, CPU-heavy rendering, and potentially blocking SDK setup belong on the
-  application thread pool or a dedicated owner thread.
+  dedicated owner thread.
 - Render-thread code may poll completed work and publish or consume ready results. It must not wait for background work.
 - OpenGL work stays on a thread with the appropriate context current. Moving a call off the render thread requires an
   explicit shared context and lifetime protocol.
@@ -31,21 +31,23 @@ reader critical section.
 
 ### Fixed
 
-- Teleprompter line rendering now polls worker futures before acquiring their mutexes. A busy line is skipped for the
+- Teleprompter line rendering polls task handles without waiting or locking the font. A busy line is skipped for the
   frame instead of stalling rendering.
 - Teleprompter reconfiguration and render-line shrinking no longer call `future::get()` until the future reports ready.
 - NDI output readback completion occurs after the frame-wide GL finish, and network transmission remains on its worker.
 - Screen output drops work when no safe buffer is available instead of waiting for the display thread.
 
+#### Background CPU tasks
+
+The dedicated CPU task worker handles heavy work independent of frame boundaries, including text, teleprompter,
+and test-pattern generation and other utility or debugging tasks. There is no pending-task limit. Higher priorities
+start first, with FIFO ordering for equal priorities. Task handles cancel obsolete queued work and release its inputs;
+running work finishes normally. Nodes cancel queued tasks on replacement and destruction. Text and test patterns keep one generation in flight per
+node, and teleprompter jobs are limited to its visible-line cache. Results are polled without waiting, and obsolete
+text/test-pattern generations cannot publish over newer requests. Tasks own their data and leases independently of
+nodes. Application shutdown discards queued jobs and joins only the already-running job before destroying upload services.
+
 ### High-priority follow-up
-
-#### Text node rasterization
-
-`src/nodes/text/text.cpp` calls `render_text()` from `prepare()`. That path can load a font file, shape and rasterize the
-entire string, allocate a CPU surface, copy its pixels, and submit a texture upload. This is the clearest remaining
-per-frame stall risk. It should follow the Teleprompter model: build a generation-tagged CPU result on the thread pool,
-then publish only the newest completed result. Any GL upload must use a shared context or be kept as a short render-thread
-publication step.
 
 #### DeckLink input/output reconfiguration
 

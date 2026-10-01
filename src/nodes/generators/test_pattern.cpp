@@ -13,13 +13,12 @@
 #include "utils/lookup.hpp"
 #include "utils/observed_value.hpp"
 
-#include <boost/fiber/future.hpp>
-
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <future>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -42,7 +41,7 @@ struct generation_s
 {
     request_s                                               request;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> stream;
-    boost::fibers::future<bool>                             worker;
+    utils::cpu_task_s<bool>                                 worker;
     gpu::transfer::texture_upload_id_s                      upload_id{};
     bool                                                    submitted{};
 };
@@ -97,7 +96,7 @@ class node_impl : public node_i
         }
 
         if (generation_->worker.valid()) {
-            if (generation_->worker.wait_for(0ms) != boost::fibers::future_status::ready) {
+            if (generation_->worker.wait_for(0ms) != std::future_status::ready) {
                 return;
             }
             try {
@@ -167,11 +166,12 @@ class node_impl : public node_i
         }
 
         generation_->upload_id = upload->upload_id();
-        auto worker            = app->thread_pool()->submit(generate_pattern,
-                                                 generation_->request.dimensions,
-                                                 generation_->request.pattern,
-                                                 generation_->request.show_logo,
-                                                 std::move(*upload));
+        auto worker            = app->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
+                                                     generate_pattern,
+                                                     generation_->request.dimensions,
+                                                     generation_->request.pattern,
+                                                     generation_->request.show_logo,
+                                                     std::move(*upload));
         if (!worker.has_value()) {
             return;
         }
@@ -190,11 +190,8 @@ class node_impl : public node_i
 
     ~node_impl() override
     {
-        if (generation_.has_value() && generation_->worker.valid()) {
-            try {
-                generation_->worker.get();
-            } catch (...) { // NOLINT(bugprone-empty-catch) -- destructor must not throw
-            }
+        if (generation_) {
+            (void)generation_->worker.cancel();
         }
     }
 
@@ -213,7 +210,7 @@ class node_impl : public node_i
         };
         if (desired_request_.observe(request)) {
             failed_request_.reset();
-            if (generation_.has_value() && !generation_->submitted) {
+            if (generation_.has_value() && (!generation_->submitted || generation_->worker.cancel())) {
                 generation_.reset();
             }
         }
