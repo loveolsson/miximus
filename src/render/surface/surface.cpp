@@ -635,11 +635,36 @@ void surface_s::checkerboard(gpu::recti_s rect, gpu::vec2i_t cell_size, pixel_t 
     if (cell_size.x <= 0 || cell_size.y <= 0) {
         return;
     }
-    raster_operation(data(), dimensions_, rect, [&](gpu::vec2i_t pos, auto* dst) {
-        const int cell_x = (pos.x - rect.pos.x) / cell_size.x;
-        const int cell_y = (pos.y - rect.pos.y) / cell_size.y;
-        *dst             = ((cell_x + cell_y) & 1) == 0 ? first : second;
-    });
+    const auto clipped = clip_rect(rect, dimensions_);
+    if (!clipped.has_value()) {
+        return;
+    }
+    // There are only two distinct rows. Draw each once with contiguous cell
+    // fills, then reuse it. References point to completed rows in this surface;
+    // no temporary image allocation is needed, even for one-pixel cells.
+    std::array<std::span<const pixel_t>, 2> reference_rows{};
+    const auto                              width = static_cast<size_t>(clipped->end.x - clipped->begin.x);
+    for (int y = clipped->begin.y; y < clipped->end.y; ++y) {
+        const auto parity = static_cast<size_t>(((static_cast<int64_t>(y) - rect.pos.y) / cell_size.y) & 1);
+        const auto offset =
+            (static_cast<size_t>(y) * static_cast<size_t>(dimensions_.x)) + static_cast<size_t>(clipped->begin.x);
+        const auto row       = pixels_.subspan(offset, width);
+        auto&      reference = reference_rows.at(parity);
+        if (!reference.empty()) {
+            std::ranges::copy(reference, row.begin());
+            continue;
+        }
+        // Preserve the original cell origin when the rectangle is clipped.
+        for (int64_t x = clipped->begin.x; x < clipped->end.x;) {
+            const int64_t local_x = x - rect.pos.x;
+            const int64_t right   = std::min<int64_t>(clipped->end.x, x + cell_size.x - (local_x % cell_size.x));
+            const auto    color   = ((static_cast<size_t>(local_x / cell_size.x) + parity) & 1) == 0 ? first : second;
+            const auto    cell = row.subspan(static_cast<size_t>(x - clipped->begin.x), static_cast<size_t>(right - x));
+            std::ranges::fill(cell, color);
+            x = right;
+        }
+        reference = row;
+    }
 }
 
 void surface_s::draw_grid(gpu::recti_s rect, gpu::vec2i_t spacing, pixel_t color, int thickness) noexcept

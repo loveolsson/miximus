@@ -137,14 +137,31 @@ void draw_smpte_color_bars(surface_s* surface)
     }
 }
 
+// These patterns vary only horizontally. Keep writes contiguous by generating
+// the first row once and copying it, rather than filling narrow vertical strips.
+void repeat_first_row(surface_s* surface)
+{
+    const auto width     = static_cast<size_t>(surface->dimensions().x);
+    const auto pixels    = surface->pixels();
+    const auto first_row = pixels.first(width);
+    for (size_t offset = width; offset < pixels.size(); offset += width) {
+        std::ranges::copy(first_row, pixels.subspan(offset, width).begin());
+    }
+}
+
 void draw_grayscale_ramp(surface_s* surface)
 {
     const auto rect = full_rect(*surface);
-    for (int x = 0; x < rect.size.x; ++x) {
-        const double encoded = rect.size.x > 1 ? static_cast<double>(x) / (rect.size.x - 1) : 0.0;
-        const auto   value   = rec709_to_linear(encoded);
-        surface->fill(make_rect({x, 0}, {1, rect.size.y}), pixel_t{value, value, value, 255});
+    if (rect.size.x <= 0 || rect.size.y <= 0) {
+        return;
     }
+    const auto row = surface->pixels().first(static_cast<size_t>(rect.size.x));
+    for (int x = 0; x < rect.size.x; ++x) {
+        const double encoded        = rect.size.x > 1 ? static_cast<double>(x) / (rect.size.x - 1) : 0.0;
+        const auto   value          = rec709_to_linear(encoded);
+        row[static_cast<size_t>(x)] = {.r = value, .g = value, .b = value, .a = 255};
+    }
+    repeat_first_row(surface);
 
     constexpr int steps = 11;
     const int     strip = std::max(1, rect.size.y / 8);
@@ -184,11 +201,11 @@ void draw_checkerboard(surface_s* surface)
 void draw_multiburst(surface_s* surface)
 {
     const auto dimensions = surface->dimensions();
-    surface->clear(BLACK);
     if (dimensions.x <= 0 || dimensions.y <= 0) {
         return;
     }
 
+    const auto    row   = surface->pixels().first(static_cast<size_t>(dimensions.x));
     constexpr int bands = 6;
     for (int band = 0; band < bands; ++band) {
         const int left   = dimensions.x * band / bands;
@@ -196,11 +213,12 @@ void draw_multiburst(surface_s* surface)
         const int width  = std::max(1, right - left);
         const int cycles = 1 << band;
         for (int x = left; x < right; ++x) {
-            const double phase = static_cast<double>(x - left) / width * cycles * 2.0 * std::numbers::pi;
-            const auto   value = rec709_to_linear((std::sin(phase) * 0.5) + 0.5);
-            surface->fill(make_rect({x, 0}, {1, dimensions.y}), pixel_t{value, value, value, 255});
+            const double phase          = static_cast<double>(x - left) / width * cycles * 2.0 * std::numbers::pi;
+            const auto   value          = rec709_to_linear((std::sin(phase) * 0.5) + 0.5);
+            row[static_cast<size_t>(x)] = {.r = value, .g = value, .b = value, .a = 255};
         }
     }
+    repeat_first_row(surface);
 }
 
 void draw_zone_plate(surface_s* surface)

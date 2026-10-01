@@ -137,6 +137,55 @@ TEST(Surface, UsesGrayscaleGlyphsAsCoverage)
     EXPECT_EQ(destination.front(), (pixel_t{128, 128, 128, 128}));
 }
 
+bool checkerboard_matches_reference(gpu::recti_s rect, gpu::vec2i_t cell_size)
+{
+    constexpr gpu::vec2i_t dimensions{9, 7};
+    constexpr pixel_t      background{3, 4, 5, 6};
+    constexpr pixel_t      first{10, 20, 30, 40};
+    constexpr pixel_t      second{50, 60, 70, 80};
+    std::vector<pixel_t>   pixels(static_cast<size_t>(dimensions.x) * dimensions.y, background);
+    auto                   expected = pixels;
+    render::surface_s      surface(dimensions, pixels);
+    surface.checkerboard(rect, cell_size, first, second);
+    for (size_t i = 0; i < expected.size(); ++i) {
+        const auto x = static_cast<int64_t>(i % dimensions.x);
+        const auto y = static_cast<int64_t>(i / dimensions.x);
+        if (cell_size.x > 0 && cell_size.y > 0 && x >= rect.pos.x && y >= rect.pos.y &&
+            x < static_cast<int64_t>(rect.pos.x) + rect.size.x && y < static_cast<int64_t>(rect.pos.y) + rect.size.y) {
+            const auto parity = (((x - rect.pos.x) / cell_size.x) + ((y - rect.pos.y) / cell_size.y)) & 1;
+            expected[i]       = parity == 0 ? first : second;
+        }
+    }
+    return pixels == expected;
+}
+
+TEST(Surface, CheckerboardPreservesClippedOriginAndPixelsOutsideRectangle)
+{
+    constexpr std::array rectangles{
+        gpu::recti_s{.pos = {0, 0},   .size = {9, 7}  },
+        gpu::recti_s{.pos = {-3, -2}, .size = {11, 10}},
+        gpu::recti_s{.pos = {-5, -4}, .size = {20, 20}},
+        gpu::recti_s{.pos = {2, 1},   .size = {4, 3}  },
+        gpu::recti_s{.pos = {8, 6},   .size = {8, 8}  },
+        gpu::recti_s{.pos = {20, 20}, .size = {5, 5}  },
+        gpu::recti_s{.pos = {0, 0},   .size = {-1, 5} }
+    };
+    constexpr std::array cells{
+        gpu::vec2i_t{1,  1 },
+        gpu::vec2i_t{2,  3 },
+        gpu::vec2i_t{20, 20},
+        gpu::vec2i_t{1,  4 },
+        gpu::vec2i_t{4,  1 },
+        gpu::vec2i_t{0,  1 },
+        gpu::vec2i_t{1,  -1}
+    };
+    for (const auto rect : rectangles) {
+        for (const auto cell : cells) {
+            EXPECT_TRUE(checkerboard_matches_reference(rect, cell));
+        }
+    }
+}
+
 TEST(Surface, InvalidDrawingGeometryIsANoOp)
 {
     constexpr pixel_t original{4, 3, 2, 1};
