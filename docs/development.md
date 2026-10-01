@@ -48,12 +48,20 @@ Release builds do not enable interprocedural optimization by default. Enable IPO
 libraries and their executable consumers with `-DMIXIMUS_ENABLE_RELEASE_IPO=ON`. External dependencies and the
 separately loaded `static_files` shared library are not included.
 
-Use a separate build directory for clang-tidy so normal builds remain unaffected:
+Use **clang-tidy 21** on Linux and Windows so both platforms use the same major version of the checks.
+Select it explicitly; CMake's default `clang-tidy` lookup does not enforce a version. Use a separate build
+directory so normal builds remain unaffected:
 
 ```bash
-cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON
+cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON \
+    -DMIXIMUS_CLANG_TIDY_EXECUTABLE="$(command -v clang-tidy-21)"
 cmake --build build-tidy -j4
 ```
+
+On Windows, follow the [clang-tidy setup](windows-development.md#clang-tidy) and select the LLVM 21 executable
+instead of the potentially different version bundled with Visual Studio. Verify the selected executable with
+`--version`; the local Windows installation is 21.1.8. This tool selection is independent of the native compiler
+and clang-format.
 
 Limit tidy builds to four jobs and avoid running another build or tidy pass concurrently. Clang-tidy disables
 precompiled headers and can use considerably more memory than an ordinary compile. The four-job limit applies to

@@ -33,8 +33,8 @@ struct external_image_platform_s
     {
         VkPhysicalDeviceIDProperties identity{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
         VkPhysicalDeviceProperties2  properties{
-             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-             .pNext = &identity,
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            .pNext = &identity,
         };
         owner.instance_vk.vkGetPhysicalDeviceProperties2(owner.physical, &properties);
         if (identity.deviceLUIDValid == VK_FALSE) {
@@ -137,8 +137,8 @@ import_texture(const std::shared_ptr<device_state_s>& device, const external_ima
     };
     VkExternalImageFormatProperties external_properties{.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
     VkImageFormatProperties2        properties{
-               .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-               .pNext = &external_properties,
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+        .pNext = &external_properties,
     };
     check(device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties),
           "query D3D11 image import");

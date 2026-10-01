@@ -423,8 +423,8 @@ size_t cuda_transfer_s::allocation_bytes() const noexcept
     const auto  frame_bytes = state.frame.buffer()
                                   ? state.frame.buffer().size()
                                   : texture_s::estimate_storage_byte_size(state.frame.texture()->dimensions(),
-                                                                         format_e::rgba_unorm8,
-                                                                         state.frame.texture()->mip_levels() > 1
+                                                                          format_e::rgba_unorm8,
+                                                                          state.frame.texture()->mip_levels() > 1
                                                                               ? sampling_e::mipmapped_linear
                                                                               : sampling_e::linear);
     // The service accounts for frame storage separately; include only its allocation padding here.

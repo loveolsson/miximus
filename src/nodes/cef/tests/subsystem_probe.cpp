@@ -174,7 +174,7 @@ void exercise_commands(session_s& session)
     }
     std::cout << "JavaScript dialogs suppressed and window.open denied\n";
     auto       first  = session.request("value => new Promise(resolve => setTimeout(() => resolve({echo:value}), 50))",
-                                 R"({"message":"hello","number":42})");
+                                        R"({"message":"hello","number":42})");
     const auto second = command_result(session.request("value => value + 1", "4"));
     const auto first_result = command_result(std::move(first));
     if (!first_result.error.empty() || nlohmann::json::parse(first_result.json)["echo"]["number"] != 42 ||

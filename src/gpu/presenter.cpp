@@ -380,7 +380,7 @@ struct presenter_state_s
                                .mipLevel       = 0,
                                .baseArrayLayer = 0,
                                .layerCount     = 1},
-            .dstOffsets     = {{},
+            .dstOffsets = {{},
                                {.x = static_cast<int32_t>(extent.width), .y = static_cast<int32_t>(extent.height), .z = 1}},
         };
         owner->vk.vkCmdBlitImage(command_buffer,

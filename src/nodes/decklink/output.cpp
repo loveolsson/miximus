@@ -335,10 +335,10 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
         const auto readback_slot_count = get_readback_slot_count(scheduled_frame_target_, output_queue_->capacity());
         const auto stream              = readback_service_->create_stream({
-                         .host_layout         = active_output->path->host_layout(),
-                         .max_slots           = readback_slot_count,
-                         .initial_slots       = readback_slot_count,
-                         .conversion_sampling = gpu::sampling_e::linear,
+            .host_layout         = active_output->path->host_layout(),
+            .max_slots           = readback_slot_count,
+            .initial_slots       = readback_slot_count,
+            .conversion_sampling = gpu::sampling_e::linear,
         });
         if (!stream->wait_for_initial_slots(5s)) {
             log()->error("Failed to initialize the DeckLink output transfer pool for {}", device_name_);
@@ -802,41 +802,41 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             output_queue_.has_value() ? output_queue_->metrics() : media::timed_output_queue_metrics_s{};
         const auto runtime_metrics = runtime_metrics_.snapshot();
         auto       result          = metrics_s{
-                           .frames_completed                     = frames_completed_.load(),
-                           .frames_displayed_late                = frames_displayed_late_.load(),
-                           .frames_dropped                       = frames_dropped_.load(),
-                           .frames_flushed                       = frames_flushed_.load(),
-                           .program_frames_received              = output_metrics.pushed,
-                           .program_queue_overflow_drops         = output_metrics.overflow_drops,
-                           .program_timing_drops                 = output_metrics.selection_drops,
-                           .program_frames_repeated              = output_metrics.repeated,
-                           .program_frames_missing               = output_metrics.missing,
-                           .program_cadence_repeats              = runtime_metrics.cadence_repeats,
-                           .program_starvation_repeats           = runtime_metrics.starvation_repeats,
-                           .program_starvation_repeat_streak     = runtime_metrics.starvation_repeat_streak,
-                           .program_starvation_repeat_streak_max = runtime_metrics.starvation_repeat_streak_max,
-                           .output_refill_shortfalls             = runtime_metrics.refill_shortfalls,
-                           .content_frames_sampled               = content_frames_sampled_,
-                           .content_frame_repeats                = content_frame_repeats_,
-                           .content_repeat_streak                = content_repeat_streak_,
-                           .content_repeat_streak_max            = content_repeat_streak_max_,
-                           .completion_intervals                 = runtime_metrics.completion_intervals,
-                           .completion_interval_max_us =
+            .frames_completed                     = frames_completed_.load(),
+            .frames_displayed_late                = frames_displayed_late_.load(),
+            .frames_dropped                       = frames_dropped_.load(),
+            .frames_flushed                       = frames_flushed_.load(),
+            .program_frames_received              = output_metrics.pushed,
+            .program_queue_overflow_drops         = output_metrics.overflow_drops,
+            .program_timing_drops                 = output_metrics.selection_drops,
+            .program_frames_repeated              = output_metrics.repeated,
+            .program_frames_missing               = output_metrics.missing,
+            .program_cadence_repeats              = runtime_metrics.cadence_repeats,
+            .program_starvation_repeats           = runtime_metrics.starvation_repeats,
+            .program_starvation_repeat_streak     = runtime_metrics.starvation_repeat_streak,
+            .program_starvation_repeat_streak_max = runtime_metrics.starvation_repeat_streak_max,
+            .output_refill_shortfalls             = runtime_metrics.refill_shortfalls,
+            .content_frames_sampled               = content_frames_sampled_,
+            .content_frame_repeats                = content_frame_repeats_,
+            .content_repeat_streak                = content_repeat_streak_,
+            .content_repeat_streak_max            = content_repeat_streak_max_,
+            .completion_intervals                 = runtime_metrics.completion_intervals,
+            .completion_interval_max_us =
                 std::chrono::duration_cast<std::chrono::microseconds>(runtime_metrics.completion_interval_max).count(),
-                           .program_queue_depth           = runtime_metrics.output_queue_depth,
-                           .program_queue_depth_max       = runtime_metrics.output_queue_depth_max,
-                           .buffered_video_frames         = runtime_metrics.buffered_frames,
-                           .buffered_video_frames_min     = runtime_metrics.buffered_frames_min,
-                           .buffered_video_frames_max     = runtime_metrics.buffered_frames_max,
-                           .buffered_below_target_samples = runtime_metrics.buffered_below_target_samples,
-                           .buffered_zero_samples         = runtime_metrics.buffered_zero_samples,
-                           .output_latency_us =
+            .program_queue_depth           = runtime_metrics.output_queue_depth,
+            .program_queue_depth_max       = runtime_metrics.output_queue_depth_max,
+            .buffered_video_frames         = runtime_metrics.buffered_frames,
+            .buffered_video_frames_min     = runtime_metrics.buffered_frames_min,
+            .buffered_video_frames_max     = runtime_metrics.buffered_frames_max,
+            .buffered_below_target_samples = runtime_metrics.buffered_below_target_samples,
+            .buffered_zero_samples         = runtime_metrics.buffered_zero_samples,
+            .output_latency_us =
                 presentation_timeline_.latency().has_value()
-                                   ? std::chrono::duration_cast<std::chrono::microseconds>(*presentation_timeline_.latency()).count()
-                                   : 0,
-                           .program_selection_offset_us = program_selection_offset_us_,
-                           .completion_time_failures    = completion_time_failures_,
-                           .readback_stream             = {},
+                    ? std::chrono::duration_cast<std::chrono::microseconds>(*presentation_timeline_.latency()).count()
+                    : 0,
+            .program_selection_offset_us = program_selection_offset_us_,
+            .completion_time_failures    = completion_time_failures_,
+            .readback_stream             = {},
         };
         if (readback_stream_) {
             result.readback_stream = readback_stream_->metrics();

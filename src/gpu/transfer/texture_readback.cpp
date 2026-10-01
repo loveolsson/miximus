@@ -134,10 +134,10 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
                 std::make_shared<texture_frame_s>(device_, stream->transfer_plan.host_layout, sampling_e::linear);
             slot->frame->set_conversion_texture(stream->conversion.texture);
             auto staging  = std::make_unique<frame_staging_s>(device_,
-                                                             stream->transfer_plan,
-                                                             frame_staging_s::direction_e::gpu_to_cpu,
-                                                             slot->frame.get(),
-                                                             &recording_context_);
+                                                              stream->transfer_plan,
+                                                              frame_staging_s::direction_e::gpu_to_cpu,
+                                                              slot->frame.get(),
+                                                              &recording_context_);
             slot->staging = std::move(staging);
 
             const auto actual_reserved =

@@ -776,10 +776,10 @@ int main(int argc, char** argv)
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
         options.external_image_import = true;
-        gpu::device_s                                                      gpu(options);
-        const gpu::extent_s                                                export_size = (square_size != 0U)
-                                                                                             ? gpu::extent_s{.width = square_size, .height = square_size}
-                                                                                             : gpu::extent_s{.width = 640, .height = 360};
+        gpu::device_s       gpu(options);
+        const gpu::extent_s export_size = (square_size != 0U)
+                                              ? gpu::extent_s{.width = square_size, .height = square_size}
+                                              : gpu::extent_s{.width = 640, .height = 360};
         std::vector<std::unique_ptr<gpu::detail::external_image_export_s>> exports;
         for (uint32_t input = 0; (async_depth == 0U) && input < inputs; ++input) {
             exports.push_back(std::make_unique<gpu::detail::external_image_export_s>(gpu, export_size));

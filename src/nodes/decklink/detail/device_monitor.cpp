@@ -216,19 +216,19 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
             break;
         case bmdDeckLinkStatusDetectedVideoInputColorspace: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.detected_colorspace,
+            changed = assign_if_changed(&snapshot.detected_colorspace,
                                         value.has_value() ? std::optional(colorspace_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusDetectedVideoInputDynamicRange: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.detected_dynamic_range,
+            changed = assign_if_changed(&snapshot.detected_dynamic_range,
                                         value.has_value() ? std::optional(dynamic_range_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusDetectedVideoInputFieldDominance: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.detected_field_dominance,
+            changed = assign_if_changed(&snapshot.detected_field_dominance,
                                         value.has_value() ? std::optional(field_dominance_name(*value)) : std::nullopt);
             break;
         }
@@ -241,13 +241,13 @@ void refresh_status(const std::shared_ptr<monitor_state_s>& state, BMDDeckLinkSt
         }
         case bmdDeckLinkStatusCurrentVideoInputPixelFormat: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.current_input_pixel_format,
+            changed = assign_if_changed(&snapshot.current_input_pixel_format,
                                         value.has_value() ? std::optional(pixel_format_name(*value)) : std::nullopt);
             break;
         }
         case bmdDeckLinkStatusLastVideoOutputPixelFormat: {
             const auto value = read_int(state->status.get(), id);
-            changed          = assign_if_changed(&snapshot.last_output_pixel_format,
+            changed = assign_if_changed(&snapshot.last_output_pixel_format,
                                         value.has_value() ? std::optional(pixel_format_name(*value)) : std::nullopt);
             break;
         }

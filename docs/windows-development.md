@@ -14,7 +14,8 @@ Linux binary package byte-for-byte. Windows configuration now reads the NDI runt
 the full-feature configuration below supports the packaged custom Windows CEF SDK and CUDA transfers.
 The CEF-enabled build, six browser probes and browser-to-screen smoke run pass, as recorded in
 [CEF implementation progress](cef-implementation-progress.md#windows-application-checks-2026-09-30).
-Physical DeckLink/NDI I/O and the combined graph still require hardware acceptance. Existing Linux results do not qualify Windows.
+On 2026-10-01, the user confirmed working DeckLink and NDI input/output on Windows. Combined-graph acceptance
+remains outstanding. Existing Linux results do not qualify Windows.
 
 Read [development](development.md), [architecture](architecture.md), [GPU/media](gpu-and-media.md),
 [frame timing](frame-timing-and-synchronization.md), and the nearest `AGENTS.md` before modifying their subsystems.
@@ -345,7 +346,8 @@ three native-handle ownership tests. All 32 device tests, 14 staging tests and t
 passed with synchronization validation (`build/shared-handle-*.log` and
 `build/integration-tests/cuda-transfers-20260930T002602-27168/`). Preprocessor comparisons confirmed unchanged
 Linux CEF ABI declarations and media-input function bodies; a Linux build/runtime run remains outstanding.
-Live SDK I/O and the combined graph still require hardware acceptance; the requirements below describe that contract.
+DeckLink and NDI input/output on Windows were confirmed by the user on 2026-10-01. Combined-graph acceptance
+remains outstanding; the requirements below describe that contract.
 
 Read [CUDA transfers](cuda-transfers.md) and [the DeckLink direct-memory contract](decklink-direct-memory.md).
 Discovery/linkage and direct transfers now work on Linux and Windows. Preserve the following requirements
@@ -435,6 +437,37 @@ validation in both the existing single-configuration build and a fresh Ninja Mul
 The probe runs used the empty implicit-layer directory described above to exclude stale TikTok registrations.
 Logs are in `build/review-{ctest,staging-result,cef-runtime,multi-runtime}.log`; Linux sandbox runtime validation
 remains outstanding.
+
+The 2026-10-01 formatting follow-up used clang-format 22.1.3 on the branch's touched C++ files. The formatter
+check and `git diff --check` pass. The full `build-tidy` build with clang-tidy 21.1.8 passed at four jobs,
+followed by all 205 ordinary tests from that directory. No clang-tidy findings were reported; MSVC emitted
+`getenv` deprecation warnings. Logs: `build/tidy-review-followup.log` and `build/tidy-review-followup-ctest.log`.
+Linux regression validation remains outstanding.
+
+### Clang-tidy
+
+Use **clang-tidy 21** to match Linux. Install LLVM 21 separately if Visual Studio bundles another version.
+From the x64 developer shell, configure a separate `build-tidy` directory with the same toolchain, SDK paths
+and CEF/CUDA options as the full-feature configuration above. Add these options to that configure command:
+
+```powershell
+-DMIXIMUS_ENABLE_CLANG_TIDY=ON `
+"-DMIXIMUS_CLANG_TIDY_EXECUTABLE=C:/Program Files/LLVM-21/bin/clang-tidy.exe"
+```
+
+For an already configured full-feature `build-tidy` directory:
+
+```powershell
+& 'C:/Program Files/LLVM-21/bin/clang-tidy.exe' --version
+cmake -S . -B build-tidy -DMIXIMUS_ENABLE_CLANG_TIDY=ON `
+  "-DMIXIMUS_CLANG_TIDY_EXECUTABLE=C:/Program Files/LLVM-21/bin/clang-tidy.exe"
+cmake --build build-tidy -j4
+ctest --test-dir build-tidy --output-on-failure
+```
+
+Adjust the executable path for your installation; the locally verified version is 21.1.8. CMake does not enforce
+the major version. Keep tidy builds at four jobs, with no other build running concurrently. Precompiled headers
+are disabled automatically. Keep the ordinary `build` directory separate from tidy configuration and compilation.
 
 ## Likely first build issues
 
