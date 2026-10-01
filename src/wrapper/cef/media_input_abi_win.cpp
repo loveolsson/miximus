@@ -4,7 +4,10 @@ namespace miximus::cef_wrapper {
 
 media_frame_s make_media_frame()
 {
-    return {.size = sizeof(media_frame_s), .texture_handle = nullptr, .source_generation = 1};
+    media_frame_s frame{};
+    frame.size              = sizeof(media_frame_s);
+    frame.source_generation = 1;
+    return frame;
 }
 
 } // namespace miximus::cef_wrapper

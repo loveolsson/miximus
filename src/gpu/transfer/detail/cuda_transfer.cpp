@@ -297,11 +297,16 @@ void cuda_transfer_s::validate_external_resources()
 
     VkPhysicalDeviceExternalSemaphoreInfo semaphore_info{
         .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO,
+        .pNext      = nullptr,
         .handleType = gpu::detail::cuda_semaphore_handle_type,
     };
 
     VkExternalSemaphoreProperties semaphore_properties{
-        .sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES,
+        .sType                         = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES,
+        .pNext                         = nullptr,
+        .exportFromImportedHandleTypes = 0,
+        .compatibleHandleTypes         = 0,
+        .externalSemaphoreFeatures     = 0,
     };
     state.owner->instance_vk.vkGetPhysicalDeviceExternalSemaphoreProperties(
         state.owner->physical, &semaphore_info, &semaphore_properties);
@@ -394,12 +399,14 @@ void cuda_transfer_s::create_external_semaphores()
     const auto make_semaphore = [&](VkSemaphore& semaphore, cudaExternalSemaphore_t& cuda_semaphore) {
         VkExportSemaphoreCreateInfo export_semaphore{
             .sType       = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+            .pNext       = nullptr,
             .handleTypes = static_cast<VkExternalSemaphoreHandleTypeFlags>(gpu::detail::cuda_semaphore_handle_type),
         };
 
         VkSemaphoreCreateInfo create{
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             .pNext = &export_semaphore,
+            .flags = 0,
         };
         check(state.owner->vk.vkCreateSemaphore(state.owner->device, &create, nullptr, &semaphore),
               "CUDA shared semaphore");
@@ -423,8 +430,8 @@ size_t cuda_transfer_s::allocation_bytes() const noexcept
     const auto  frame_bytes = state.frame.buffer()
                                   ? state.frame.buffer().size()
                                   : texture_s::estimate_storage_byte_size(state.frame.texture()->dimensions(),
-                                                                          format_e::rgba_unorm8,
-                                                                          state.frame.texture()->mip_levels() > 1
+                                                                         format_e::rgba_unorm8,
+                                                                         state.frame.texture()->mip_levels() > 1
                                                                               ? sampling_e::mipmapped_linear
                                                                               : sampling_e::linear);
     // The service accounts for frame storage separately; include only its allocation padding here.
@@ -452,7 +459,15 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
         releasing ? VK_ACCESS_2_NONE : VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
 
     VkDependencyInfo dependency{
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext                    = nullptr,
+        .dependencyFlags          = 0,
+        .memoryBarrierCount       = 0,
+        .pMemoryBarriers          = nullptr,
+        .bufferMemoryBarrierCount = 0,
+        .pBufferMemoryBarriers    = nullptr,
+        .imageMemoryBarrierCount  = 0,
+        .pImageMemoryBarriers     = nullptr,
     };
     VkBufferMemoryBarrier2 buffer_barrier{};
     VkImageMemoryBarrier2  image_barrier{};
@@ -461,6 +476,7 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
         record.state_->retain(buffer);
         buffer_barrier = {
             .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+            .pNext               = nullptr,
             .srcStageMask        = source_stage,
             .srcAccessMask       = source_access,
             .dstStageMask        = target_stage,
@@ -468,6 +484,7 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
             .srcQueueFamilyIndex = source_family,
             .dstQueueFamilyIndex = target_family,
             .buffer              = buffer->buffer,
+            .offset              = {},
             .size                = VK_WHOLE_SIZE,
         };
         dependency.bufferMemoryBarrierCount = 1;
@@ -496,6 +513,7 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
         }
         image_barrier = {
             .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext               = nullptr,
             .srcStageMask        = source_stage,
             .srcAccessMask       = source_access,
             .dstStageMask        = target_stage,
@@ -522,9 +540,12 @@ completion_s cuda_transfer_s::submit(recording_s& record, ownership_operation_e 
     auto& state = *state_;
 
     VkSemaphoreSubmitInfo semaphore{
-        .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = operation == ownership_operation_e::release_to_cuda ? state.to_cuda : state.to_vulkan,
-        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .pNext       = nullptr,
+        .semaphore   = operation == ownership_operation_e::release_to_cuda ? state.to_cuda : state.to_vulkan,
+        .value       = 0,
+        .stageMask   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .deviceIndex = 0,
     };
     const auto span = std::span(&semaphore, 1);
     return operation == ownership_operation_e::release_to_cuda

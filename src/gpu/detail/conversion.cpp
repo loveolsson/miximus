@@ -63,17 +63,29 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
         .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
     };
     std::array<VkWriteDescriptorSet, 2> writes{
-        {{.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet          = descriptor,
-          .descriptorCount = 1,
-          .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-          .pBufferInfo     = &storage},
-         {.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet          = descriptor,
-          .dstBinding      = 1,
-          .descriptorCount = 1,
-          .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-          .pImageInfo      = &image_info}}
+        {{
+             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+             .pNext            = nullptr,
+             .dstSet           = descriptor,
+             .dstBinding       = 0,
+             .dstArrayElement  = 0,
+             .descriptorCount  = 1,
+             .descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             .pImageInfo       = nullptr,
+             .pBufferInfo      = &storage,
+             .pTexelBufferView = nullptr,
+         }, {
+             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+             .pNext            = nullptr,
+             .dstSet           = descriptor,
+             .dstBinding       = 1,
+             .dstArrayElement  = 0,
+             .descriptorCount  = 1,
+             .descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+             .pImageInfo       = &image_info,
+             .pBufferInfo      = nullptr,
+             .pTexelBufferView = nullptr,
+         }}
     };
     owner->vk.vkUpdateDescriptorSets(owner->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     // Compute shaders address packed storage in 32-bit words, including SDK row padding.

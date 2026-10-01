@@ -30,7 +30,7 @@ bool output_activation_s::supports_ordinary_output(BMDDisplayMode display_mode)
                                       bmdSupportedVideoModeDefault,
                                       nullptr,
                                       &supported) != S_OK ||
-        !static_cast<bool>(supported)) {
+        supported == BOOL{}) {
         log()->error("DeckLink output mode is not supported by {}", device_name_);
         return false;
     }
@@ -46,7 +46,7 @@ auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        dis
     const auto capability_id = requested_keyer_mode == decklink_keyer_mode_e::external
                                    ? BMDDeckLinkSupportsExternalKeying
                                    : BMDDeckLinkSupportsInternalKeying;
-    if (!attributes || attributes->GetFlag(capability_id, &capability) != S_OK || !static_cast<bool>(capability)) {
+    if (!attributes || attributes->GetFlag(capability_id, &capability) != S_OK || capability == BOOL{}) {
         return "the active device profile does not advertise that keyer capability";
     }
 
@@ -63,7 +63,7 @@ auto output_activation_s::keyed_output_fallback_reason(BMDDisplayMode        dis
                                       bmdSupportedVideoModeKeying,
                                       nullptr,
                                       &supported) != S_OK ||
-        !static_cast<bool>(supported)) {
+        supported == BOOL{}) {
         keyer_ = nullptr;
         return "the selected display mode does not support 8-bit ARGB keying";
     }

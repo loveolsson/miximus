@@ -80,6 +80,8 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
 
     VkShaderModuleCreateInfo shader{
         .sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext    = nullptr,
+        .flags    = 0,
         .codeSize = static_cast<size_t>(bytes),
         .pCode    = code.data(),
     };
@@ -100,6 +102,8 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
 
     VkDescriptorSetLayoutCreateInfo descriptors{
         .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext        = nullptr,
+        .flags        = 0,
         .bindingCount = static_cast<uint32_t>(bindings.size()),
         .pBindings    = bindings.data(),
     };
@@ -114,6 +118,8 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
 
     VkPipelineLayoutCreateInfo layout{
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext                  = nullptr,
+        .flags                  = 0,
         .setLayoutCount         = 1,
         .pSetLayouts            = &state_->descriptors,
         .pushConstantRangeCount = 1,
@@ -123,12 +129,22 @@ color_comparison_s::color_comparison_s(const texture_s& source, const std::files
     check(vk.vkCreatePipelineLayout(device, &layout, nullptr, &state_->layout), "create comparison layout");
 
     VkComputePipelineCreateInfo pipeline{
-        .sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .stage  = {.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                   .stage  = VK_SHADER_STAGE_COMPUTE_BIT,
-                   .module = state_->shader,
-                   .pName  = "main"},
-        .layout = state_->layout,
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .stage =
+            {
+                    .sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                    .pNext               = nullptr,
+                    .flags               = 0,
+                    .stage               = VK_SHADER_STAGE_COMPUTE_BIT,
+                    .module              = state_->shader,
+                    .pName               = "main",
+                    .pSpecializationInfo = nullptr,
+                    },
+        .layout             = state_->layout,
+        .basePipelineHandle = {},
+        .basePipelineIndex  = 0,
     };
 
     check(vk.vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &state_->pipeline),
@@ -183,17 +199,29 @@ void color_comparison_s::record(recording_s&         recording,
         .range  = 8,
     };
     std::array<VkWriteDescriptorSet, 2> writes{
-        {{.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet          = descriptor,
-          .descriptorCount = 1,
-          .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-          .pImageInfo      = &image},
-         {.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet          = descriptor,
-          .dstBinding      = 1,
-          .descriptorCount = 1,
-          .descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-          .pBufferInfo     = &buffer}}
+        {{
+             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+             .pNext            = nullptr,
+             .dstSet           = descriptor,
+             .dstBinding       = 0,
+             .dstArrayElement  = 0,
+             .descriptorCount  = 1,
+             .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+             .pImageInfo       = &image,
+             .pBufferInfo      = nullptr,
+             .pTexelBufferView = nullptr,
+         }, {
+             .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+             .pNext            = nullptr,
+             .dstSet           = descriptor,
+             .dstBinding       = 1,
+             .dstArrayElement  = 0,
+             .descriptorCount  = 1,
+             .descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+             .pImageInfo       = nullptr,
+             .pBufferInfo      = &buffer,
+             .pTexelBufferView = nullptr,
+         }}
     };
     const auto& vk = state.owner->vk;
 

@@ -74,6 +74,7 @@ transfer_measurement_s measure(staging_t& staging, staging_t::direction_e direct
         .p99_us    = percentile(0.99),
         .effective_gb_per_second =
             double(staging.host_buffer_size_bytes()) * static_cast<double>(samples.size()) / (total * 1000),
+        .format = {},
     };
 }
 struct probe_options_s
@@ -131,10 +132,13 @@ int main(int argc, char** argv)
         const auto [options, iterations, output] = parse_options(argc, argv);
 
         device_s          device(options);
-        transfer_report_s report{.device = device.diagnostics()};
-        report.method = "Sequential production frame_staging transfers; host-observed submit-to-ready latency, "
-                        "including ownership hand-offs and polling; 30 warm-up transfers per case; "
-                        "host filling, allocation, color conversion, SDK and service queue delay excluded";
+        transfer_report_s report{
+            .device  = device.diagnostics(),
+            .method  = "Sequential production frame_staging transfers; host-observed submit-to-ready latency, "
+                       "including ownership hand-offs and polling; 30 warm-up transfers per case; "
+                       "host filling, allocation, color conversion, SDK and service queue delay excluded",
+            .results = {},
+        };
         for (const vec2i_t size : {
                  vec2i_t{1280, 720 },
                  vec2i_t{1920, 1080},

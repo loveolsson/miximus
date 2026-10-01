@@ -19,7 +19,7 @@ std::filesystem::path runtime_directory()
 std::filesystem::path vulkan_loader_path()
 {
     auto* library = dlopen("libvulkan.so.1", RTLD_NOLOAD | RTLD_NOW);
-    if (!library) {
+    if (library == nullptr) {
         throw std::runtime_error("Vulkan loader is not loaded");
     }
 

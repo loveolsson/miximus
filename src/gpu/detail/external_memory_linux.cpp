@@ -17,6 +17,7 @@ VkDeviceMemory allocate_external_memory(device_state_s& device,
 {
     VkMemoryDedicatedAllocateInfo dedicated{
         .sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+        .pNext  = nullptr,
         .image  = image,
         .buffer = buffer,
     };
@@ -44,6 +45,7 @@ native_handle_s export_memory_handle(device_state_s& device, VkDeviceMemory memo
 {
     VkMemoryGetFdInfoKHR info{
         .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+        .pNext      = nullptr,
         .memory     = memory,
         .handleType = cuda_memory_handle_type,
     };
@@ -58,6 +60,7 @@ native_handle_s export_semaphore_handle(device_state_s& device, VkSemaphore sema
 {
     VkSemaphoreGetFdInfoKHR info{
         .sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+        .pNext      = nullptr,
         .semaphore  = semaphore,
         .handleType = cuda_semaphore_handle_type,
     };

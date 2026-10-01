@@ -21,8 +21,10 @@ recording_state_s::recording_state_s(std::shared_ptr<recording_context_state_s> 
         check(owner->vk.vkResetDescriptorPool(owner->device, pool, 0), "reset descriptor arena");
     }
     VkCommandBufferBeginInfo info{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext            = nullptr,
+        .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr,
     };
     check(owner->vk.vkBeginCommandBuffer(arena->commands, &info), "begin recording");
 }
@@ -67,6 +69,8 @@ VkDescriptorSet recording_state_s::allocate_descriptor(VkDescriptorSetLayout lay
 
         VkDescriptorPoolCreateInfo create{
             .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .pNext         = nullptr,
+            .flags         = 0,
             .maxSets       = sets,
             .poolSizeCount = static_cast<uint32_t>(sizes.size()),
             .pPoolSizes    = sizes.data(),
@@ -87,6 +91,7 @@ VkDescriptorSet recording_state_s::allocate_descriptor(VkDescriptorSetLayout lay
 
     VkDescriptorSetAllocateInfo allocate{
         .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext              = nullptr,
         .descriptorPool     = arena->descriptor_pools.at(page_index),
         .descriptorSetCount = 1,
         .pSetLayouts        = &layout,
@@ -118,6 +123,7 @@ void recording_state_s::transition(const std::shared_ptr<texture_state_s>& image
 
     VkImageMemoryBarrier2 barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .pNext = nullptr,
         .srcStageMask =
             previous == VK_IMAGE_LAYOUT_UNDEFINED ? VK_PIPELINE_STAGE_2_NONE : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
         .srcAccessMask       = previous == VK_IMAGE_LAYOUT_UNDEFINED
@@ -138,9 +144,15 @@ void recording_state_s::transition(const std::shared_ptr<texture_state_s>& image
     };
 
     VkDependencyInfo dependency{
-        .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
+        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext                    = nullptr,
+        .dependencyFlags          = 0,
+        .memoryBarrierCount       = 0,
+        .pMemoryBarriers          = nullptr,
+        .bufferMemoryBarrierCount = 0,
+        .pBufferMemoryBarriers    = nullptr,
+        .imageMemoryBarrierCount  = 1,
+        .pImageMemoryBarriers     = &barrier,
     };
     if (previous == VK_IMAGE_LAYOUT_UNDEFINED) {
         auto [uses, unused] = initial_uses.try_emplace(image.get(), image->mip_levels);
@@ -230,6 +242,7 @@ void recording_state_s::buffer_barrier(const std::shared_ptr<buffer_state_s>& bu
 
     VkBufferMemoryBarrier2 barrier{
         .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+        .pNext               = nullptr,
         .srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT,
         .srcAccessMask       = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_HOST_WRITE_BIT,
         .dstStageMask        = stage,
@@ -237,13 +250,20 @@ void recording_state_s::buffer_barrier(const std::shared_ptr<buffer_state_s>& bu
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .buffer              = buffer->buffer,
+        .offset              = {},
         .size                = VK_WHOLE_SIZE,
     };
 
     VkDependencyInfo dependency{
         .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext                    = nullptr,
+        .dependencyFlags          = 0,
+        .memoryBarrierCount       = 0,
+        .pMemoryBarriers          = nullptr,
         .bufferMemoryBarrierCount = 1,
         .pBufferMemoryBarriers    = &barrier,
+        .imageMemoryBarrierCount  = 0,
+        .pImageMemoryBarriers     = nullptr,
     };
     owner->vk.vkCmdPipelineBarrier2(arena->commands, &dependency);
 }
@@ -291,12 +311,15 @@ VkBufferImageCopy copy_region(const detail::texture_state_s& image, size_t buffe
     }
 
     VkBufferImageCopy region{
-        .bufferRowLength  = static_cast<uint32_t>(stride / bpp),
-        .imageSubresource = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                             .mipLevel       = 0,
-                             .baseArrayLayer = 0,
-                             .layerCount     = 1},
-        .imageExtent      = {.width = image.extent.width, .height = image.extent.height, .depth = 1},
+        .bufferOffset      = {},
+        .bufferRowLength   = static_cast<uint32_t>(stride / bpp),
+        .bufferImageHeight = 0,
+        .imageSubresource  = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                              .mipLevel       = 0,
+                              .baseArrayLayer = 0,
+                              .layerCount     = 1},
+        .imageOffset       = {},
+        .imageExtent       = {.width = image.extent.width, .height = image.extent.height, .depth = 1},
     };
     return region;
 }

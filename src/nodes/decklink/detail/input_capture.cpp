@@ -66,7 +66,7 @@ class callback_s final
     mutable std::mutex                                      upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
     media::timed_source_queue_s<captured_frame_data_s>      frame_queue_{
-        {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = SOURCE_PLAYOUT_DELAY_FRAMES}
+             {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = SOURCE_PLAYOUT_DELAY_FRAMES}
     };
 
     std::atomic<BMDDisplayMode> pending_display_mode_{bmdModeUnknown};
@@ -342,7 +342,11 @@ class callback_s final
     }
 
     // Windows COM interfaces have no virtual destructor; Release deletes this concrete type.
+#ifdef _WIN32
     ~callback_s()
+#else
+    ~callback_s() override
+#endif
     {
         if (allocator_) {
             log()->error("DeckLink input callback destroyed before its allocator was retired");

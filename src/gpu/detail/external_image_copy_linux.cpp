@@ -42,11 +42,16 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
 {
     VkPhysicalDeviceExternalSemaphoreInfo query{
         .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO,
+        .pNext      = nullptr,
         .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,
     };
 
     VkExternalSemaphoreProperties properties{
-        .sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES,
+        .sType                         = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES,
+        .pNext                         = nullptr,
+        .exportFromImportedHandleTypes = 0,
+        .compatibleHandleTypes         = 0,
+        .externalSemaphoreFeatures     = 0,
     };
 
     device->instance_vk.vkGetPhysicalDeviceExternalSemaphoreProperties(device->physical, &query, &properties);
@@ -59,6 +64,8 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
 
     VkSemaphoreCreateInfo create{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
     };
 
     check(device->vk.vkCreateSemaphore(device->device, &create, nullptr, &fence->semaphore),
@@ -104,6 +111,7 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
 
     VkImportSemaphoreFdInfoKHR import{
         .sType      = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR,
+        .pNext      = nullptr,
         .semaphore  = fence->semaphore,
         .flags      = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT,
         .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,

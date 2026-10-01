@@ -251,6 +251,8 @@ bool device_state_s::initialize_instance()
 
     VkDebugUtilsMessengerCreateInfoEXT debug_info{
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .pNext = nullptr,
+        .flags = 0,
         .messageSeverity =
             VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
         .messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
@@ -260,10 +262,12 @@ bool device_state_s::initialize_instance()
     };
     VkValidationFeatureEnableEXT synchronization = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
     VkValidationFeaturesEXT      validation{
-        .sType                         = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-        .pNext                         = &debug_info,
-        .enabledValidationFeatureCount = 1,
-        .pEnabledValidationFeatures    = &synchronization,
+             .sType                          = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+             .pNext                          = &debug_info,
+             .enabledValidationFeatureCount  = 1,
+             .pEnabledValidationFeatures     = &synchronization,
+             .disabledValidationFeatureCount = 0,
+             .pDisabledValidationFeatures    = nullptr,
     };
     if (options.validation) {
         check(vkEnumerateInstanceLayerProperties(&count, nullptr), "instance layers");
@@ -281,9 +285,13 @@ bool device_state_s::initialize_instance()
     }
 
     VkApplicationInfo application{
-        .sType            = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "Miximus",
-        .apiVersion       = VK_API_VERSION_1_3,
+        .sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext              = nullptr,
+        .pApplicationName   = "Miximus",
+        .applicationVersion = 0,
+        .pEngineName        = nullptr,
+        .engineVersion      = 0,
+        .apiVersion         = VK_API_VERSION_1_3,
     };
 
     VkInstanceCreateInfo create{
@@ -358,42 +366,52 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
     std::erase(requested_device_uuid, '-');
     for (const auto candidate : devices) {
         VkPhysicalDeviceIDProperties identity{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
+            .sType           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
+            .pNext           = nullptr,
+            .deviceUUID      = {},
+            .driverUUID      = {},
+            .deviceLUID      = {},
+            .deviceNodeMask  = 0,
+            .deviceLUIDValid = VK_FALSE,
         };
 
         VkPhysicalDeviceProperties2 device_properties{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-            .pNext = &identity,
+            .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            .pNext      = &identity,
+            .properties = {},
         };
         instance_vk.vkGetPhysicalDeviceProperties2(candidate, &device_properties);
 
         VkPhysicalDevicePresentWaitFeaturesKHR present_wait_features{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR,
+            .sType       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR,
+            .pNext       = nullptr,
+            .presentWait = VK_FALSE,
         };
 
         VkPhysicalDevicePresentIdFeaturesKHR present_id_features{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR,
-            .pNext = &present_wait_features,
+            .sType     = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR,
+            .pNext     = &present_wait_features,
+            .presentId = VK_FALSE,
         };
 
         VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT,
-            .pNext = &present_id_features,
+            .sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT,
+            .pNext                 = &present_id_features,
+            .swapchainMaintenance1 = VK_FALSE,
         };
 
-        VkPhysicalDeviceVulkan13Features vulkan13_features{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-            .pNext = &maintenance,
-        };
+        VkPhysicalDeviceVulkan13Features vulkan13_features{};
+        vulkan13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        vulkan13_features.pNext = &maintenance;
 
-        VkPhysicalDeviceVulkan12Features vulkan12_features{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-            .pNext = &vulkan13_features,
-        };
+        VkPhysicalDeviceVulkan12Features vulkan12_features{};
+        vulkan12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        vulkan12_features.pNext = &vulkan13_features;
 
         VkPhysicalDeviceFeatures2 features{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-            .pNext = &vulkan12_features,
+            .sType    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            .pNext    = &vulkan12_features,
+            .features = {},
         };
         instance_vk.vkGetPhysicalDeviceFeatures2(candidate, &features);
         instance_vk.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &count, nullptr);
@@ -409,13 +427,13 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
                                        [&](const auto& e) { return std::strcmp(e.extensionName, name) == 0; });
         };
 
-        VkPhysicalDevicePortabilitySubsetFeaturesKHR portability{
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR,
-        };
+        VkPhysicalDevicePortabilitySubsetFeaturesKHR portability{};
+        portability.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR;
         if (has_device_extension("VK_KHR_portability_subset")) {
             VkPhysicalDeviceFeatures2 subset{
-                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                .pNext = &portability,
+                .sType    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                .pNext    = &portability,
+                .features = {},
             };
             instance_vk.vkGetPhysicalDeviceFeatures2(candidate, &subset);
         }
@@ -451,8 +469,8 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         const bool candidate_maintenance = (maintenance.swapchainMaintenance1 != 0U) &&
                                            has_device_extension(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) &&
                                            surface_maintenance_available;
-        entry.buffer_conversion          = candidate_conversion;
-        entry.swapchain_maintenance      = candidate_maintenance;
+        entry.buffer_conversion     = candidate_conversion;
+        entry.swapchain_maintenance = candidate_maintenance;
 
         const bool supported =
             device_properties.properties.apiVersion >= VK_API_VERSION_1_3 &&
@@ -479,10 +497,10 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         separate_present_queue = options.presentation && families[selected_queue_family].queueCount > 1;
         swapchain_maintenance  = options.presentation && candidate_maintenance;
         present_wait           = options.presentation && present_wait_features.presentWait != 0U &&
-                                 present_id_features.presentId != 0U &&
-                                 has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
-                                 has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);
-        device_extensions      = select_cuda_extensions(identity.deviceUUID, extensions);
+                       present_id_features.presentId != 0U &&
+                       has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
+                       has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+        device_extensions = select_cuda_extensions(identity.deviceUUID, extensions);
         if (options.presentation) {
             device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         }
@@ -550,6 +568,8 @@ void device_state_s::initialize_logical_device(std::span<const char* const> devi
 
     VkDeviceQueueCreateInfo queue_info{
         .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = 0,
         .queueFamilyIndex = queue_family,
         .queueCount       = separate_present_queue ? 2U : 1U,
         .pQueuePriorities = priorities.data(),
@@ -557,6 +577,7 @@ void device_state_s::initialize_logical_device(std::span<const char* const> devi
 
     VkPhysicalDevicePresentWaitFeaturesKHR present_wait_features{
         .sType       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR,
+        .pNext       = nullptr,
         .presentWait = static_cast<VkBool32>(present_wait),
     };
 
@@ -576,28 +597,28 @@ void device_state_s::initialize_logical_device(std::span<const char* const> devi
         presentation_features = &maintenance;
     }
 
-    VkPhysicalDeviceVulkan13Features vulkan13_features{
-        .sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-        .pNext            = presentation_features,
-        .synchronization2 = VK_TRUE,
-        .dynamicRendering = VK_TRUE,
-    };
+    VkPhysicalDeviceVulkan13Features vulkan13_features{};
+    vulkan13_features.sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vulkan13_features.pNext            = presentation_features;
+    vulkan13_features.synchronization2 = VK_TRUE;
+    vulkan13_features.dynamicRendering = VK_TRUE;
 
-    VkPhysicalDeviceVulkan12Features vulkan12_features{
-        .sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        .pNext             = &vulkan13_features,
-        .timelineSemaphore = VK_TRUE,
-    };
+    VkPhysicalDeviceVulkan12Features vulkan12_features{};
+    vulkan12_features.sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vulkan12_features.pNext             = &vulkan13_features;
+    vulkan12_features.timelineSemaphore = VK_TRUE;
 
-    VkPhysicalDeviceFeatures core_features{
-        .shaderStorageImageExtendedFormats = static_cast<VkBool32>(buffer_conversion),
-    };
+    VkPhysicalDeviceFeatures core_features{};
+    core_features.shaderStorageImageExtendedFormats = static_cast<VkBool32>(buffer_conversion);
 
     VkDeviceCreateInfo device_info{
         .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext                   = &vulkan12_features,
+        .flags                   = 0,
         .queueCreateInfoCount    = 1,
         .pQueueCreateInfos       = &queue_info,
+        .enabledLayerCount       = 0,
+        .ppEnabledLayerNames     = nullptr,
         .enabledExtensionCount   = static_cast<uint32_t>(device_extensions.size()),
         .ppEnabledExtensionNames = device_extensions.data(),
         .pEnabledFeatures        = &core_features,
@@ -801,6 +822,8 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
 
     VkImageCreateInfo info{
         .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext       = nullptr,
+        .flags       = 0,
         .imageType   = VK_IMAGE_TYPE_2D,
         .format      = detail::native_format(format),
         .extent      = {.width = extent.width, .height = extent.height, .depth = 1},
@@ -809,7 +832,11 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
         .samples     = VK_SAMPLE_COUNT_1_BIT,
         .tiling      = VK_IMAGE_TILING_OPTIMAL,
         .usage       = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode           = {},
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices   = nullptr,
+        .initialLayout         = {},
     };
     if (format == format_e::rgba_unorm16 && state_->buffer_conversion) {
         info.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
@@ -822,6 +849,7 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
 
         VkPhysicalDeviceExternalImageFormatInfo external_format{
             .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
+            .pNext      = nullptr,
             .handleType = detail::cuda_memory_handle_type,
         };
         VkPhysicalDeviceImageFormatInfo2 query{
@@ -831,13 +859,17 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
             .type   = info.imageType,
             .tiling = info.tiling,
             .usage  = info.usage,
+            .flags  = 0,
         };
         VkExternalImageFormatProperties external_properties{
-            .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+            .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+            .pNext                    = nullptr,
+            .externalMemoryProperties = {},
         };
         VkImageFormatProperties2 properties{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-            .pNext = &external_properties,
+            .sType                 = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+            .pNext                 = &external_properties,
+            .imageFormatProperties = {},
         };
         check(state_->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(state_->physical, &query, &properties),
               "query CUDA shared image format");
@@ -848,6 +880,7 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
 
         VkExternalMemoryImageCreateInfo external{
             .sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+            .pNext       = nullptr,
             .handleTypes = static_cast<VkExternalMemoryHandleTypeFlags>(external_format.handleType),
         };
         info.pNext = &external;
@@ -868,9 +901,12 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
 
     VkImageViewCreateInfo view{
         .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = 0,
         .image            = image->image,
         .viewType         = VK_IMAGE_VIEW_TYPE_2D,
         .format           = info.format,
+        .components       = {},
         .subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
                              .baseMipLevel   = 0,
                              .levelCount     = 1,
@@ -901,9 +937,14 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
 
     VkBufferCreateInfo info{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .size  = bytes,
         .usage =
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .sharingMode           = {},
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices   = nullptr,
     };
 
     if (sharing == resource_sharing_e::cuda) {
@@ -912,11 +953,15 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
         }
         VkPhysicalDeviceExternalBufferInfo query{
             .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO,
+            .pNext      = nullptr,
+            .flags      = 0,
             .usage      = info.usage,
             .handleType = detail::cuda_memory_handle_type,
         };
         VkExternalBufferProperties properties{
-            .sType = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES,
+            .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES,
+            .pNext                    = nullptr,
+            .externalMemoryProperties = {},
         };
         state_->instance_vk.vkGetPhysicalDeviceExternalBufferProperties(state_->physical, &query, &properties);
         if ((properties.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) ==
@@ -925,6 +970,7 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
         }
         VkExternalMemoryBufferCreateInfo external{
             .sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
+            .pNext       = nullptr,
             .handleTypes = static_cast<VkExternalMemoryHandleTypeFlags>(query.handleType),
         };
         info.pNext              = &external;
@@ -957,10 +1003,10 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
     buffer->mapped   = mapped.pMappedData;
     const auto flags = std::span(state_->memory.memoryTypes)[mapped.memoryType].propertyFlags;
     buffer->info     = {
-        .bytes         = static_cast<size_t>(mapped.size),
-        .device_local  = (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0,
-        .host_coherent = (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
-        .host_cached   = (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0,
+            .bytes         = static_cast<size_t>(mapped.size),
+            .device_local  = (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0,
+            .host_coherent = (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+            .host_cached   = (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0,
     };
 
     if ((buffer->mapped != nullptr) && reinterpret_cast<uintptr_t>(buffer->mapped) % alignment != 0) {

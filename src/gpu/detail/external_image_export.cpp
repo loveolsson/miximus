@@ -36,6 +36,9 @@ void external_image_export_s::copy(recording_s& record, const texture_s& source,
 
     VkImageMemoryBarrier2 barrier{
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .pNext               = nullptr,
+        .srcStageMask        = 0,
+        .srcAccessMask       = 0,
         .dstStageMask        = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         .dstAccessMask       = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
         .oldLayout           = foreign ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED,
@@ -51,9 +54,15 @@ void external_image_export_s::copy(recording_s& record, const texture_s& source,
     };
 
     VkDependencyInfo dependency{
-        .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
+        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext                    = nullptr,
+        .dependencyFlags          = 0,
+        .memoryBarrierCount       = 0,
+        .pMemoryBarriers          = nullptr,
+        .bufferMemoryBarrierCount = 0,
+        .pBufferMemoryBarriers    = nullptr,
+        .imageMemoryBarrierCount  = 1,
+        .pImageMemoryBarriers     = &barrier,
     };
 
     recording.owner->vk.vkCmdPipelineBarrier2(recording.arena->commands, &dependency);

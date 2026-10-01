@@ -14,12 +14,12 @@
 
 namespace miximus::nodes::cef::tests {
 
-void log_producer_fence(gpu::detail::native_handle_s::value_t dma_buf)
+void log_producer_fence(gpu::detail::native_handle_s::value_t handle)
 {
     dma_buf_export_sync_file exported{};
     exported.flags = DMA_BUF_SYNC_READ;
     exported.fd    = -1;
-    if (ioctl(dma_buf, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0) {
+    if (ioctl(handle, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF producer fence");
     }
     utils::owned_fd_s fence{exported.fd};

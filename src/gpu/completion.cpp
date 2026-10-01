@@ -81,6 +81,8 @@ wait_result_e completion_s::wait(std::chrono::milliseconds timeout, const std::s
         if (value != 0) {
             VkSemaphoreWaitInfo info{
                 .sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                .pNext          = nullptr,
+                .flags          = 0,
                 .semaphoreCount = 1,
                 .pSemaphores    = &state_->submissions.timeline,
                 .pValues        = &value,

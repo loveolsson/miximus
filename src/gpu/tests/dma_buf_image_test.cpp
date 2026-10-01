@@ -74,12 +74,16 @@ class external_image_test : public testing::Test
     bool export_image(VkFormat format, bool writable = false)
     {
         VkDrmFormatModifierPropertiesListEXT modifiers{
-            .sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
+            .sType                        = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
+            .pNext                        = nullptr,
+            .drmFormatModifierCount       = 0,
+            .pDrmFormatModifierProperties = nullptr,
         };
 
         VkFormatProperties2 formats{
-            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
-            .pNext = &modifiers,
+            .sType            = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+            .pNext            = &modifiers,
+            .formatProperties = {},
         };
 
         device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, format, &formats);
@@ -97,9 +101,12 @@ class external_image_test : public testing::Test
             }
 
             VkPhysicalDeviceImageDrmFormatModifierInfoEXT modifier_query{
-                .sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT,
-                .drmFormatModifier = candidate.drmFormatModifier,
-                .sharingMode       = VK_SHARING_MODE_EXCLUSIVE,
+                .sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT,
+                .pNext                 = nullptr,
+                .drmFormatModifier     = candidate.drmFormatModifier,
+                .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+                .queueFamilyIndexCount = 0,
+                .pQueueFamilyIndices   = nullptr,
             };
 
             VkPhysicalDeviceExternalImageFormatInfo external_query{
@@ -116,15 +123,19 @@ class external_image_test : public testing::Test
                 .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
                 .usage =
                     VK_IMAGE_USAGE_SAMPLED_BIT | (writable ? VK_IMAGE_USAGE_TRANSFER_DST_BIT : VkImageUsageFlags{0}),
+                .flags = 0,
             };
 
             VkExternalImageFormatProperties external_properties{
-                .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+                .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+                .pNext                    = nullptr,
+                .externalMemoryProperties = {},
             };
 
             VkImageFormatProperties2 properties{
-                .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-                .pNext = &external_properties,
+                .sType                 = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+                .pNext                 = &external_properties,
+                .imageFormatProperties = {},
             };
             const auto result =
                 device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties);
@@ -140,6 +151,7 @@ class external_image_test : public testing::Test
 
             VkImageDrmFormatModifierListCreateInfoEXT modifier{
                 .sType                  = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT,
+                .pNext                  = nullptr,
                 .drmFormatModifierCount = 1,
                 .pDrmFormatModifiers    = &candidate.drmFormatModifier,
             };
@@ -151,16 +163,21 @@ class external_image_test : public testing::Test
             };
 
             VkImageCreateInfo info{
-                .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-                .pNext       = &external,
-                .imageType   = query.type,
-                .format      = format,
-                .extent      = {.width = 64, .height = 32, .depth = 1},
-                .mipLevels   = 1,
-                .arrayLayers = 1,
-                .samples     = VK_SAMPLE_COUNT_1_BIT,
-                .tiling      = query.tiling,
-                .usage       = query.usage,
+                .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .pNext                 = &external,
+                .flags                 = 0,
+                .imageType             = query.type,
+                .format                = format,
+                .extent                = {.width = 64, .height = 32, .depth = 1},
+                .mipLevels             = 1,
+                .arrayLayers           = 1,
+                .samples               = VK_SAMPLE_COUNT_1_BIT,
+                .tiling                = query.tiling,
+                .usage                 = query.usage,
+                .sharingMode           = {},
+                .queueFamilyIndexCount = 0,
+                .pQueueFamilyIndices   = nullptr,
+                .initialLayout         = {},
             };
 
             check(device->vk.vkCreateImage(device->device, &info, nullptr, &exported->image),
@@ -171,8 +188,10 @@ class external_image_test : public testing::Test
             device->vk.vkGetImageMemoryRequirements(device->device, exported->image, &requirements);
 
             VkMemoryDedicatedAllocateInfo dedicated{
-                .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-                .image = exported->image,
+                .sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+                .pNext  = nullptr,
+                .image  = exported->image,
+                .buffer = {},
             };
 
             VkExportMemoryAllocateInfo export_memory{
@@ -196,6 +215,7 @@ class external_image_test : public testing::Test
 
             VkMemoryGetFdInfoKHR get_fd{
                 .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+                .pNext      = nullptr,
                 .memory     = exported->external_memory,
                 .handleType = external_query.handleType,
             };
@@ -205,6 +225,8 @@ class external_image_test : public testing::Test
 
             VkImageSubresource subresource{
                 .aspectMask = VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT,
+                .mipLevel   = 0,
+                .arrayLayer = 0,
             };
 
             VkSubresourceLayout layout{};
@@ -225,6 +247,8 @@ class external_image_test : public testing::Test
     {
         VkCommandPoolCreateInfo pool{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .pNext            = nullptr,
+            .flags            = 0,
             .queueFamilyIndex = device->queue_family,
         };
 
@@ -233,6 +257,7 @@ class external_image_test : public testing::Test
 
         VkCommandBufferAllocateInfo allocate{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext              = nullptr,
             .commandPool        = producer_pool,
             .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
@@ -244,13 +269,19 @@ class external_image_test : public testing::Test
               "allocate test producer commands");
 
         VkCommandBufferBeginInfo begin{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext            = nullptr,
+            .flags            = 0,
+            .pInheritanceInfo = nullptr,
         };
 
         check(device->vk.vkBeginCommandBuffer(commands, &begin), "begin test producer commands");
 
         VkImageMemoryBarrier2 barrier{
             .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext               = nullptr,
+            .srcStageMask        = 0,
+            .srcAccessMask       = 0,
             .dstStageMask        = VK_PIPELINE_STAGE_2_CLEAR_BIT,
             .dstAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT,
             .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -266,9 +297,15 @@ class external_image_test : public testing::Test
         };
 
         VkDependencyInfo dependency{
-            .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers    = &barrier,
+            .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            .pNext                    = nullptr,
+            .dependencyFlags          = 0,
+            .memoryBarrierCount       = 0,
+            .pMemoryBarriers          = nullptr,
+            .bufferMemoryBarrierCount = 0,
+            .pBufferMemoryBarriers    = nullptr,
+            .imageMemoryBarrierCount  = 1,
+            .pImageMemoryBarriers     = &barrier,
         };
 
         device->vk.vkCmdPipelineBarrier2(commands, &dependency);
@@ -296,30 +333,41 @@ class external_image_test : public testing::Test
 
         VkExportSemaphoreCreateInfo export_info{
             .sType       = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
+            .pNext       = nullptr,
             .handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,
         };
 
         VkSemaphoreCreateInfo semaphore{
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             .pNext = &export_info,
+            .flags = 0,
         };
 
         check(device->vk.vkCreateSemaphore(device->device, &semaphore, nullptr, &producer_signal),
               "create test producer signal");
 
         VkSemaphoreSubmitInfo signal{
-            .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = producer_signal,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext       = nullptr,
+            .semaphore   = producer_signal,
+            .value       = 0,
+            .stageMask   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .deviceIndex = 0,
         };
 
         VkCommandBufferSubmitInfo command{
             .sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+            .pNext         = nullptr,
             .commandBuffer = commands,
+            .deviceMask    = 0,
         };
 
         VkSubmitInfo2 submit{
             .sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+            .pNext                    = nullptr,
+            .flags                    = 0,
+            .waitSemaphoreInfoCount   = 0,
+            .pWaitSemaphoreInfos      = nullptr,
             .commandBufferInfoCount   = 1,
             .pCommandBufferInfos      = &command,
             .signalSemaphoreInfoCount = 1,
@@ -330,6 +378,7 @@ class external_image_test : public testing::Test
 
         VkSemaphoreGetFdInfoKHR get{
             .sType      = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+            .pNext      = nullptr,
             .semaphore  = producer_signal,
             .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT,
         };

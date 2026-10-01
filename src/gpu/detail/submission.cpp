@@ -34,12 +34,15 @@ void recording_context_state_s::initialize(uint32_t capacity)
         auto&                   arena = *arenas.emplace_back(std::make_unique<arena_s>());
         VkCommandPoolCreateInfo pool{
             .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .pNext            = nullptr,
+            .flags            = 0,
             .queueFamilyIndex = owner->queue_family,
         };
         check(owner->vk.vkCreateCommandPool(owner->device, &pool, nullptr, &arena.pool), "create command pool");
 
         VkCommandBufferAllocateInfo allocation{
             .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext              = nullptr,
             .commandPool        = arena.pool,
             .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
@@ -86,8 +89,10 @@ std::unique_ptr<recording_state_s> recording_context_state_s::try_record()
 void recording_state_s::record_prologue()
 {
     VkCommandBufferBeginInfo begin{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext            = nullptr,
+        .flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr,
     };
     check(owner->vk.vkBeginCommandBuffer(arena->prologue, &begin), "begin resource prologue");
 
@@ -102,6 +107,7 @@ void recording_state_s::record_prologue()
             const bool            initialized = old_layout != VK_IMAGE_LAYOUT_UNDEFINED;
             VkImageMemoryBarrier2 barrier{
                 .sType        = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .pNext        = nullptr,
                 .srcStageMask = initialized ? VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT : VK_PIPELINE_STAGE_2_NONE,
                 .srcAccessMask =
                     initialized ? VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT : VK_ACCESS_2_NONE,
@@ -120,9 +126,15 @@ void recording_state_s::record_prologue()
             };
 
             VkDependencyInfo dependency{
-                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .imageMemoryBarrierCount = 1,
-                .pImageMemoryBarriers    = &barrier,
+                .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .pNext                    = nullptr,
+                .dependencyFlags          = 0,
+                .memoryBarrierCount       = 0,
+                .pMemoryBarriers          = nullptr,
+                .bufferMemoryBarrierCount = 0,
+                .pBufferMemoryBarriers    = nullptr,
+                .imageMemoryBarrierCount  = 1,
+                .pImageMemoryBarriers     = &barrier,
             };
 
             // The body always loads attachment contents. Only submission order
@@ -166,30 +178,45 @@ void recording_state_s::submit_native()
     }
     if (dependency_value != 0) {
         VkSemaphoreSubmitInfo wait{
-            .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = owner->submissions.timeline,
-            .value     = dependency_value,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+            .pNext       = nullptr,
+            .semaphore   = owner->submissions.timeline,
+            .value       = dependency_value,
+            .stageMask   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .deviceIndex = 0,
         };
         waits.push_back(wait);
     }
     record_prologue();
 
     std::array<VkCommandBufferSubmitInfo, 2> commands{
-        {{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = arena->prologue},
-         {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = arena->commands}}
+        {{
+             .sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+             .pNext         = nullptr,
+             .commandBuffer = arena->prologue,
+             .deviceMask    = 0,
+         }, {
+             .sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+             .pNext         = nullptr,
+             .commandBuffer = arena->commands,
+             .deviceMask    = 0,
+         }}
     };
     const auto            value = owner->submissions.last_submitted_timeline_value + 1;
     VkSemaphoreSubmitInfo timeline{
-        .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = owner->submissions.timeline,
-        .value     = value,
-        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .pNext       = nullptr,
+        .semaphore   = owner->submissions.timeline,
+        .value       = value,
+        .stageMask   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .deviceIndex = 0,
     };
     signals.push_back(timeline);
 
     VkSubmitInfo2 batch{
         .sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .pNext                    = nullptr,
+        .flags                    = 0,
         .waitSemaphoreInfoCount   = static_cast<uint32_t>(waits.size()),
         .pWaitSemaphoreInfos      = waits.data(),
         .commandBufferInfoCount   = static_cast<uint32_t>(commands.size()),
@@ -389,12 +416,15 @@ void submission_engine_s::initialize()
     // Queue acceptance assigns values; the submission worker publishes completed values.
     VkSemaphoreTypeCreateInfo timeline_info{
         .sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .pNext         = nullptr,
         .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue  = 0,
     };
 
     VkSemaphoreCreateInfo semaphore{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         .pNext = &timeline_info,
+        .flags = 0,
     };
     check(owner.vk.vkCreateSemaphore(owner.device, &semaphore, nullptr, &timeline), "timeline semaphore");
 }

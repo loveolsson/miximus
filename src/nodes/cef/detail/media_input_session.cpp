@@ -739,7 +739,7 @@ media_input_metrics_s media_input_session_s::metrics() const
     std::scoped_lock      lock(state.mutex);
     media_input_metrics_s result{.available      = bool(state.exports),
                                  .failed         = state.exports && (state.bridge_failed || state.exports->failed() ||
-                                                                     (state.drained && !state.closing)),
+                                                             (state.drained && !state.closing)),
                                  .subscribed     = state.subscribed,
                                  .submitted      = state.submitted,
                                  .delivered      = state.delivered,

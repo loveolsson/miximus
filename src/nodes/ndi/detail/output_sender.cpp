@@ -162,7 +162,7 @@ class output_sender_s::impl_s
     void run_stream(const stream_state_s& state)
     {
         media::timed_output_queue_s<sender_frame_s>              queue({
-            .capacity = output_sender_s::get_queue_capacity(state.buffer_frames),
+                         .capacity = output_sender_s::get_queue_capacity(state.buffer_frames),
         });
         media::playout_timeline_s                                timeline;
         media::presentation_timeline_s                           observed_latency;
@@ -227,7 +227,7 @@ class output_sender_s::impl_s
                 program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
                                                    selection.frame->program_target_time - program_target)
                                                    .count();
-                auto next                    = selection.frame->payload.readback;
+                auto next = selection.frame->payload.readback;
                 send_frame(state, selection.frame->payload, program_target - state.program_time_origin);
                 inflight = std::move(next);
             }

@@ -38,12 +38,16 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     }
 
     VkDrmFormatModifierPropertiesListEXT modifiers{
-        .sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
+        .sType                        = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
+        .pNext                        = nullptr,
+        .drmFormatModifierCount       = 0,
+        .pDrmFormatModifierProperties = nullptr,
     };
 
     VkFormatProperties2 formats{
-        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
-        .pNext = &modifiers,
+        .sType            = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        .pNext            = &modifiers,
+        .formatProperties = {},
     };
 
     device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, format, &formats);
@@ -61,9 +65,12 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     }
 
     VkPhysicalDeviceImageDrmFormatModifierInfoEXT modifier_query{
-        .sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT,
-        .drmFormatModifier = descriptor.modifier,
-        .sharingMode       = VK_SHARING_MODE_EXCLUSIVE,
+        .sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT,
+        .pNext                 = nullptr,
+        .drmFormatModifier     = descriptor.modifier,
+        .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices   = nullptr,
     };
 
     VkPhysicalDeviceExternalImageFormatInfo external_query{
@@ -79,15 +86,19 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
         .type   = VK_IMAGE_TYPE_2D,
         .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
         .usage  = VK_IMAGE_USAGE_SAMPLED_BIT,
+        .flags  = 0,
     };
 
     VkExternalImageFormatProperties external_properties{
-        .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+        .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+        .pNext                    = nullptr,
+        .externalMemoryProperties = {},
     };
 
     VkImageFormatProperties2 properties{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-        .pNext = &external_properties,
+        .sType                 = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+        .pNext                 = &external_properties,
+        .imageFormatProperties = {},
     };
 
     check(device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties),
@@ -109,12 +120,16 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     image->layouts = {VK_IMAGE_LAYOUT_GENERAL};
 
     VkSubresourceLayout plane{
-        .offset   = descriptor.offset,
-        .rowPitch = descriptor.stride,
+        .offset     = descriptor.offset,
+        .size       = {},
+        .rowPitch   = descriptor.stride,
+        .arrayPitch = {},
+        .depthPitch = {},
     };
 
     VkImageDrmFormatModifierExplicitCreateInfoEXT modifier{
         .sType                       = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT,
+        .pNext                       = nullptr,
         .drmFormatModifier           = descriptor.modifier,
         .drmFormatModifierPlaneCount = 1,
         .pPlaneLayouts               = &plane,
@@ -127,16 +142,21 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     };
 
     VkImageCreateInfo info{
-        .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext       = &external,
-        .imageType   = VK_IMAGE_TYPE_2D,
-        .format      = format,
-        .extent      = {.width = descriptor.extent.width, .height = descriptor.extent.height, .depth = 1},
-        .mipLevels   = 1,
-        .arrayLayers = 1,
-        .samples     = VK_SAMPLE_COUNT_1_BIT,
-        .tiling      = query.tiling,
-        .usage       = query.usage,
+        .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext                 = &external,
+        .flags                 = 0,
+        .imageType             = VK_IMAGE_TYPE_2D,
+        .format                = format,
+        .extent                = {.width = descriptor.extent.width, .height = descriptor.extent.height, .depth = 1},
+        .mipLevels             = 1,
+        .arrayLayers           = 1,
+        .samples               = VK_SAMPLE_COUNT_1_BIT,
+        .tiling                = query.tiling,
+        .usage                 = query.usage,
+        .sharingMode           = {},
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices   = nullptr,
+        .initialLayout         = {},
     };
 
     check(device->vk.vkCreateImage(device->device, &info, nullptr, &image->image), "create DMA-BUF image");
@@ -146,7 +166,9 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     device->vk.vkGetImageMemoryRequirements(device->device, image->image, &requirements);
 
     VkMemoryFdPropertiesKHR fd_properties{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR,
+        .sType          = VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR,
+        .pNext          = nullptr,
+        .memoryTypeBits = 0,
     };
 
     check(device->vk.vkGetMemoryFdPropertiesKHR(
@@ -161,8 +183,10 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     auto duplicate = native_handle_s::duplicate(descriptor.handle);
 
     VkMemoryDedicatedAllocateInfo dedicated{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-        .image = image->image,
+        .sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+        .pNext  = nullptr,
+        .image  = image->image,
+        .buffer = {},
     };
 
     VkImportMemoryFdInfoKHR import{
@@ -190,9 +214,12 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
 
     VkImageViewCreateInfo view{
         .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = 0,
         .image            = image->image,
         .viewType         = VK_IMAGE_VIEW_TYPE_2D,
         .format           = format,
+        .components       = {},
         .subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
                              .baseMipLevel   = 0,
                              .levelCount     = 1,

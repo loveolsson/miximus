@@ -70,34 +70,49 @@ void recording_state_s::draw(const std::shared_ptr<texture_state_s>&      a,
     std::array<VkWriteDescriptorSet, 2> writes{};
     for (uint32_t i = 0; i < writes.size(); ++i) {
         writes.at(i) = {
-            .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet          = descriptor,
-            .dstBinding      = i,
-            .descriptorCount = 1,
-            .descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .pImageInfo      = &sampled.at(i),
+            .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext            = nullptr,
+            .dstSet           = descriptor,
+            .dstBinding       = i,
+            .dstArrayElement  = 0,
+            .descriptorCount  = 1,
+            .descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo       = &sampled.at(i),
+            .pBufferInfo      = nullptr,
+            .pTexelBufferView = nullptr,
         };
     }
 
     owner->vk.vkUpdateDescriptorSets(owner->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     VkRenderingAttachmentInfo attachment{
-        .sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView   = target->view,
-        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD,
-        .storeOp     = VK_ATTACHMENT_STORE_OP_STORE,
+        .sType              = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .pNext              = nullptr,
+        .imageView          = target->view,
+        .imageLayout        = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .resolveMode        = {},
+        .resolveImageView   = {},
+        .resolveImageLayout = {},
+        .loadOp             = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp            = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue         = {},
     };
 
     VkRenderingInfo render{
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .renderArea =
             {
+                         .offset = {},
                          .extent = {.width = target->extent.width, .height = target->extent.height},
                          },
         .layerCount           = 1,
+        .viewMask             = 0,
         .colorAttachmentCount = 1,
         .pColorAttachments    = &attachment,
+        .pDepthAttachment     = nullptr,
+        .pStencilAttachment   = nullptr,
     };
     const auto command_buffer = arena->commands;
     owner->vk.vkCmdBeginRendering(command_buffer, &render);

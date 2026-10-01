@@ -34,9 +34,12 @@ completion_s external_image_copy_s::submit(recording_s&              record,
     state.retain(image);
 
     VkSemaphoreSubmitInfo wait{
-        .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-        .semaphore = fence.semaphore,
-        .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .sType       = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+        .pNext       = nullptr,
+        .semaphore   = fence.semaphore,
+        .value       = 0,
+        .stageMask   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+        .deviceIndex = 0,
     };
 
     // As in the CUDA bridge, prevent the submission prologue from transitioning
@@ -45,6 +48,9 @@ completion_s external_image_copy_s::submit(recording_s&              record,
 
     VkImageMemoryBarrier2 barrier{
         .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .pNext               = nullptr,
+        .srcStageMask        = 0,
+        .srcAccessMask       = 0,
         .dstStageMask        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
         .dstAccessMask       = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
         .oldLayout           = VK_IMAGE_LAYOUT_GENERAL,
@@ -60,9 +66,15 @@ completion_s external_image_copy_s::submit(recording_s&              record,
     };
 
     VkDependencyInfo dependency{
-        .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers    = &barrier,
+        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext                    = nullptr,
+        .dependencyFlags          = 0,
+        .memoryBarrierCount       = 0,
+        .pMemoryBarriers          = nullptr,
+        .bufferMemoryBarrierCount = 0,
+        .pBufferMemoryBarriers    = nullptr,
+        .imageMemoryBarrierCount  = 1,
+        .pImageMemoryBarriers     = &barrier,
     };
 
     state.owner->vk.vkCmdPipelineBarrier2(state.arena->commands, &dependency);

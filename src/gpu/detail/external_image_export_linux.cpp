@@ -18,12 +18,16 @@ constexpr VkImageUsageFlags EXPORT_USAGE  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAG
 uint64_t choose_export_modifier(const std::shared_ptr<device_state_s>& device, extent_s extent)
 {
     VkDrmFormatModifierPropertiesListEXT modifiers{
-        .sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
+        .sType                        = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
+        .pNext                        = nullptr,
+        .drmFormatModifierCount       = 0,
+        .pDrmFormatModifierProperties = nullptr,
     };
 
     VkFormatProperties2 formats{
-        .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
-        .pNext = &modifiers,
+        .sType            = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
+        .pNext            = &modifiers,
+        .formatProperties = {},
     };
 
     device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, EXPORT_FORMAT, &formats);
@@ -56,9 +60,12 @@ uint64_t choose_export_modifier(const std::shared_ptr<device_state_s>& device, e
         }
 
         VkPhysicalDeviceImageDrmFormatModifierInfoEXT modifier_query{
-            .sType             = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT,
-            .drmFormatModifier = candidate.drmFormatModifier,
-            .sharingMode       = VK_SHARING_MODE_EXCLUSIVE,
+            .sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT,
+            .pNext                 = nullptr,
+            .drmFormatModifier     = candidate.drmFormatModifier,
+            .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices   = nullptr,
         };
 
         VkPhysicalDeviceExternalImageFormatInfo external_query{
@@ -74,15 +81,19 @@ uint64_t choose_export_modifier(const std::shared_ptr<device_state_s>& device, e
             .type   = VK_IMAGE_TYPE_2D,
             .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
             .usage  = EXPORT_USAGE,
+            .flags  = 0,
         };
 
         VkExternalImageFormatProperties external_properties{
-            .sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+            .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
+            .pNext                    = nullptr,
+            .externalMemoryProperties = {},
         };
 
         VkImageFormatProperties2 properties{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-            .pNext = &external_properties,
+            .sType                 = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+            .pNext                 = &external_properties,
+            .imageFormatProperties = {},
         };
         const auto result =
             device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties);
@@ -122,6 +133,7 @@ void external_image_export_s::state_s::initialize(const std::shared_ptr<device_s
 
     VkImageDrmFormatModifierListCreateInfoEXT modifier{
         .sType                  = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT,
+        .pNext                  = nullptr,
         .drmFormatModifierCount = 1,
         .pDrmFormatModifiers    = &selected_modifier,
     };
@@ -133,16 +145,21 @@ void external_image_export_s::state_s::initialize(const std::shared_ptr<device_s
     };
 
     VkImageCreateInfo info{
-        .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext       = &external,
-        .imageType   = VK_IMAGE_TYPE_2D,
-        .format      = EXPORT_FORMAT,
-        .extent      = {.width = extent.width, .height = extent.height, .depth = 1},
-        .mipLevels   = 1,
-        .arrayLayers = 1,
-        .samples     = VK_SAMPLE_COUNT_1_BIT,
-        .tiling      = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
-        .usage       = EXPORT_USAGE,
+        .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext                 = &external,
+        .flags                 = 0,
+        .imageType             = VK_IMAGE_TYPE_2D,
+        .format                = EXPORT_FORMAT,
+        .extent                = {.width = extent.width, .height = extent.height, .depth = 1},
+        .mipLevels             = 1,
+        .arrayLayers           = 1,
+        .samples               = VK_SAMPLE_COUNT_1_BIT,
+        .tiling                = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+        .usage                 = EXPORT_USAGE,
+        .sharingMode           = {},
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices   = nullptr,
+        .initialLayout         = {},
     };
 
     check(device->vk.vkCreateImage(device->device, &info, nullptr, &exported->image), "create DMA-BUF export image");
@@ -152,8 +169,10 @@ void external_image_export_s::state_s::initialize(const std::shared_ptr<device_s
     device->vk.vkGetImageMemoryRequirements(device->device, exported->image, &requirements);
 
     VkMemoryDedicatedAllocateInfo dedicated{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
-        .image = exported->image,
+        .sType  = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+        .pNext  = nullptr,
+        .image  = exported->image,
+        .buffer = {},
     };
 
     VkExportMemoryAllocateInfo export_memory{
@@ -188,6 +207,7 @@ void external_image_export_s::state_s::initialize(const std::shared_ptr<device_s
 
     VkMemoryGetFdInfoKHR get_fd{
         .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+        .pNext      = nullptr,
         .memory     = exported->external_memory,
         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
     };
@@ -199,6 +219,8 @@ void external_image_export_s::state_s::initialize(const std::shared_ptr<device_s
 
     VkImageSubresource subresource{
         .aspectMask = VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT,
+        .mipLevel   = 0,
+        .arrayLayer = 0,
     };
 
     VkSubresourceLayout layout{};
@@ -213,9 +235,12 @@ void external_image_export_s::state_s::initialize(const std::shared_ptr<device_s
 
     VkImageViewCreateInfo view{
         .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext            = nullptr,
+        .flags            = 0,
         .image            = exported->image,
         .viewType         = VK_IMAGE_VIEW_TYPE_2D,
         .format           = EXPORT_FORMAT,
+        .components       = {},
         .subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
                              .baseMipLevel   = 0,
                              .levelCount     = 1,
