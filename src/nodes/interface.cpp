@@ -19,6 +19,27 @@ interface_i::interface_i(node_i& owner, std::string_view name, dir_e direction, 
     owner.register_interface(*this);
 }
 
+void interface_i::clear_frame_value()
+{
+    if (direction() != dir_e::output) {
+        return;
+    }
+    switch (type()) {
+        case interface_type_e::texture:
+            if (auto* output = dynamic_cast<output_interface_s<texture_source_info_s>*>(this)) {
+                output->set_value({});
+            }
+            break;
+        case interface_type_e::framebuffer:
+            if (auto* output = dynamic_cast<output_interface_s<framebuffer_source_info_s>*>(this)) {
+                output->set_value({});
+            }
+            break;
+        default:
+            break;
+    }
+}
+
 void interface_i::add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const
 {
     if (connections->size() == max_connection_count_) {
@@ -58,9 +79,12 @@ interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes,
     if (iface != nullptr) {
         execute_node_once(app, nodes, record->first);
         if (type() == interface_type_e::texture && iface->type() == interface_type_e::framebuffer) {
-            const auto* output = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface);
-            if (output != nullptr && output->get_value() != nullptr) {
-                app->commands().generate_mip_maps(*output->get_value());
+            const auto* output = dynamic_cast<const output_interface_s<framebuffer_source_info_s>*>(iface);
+            if (output != nullptr) {
+                const auto source = output->get_value();
+                if (source.texture != nullptr) {
+                    app->commands().generate_mip_maps(*source.texture);
+                }
             }
         }
     }
@@ -127,48 +151,30 @@ gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_
 }
 
 template <>
-const gpu::texture_s*
-input_interface_s<const gpu::texture_s*>::cast_iface_to_value(const interface_i*           iface,
-                                                              const gpu::texture_s* const& fallback)
+texture_source_info_s
+input_interface_s<texture_source_info_s>::cast_iface_to_value(const interface_i*           iface,
+                                                              const texture_source_info_s& fallback)
 {
-    if (iface == nullptr) {
-        return fallback;
+    if (const auto* cast = dynamic_cast<const output_interface_s<texture_source_info_s>*>(iface)) {
+        auto value = cast->get_value();
+        // Preserve metadata for an unavailable source unless a substitute image was supplied.
+        return value.texture != nullptr || fallback.texture == nullptr ? value : fallback;
     }
-
-    switch (iface->type()) {
-        case interface_type_e::texture: {
-            const auto* cast = dynamic_cast<const output_interface_s<const gpu::texture_s*>*>(iface);
-            if (cast == nullptr) {
-                return fallback;
-            }
-            auto* texture = cast->get_value();
-            return texture != nullptr ? texture : fallback;
-        }
-        case interface_type_e::framebuffer: {
-            const auto* cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface);
-            if (cast == nullptr) {
-                return fallback;
-            }
-
-            auto* texture = cast->get_value();
-            if (texture != nullptr) {
-                return texture;
-            }
-            return fallback;
-        }
-        default:
-            return fallback;
+    if (const auto* cast = dynamic_cast<const output_interface_s<framebuffer_source_info_s>*>(iface)) {
+        auto value = cast->get_value();
+        return value.texture != nullptr || fallback.texture == nullptr ? value.as_texture() : fallback;
     }
+    return fallback;
 }
 
 template <>
-gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
-                                                                        gpu::texture_s* const& fallback)
+framebuffer_source_info_s
+input_interface_s<framebuffer_source_info_s>::cast_iface_to_value(const interface_i*               iface,
+                                                                  const framebuffer_source_info_s& fallback)
 {
-    if (const auto* cast = dynamic_cast<const output_interface_s<gpu::texture_s*>*>(iface)) {
+    if (const auto* cast = dynamic_cast<const output_interface_s<framebuffer_source_info_s>*>(iface)) {
         return cast->get_value();
     }
-
     return fallback;
 }
 

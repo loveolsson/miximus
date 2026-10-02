@@ -18,6 +18,8 @@ export const enum node_type_e {
   cef_browser = "cef_browser",
   ndi_input = "ndi_input",
   ndi_output = "ndi_output",
+  set_texture_name = "set_texture_name",
+  set_framebuffer_name = "set_framebuffer_name",
   framebuffer = "framebuffer",
   framebuffer_to_texture = "framebuffer_to_texture",
   teleprompter = "teleprompter",

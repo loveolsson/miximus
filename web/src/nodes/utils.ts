@@ -2,7 +2,7 @@ import { defineNode, NodeInterface } from "@baklavajs/core";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture, t_framebuffer, t_f64, t_vec2, t_rect } from "./interface_types";
 import { node_type_e } from "./node_type";
-import { NumericInterface, Vec2Interface } from "./interfaces";
+import { FocusTrackingStringInterface, NumericInterface, Vec2Interface } from "./interfaces";
 import type { vec2_t } from "@/generated/json_contracts";
 
 const scalarOptions = { precision: 2, step: 0.1 } as const;
@@ -53,5 +53,29 @@ export const FramebufferToTextureNode = defineNode({
   },
   outputs: {
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+  },
+});
+
+export const SetTextureNameNode = defineNode({
+  type: node_type_e.set_texture_name,
+  title: "Set Texture Name",
+  inputs: {
+    tex_in: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+    source_name: () => new FocusTrackingStringInterface("Source name", ""),
+  },
+  outputs: {
+    tex_out: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
+  },
+});
+
+export const SetFramebufferNameNode = defineNode({
+  type: node_type_e.set_framebuffer_name,
+  title: "Set Framebuffer Name",
+  inputs: {
+    fb_in: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),
+    source_name: () => new FocusTrackingStringInterface("Source name", ""),
+  },
+  outputs: {
+    fb_out: () => new NodeInterface<null>("FB", null).use(setType, t_framebuffer),
   },
 });

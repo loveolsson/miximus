@@ -82,9 +82,12 @@ bounded linear-light contract. Raw RGBA/BGRA/BGRX/ARGB transfers use RGBA8 stora
 mapping. Packed v210 occupies device buffers with SDK row-stride padding, not filtered images.
 
 There is no framebuffer resource class or Vulkan framebuffer object: dynamic rendering targets textures directly. The
-graph keeps its existing `texture` and `framebuffer` protocol names, represented by `const gpu::texture_s*` and
-`gpu::texture_s*` respectively. This preserves read-only fan-out and ordered mutable-target connections without a GPU
-wrapper. Named drawing options and typed draw/mix parameters describe normalized node geometry, pixel viewport/scissor,
+graph keeps its existing `texture` and `framebuffer` protocol names. Copyable `texture_source_info_s` and
+`framebuffer_source_info_s` graph values pair borrowed `const gpu::texture_s*` and `gpu::texture_s*` respectively with
+a source name that owns its bytes or borrows an upstream output name for the current frame.
+These metadata wrappers preserve read-only fan-out, ordered mutable-target connections, and the
+existing image/lease lifetimes; they introduce no GPU resource ownership or image copies. Named drawing options and
+typed draw/mix parameters describe normalized node geometry, pixel viewport/scissor,
 opacity, premultiplied blending, transfer functions, and component order. Packing/unpacking and color matrices live in the GPU layer.
 C++/shader matrix rows are explicitly padded; the legacy color conventions are retained. Text and teleprompter surfaces
 still render on the CPU.

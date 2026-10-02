@@ -9,6 +9,8 @@
 #include <format>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
 
 namespace miximus::nodes {
@@ -30,6 +32,16 @@ struct node_state_s
         }
 
         throw std::runtime_error(std::format("missing connection set {}", name));
+    }
+
+    // Borrow only from the stable render snapshot; graph metadata copies this view.
+    std::string_view get_option_string_view(std::string_view name) const
+    {
+        const auto it = options.find(name);
+        if (it == options.end() || !it->is_string()) {
+            return {};
+        }
+        return it->get_ref<const std::string&>();
     }
 
     template <typename T>

@@ -7,12 +7,15 @@
 
 namespace miximus::nodes::detail {
 
-disconnected_value_provider_s<gpu::texture_s*>::~disconnected_value_provider_s() = default;
+disconnected_value_provider_s<framebuffer_source_info_s>::disconnected_value_provider_s()  = default;
+disconnected_value_provider_s<framebuffer_source_info_s>::~disconnected_value_provider_s() = default;
 
-void disconnected_value_provider_s<gpu::texture_s*>::release() noexcept { framebuffer_.reset(); }
+void disconnected_value_provider_s<framebuffer_source_info_s>::release() noexcept { framebuffer_.reset(); }
 
-gpu::texture_s* disconnected_value_provider_s<gpu::texture_s*>::get(core::app_state_s*     app,
-                                                                    gpu::texture_s* const& fallback)
+framebuffer_source_info_s
+disconnected_value_provider_s<framebuffer_source_info_s>::get(core::app_state_s*               app,
+                                                              const framebuffer_source_info_s& fallback,
+                                                              std::string_view                 name)
 {
     if (app == nullptr) {
         return fallback;
@@ -25,7 +28,7 @@ gpu::texture_s* disconnected_value_provider_s<gpu::texture_s*>::get(core::app_st
 
     framebuffer_->clear(app->commands());
 
-    return framebuffer_.get();
+    return {.texture = framebuffer_.get(), .name = name};
 }
 
 } // namespace miximus::nodes::detail

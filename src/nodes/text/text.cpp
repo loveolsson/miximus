@@ -43,9 +43,9 @@ class node_impl : public node_i
         utils::observed_value_s<int>                            font_size;
     };
 
-    input_interface_s<gpu::vec2_t>      iface_position_in_{*this, "position"};
-    input_interface_s<gpu::texture_s*>  iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::texture_s*> iface_fb_out_{*this, "fb_out"};
+    input_interface_s<gpu::vec2_t>                iface_position_in_{*this, "position"};
+    input_interface_s<framebuffer_source_info_s>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<framebuffer_source_info_s> iface_fb_out_{*this, "fb_out"};
 
     std::unique_ptr<text_render_info_s>                    text_info_{std::make_unique<text_render_info_s>()};
     utils::cpu_task_s<std::unique_ptr<text_render_info_s>> render_future_;
@@ -235,8 +235,9 @@ class node_impl : public node_i
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         rendered_text_frame_.reset();
-        auto fb = iface_fb_in_.resolve_value(app, nodes, state);
-        iface_fb_out_.set_value(fb);
+        const auto fb_source = iface_fb_in_.resolve_value(app, nodes, state);
+        auto*      fb        = fb_source.texture;
+        iface_fb_out_.set_value(fb_source);
 
         if (fb == nullptr || !text_info_->text.has_value() || text_info_->text.value().empty()) {
             if (fb == nullptr) {

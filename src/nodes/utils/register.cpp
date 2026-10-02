@@ -8,6 +8,8 @@ std::shared_ptr<node_i> create_framebuffer_node();
 std::shared_ptr<node_i> create_framebuffer_to_texture_node();
 std::shared_ptr<node_i> create_rect_node();
 std::shared_ptr<node_i> create_vec2_node();
+std::shared_ptr<node_i> create_set_texture_name_node();
+std::shared_ptr<node_i> create_set_framebuffer_name_node();
 
 void register_nodes(node_definition_map_t* map)
 {
@@ -16,6 +18,8 @@ void register_nodes(node_definition_map_t* map)
     map->emplace("rect", create_rect_node);
     map->emplace("framebuffer", create_framebuffer_node);
     map->emplace("framebuffer_to_texture", create_framebuffer_to_texture_node);
+    map->emplace("set_texture_name", create_set_texture_name_node);
+    map->emplace("set_framebuffer_name", create_set_framebuffer_name_node);
 }
 
 } // namespace miximus::nodes::utils

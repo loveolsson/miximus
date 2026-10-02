@@ -93,7 +93,9 @@ The order in `node_manager_s::tick_one_frame()` is an invariant:
 8. Record executed IDs so each node executes at most once per frame.
 9. Commit the frame scope: enqueue pending GPU work and output publication callbacks. Publish outputs only after
    successful native submission on the submission worker; retain GPU uses through timeline completion.
-10. Call `complete()` on every node without waiting for unrelated GPU work. Release CPU frame references here.
+10. Call `complete()` on every node without waiting for unrelated GPU work. Release CPU frame references here, then
+    clear every texture/framebuffer output wrapper, including borrowed names. Numeric, vector and rectangle outputs
+    retain their values.
 11. Publish the completed typed status batch to the configuration executor. JSON conversion, deduplication, and
     broadcasting happen there asynchronously.
 12. Poll GLFW, measure completion, skip obsolete evaluations if necessary, and wait for the next anchored target.
@@ -128,8 +130,26 @@ Supported native interface types are:
 - `double` (`f64`)
 - `gpu::vec2_t`
 - `gpu::rect_s`
-- `const gpu::texture_s*` (sampled `texture` port)
-- `gpu::texture_s*` (writable `framebuffer` port)
+- `texture_source_info_s` (sampled `texture` port, borrowing `const gpu::texture_s*`)
+- `framebuffer_source_info_s` (writable `framebuffer` port, borrowing `gpu::texture_s*`)
+
+The two image values are copyable graph wrappers defined in `src/nodes/source_info.hpp`. They preserve the existing
+frame-scoped image borrows and carry a `nodes::source_name_s`. Its variant holds either an owned `std::string`
+or a borrowed reference to another source name. Reading an output borrows its stable name;
+pass-through copies retain the borrow. Each borrowed name points directly to the owning name; borrowing copies that
+pointer in one step, so intermediate wrappers do not need to survive. Rename nodes construct a fresh wrapper with
+an owned name rather than modifying an input name. Ordinary copies of owned names still own independent bytes; borrowing is explicit
+and prohibited from rvalues. The graph resolves fresh interface values every frame, with upstream output names stable
+during downstream execution. Names retained beyond that frame can be captured with `owned_copy()`.
+Text access uses `std::string_view`. Source nodes copy their current
+display name into each published value, including when reusing a cached image. Routing nodes copy the entire value;
+framebuffer drawing nodes preserve the destination framebuffer's metadata. Explicit and implicit framebuffer-to-texture
+conversion preserve the name and read-only access contract. A private framebuffer created for a disconnected input
+uses the owning node's display name.
+
+The `set_texture_name` and `set_framebuffer_name` utility nodes publish a fresh wrapper with the input image pointer
+and the `source_name` string option (default empty). A missing image produces an empty output. Their own display names remain independent. Empty replacement names clear
+the label; renaming a branch does not change the upstream value or other branches. Multiviewer label rendering is deferred.
 
 `input_interface_s<T>::resolve_value()` follows its connection and lazily executes the upstream node before reading its output value. `resolve_values()` is used only after increasing the interface's connection limit.
 

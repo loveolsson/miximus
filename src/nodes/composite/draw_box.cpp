@@ -17,25 +17,27 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::rect_s>           iface_rect_{*this, "rect"};
-    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
-    input_interface_s<double>                iface_opacity_{*this, "opacity"};
-    input_interface_s<gpu::texture_s*>       iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::texture_s*>      iface_fb_out_{*this, "fb_out"};
+    input_interface_s<gpu::rect_s>                iface_rect_{*this, "rect"};
+    input_interface_s<texture_source_info_s>      iface_tex_{*this, "tex"};
+    input_interface_s<double>                     iface_opacity_{*this, "opacity"};
+    input_interface_s<framebuffer_source_info_s>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<framebuffer_source_info_s> iface_fb_out_{*this, "fb_out"};
 
   public:
     explicit node_impl() = default;
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto fb = iface_fb_in_.resolve_value(app, nodes, state);
-        iface_fb_out_.set_value(fb);
+        const auto fb_source = iface_fb_in_.resolve_value(app, nodes, state);
+        auto*      fb        = fb_source.texture;
+        iface_fb_out_.set_value(fb_source);
 
         if (fb == nullptr) {
             return;
         }
 
-        auto texture = iface_tex_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        auto*      texture        = texture_source.texture;
 
         if (texture == nullptr) {
             return;

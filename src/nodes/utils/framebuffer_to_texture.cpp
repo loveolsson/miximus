@@ -14,8 +14,8 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::texture_s*>        iface_fb_{*this, "fb"};
-    output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<framebuffer_source_info_s> iface_fb_{*this, "fb"};
+    output_interface_s<texture_source_info_s>    iface_tex_{*this, "tex"};
 
   public:
     explicit node_impl() = default;
@@ -24,11 +24,12 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* texture = iface_fb_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_fb_.resolve_value(app, nodes, state);
+        auto*      texture        = texture_source.texture;
         if (texture != nullptr) {
             app->commands().generate_mip_maps(*texture);
         }
-        iface_tex_.set_value(texture);
+        iface_tex_.set_value(texture_source.as_texture());
     }
 
     nlohmann::json get_default_options() const final

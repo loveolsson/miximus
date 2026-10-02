@@ -37,7 +37,7 @@ class node_impl : public node_i
 
     gpu::texture_frame_ptr rendered_input_frame_;
 
-    output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    output_interface_s<texture_source_info_s> iface_tex_{*this, "tex"};
 
     void stop_capture()
     {
@@ -172,7 +172,7 @@ class node_impl : public node_i
         app->submit_gpu();
         const auto frame = capture_ ? capture_->resolve_frame() : std::nullopt;
         if (!frame.has_value()) {
-            iface_tex_.set_value(framebuffer_ ? framebuffer_.get() : nullptr);
+            iface_tex_.set_value({.texture = framebuffer_.get(), .name = state.get_option_string_view("name")});
             return;
         }
         rendered_input_frame_ = frame->frame;
@@ -194,7 +194,7 @@ class node_impl : public node_i
 
         auto* output = framebuffer_.get();
         app->commands().generate_mip_maps(*output);
-        iface_tex_.set_value(output);
+        iface_tex_.set_value({.texture = output, .name = state.get_option_string_view("name")});
     }
 
     void complete(core::app_state_s* /*app*/) final

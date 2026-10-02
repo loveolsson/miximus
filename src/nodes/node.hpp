@@ -26,7 +26,7 @@ class node_i
 {
     friend class interface_i;
 
-    void register_interface(const interface_i& iface);
+    void register_interface(interface_i& iface);
 
   protected:
     interface_map_t            interfaces_;
@@ -88,6 +88,8 @@ class node_i
      * Called on the main thread after execution. GPU commands may still run.
      * Release CPU frame references; submitted GPU uses retain native storage.
      * Do not block; use workers for slow I/O and readback completion.
+     * Common frame completion clears texture/framebuffer output values after
+     * all node callbacks; numeric, vector and rectangle outputs are retained.
      */
     virtual void complete(core::app_state_s*) {}
 

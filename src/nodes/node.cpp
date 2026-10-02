@@ -11,7 +11,7 @@
 #include <utility>
 
 namespace miximus::nodes {
-void node_i::register_interface(const interface_i& iface)
+void node_i::register_interface(interface_i& iface)
 {
     const auto [_, inserted] = interfaces_.emplace(iface.name(), &iface);
     if (!inserted) {

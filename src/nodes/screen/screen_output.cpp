@@ -28,7 +28,7 @@ class node_impl : public node_i
 {
     using presenter_settings_t = std::tuple<bool, int, utils::flicks>;
 
-    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<texture_source_info_s> iface_tex_{*this, "tex"};
 
     std::unique_ptr<output_presenter_s>           presenter_;
     utils::observed_value_s<uint64_t>             monitor_version_;
@@ -190,8 +190,9 @@ class node_impl : public node_i
             return;
         }
 
-        auto* texture = iface_tex_.resolve_value(app, nodes, state);
-        auto  frame   = presenter_->try_acquire();
+        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        auto*      texture        = texture_source.texture;
+        auto       frame          = presenter_->try_acquire();
         if (!frame.has_value()) {
             return;
         }

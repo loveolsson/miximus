@@ -17,7 +17,7 @@ namespace miximus::nodes::cef {
 namespace {
 class unavailable_browser_s final : public node_i
 {
-    output_interface_s<const gpu::texture_s*>             texture_{*this, "tex"};
+    output_interface_s<texture_source_info_s>             texture_{*this, "tex"};
     browser_inputs_s                                      inputs_{*this};
     utils::observed_value_s<std::pair<bool, std::string>> reported_state_;
 
@@ -49,9 +49,9 @@ class unavailable_browser_s final : public node_i
                 ? core::status_delivery_e::immediate
                 : core::status_delivery_e::rate_limited);
     }
-    void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& /* state */) final
+    void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& state) final
     {
-        texture_.set_value(nullptr);
+        texture_.set_value({.texture = nullptr, .name = state.get_option_string_view("name")});
     }
     nlohmann::json  get_default_options() const final { return browser_default_options(); }
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final

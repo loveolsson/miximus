@@ -54,10 +54,10 @@ class node_impl : public node_i
         std::shared_ptr<render::font_instance_s> font;
     };
 
-    input_interface_s<gpu::rect_s>      iface_rect_in_{*this, "rect"};
-    input_interface_s<double>           iface_scroll_pos_in_{*this, "scroll_pos"};
-    input_interface_s<gpu::texture_s*>  iface_fb_in_{*this, "fb_in"};
-    output_interface_s<gpu::texture_s*> iface_fb_out_{*this, "fb_out"};
+    input_interface_s<gpu::rect_s>                iface_rect_in_{*this, "rect"};
+    input_interface_s<double>                     iface_scroll_pos_in_{*this, "scroll_pos"};
+    input_interface_s<framebuffer_source_info_s>  iface_fb_in_{*this, "fb_in"};
+    output_interface_s<framebuffer_source_info_s> iface_fb_out_{*this, "fb_out"};
 
     utils::cpu_task_s<text_s>                 text_future_;
     text_s                                    text_;
@@ -122,8 +122,9 @@ class node_impl : public node_i
         auto       font_variant = state.get_option<std::string_view>("font_variant");
         const auto font_size    = state.get_option<int>("font_size", 100);
 
-        auto fb = iface_fb_in_.resolve_value(app, nodes, state);
-        iface_fb_out_.set_value(fb);
+        const auto fb_source = iface_fb_in_.resolve_value(app, nodes, state);
+        auto*      fb        = fb_source.texture;
+        iface_fb_out_.set_value(fb_source);
 
         if (fb == nullptr) {
             return;

@@ -14,7 +14,14 @@ import {
   Vec2ClampNode,
   RectClampNode,
 } from "./math";
-import { Vec2Node, RectNode, FrameBufferNode, FramebufferToTextureNode } from "./utils";
+import {
+  Vec2Node,
+  RectNode,
+  FrameBufferNode,
+  FramebufferToTextureNode,
+  SetTextureNameNode,
+  SetFramebufferNameNode,
+} from "./utils";
 import { DrawBoxNode, InfiniteMultiviewerNode, MixTex2Node } from "./composite";
 import {
   SwitchF64_4Node,
@@ -47,6 +54,8 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(RectClampNode, { category: "Math" });
   editor.registerNodeType(Vec2Node, { category: "Utils" });
   editor.registerNodeType(RectNode, { category: "Utils" });
+  editor.registerNodeType(SetTextureNameNode, { category: "Utils" });
+  editor.registerNodeType(SetFramebufferNameNode, { category: "Utils" });
   editor.registerNodeType(FrameBufferNode, { category: "Utils" });
   editor.registerNodeType(FramebufferToTextureNode, { category: "Utils" });
   editor.registerNodeType(DrawBoxNode, { category: "Composite" });

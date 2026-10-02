@@ -1,6 +1,5 @@
 #pragma once
 
-#include "gpu/texture_fwd.hpp"
 #include "gpu/types.hpp"
 
 #include <cmath>
@@ -28,18 +27,6 @@ template <>
 inline bool is_finite<gpu::rect_s>(const gpu::rect_s& value) noexcept
 {
     return is_finite(value.pos) && is_finite(value.size);
-}
-
-template <>
-inline bool is_finite<const gpu::texture_s*>(const gpu::texture_s* const& /*value*/) noexcept
-{
-    return true;
-}
-
-template <>
-inline bool is_finite<gpu::texture_s*>(gpu::texture_s* const& /*value*/) noexcept
-{
-    return true;
 }
 
 } // namespace miximus::utils

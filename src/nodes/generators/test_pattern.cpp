@@ -61,7 +61,7 @@ struct generation_s
 
 class node_impl : public node_i
 {
-    output_interface_s<const gpu::texture_s*> iface_texture_{*this, "texture"};
+    output_interface_s<texture_source_info_s> iface_texture_{*this, "texture"};
 
     utils::observed_value_s<request_s>                      desired_request_;
     std::optional<request_s>                                published_request_;
@@ -225,7 +225,8 @@ class node_impl : public node_i
             }
         }
         rendered_frame_ = published_frame_;
-        iface_texture_.set_value(rendered_frame_ ? rendered_frame_->texture() : nullptr);
+        iface_texture_.set_value({.texture = rendered_frame_ ? rendered_frame_->texture() : nullptr,
+                                  .name    = state.get_option_string_view("name")});
     }
 
     void complete(core::app_state_s* /*app*/) final

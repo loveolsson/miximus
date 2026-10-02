@@ -7,7 +7,7 @@ namespace miximus::nodes::cef {
 
 struct browser_inputs_s
 {
-    std::array<input_interface_s<const gpu::texture_s*>, 8> ports;
+    std::array<input_interface_s<texture_source_info_s>, 8> ports;
 
     explicit browser_inputs_s(node_i& owner)
         : ports{

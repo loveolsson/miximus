@@ -4,7 +4,7 @@
 #include "nodes/disconnected_value_provider.hpp"
 #include "nodes/interface_type.hpp"
 #include "nodes/node_fwd.hpp"
-#include "nodes/node_map_fwd.hpp"
+#include "nodes/node_map.hpp"
 #include "utils/is_finite.hpp"
 
 #include <boost/container/small_vector.hpp>
@@ -14,6 +14,8 @@
 #include <limits>
 #include <span>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 
 namespace miximus::nodes {
 
@@ -44,6 +46,7 @@ class interface_i
 
     dir_e            direction() const noexcept { return direction_; }
     interface_type_e type() const noexcept { return type_; }
+    void             clear_frame_value();
     virtual bool     accepts(interface_type_e /*type*/) const noexcept { return false; }
     std::string_view name() const noexcept { return name_; }
 
@@ -106,7 +109,11 @@ class input_interface_s : public interface_i
             return iface != nullptr ? cast_iface_to_value(iface, fallback) : fallback;
         }
 
-        return disconnected_value_provider_.get(app, fallback);
+        if constexpr (std::is_same_v<T, framebuffer_source_info_s>) {
+            return disconnected_value_provider_.get(app, fallback, state.get_option_string_view("name"));
+        } else {
+            return disconnected_value_provider_.get(app, fallback);
+        }
     }
 
     template <size_t S = 4>
@@ -156,8 +163,17 @@ class output_interface_s : public interface_i
     }
     ~output_interface_s() = default;
 
-    T    get_value() const { return value_; }
-    void set_value(const T& value) { value_ = utils::is_finite(value) ? value : T{}; }
+    T get_value() const
+    {
+        if constexpr (std::is_same_v<T, texture_source_info_s> || std::is_same_v<T, framebuffer_source_info_s>) {
+            // value_ is stable throughout downstream execution. Ordinary copies
+            // of this result retain the borrow; rename nodes publish a new value.
+            return {.texture = value_.texture, .name = value_.name.borrow()};
+        } else {
+            return value_;
+        }
+    }
+    void set_value(T value) { value_ = utils::is_finite(value) ? std::move(value) : T{}; }
 };
 
 template <>
@@ -167,11 +183,12 @@ gpu::vec2_t input_interface_s<gpu::vec2_t>::cast_iface_to_value(const interface_
 template <>
 gpu::rect_s input_interface_s<gpu::rect_s>::cast_iface_to_value(const interface_i* iface, const gpu::rect_s& fallback);
 template <>
-const gpu::texture_s*
-input_interface_s<const gpu::texture_s*>::cast_iface_to_value(const interface_i*           iface,
-                                                              const gpu::texture_s* const& fallback);
+texture_source_info_s
+input_interface_s<texture_source_info_s>::cast_iface_to_value(const interface_i*           iface,
+                                                              const texture_source_info_s& fallback);
 template <>
-gpu::texture_s* input_interface_s<gpu::texture_s*>::cast_iface_to_value(const interface_i*     iface,
-                                                                        gpu::texture_s* const& fallback);
+framebuffer_source_info_s
+input_interface_s<framebuffer_source_info_s>::cast_iface_to_value(const interface_i*               iface,
+                                                                  const framebuffer_source_info_s& fallback);
 
 } // namespace miximus::nodes

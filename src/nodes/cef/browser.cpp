@@ -24,7 +24,7 @@ using namespace miximus::nodes;
 
 class node_impl final : public node_i
 {
-    output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    output_interface_s<texture_source_info_s> iface_tex_{*this, "tex"};
     cef::browser_inputs_s                     inputs_{*this};
     uint32_t                                  input_mask_{};
     using session_t = cef::session_s;
@@ -54,7 +54,7 @@ class node_impl final : public node_i
 
     void stop()
     {
-        iface_tex_.set_value(nullptr);
+        iface_tex_.set_value({});
         output_.reset();
         session_.reset();
         request_.reset();
@@ -284,14 +284,16 @@ class node_impl final : public node_i
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
         output_ = session_ ? session_->resolve_frame() : nullptr;
-        iface_tex_.set_value(output_ ? &output_->texture() : nullptr);
+        iface_tex_.set_value(
+            {.texture = output_ ? &output_->texture() : nullptr, .name = state.get_option_string_view("name")});
         if (session_) {
             for (size_t input = 0; input < inputs_.ports.size(); ++input) {
                 if ((input_mask_ & (1U << input)) == 0U) {
                     continue;
                 }
 
-                const auto*            source      = inputs_.ports.at(input).resolve_value(app, nodes, state);
+                const auto             source_info = inputs_.ports.at(input).resolve_value(app, nodes, state);
+                auto*                  source      = source_info.texture;
                 const auto             connections = inputs_.ports.at(input).connections(state);
                 const std::string_view source_node =
                     connections.empty() ? std::string_view{} : connections.front().from_node;
@@ -313,7 +315,6 @@ class node_impl final : public node_i
 
     void complete(core::app_state_s* /* app */) final
     {
-        iface_tex_.set_value(nullptr);
         output_.reset();
         if (session_) {
             session_->release_prepared_frame();

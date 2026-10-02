@@ -943,7 +943,7 @@ class node_impl : public node_i
 
     uint64_t render_target_drops_{};
 
-    input_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    input_interface_s<texture_source_info_s> iface_tex_{*this, "tex"};
 
     void stop_playback()
     {
@@ -1197,7 +1197,8 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        const auto texture = iface_tex_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        auto*      texture        = texture_source.texture;
         if (texture == nullptr || !render_state_) {
             return;
         }

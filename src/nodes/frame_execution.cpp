@@ -26,6 +26,13 @@ void complete_all_nodes(core::app_state_s* app, node_map_t& nodes)
     for (auto& [_, record] : nodes) {
         record.node->complete(app);
     }
+    // Discard all frame-local image pointers and name borrows after completion.
+    // Clearing does not dereference a borrowed name, so node order is irrelevant.
+    for (const auto& [_, record] : nodes) {
+        for (const auto& [name, iface] : record.node->get_interfaces()) {
+            iface->clear_frame_value();
+        }
+    }
 }
 
 bool submit_node_once(core::app_state_s* app, const node_map_t& nodes, std::string_view id)

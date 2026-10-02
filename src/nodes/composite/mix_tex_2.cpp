@@ -16,11 +16,11 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::texture_s*>       iface_fb_in_{*this, "fb_in"};
-    input_interface_s<const gpu::texture_s*> iface_a_{*this, "a"};
-    input_interface_s<const gpu::texture_s*> iface_b_{*this, "b"};
-    input_interface_s<double>                iface_t_{*this, "t"};
-    output_interface_s<gpu::texture_s*>      iface_fb_out_{*this, "fb_out"};
+    input_interface_s<framebuffer_source_info_s>  iface_fb_in_{*this, "fb_in"};
+    input_interface_s<texture_source_info_s>      iface_a_{*this, "a"};
+    input_interface_s<texture_source_info_s>      iface_b_{*this, "b"};
+    input_interface_s<double>                     iface_t_{*this, "t"};
+    output_interface_s<framebuffer_source_info_s> iface_fb_out_{*this, "fb_out"};
 
   public:
     void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
@@ -47,8 +47,9 @@ class node_impl : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* framebuffer = iface_fb_in_.resolve_value(app, nodes, state);
-        iface_fb_out_.set_value(framebuffer);
+        const auto framebuffer_source = iface_fb_in_.resolve_value(app, nodes, state);
+        auto*      framebuffer        = framebuffer_source.texture;
+        iface_fb_out_.set_value(framebuffer_source);
 
         if (framebuffer == nullptr) {
             return;
@@ -62,14 +63,14 @@ class node_impl : public node_i
         const gpu::texture_s* a{};
         const gpu::texture_s* b{};
         if (t <= 0.0) {
-            a = iface_a_.resolve_value(app, nodes, state, fallback);
+            a = iface_a_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
             b = a;
         } else if (t >= 1.0) {
-            b = iface_b_.resolve_value(app, nodes, state, fallback);
+            b = iface_b_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
             a = b;
         } else {
-            a = iface_a_.resolve_value(app, nodes, state, fallback);
-            b = iface_b_.resolve_value(app, nodes, state, fallback);
+            a = iface_a_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
+            b = iface_b_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
         }
 
         const auto target_dimensions = framebuffer->dimensions();

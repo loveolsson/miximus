@@ -4,6 +4,7 @@ PRIVATE
     register.cpp
     rect.cpp
     vec2.cpp
+    set_source_name.cpp
     framebuffer.cpp
     framebuffer_to_texture.cpp
 )

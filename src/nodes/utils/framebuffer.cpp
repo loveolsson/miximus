@@ -15,8 +15,8 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    input_interface_s<gpu::vec2_t>      iface_size_{*this, "size"};
-    output_interface_s<gpu::texture_s*> iface_fb_{*this, "fb"};
+    input_interface_s<gpu::vec2_t>                iface_size_{*this, "size"};
+    output_interface_s<framebuffer_source_info_s> iface_fb_{*this, "fb"};
 
     std::unique_ptr<gpu::texture_s> framebuffer_;
 
@@ -37,7 +37,7 @@ class node_impl : public node_i
 
         framebuffer_->clear(app->commands());
 
-        iface_fb_.set_value(framebuffer_.get());
+        iface_fb_.set_value({.texture = framebuffer_.get(), .name = state.get_option_string_view("name")});
     }
 
     nlohmann::json get_default_options() const final

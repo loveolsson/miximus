@@ -18,7 +18,7 @@ using namespace miximus::nodes;
 
 class node_impl : public node_i
 {
-    output_interface_s<const gpu::texture_s*> iface_tex_{*this, "tex"};
+    output_interface_s<texture_source_info_s> iface_tex_{*this, "tex"};
 
     std::unique_ptr<gpu::texture_s> framebuffer_;
 
@@ -27,7 +27,10 @@ class node_impl : public node_i
 
     void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, prepare_result_s* /*result*/) final {}
 
-    void execute(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final {}
+    void execute(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& state) final
+    {
+        iface_tex_.set_value({.texture = framebuffer_.get(), .name = state.get_option_string_view("name")});
+    }
 
     nlohmann::json get_default_options() const final
     {
