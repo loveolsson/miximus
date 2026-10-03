@@ -133,23 +133,32 @@ Supported native interface types are:
 - `texture_source_info_s` (sampled `texture` port, borrowing `const gpu::texture_s*`)
 - `framebuffer_source_info_s` (writable `framebuffer` port, borrowing `gpu::texture_s*`)
 
-The two image values are copyable graph wrappers defined in `src/nodes/source_info.hpp`. They preserve the existing
-frame-scoped image borrows and carry a `nodes::source_name_s`. Its variant holds either an owned `std::string`
-or a borrowed reference to another source name. Reading an output borrows its stable name;
-pass-through copies retain the borrow. Each borrowed name points directly to the owning name; borrowing copies that
-pointer in one step, so intermediate wrappers do not need to survive. Rename nodes construct a fresh wrapper with
-an owned name rather than modifying an input name. Ordinary copies of owned names still own independent bytes; borrowing is explicit
-and prohibited from rvalues. The graph resolves fresh interface values every frame, with upstream output names stable
-during downstream execution. Names retained beyond that frame can be captured with `owned_copy()`.
-Text access uses `std::string_view`. Source nodes copy their current
-display name into each published value, including when reusing a cached image. Routing nodes copy the entire value;
-framebuffer drawing nodes preserve the destination framebuffer's metadata. Explicit and implicit framebuffer-to-texture
-conversion preserve the name and read-only access contract. A private framebuffer created for a disconnected input
-uses the owning node's display name.
+The two image values are copyable graph wrappers defined in `src/nodes/source_info.hpp`. They borrow images and
+carry a `std::string_view` name, both valid through the current frame's completion. Source and rename nodes reference
+strings in the active settings snapshot, which remains stable throughout frame execution. Routing nodes copy the
+entire value; renaming replaces the view without modifying the upstream name. Frame completion clears image outputs
+before the next settings snapshot is applied. Consumers retaining names beyond the frame must copy them into owned
+strings, as the asynchronous label renderer does.
+
+Source nodes publish their current display name each frame, including when reusing a cached image. Framebuffer
+drawing nodes preserve the destination framebuffer's metadata. Explicit and implicit framebuffer-to-texture conversion
+preserve the name and read-only access contract. A private framebuffer created for a disconnected input uses the
+owning node's display name.
 
 The `set_texture_name` and `set_framebuffer_name` utility nodes publish a fresh wrapper with the input image pointer
 and the `source_name` string option (default empty). A missing image produces an empty output. Their own display names remain independent. Empty replacement names clear
-the label; renaming a branch does not change the upstream value or other branches. Multiviewer label rendering is deferred.
+the label; renaming a branch does not change the upstream value or other branches.
+
+The infinite multiviewer has a `show_labels` option, defaulting to false. Labels use embedded source names, including
+names on unavailable sources, and are anchored at the bottom center of each grid cell. Empty names have no label;
+long names are ellipsized to fit. Font size, padding, and bottom inset scale with output height (24-pixel font,
+12-pixel horizontal padding/inset, and 6-pixel vertical padding at 1080p). The label textures are generated at their
+final pixel dimensions and drawn on integer pixel boundaries without scaling. Text is white over 75% black pills.
+
+`render/pill_label.hpp` shares CPU label layout and painting; `nodes/composite/source_labels.hpp` shares the asynchronous
+cache and upload lifecycle. The cache retains only currently requested names, reuses unchanged labels, and invalidates
+on style or font-registry changes. Changed names are hidden until their replacement upload completes; obsolete worker
+results cannot publish into a newer generation.
 
 `input_interface_s<T>::resolve_value()` follows its connection and lazily executes the upstream node before reading its output value. `resolve_values()` is used only after increasing the interface's connection limit.
 

@@ -73,7 +73,7 @@ Precompiled headers are enabled by default for targets that make extensive use o
 can be disabled with `-DMIXIMUS_ENABLE_PRECOMPILED_HEADERS=OFF`. They are disabled automatically while clang-tidy is
 enabled because the compiler and clang-tidy may use incompatible PCH formats.
 
-GPU and CEF tests inherit these checks and exclude GoogleTest macro expansions from cognitive-complexity scoring.
+GPU, CEF, and CPU-rendering tests inherit these checks and exclude GoogleTest macro expansions from cognitive-complexity scoring.
 Their own loops and conditionals are still checked; assertion implementation details do not inflate the score.
 
 ### Sanitizers

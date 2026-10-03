@@ -21,9 +21,11 @@
 #include <algorithm>
 #include <cstdint>
 #include <future>
+#include <glm/common.hpp>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 using namespace miximus;
@@ -180,16 +182,31 @@ class node_impl : public node_i
         // Convert text to UTF-32
         auto utf32_text = utils::utf8_to_utf32(info.text.value());
 
-        // Calculate text dimensions
-        auto text_dim = font_instance->flow_line(utf32_text, INT_MAX);
-
-        // Create surface with generous padding to ensure no character cutoff
-        // Use font size as height reference and add extra width padding
-        const int padding = std::max(40, info.font_size.value() / 2);
-
-        const gpu::vec2i_t surface_size{static_cast<int>(text_dim.pixels_advanced) +
-                                            (padding * 2), // More generous padding
-                                        info.font_size.value() + (padding * 2)};
+        struct line_s
+        {
+            std::u32string_view text;
+            gpu::vec2i_t        baseline;
+        };
+        const std::u32string_view text_view(utf32_text);
+        std::vector<line_s>       lines;
+        gpu::vec2i_t              minimum{};
+        gpu::vec2i_t              maximum{};
+        gpu::vec2i_t              baseline{};
+        for (size_t offset = 0; offset < utf32_text.size();) {
+            const auto remaining = text_view.substr(offset);
+            const auto line      = font_instance->measure_line(remaining);
+            lines.push_back({remaining.substr(0, line.text_length), baseline});
+            if (line.metrics.has_ink) {
+                const auto start = baseline + line.metrics.ink_bounds.pos;
+                minimum          = glm::min(minimum, start);
+                maximum          = glm::max(maximum, start + line.metrics.ink_bounds.size);
+            }
+            maximum = glm::max(maximum, baseline + line.metrics.advance);
+            offset += line.consumed_length;
+            baseline.y += font_instance->line_height();
+        }
+        const int          padding      = std::max(40, info.font_size.value() / 2);
+        const gpu::vec2i_t surface_size = maximum - minimum + gpu::vec2i_t{padding * 2};
 
         if (!info.upload_stream || info.surface_size != surface_size) {
             info.surface_size                 = surface_size;
@@ -222,11 +239,10 @@ class node_impl : public node_i
         render::surface_s surface(surface_size, upload->writable_host_bytes());
         surface.clear({0, 0, 0, 0});
 
-        // Position text with adequate padding from the top-left
-        const gpu::vec2i_t text_position{padding, info.font_size.value() + (padding / 2)};
-
-        // Render text in white
-        font_instance->render_string(utf32_text, &surface, text_position);
+        const auto text_origin = gpu::vec2i_t{padding} - minimum;
+        for (const auto& line : lines) {
+            font_instance->render_line(line.text, &surface, text_origin + line.baseline);
+        }
         if (upload->submit()) {
             info.needs_update = false;
         }

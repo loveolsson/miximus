@@ -4,5 +4,7 @@ PRIVATE
     register.cpp
     draw_box.cpp
     infinite_multiviewer.cpp
+    source_labels.cpp
+    source_labels.hpp
     mix_tex_2.cpp
 )

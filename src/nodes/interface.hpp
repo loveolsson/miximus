@@ -163,16 +163,7 @@ class output_interface_s : public interface_i
     }
     ~output_interface_s() = default;
 
-    T get_value() const
-    {
-        if constexpr (std::is_same_v<T, texture_source_info_s> || std::is_same_v<T, framebuffer_source_info_s>) {
-            // value_ is stable throughout downstream execution. Ordinary copies
-            // of this result retain the borrow; rename nodes publish a new value.
-            return {.texture = value_.texture, .name = value_.name.borrow()};
-        } else {
-            return value_;
-        }
-    }
+    T    get_value() const { return value_; }
     void set_value(T value) { value_ = utils::is_finite(value) ? std::move(value) : T{}; }
 };
 

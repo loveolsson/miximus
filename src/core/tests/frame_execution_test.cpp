@@ -361,9 +361,12 @@ void check_rename(std::string_view type, std::string_view input, std::string_vie
         const auto renamed  = read_output<T>(graph, "rename", output);
         const auto original = read_output<T>(graph, "source", "out");
         EXPECT_EQ(renamed.texture, &texture);
-        EXPECT_EQ(renamed.name.view(), name);
+        EXPECT_EQ(renamed.name, name);
+        EXPECT_EQ(renamed.name.data(), state.get_option_string_view("source_name").data());
         EXPECT_EQ(original.texture, &texture);
-        EXPECT_EQ(original.name.view(), "Camera");
+        EXPECT_EQ(original.name, "Camera");
+        EXPECT_EQ(original.name.data(), graph.at("source").state.get_option_string_view("name").data());
+        nodes::complete_all_nodes(&app, graph);
     }
     const auto options = state.options;
     EXPECT_NE(node->set_options(state.options,
@@ -402,16 +405,16 @@ TEST(FrameExecution, TextureBranchesAndSwitchesPreserveNamesAcrossFrames)
         ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
         const auto result = read_output<nodes::texture_source_info_s>(graph, "switch", "tex");
         EXPECT_EQ(result.texture, &texture);
-        EXPECT_EQ(result.name.view(), active == 1 ? "Camera" : "Preview");
+        EXPECT_EQ(result.name, active == 1 ? "Camera" : "Preview");
         const auto upstream = read_output<nodes::texture_source_info_s>(
             graph, active == 1 ? "source" : "rename", active == 1 ? "out" : "tex_out");
-        EXPECT_TRUE(result.name.is_borrowed());
-        EXPECT_EQ(result.name.view().data(), upstream.name.view().data());
+        EXPECT_EQ(result.name.data(), upstream.name.data());
+        nodes::complete_all_nodes(&app, graph);
     }
     graph.at("source").state.options["name"] = "Camera renamed";
     app.frame_info.executed_nodes.clear();
     ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
-    EXPECT_EQ(read_output<nodes::texture_source_info_s>(graph, "switch", "tex").name.view(), "Camera renamed");
+    EXPECT_EQ(read_output<nodes::texture_source_info_s>(graph, "switch", "tex").name, "Camera renamed");
 }
 
 TEST(FrameExecution, FramebufferConversionCopiesNamesAndRetainsConstness)
@@ -423,15 +426,14 @@ TEST(FrameExecution, FramebufferConversionCopiesNamesAndRetainsConstness)
     output.set_value({.texture = &texture, .name = std::string_view("Program")});
     auto converted = nodes::input_interface_s<nodes::texture_source_info_s>::cast_iface_to_value(&output, {});
     EXPECT_EQ(converted.texture, &texture);
-    EXPECT_EQ(converted.name.view(), "Program");
-    EXPECT_TRUE(converted.name.is_borrowed());
-    EXPECT_EQ(converted.name.view().data(), output.get_value().name.view().data());
+    EXPECT_EQ(converted.name, "Program");
+    EXPECT_EQ(converted.name.data(), output.get_value().name.data());
     const nodes::texture_source_info_s renamed{.texture = converted.texture, .name = std::string_view("Preview")};
-    EXPECT_EQ(renamed.name.view(), "Preview");
-    EXPECT_EQ(output.get_value().name.view(), "Program");
+    EXPECT_EQ(renamed.name, "Preview");
+    EXPECT_EQ(output.get_value().name, "Program");
     const auto explicit_conversion = output.get_value().as_texture();
     EXPECT_EQ(explicit_conversion.texture, &texture);
-    EXPECT_EQ(explicit_conversion.name.view(), "Program");
+    EXPECT_EQ(explicit_conversion.name, "Program");
 }
 
 TEST(FrameExecution, MissingTextureKeepsItsNameUnlessUsingAFallbackImage)
@@ -443,15 +445,15 @@ TEST(FrameExecution, MissingTextureKeepsItsNameUnlessUsingAFallbackImage)
     texture_output.set_value({.texture = nullptr, .name = std::string_view("Camera")});
     framebuffer_output.set_value({.texture = nullptr, .name = std::string_view("Program")});
     using input_t = nodes::input_interface_s<nodes::texture_source_info_s>;
-    EXPECT_EQ(input_t::cast_iface_to_value(&texture_output, {}).name.view(), "Camera");
-    EXPECT_EQ(input_t::cast_iface_to_value(&framebuffer_output, {}).name.view(), "Program");
+    EXPECT_EQ(input_t::cast_iface_to_value(&texture_output, {}).name, "Camera");
+    EXPECT_EQ(input_t::cast_iface_to_value(&framebuffer_output, {}).name, "Program");
     gpu::texture_s                     texture;
     const nodes::texture_source_info_s fallback{.texture = &texture, .name = std::string_view("Fallback")};
     for (const nodes::interface_i* output : {static_cast<const nodes::interface_i*>(&texture_output),
                                              static_cast<const nodes::interface_i*>(&framebuffer_output)}) {
         const auto result = input_t::cast_iface_to_value(output, fallback);
         EXPECT_EQ(result.texture, &texture);
-        EXPECT_EQ(result.name.view(), "Fallback");
+        EXPECT_EQ(result.name, "Fallback");
     }
 }
 
@@ -469,14 +471,14 @@ TEST(FrameExecution, EmptyFramebufferPassThroughPreservesMetadata)
         ASSERT_TRUE(nodes::execute_node_once(&app, graph, type));
         const auto result = read_output<nodes::framebuffer_source_info_s>(graph, type, "fb_out");
         EXPECT_EQ(result.texture, nullptr);
-        EXPECT_EQ(result.name.view(), "Program");
+        EXPECT_EQ(result.name, "Program");
     }
     add_registered_node(&graph, "adapter", "framebuffer_to_texture", definitions);
     connect(&graph, "source", "adapter", "fb");
     ASSERT_TRUE(nodes::execute_node_once(&app, graph, "adapter"));
     const auto result = read_output<nodes::texture_source_info_s>(graph, "adapter", "tex");
     EXPECT_EQ(result.texture, nullptr);
-    EXPECT_EQ(result.name.view(), "Program");
+    EXPECT_EQ(result.name, "Program");
 }
 
 TEST(FrameExecution, CompletionClearsImageOutputsAndPreservesValueOutputs)
@@ -524,7 +526,7 @@ TEST(FrameExecution, CompletionClearsImageOutputsAndPreservesValueOutputs)
     ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
     const auto refreshed = read_output<nodes::texture_source_info_s>(graph, "switch", "tex");
     EXPECT_EQ(refreshed.texture, &texture);
-    EXPECT_EQ(refreshed.name.view(), "Next frame");
+    EXPECT_EQ(refreshed.name, "Next frame");
     nodes::complete_all_nodes(&app, graph);
 }
 

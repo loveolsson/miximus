@@ -64,7 +64,6 @@ if(BUILD_TESTING)
         tests/settings_node_test.cpp
         tests/node_options_test.cpp
         tests/frame_execution_test.cpp
-        tests/source_name_test.cpp
         tests/frame_scheduler_test.cpp
         tests/output_timing_test.cpp
         tests/source_timing_test.cpp

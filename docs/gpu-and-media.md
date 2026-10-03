@@ -358,6 +358,21 @@ The font registry may refresh from the configuration thread. It uses a shared mu
 
 Do not reintroduce pointer/view results whose lifetime crosses the registry lock.
 
+`font_instance_s::measure_line()`, `flow_line()`, and `render_line()` share one glyph-layout path and return
+`line_layout_s`: signed pixel advance, baseline-relative ink bounds with an explicit `has_ink` flag, and separate
+painted (`text_length`) and consumed UTF-32 lengths. All stop at CR, LF, or CRLF. Flow wraps on spaces/tabs, accepts exact
+advance-width fits, discards wrap whitespace, and consumes at least one code point on an overwide first glyph. Tabs
+are one space; nonbreaking spaces are not word boundaries. Advance includes whitespace; ink bounds exclude empty
+glyphs and do not implicitly include the origin. Hinting, color selection, kerning, and integer-pixel rounding are
+shared with painting, and FreeType errors propagate to the caller's worker error handling.
+
+Ordinary outline measurement uses a pixel-rounded hinted control box; embedded bitmaps use
+`FT_LOAD_BITMAP_METRICS_ONLY`. Formats requiring rasterization (including layered color glyphs) render directly
+into FreeType's current glyph slot. Painting uses that slot immediately; glyph metrics and bitmaps are not cached
+or copied into separately owned glyph objects. Font operations remain confined to the existing CPU worker. The text
+node explicitly lays out each line using these metrics and the font's line height; teleprompter wrapping uses
+`consumed_length` to advance and `text_length` to paint.
+
 `render::surface_s` is a non-owning CPU pixel span. Text and teleprompter rendering construct it over an upload lease,
 so font work never owns GPU recordings and runs on the dedicated CPU task worker. Copy and blend operations accept
 checked strided image views, keeping storage extent, dimensions, and signed row stride together. Their templated helper clips once before pixel
@@ -366,6 +381,20 @@ loops; preserve the separation between clipping and pixel operations to avoid pe
 Surface-producing upload streams request `surface_s::DATA_ALIGNMENT`. The transfer factory verifies the exposed host
 pointer for every backend, and `surface_s` uses that contract for compiler alignment hints. New surface producers must
 carry the same requirement into their upload-stream configuration.
+
+Multiviewer labels use the same surface and font primitives via `render::make_pill_label()` and
+`render::render_pill_label()`. `source_labels_s` owns its cache and generation state on the render thread. It admits at
+most one task at a time to the existing CPU worker, at background priority. Preparation tasks own copies of names and
+font metadata; painting tasks own exact upload leases and write directly into their bounded transfer memory. Font
+loading, glyph measurement, and rasterization all run on that worker. Futures transfer exclusive batch ownership
+between threads, without borrowing graph values or node pointers. The render thread only polls task/upload completion
+and draws completed textures through `app->commands()`.
+
+Each distinct current label has a compact single-slot upload stream with mipmap generation disabled. Cached frame
+leases survive across frames; GPU uses retain native storage independently when a name is removed or labels are
+switched off. Queued obsolete tasks are cancelled; running tasks may finish but their generation is rejected. Node
+destruction cancels queued work without waiting, and application shutdown joins the CPU worker before destroying
+transfer services. Missing fonts, failed allocation, or unavailable upload slots never stall graph execution.
 
 ## Real-time queues and workers
 

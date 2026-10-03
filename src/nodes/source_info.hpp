@@ -1,23 +1,25 @@
 #pragma once
 
 #include "gpu/texture_fwd.hpp"
-#include "nodes/source_name.hpp"
 #include "utils/is_finite.hpp"
+
+#include <string_view>
 
 namespace miximus::nodes {
 
-// Graph values borrow images and may borrow source names for the current frame.
-// Producers retain the existing resource/lease lifetime; copies may rename independently.
+// Graph values borrow images and names through the current frame's completion.
+// Names reference the active settings or producer-owned storage with that lifetime.
+// Consumers retaining a name beyond the frame must copy it into a std::string.
 struct texture_source_info_s
 {
     const gpu::texture_s* texture{};
-    source_name_s         name;
+    std::string_view      name;
 };
 
 struct framebuffer_source_info_s
 {
-    gpu::texture_s* texture{};
-    source_name_s   name;
+    gpu::texture_s*  texture{};
+    std::string_view name;
 
     [[nodiscard]] texture_source_info_s as_texture() const { return {.texture = texture, .name = name}; }
 };

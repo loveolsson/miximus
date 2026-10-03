@@ -115,3 +115,25 @@ TEST(NodeOptions, CefBrowserExposesEightStableTextureInputsInEveryBuild)
     EXPECT_EQ(node->find_interface("tex")->direction(), nodes::interface_i::dir_e::output);
     EXPECT_EQ(node->find_interface("input_8"), nullptr);
 }
+
+TEST(NodeOptions, MultiviewerLabelsDefaultOffAndRequireBoolean)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::register_all_nodes(&definitions);
+    const auto node  = definitions.at("infinite_multiviewer").constructor();
+    auto       state = node->get_default_options();
+    EXPECT_EQ(state.at("show_labels"), false);
+    const nlohmann::json enabled_options{
+        {"show_labels", true}
+    };
+    const auto enabled = node->set_options(state, enabled_options);
+    EXPECT_EQ(enabled.error, error_e::no_error);
+    EXPECT_EQ(state.at("show_labels"), true);
+
+    const nlohmann::json invalid_options{
+        {"show_labels", "yes"}
+    };
+    const auto invalid = node->set_options(state, invalid_options);
+    EXPECT_NE(invalid.error, error_e::no_error);
+    EXPECT_EQ(state.at("show_labels"), true);
+}

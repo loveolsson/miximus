@@ -427,11 +427,8 @@ class node_impl : public node_i
 
         while (pos < str.size()) {
             auto info = res.font->flow_line(str.substr(pos), width);
-            // An overwide first glyph must still advance, otherwise one narrow
-            // viewport can keep the shared CPU task worker busy indefinitely.
-            const auto consumed = std::max<size_t>(info.consumed_chars, 1);
-            res.lines.emplace_back(str.data() + pos, consumed);
-            pos += consumed;
+            res.lines.emplace_back(str.data() + pos, info.text_length);
+            pos += info.consumed_length;
         }
 
         return res;
@@ -445,7 +442,7 @@ class node_impl : public node_i
     {
         render::surface_s surface(dim, upload.writable_host_bytes());
         surface.clear({0, 0, 0, 0});
-        font->render_string(str, &surface, {0, font_size});
+        font->render_line(str, &surface, {0, font_size});
         return upload.submit();
     }
 };

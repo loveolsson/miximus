@@ -1,4 +1,5 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
+import { CheckboxInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_texture, t_framebuffer, t_f64, t_rect } from "./interface_types";
 import { node_type_e } from "./node_type";
@@ -31,6 +32,7 @@ export const InfiniteMultiviewerNode = defineNode({
     fb_in: () => new NodeInterface<null>("FB In", null).use(setType, t_framebuffer),
     tex: () => new NodeInterface<null>("Texture", null).use(setType, t_texture),
     fill_mode: () => createFillModeInterface("contain"),
+    show_labels: () => new CheckboxInterface("Show labels", false).setPort(false),
   },
   outputs: {
     fb_out: () => new NodeInterface<null>("FB Out", null).use(setType, t_framebuffer),
