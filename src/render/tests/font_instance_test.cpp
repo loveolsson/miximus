@@ -32,9 +32,8 @@ class FontLayout : public testing::Test
         }
         render::font_registry_s registry;
         const auto              info = registry.find_font_variant(render::get_default_font_name(), "Regular");
-        if (!info) {
-            GTEST_SKIP() << "Default platform font is not installed";
-        }
+        ASSERT_TRUE(info);
+        ASSERT_FALSE(info->resource_path.empty());
         font_ = std::make_shared<render::font_loader_s>()->load_font(&*info);
         ASSERT_NE(font_, nullptr);
         font().set_size(24);
@@ -190,6 +189,40 @@ TEST_F(FontLayout, FontSizeChangesPreserveMetrics)
     expect_metrics(font().measure_line(U"Camera").metrics, small.metrics);
     EXPECT_THROW(font().set_size(0), std::invalid_argument);
     EXPECT_GT(font().line_height(), 0);
+}
+
+TEST(FontResources, AllBundledVariantsSurviveRegistryRefreshAndLoaderLifetime)
+{
+    if (!getlog("app")) {
+        logger::init_loggers(spdlog::level::warn);
+    }
+    render::font_registry_s registry;
+    EXPECT_EQ(render::get_default_font_name(), "Liberation Sans");
+    for (const auto family : {"Liberation Sans", "Liberation Mono"}) {
+        for (const auto style : {"Regular", "Bold", "Italic", "Bold Italic"}) {
+            const auto info = registry.find_font_variant(family, style);
+            ASSERT_TRUE(info);
+            ASSERT_FALSE(info->resource_path.empty());
+            EXPECT_TRUE(info->path.empty());
+            registry.refresh();
+            auto font = std::make_shared<render::font_loader_s>()->load_font(&*info);
+            ASSERT_NE(font, nullptr);
+            font->set_size(24);
+            EXPECT_GT(font->measure_line(U"Camera 01 — Åäö").metrics.advance.x, 0);
+        }
+    }
+}
+
+TEST(FontResources, MissingAndInvalidSourcesFailCleanly)
+{
+    auto loader = std::make_shared<render::font_loader_s>();
+    EXPECT_EQ(loader->load_font(nullptr), nullptr);
+    const render::font_variant_s missing_resource{.resource_path = "fonts/missing.ttf"};
+    EXPECT_EQ(loader->load_font(&missing_resource), nullptr);
+    const render::font_variant_s invalid_resource{.resource_path = "fonts/Liberation-LICENSE.txt"};
+    EXPECT_EQ(loader->load_font(&invalid_resource), nullptr);
+    const render::font_variant_s missing_file{.path = "missing-font.ttf"};
+    EXPECT_EQ(loader->load_font(&missing_file), nullptr);
 }
 
 TEST(FontBitmapLayout, BitmapMetricsAndMonochromePaintingAgree)

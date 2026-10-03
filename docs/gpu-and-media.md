@@ -358,6 +358,12 @@ The font registry may refresh from the configuration thread. It uses a shared mu
 
 Do not reintroduce pointer/view results whose lifetime crosses the registry lock.
 
+Liberation Sans and Liberation Mono (regular, bold, italic, and bold italic) are bundled from `resources/fonts/`
+with their OFL license. Bundled variants override matching system entries on every refresh. Liberation Sans is the
+cross-platform default for text, teleprompter fallback, and multiviewer labels. Font metadata identifies either a
+filesystem path or an embedded resource path; resource decompression and FreeType face creation stay on the CPU
+worker. Each font instance owns its decoded bytes until its FreeType face is destroyed.
+
 `font_instance_s::measure_line()`, `flow_line()`, and `render_line()` share one glyph-layout path and return
 `line_layout_s`: signed pixel advance, baseline-relative ink bounds with an explicit `has_ink` flag, and separate
 painted (`text_length`) and consumed UTF-32 lengths. All stop at CR, LF, or CRLF. Flow wraps on spaces/tabs, accepts exact

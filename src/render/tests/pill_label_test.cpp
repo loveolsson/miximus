@@ -35,9 +35,8 @@ class PillLabel : public testing::Test
         }
         render::font_registry_s registry;
         const auto              info = registry.find_font_variant(render::get_default_font_name(), "Regular");
-        if (!info) {
-            GTEST_SKIP() << "Default platform font is not installed";
-        }
+        ASSERT_TRUE(info);
+        ASSERT_FALSE(info->resource_path.empty());
         font_ = std::make_shared<render::font_loader_s>()->load_font(&*info);
         ASSERT_NE(font_, nullptr);
     }

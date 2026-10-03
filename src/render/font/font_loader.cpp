@@ -2,9 +2,11 @@
 
 #include "render/font/font_info.hpp"
 #include "render/font/font_instance.hpp"
+#include "static_files/files.hpp"
 
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace miximus::render {
 
@@ -24,7 +26,18 @@ std::unique_ptr<font_instance_s> font_loader_s::load_font(const font_variant_s* 
         return nullptr;
     }
 
-    auto font = std::make_unique<font_instance_s>(shared_from_this(), face->path, face->index);
+    std::unique_ptr<font_instance_s> font;
+    if (face->resource_path.empty()) {
+        font = std::make_unique<font_instance_s>(shared_from_this(), face->path, face->index);
+    } else {
+        const auto* resource = static_files::get_resource_files().get_file(face->resource_path);
+        if (resource == nullptr) {
+            return nullptr;
+        }
+        const auto data = resource->unzip();
+        font            = std::make_unique<font_instance_s>(
+            shared_from_this(), std::vector<FT_Byte>(data.begin(), data.end()), face->index);
+    }
     if (font->valid()) {
         return font;
     }

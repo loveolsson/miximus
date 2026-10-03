@@ -8,9 +8,11 @@ namespace miximus::render {
 
 struct font_variant_s
 {
-    int                   index;
-    std::string           name;
-    std::filesystem::path path;
+    int                   index{};
+    std::string           name{};
+    std::filesystem::path path{};
+    // When nonempty, load from the embedded resource bundle instead of the filesystem.
+    std::string resource_path{};
 };
 
 struct font_info_s

@@ -68,34 +68,43 @@ void include_ink(font_instance_s::line_metrics_s& metrics, gpu::recti_s bounds)
     const auto maximum = glm::max(metrics.ink_bounds.pos + metrics.ink_bounds.size, bounds.pos + bounds.size);
     metrics.ink_bounds = {.pos = minimum, .size = maximum - minimum};
 }
-} // namespace
 
-font_instance_s::font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path& path, int index)
-    : loader_(std::move(loader))
+std::vector<FT_Byte> read_font_file(const std::filesystem::path& path)
 {
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        return;
+        return {};
     }
-
     const auto size = file.tellg();
     if (size <= 0 || size > std::numeric_limits<FT_Long>::max()) {
-        return;
+        return {};
     }
-
-    file_data_.resize(static_cast<size_t>(size));
+    std::vector<FT_Byte> data(static_cast<size_t>(size));
     file.seekg(0);
-    file.read(reinterpret_cast<char*>(file_data_.data()), static_cast<std::streamsize>(file_data_.size()));
+    file.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(data.size()));
     if (!file) {
-        file_data_.clear();
+        return {};
+    }
+    return data;
+}
+} // namespace
+
+font_instance_s::font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path& path, int index)
+    : font_instance_s(std::move(loader), read_font_file(path), index)
+{
+}
+
+font_instance_s::font_instance_s(std::shared_ptr<font_loader_s> loader, std::vector<FT_Byte> data, int index)
+    : loader_(std::move(loader))
+    , file_data_(std::move(data))
+{
+    // FreeType borrows these bytes until FT_Done_Face, so the instance owns them.
+    if (file_data_.empty() || file_data_.size() > static_cast<size_t>(std::numeric_limits<FT_Long>::max())) {
         return;
     }
-
-    auto error = FT_New_Memory_Face(
+    const auto error = FT_New_Memory_Face(
         loader_->library_, file_data_.data(), static_cast<FT_Long>(file_data_.size()), index, &face_);
-    if (error == 0) {
-        valid_ = true;
-    }
+    valid_ = error == 0;
 }
 
 font_instance_s::~font_instance_s()

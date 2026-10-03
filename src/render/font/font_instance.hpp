@@ -57,6 +57,7 @@ class font_instance_s
 
   public:
     font_instance_s(std::shared_ptr<font_loader_s> loader, const std::filesystem::path& path, int index);
+    font_instance_s(std::shared_ptr<font_loader_s> loader, std::vector<FT_Byte> data, int index);
     font_instance_s(const font_instance_s& other)            = delete;
     font_instance_s& operator=(const font_instance_s& other) = delete;
     font_instance_s(font_instance_s&& other)                 = delete;

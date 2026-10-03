@@ -3,6 +3,7 @@
 #include "logger/logger.hpp"
 #include "utils/filesystem.hpp"
 
+#include <format>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -16,6 +17,22 @@ font_registry_s::font_registry_s() { refresh(); }
 void font_registry_s::refresh()
 {
     auto fonts = scan_fonts();
+    // Bundled variants override installed copies for consistent defaults on every platform.
+    for (const auto family : {"Sans", "Mono"}) {
+        const auto name = std::format("Liberation {}", family);
+        auto&      font = fonts[name];
+        font.name       = name;
+        for (const auto style : {"Regular", "Bold", "Italic", "Bold Italic"}) {
+            const auto suffix = std::string_view(style) == "Bold Italic" ? "BoldItalic" : style;
+            font.variants.insert_or_assign(
+                style,
+                font_variant_s{
+                    .index         = 0,
+                    .name          = style,
+                    .resource_path = std::format("fonts/Liberation{}-{}.ttf", family, suffix),
+                });
+        }
+    }
     log_fonts(fonts);
 
     {
@@ -28,12 +45,15 @@ void font_registry_s::refresh()
 void font_registry_s::log_fonts(const font_map_t& fonts)
 {
     auto log = getlog("app");
-    log->debug("Found system fonts:");
+    log->debug("Found fonts:");
     for (const auto& [name, font] : fonts) {
         log->debug("  \"{}\"", name);
 
         for (const auto& [v_name, variant] : font.variants) {
-            log->debug("   -- {}: \"{}\", {}", v_name, utils::path_to_utf8(variant.path), variant.index);
+            log->debug("   -- {}: \"{}\", {}",
+                       v_name,
+                       variant.resource_path.empty() ? utils::path_to_utf8(variant.path) : variant.resource_path,
+                       variant.index);
         }
     }
 }
