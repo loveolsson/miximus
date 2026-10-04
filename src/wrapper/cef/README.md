@@ -31,7 +31,7 @@ After preparing/building the pinned source tree, package and select the SDK:
 ```sh
 python3 src/wrapper/cef/source_build.py package --work-dir build-cef-source --no-archive
 cmake -S . -B build -DMIXIMUS_ENABLE_CEF=ON \
-  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11"
+  -DMIXIMUS_CEF_ROOT="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r13"
 cmake --build build -j
 # Complete the Linux sandbox setup below before the first launch.
 ./build/miximus
@@ -148,6 +148,46 @@ The Linux descriptor ABI and DMA-BUF transport remain unchanged. Windows-specifi
 updater-test dependency omission live in the manifest's platform overrides; production/test patches are shared.
 The Windows artifact is still awaiting build and hardware qualification.
 
+Revision 12 adds optional GPU-generated mipmaps for injected browser textures. The private v4 sender takes a
+per-push `uint32_t mipmaps` (0 or 1); v3 remains available and delegates with mipmaps disabled. The node's
+`input_mipmaps` boolean defaults off and applies to all its texture inputs. Changing it recreates that browser
+session, using the existing asynchronous retirement path; queued frames retain their original setting.
+
+The imported image is still level zero only. Enabled destinations use `SHARED_IMAGE_USAGE_MIPMAP` instead of
+`GLES2_READ`, selecting Skia-owned mipmapped storage. The existing raster copy flushes the destination surface;
+Ganesh regenerates dirty mip levels before the GPU completion query. SharedImage usage survives resource transport,
+and the compositor wraps the matching mipmapped promise image. Revision 13 requests up to 8× anisotropic
+sampling only for video textures carrying the bridge destination label `CefMediaInputDestination`; this label
+is preserved through SharedImage IPC and forms part of the local patch contract. The existing mipmap option
+and per-push flag control it. Nearest-neighbor requests take precedence; Skia limits anisotropy to GPU support
+and falls back to mip filtering when unsupported. Ordinary webcam and page textures do not select this policy. No CPU pixels or
+extra unbounded texture cache are introduced. Pool slots wait for their real consumer release tokens before reuse,
+and a changed per-push setting recreates only an available slot. Native admission includes padded mip-level storage.
+Mip filtering averages stored sRGB-encoded values, not linear-light values. The ordinary composited video path is
+the target; other page consumers and other GPU backends require separate qualification.
+
+GPU regression commands after building and staging revision 13:
+
+```sh
+build/src/nodes/cef/cef_media_input_probe build/cef /tmp/miximus-mipmap-pattern 1 --mipmaps
+build/src/nodes/cef/cef_media_input_probe build/cef /tmp/miximus-anisotropy-pattern 1 --anisotropy
+build/src/nodes/cef/cef_media_input_session_probe build/cef /tmp/miximus-mipmap-session --mipmaps
+build/src/nodes/cef/cef_media_input_session_probe build/cef /tmp/miximus-mipmap-small --small-input-mipmaps
+python3 scripts/test_cef_inputs.py --inputs 4 --connected-inputs 2 --input-mipmaps --perspective
+```
+
+The pattern probe downsamples 2560×1440 to 640×360, checking that single-pixel stripes contribute to the result,
+then changes colors and toggles the per-push flag on the same track to catch stale mip levels and pooled storage.
+The anisotropy probe reduces 640×2880 to 640×360: red vertical bars must stay sharp while two green rows in
+every eight must average to 0.25 encoded intensity. It compares 46,080 stripe-interior output pixels on
+the GPU with a 0.02 linear-channel tolerance, then inverts the red bars to check freshness. The disabled
+stage instead requires the expected bilinear result. Revision 13 passes; revision 12's trilinear path
+fails every sampled pixel in the enabled stage. This verifies anisotropic output for directional scaling,
+not arbitrary perspective, intermediate surfaces, or every hardware backend.
+Session probes cover resize, disconnect, track retirement/reacquisition, navigation and bounded teardown. Run GPU
+qualification with the Vulkan validation environment from the GPU guide. Windows remains unqualified until its SDK
+build and hardware tests run.
+
 This header is required even when unqualified provenance is explicitly allowed for diagnostics.
 
 The separately listed `test_patches` entry updates Chromium's `MockDisplayClient` to match the cross-platform
@@ -195,14 +235,14 @@ affinity restriction; it is opt-in and does not change the default memory-conser
 Pinned inputs support reproducibility; byte-for-byte
 reproducibility has not been established. The source build does not automatically replace the application's SDK.
 
-Packaging also emits `miximus_cef_linux64_native_handle_r11.json`, an acquisition manifest containing the actual
+Packaging also emits `miximus_cef_linux64_native_handle_r13.json`, an acquisition manifest containing the actual
 archive SHA-256, archive root and patch identities. It has no download URL until an artifact is deliberately published.
 Use the local archive and its generated manifest to extract a verified SDK:
 
 ```sh
 cmake \
-    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11.json" \
-    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r11.tar.bz2" \
+    -DCEF_MANIFEST="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r13.json" \
+    -DCEF_ARCHIVE="$PWD/build-cef-source/distribution/miximus_cef_linux64_native_handle_r13.tar.bz2" \
     -DCEF_DESTINATION="$PWD/build-cef-sdk" \
     -P src/wrapper/cef/acquire.cmake
 ```

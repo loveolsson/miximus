@@ -430,7 +430,8 @@ void run(subsystem_s&       subsystem,
          bool               small_inputs,
          const std::string& navigation_url,
          const std::string& profile,
-         bool               budget)
+         bool               budget,
+         bool               mipmaps)
 {
     std::string page =
         R"HTML(
@@ -482,10 +483,11 @@ void run(subsystem_s&       subsystem,
         }
     }
     const session_s::options_s options{
-        .url        = navigation_url.empty() ? "data:text/html," + CefURIEncode(page, false).ToString()
-                                             : navigation_url + "/inputs.html",
-        .dimensions = {640, 360},
-        .frame_rate = 60,
+        .url           = navigation_url.empty() ? "data:text/html," + CefURIEncode(page, false).ToString()
+                                                : navigation_url + "/inputs.html",
+        .dimensions    = {640, 360},
+        .frame_rate    = 60,
+        .input_mipmaps = mipmaps,
     };
     auto request = subsystem.create_session(options);
 
@@ -642,12 +644,14 @@ async () => {
 int main(int argc, char** argv)
 {
     try {
-        const bool small_inputs = argc == 4 && std::string_view(argv[3]) == "--small-inputs";
-        const bool budget       = argc == 4 && std::string_view(argv[3]) == "--budget";
-        const bool navigation   = argc == 5 && std::string_view(argv[3]) == "--navigation";
-        if (argc != 3 && !small_inputs && !navigation && !budget) {
+        const bool small_mipmaps = argc == 4 && std::string_view(argv[3]) == "--small-input-mipmaps";
+        const bool mipmaps       = small_mipmaps || (argc == 4 && std::string_view(argv[3]) == "--mipmaps");
+        const bool small_inputs  = small_mipmaps || (argc == 4 && std::string_view(argv[3]) == "--small-inputs");
+        const bool budget        = argc == 4 && std::string_view(argv[3]) == "--budget";
+        const bool navigation    = argc == 5 && std::string_view(argv[3]) == "--navigation";
+        if (argc != 3 && !small_inputs && !navigation && !budget && !mipmaps) {
             std::cerr << "Usage: cef_media_input_session_probe RUNTIME PROFILE [--small-inputs | --budget | "
-                         "--navigation URL]\n";
+                         "--navigation URL | --mipmaps | --small-input-mipmaps]\n";
             return 2;
         }
 
@@ -660,7 +664,7 @@ int main(int argc, char** argv)
         gpu::device_s gpu(options);
         {
             subsystem_s subsystem(gpu, argv[2], argv[1]);
-            run(subsystem, gpu, small_inputs, navigation ? argv[4] : "", argv[2], budget);
+            run(subsystem, gpu, small_inputs, navigation ? argv[4] : "", argv[2], budget, mipmaps);
         }
 
         if (gpu.validation_errors() != 0U) {

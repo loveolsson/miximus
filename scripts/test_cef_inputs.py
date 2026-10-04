@@ -41,6 +41,7 @@ class Page(BaseHTTPRequestHandler):
     lock = threading.Lock()
     loads = 0
     inputs = 8
+    perspective = False
     latest = {}
     control = "run"
 
@@ -84,6 +85,7 @@ class Page(BaseHTTPRequestHandler):
   video {
     width: calc(100% / INPUT_COUNT);
     height: 100vh;
+    VIDEO_TRANSFORM
   }
 </style>
 <body>
@@ -159,7 +161,14 @@ class Page(BaseHTTPRequestHandler):
     );
   </script>
 </body>
-""".replace("GENERATION", str(generation)).replace("INPUT_COUNT", str(Page.inputs))
+""".replace("GENERATION", str(generation))
+                .replace("INPUT_COUNT", str(Page.inputs))
+                .replace(
+                    "VIDEO_TRANSFORM",
+                    "transform: perspective(600px) rotateY(65deg) rotateZ(10deg);"
+                    if Page.perspective
+                    else "",
+                )
             ).encode()
         )
 
@@ -178,6 +187,15 @@ def main():
     parser.add_argument("--browser-height", type=int, default=360)
     parser.add_argument("--warmup-seconds", type=float, default=3)
     parser.add_argument("--steady-seconds", type=float, default=0)
+    parser.add_argument(
+        "--input-mipmaps",
+        action="store_true",
+        help="Enable and exercise browser input mipmap toggles",
+    )
+    parser.add_argument(
+        "--perspective", action="store_true",
+        help="Exercise transformed video compositing",
+    )
     args = parser.parse_args()
     if args.connected_inputs is None:
         args.connected_inputs = args.inputs
@@ -204,6 +222,7 @@ def main():
     work.mkdir(parents=True, exist_ok=False)
     print("Artifacts:", work, flush=True)
     Page.inputs = args.inputs
+    Page.perspective = args.perspective
     server = ThreadingHTTPServer(("127.0.0.1", 0), Page)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -233,6 +252,7 @@ def main():
             type="cef_browser",
             options=dict(
                 size=[args.browser_width, args.browser_height],
+                input_mipmaps=args.input_mipmaps,
                 url=f"http://127.0.0.1:{server.server_port}/",
             ),
         )
@@ -344,6 +364,26 @@ def main():
                     for a, b in zip(first["page"]["samples"], last["page"]["samples"])
                 ]
                 print("Presented frames/s per input:", rates, flush=True)
+            if args.input_mipmaps:
+                for enabled in (False, True):
+                    with Page.lock:
+                        loads = Page.loads
+                    command(
+                        "update_node", id="browser", options={"input_mipmaps": enabled}
+                    )
+                    wait(
+                        f"input mipmaps toggled to {enabled}",
+                        lambda s, p: p.get("generation", 0) > loads
+                        and s.get("cef_inputs_active") == args.inputs
+                        and len(p.get("samples", [])) == args.inputs
+                        and all(
+                            v["presented"] >= 10
+                            for v in p["samples"][: args.connected_inputs]
+                        ),
+                    )
+                    saved = next(n for n in config()["nodes"] if n["id"] == "browser")
+                    if saved["options"]["input_mipmaps"] != enabled:
+                        raise RuntimeError("Browser mipmap option was not persisted")
             with Page.lock:
                 Page.control = "stop"
             wait(

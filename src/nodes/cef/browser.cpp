@@ -48,7 +48,8 @@ class node_impl final : public node_i
             .dimensions = {static_cast<int>(size.x), static_cast<int>(size.y)},
             // CEF's public cadence is integer. The existing timed queue handles
             // fractional program rates; capture never skips received paints.
-            .frame_rate = static_cast<int>((rate.numerator + uint64_t(rate.denominator) - 1) / rate.denominator),
+            .frame_rate    = static_cast<int>((rate.numerator + uint64_t(rate.denominator) - 1) / rate.denominator),
+            .input_mipmaps = state.get_option<bool>("input_mipmaps"),
         };
     }
 

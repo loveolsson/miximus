@@ -378,7 +378,7 @@ session_s::session_s(gpu::device_s& device, options_s options, std::shared_ptr<m
         options.dimensions.y > 8192 || options.frame_rate < 1 || options.frame_rate > 1'000'000) {
         throw std::invalid_argument("Invalid CEF session options");
     }
-    impl_->state->inputs = std::make_shared<media_input_session_s>(device, std::move(inputs));
+    impl_->state->inputs = std::make_shared<media_input_session_s>(device, std::move(inputs), options.input_mipmaps);
     impl_->client        = new client_s(device, std::move(options), impl_->state);
 }
 

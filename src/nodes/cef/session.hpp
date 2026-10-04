@@ -30,6 +30,7 @@ class session_s
         std::string  url;
         gpu::vec2i_t dimensions{1920, 1080};
         int          frame_rate{60};
+        bool         input_mipmaps{};
         bool         operator==(const options_s&) const = default;
     };
 

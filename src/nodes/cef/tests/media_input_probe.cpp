@@ -46,28 +46,41 @@ std::array<float, 4> input_color(uint32_t input, bool second_phase)
             alpha};
 }
 
+struct expected_region_s
+{
+    uint32_t             begin;
+    uint32_t             end;
+    std::array<float, 4> color;
+};
+
 class client_s final
     : public CefClient
     , public CefRenderHandler
     , public CefLifeSpanHandler
     , public CefDisplayHandler
 {
-    gpu::texture_s                  destination_;
-    gpu::recording_context_s        context_;
-    gpu::detail::color_comparison_s compare_;
-    gpu::buffer_s                   counters_;
-    std::mutex                      mutex_;
-    std::condition_variable         changed_;
-    CefRefPtr<CefBrowser>           browser_;
-    std::string                     token_;
-    std::string                     error_;
-    std::string                     input_error_;
-    const uint32_t                  input_count_;
-    uint32_t                        subscribed_{};
-    bool                            stats_ready_{};
-    bool                            closed_{};
-    bool                            red_{};
-    bool                            green_{};
+    gpu::texture_s                      destination_;
+    gpu::recording_context_s            context_;
+    gpu::detail::color_comparison_s     compare_;
+    gpu::buffer_s                       counters_;
+    std::mutex                          mutex_;
+    std::condition_variable             changed_;
+    CefRefPtr<CefBrowser>               browser_;
+    std::string                         token_;
+    std::string                         error_;
+    std::string                         input_error_;
+    const uint32_t                      input_count_;
+    uint32_t                            subscribed_{};
+    bool                                stats_ready_{};
+    bool                                closed_{};
+    bool                                red_{};
+    bool                                green_{};
+    std::optional<std::array<float, 4>> expected_;
+    uint64_t                            expectation_{};
+    bool                                expectation_matched_{};
+    std::vector<expected_region_s>      regions_;
+    uint32_t                            last_mismatches_{};
+    float                               last_maximum_error_{};
     IMPLEMENT_REFCOUNTING(client_s);
 
   public:
@@ -216,6 +229,15 @@ class client_s final
             }
 
             record.reset();
+            std::optional<std::array<float, 4>> expected;
+            uint64_t                            expectation;
+            std::vector<expected_region_s>      regions;
+            {
+                std::scoped_lock lock(mutex_);
+                expected    = expected_;
+                expectation = expectation_;
+                regions     = regions_;
+            }
             for (bool green : {false, true}) {
                 std::ranges::fill(counters_.writable_bytes(), std::byte{});
                 record = context_.try_record();
@@ -223,14 +245,21 @@ class client_s final
                     throw std::runtime_error("Comparison recording exhausted");
                 }
 
-                for (uint32_t input = 0; input < input_count_; ++input) {
-                    compare_.record(*record,
-                                    destination_,
-                                    counters_,
-                                    input_color(input, green),
-                                    0.01F,
-                                    640 * input / input_count_,
-                                    640 * (input + 1) / input_count_);
+                if (!regions.empty()) {
+                    for (const auto& region : regions) {
+                        compare_.record(
+                            *record, destination_, counters_, region.color, 0.02F, region.begin, region.end);
+                    }
+                } else {
+                    for (uint32_t input = 0; input < input_count_; ++input) {
+                        compare_.record(*record,
+                                        destination_,
+                                        counters_,
+                                        expected.value_or(input_color(input, green)),
+                                        0.01F,
+                                        640 * input / input_count_,
+                                        640 * (input + 1) / input_count_);
+                    }
                 }
 
                 if (record->submit().wait(5s) != gpu::wait_result_e::ready) {
@@ -241,8 +270,18 @@ class client_s final
                 uint32_t   mismatches{};
                 const auto bytes = counters_.readable_bytes();
                 std::memcpy(&mismatches, bytes.data(), sizeof(mismatches));
+                {
+                    std::scoped_lock lock(mutex_);
+                    if (expectation == expectation_) {
+                        last_mismatches_ = mismatches;
+                        std::memcpy(&last_maximum_error_, bytes.data() + sizeof(uint32_t), sizeof(float));
+                    }
+                }
                 if (mismatches == 0) {
                     std::scoped_lock lock(mutex_);
+                    if ((expected || !regions.empty()) && expectation == expectation_) {
+                        expectation_matched_ = true;
+                    }
                     if (!green) {
                         red_ = true;
                     } else if (red_) {
@@ -275,6 +314,38 @@ class client_s final
     {
         std::scoped_lock lock(mutex_);
         return {browser_, token_};
+    }
+
+    void expect(std::array<float, 4> color)
+    {
+        std::scoped_lock lock(mutex_);
+        expected_ = color;
+        ++expectation_;
+        expectation_matched_ = false;
+    }
+
+    void expect_regions(std::vector<expected_region_s> regions)
+    {
+        std::scoped_lock lock(mutex_);
+        regions_ = std::move(regions);
+        ++expectation_;
+        expectation_matched_ = false;
+    }
+
+    void wait_expected()
+    {
+        std::unique_lock lock(mutex_);
+        if (!changed_.wait_for(lock, 10s, [&] { return !error_.empty() || expectation_matched_; })) {
+            throw std::runtime_error(
+                std::format("Output comparison failed: {} mismatched pixels, maximum linear error {}",
+                            last_mismatches_,
+                            last_maximum_error_));
+        }
+        if (!error_.empty()) {
+            throw std::runtime_error(error_);
+        }
+        std::cout << "Output comparison: " << last_mismatches_ << " mismatches, maximum linear error "
+                  << last_maximum_error_ << '\n';
     }
 
     void wait_colors()
@@ -333,12 +404,13 @@ describe(const gpu::detail::external_image_export_s& exported, uint32_t input, i
 std::future<std::pair<int, int>> enqueue(cef_wrapper::send_media_frame_t  api,
                                          const CefRefPtr<client_s>&       client,
                                          cef_wrapper::media_frame_s       frame,
-                                         const std::function<void(bool)>& retire = {})
+                                         const std::function<void(bool)>& retire  = {},
+                                         bool                             mipmaps = false)
 {
     auto result           = std::make_shared<std::promise<std::pair<int, int>>>();
     auto future           = result->get_future();
     auto [browser, token] = client->endpoint();
-    if (!CefPostTask(TID_UI, new cef_detail::task_s([api, browser, token, frame, result, retire] {
+    if (!CefPostTask(TID_UI, new cef_detail::task_s([api, browser, token, frame, result, retire, mipmaps] {
                          struct pending_s
                          {
                              std::shared_ptr<std::promise<std::pair<int, int>>> result;
@@ -355,7 +427,8 @@ std::future<std::pair<int, int>> enqueue(cef_wrapper::send_media_frame_t  api,
                              state->result->set_value({safe, delivered});
                          };
 
-                         if (!browser || !api(browser->GetIdentifier(), token.c_str(), &frame, done, pending)) {
+                         if (!browser ||
+                             !api(browser->GetIdentifier(), token.c_str(), &frame, mipmaps, done, pending)) {
                              done(pending, 1, 0);
                          }
                      }))) {
@@ -373,9 +446,10 @@ bool send(cef_wrapper::send_media_frame_t             api,
           const CefRefPtr<client_s>&                  client,
           const gpu::detail::external_image_export_s& exported,
           int64_t                                     timestamp,
-          uint32_t                                    input)
+          uint32_t                                    input,
+          bool                                        mipmaps = false)
 {
-    auto future = enqueue(api, client, describe(exported, input, timestamp));
+    auto future = enqueue(api, client, describe(exported, input, timestamp), {}, mipmaps);
     if (future.wait_for(10s) != std::future_status::ready) {
         throw std::runtime_error("Input GPU retirement not established; export quarantined until runtime shutdown");
     }
@@ -386,6 +460,125 @@ bool send(cef_wrapper::send_media_frame_t             api,
     }
 
     return delivered != 0;
+}
+
+// One bright column in every four is invisible to a center-aligned bilinear
+// 4:1 reduction, but contributes exactly 1/4 to a mipmapped reduction. Change
+// colors and toggle on the same track to exercise pooled destination reuse.
+void run_mipmaps(gpu::device_s&                        gpu,
+                 gpu::detail::external_image_export_s& exported,
+                 gpu::texture_s&                       source,
+                 gpu::recording_context_s&             context,
+                 cef_wrapper::send_media_frame_t       api,
+                 const CefRefPtr<client_s>&            client)
+{
+    auto    solid     = gpu.create_texture({.width = 1, .height = 1});
+    int64_t timestamp = 0;
+    for (int stage = 0; stage < 5; ++stage) {
+        const bool mipmaps = stage != 0 && stage != 3;
+        const bool green   = stage == 2;
+        // Mips average the stored sRGB-encoded RGBA values. Output comparison
+        // decodes sRGB, so 0.25 becomes approximately 0.050876 linear.
+        const float average = mipmaps ? 0.050876F : 0.0F;
+        client->expect({green ? 0.0F : average, green ? average : 0.0F, 0.0F, 1.0F});
+        for (int frame = 0; frame < 12; ++frame) {
+            auto record = context.try_record();
+            if (!record) {
+                throw std::runtime_error("Mipmap probe recording unavailable");
+            }
+            record->clear(source, {0, 0, 0, 1});
+            record->clear(solid, green ? std::array<float, 4>{0, 1, 0, 1} : std::array<float, 4>{1, 0, 0, 1});
+            for (int x = 0; x < 2560; x += 4) {
+                record->draw(solid,
+                             source,
+                             {
+                                 .destination = {float(x), 0, 1, 1440},
+                                   .compositing = gpu::compositing_e::replace
+                });
+            }
+            gpu::draw_s conversion;
+            conversion.compositing = gpu::compositing_e::replace;
+            conversion.transfer    = gpu::color_operation_e::encode_srgb_premultiplied;
+            exported.copy(*record, source, conversion);
+            if (record->submit().wait(5s) != gpu::wait_result_e::ready) {
+                throw std::runtime_error("Mipmap pattern GPU completion failed");
+            }
+            record.reset();
+            timestamp += 16667;
+            (void)send(api, client, exported, timestamp, 0, mipmaps);
+            std::this_thread::sleep_for(20ms);
+        }
+        client->wait_expected();
+        std::cout << "Mipmap stage " << stage << " passed (enabled=" << mipmaps << ")\n";
+    }
+}
+
+// An 8:1 vertical reduction with no horizontal reduction. Red bars must stay
+// sharp in X (isotropic mips fail), while two green rows in eight must contribute
+// in Y (bilinear fails). Compare stripe interiors, avoiding filter boundaries.
+void run_anisotropy(gpu::device_s&                        gpu,
+                    gpu::detail::external_image_export_s& exported,
+                    gpu::texture_s&                       source,
+                    gpu::recording_context_s&             context,
+                    cef_wrapper::send_media_frame_t       api,
+                    const CefRefPtr<client_s>&            client)
+{
+    auto    solid     = gpu.create_texture({.width = 1, .height = 1});
+    int64_t timestamp = 0;
+    for (int stage = 0; stage < 3; ++stage) {
+        const bool                     enabled = stage != 0;
+        const bool                     invert  = stage == 2;
+        std::vector<expected_region_s> regions;
+        for (uint32_t x = 64; x < 576; x += 16) {
+            const float red = (((x / 4) & 1) != 0U) != invert ? 0.0F : 1.0F;
+            regions.push_back({
+                x + 1, x + 3, {red, enabled ? 0.050876F : 0.0F, 0, 1}
+            });
+            regions.push_back({
+                x + 5, x + 7, {1.0F - red, enabled ? 0.050876F : 0.0F, 0, 1}
+            });
+        }
+        client->expect_regions(std::move(regions));
+        for (int frame = 0; frame < 12; ++frame) {
+            auto record = context.try_record();
+            if (!record) {
+                throw std::runtime_error("Anisotropic probe recording unavailable");
+            }
+            record->clear(source, {0, 0, 0, 1});
+            record->clear(solid, {1, 0, 0, 1});
+            for (int x = invert ? 4 : 0; x < 640; x += 8) {
+                record->draw(solid,
+                             source,
+                             {
+                                 .destination = {float(x), 0, 4, 2880},
+                                   .compositing = gpu::compositing_e::replace
+                });
+            }
+            // Add green without changing the red test pattern.
+            record->clear(solid, {0, 1, 0, 0});
+            for (int y = 0; y < 2880; y += 8) {
+                record->draw(solid,
+                             source,
+                             {
+                                 .destination = {0, float(y), 640, 2},
+                                   .compositing = gpu::compositing_e::source_over
+                });
+            }
+            gpu::draw_s conversion;
+            conversion.compositing = gpu::compositing_e::replace;
+            conversion.transfer    = gpu::color_operation_e::encode_srgb_premultiplied;
+            exported.copy(*record, source, conversion);
+            if (record->submit().wait(5s) != gpu::wait_result_e::ready) {
+                throw std::runtime_error("Anisotropic probe GPU completion failed");
+            }
+            record.reset();
+            timestamp += 16667;
+            (void)send(api, client, exported, timestamp, 0, enabled);
+            std::this_thread::sleep_for(20ms);
+        }
+        client->wait_expected();
+        std::cout << "Anisotropic output stage " << stage << " passed (enabled=" << enabled << ")\n";
+    }
 }
 
 struct pending_s
@@ -720,12 +913,14 @@ struct probe_options_s
     uint32_t async_depth{};
     uint32_t square_size{};
     bool     reject_invalid_import{};
+    bool     mipmaps{};
+    bool     anisotropy{};
 };
 
 probe_options_s parse_options(int argc, char** argv)
 {
     probe_options_s options;
-    auto& [inputs, async_depth, square_size, reject_invalid_import] = options;
+    auto& [inputs, async_depth, square_size, reject_invalid_import, mipmaps, anisotropy] = options;
     if (argc >= 4) {
         const std::string_view value(argv[3]);
         const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), inputs);
@@ -736,7 +931,13 @@ probe_options_s parse_options(int argc, char** argv)
 
     if (argc == 5) {
         const std::string_view value(argv[4]);
-        if (value == "--reject-invalid-import") {
+        if (value == "--mipmaps" || value == "--anisotropy") {
+            if (inputs != 1) {
+                throw std::runtime_error("Mipmap comparison requires INPUT_COUNT=1");
+            }
+            mipmaps    = true;
+            anisotropy = value == "--anisotropy";
+        } else if (value == "--reject-invalid-import") {
             reject_invalid_import = true;
         } else if (value.starts_with("--size=")) {
             const auto size   = value.substr(7);
@@ -764,29 +965,32 @@ int main(int argc, char** argv)
     try {
         if (argc < 3 || argc > 5) {
             std::cerr << "Usage: cef_media_input_probe RUNTIME_DIRECTORY PROFILE_DIRECTORY [INPUT_COUNT=1] "
-                         "[ASYNC_EXPORT_DEPTH=1..8 | --reject-invalid-import | --size=N]\n";
+                         "[ASYNC_EXPORT_DEPTH=1..8 | --reject-invalid-import | --size=N | --mipmaps | --anisotropy]\n";
             return 2;
         }
 
         std::cout.setf(std::ios::unitbuf);
-        const auto [inputs, async_depth, square_size, reject_invalid_import] = parse_options(argc, argv);
+        const auto [inputs, async_depth, square_size, reject_invalid_import, mipmaps, anisotropy] =
+            parse_options(argc, argv);
 
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
         options.external_image_import = true;
-        gpu::device_s                                                      gpu(options);
-        const gpu::extent_s                                                export_size = (square_size != 0U)
-                                                                                             ? gpu::extent_s{.width = square_size, .height = square_size}
-                                                                                             : gpu::extent_s{.width = 640, .height = 360};
+        gpu::device_s       gpu(options);
+        const gpu::extent_s export_size = anisotropy ? gpu::extent_s{.width = 640, .height = 2880}
+                                          : mipmaps  ? gpu::extent_s{.width = 2560, .height = 1440}
+                                          : (square_size != 0U)
+                                              ? gpu::extent_s{.width = square_size, .height = square_size}
+                                              : gpu::extent_s{.width = 640, .height = 360};
         std::vector<std::unique_ptr<gpu::detail::external_image_export_s>> exports;
         for (uint32_t input = 0; (async_depth == 0U) && input < inputs; ++input) {
             exports.push_back(std::make_unique<gpu::detail::external_image_export_s>(gpu, export_size));
         }
 
-        auto                                             source  = gpu.create_texture({.width = 640, .height = 360});
-        auto                                             context = gpu.create_recording_context(3);
+        auto source  = gpu.create_texture(mipmaps ? export_size : gpu::extent_s{.width = 640, .height = 360});
+        auto context = gpu.create_recording_context(3);
         cef_detail::media_input_exports_s::quarantine_s  quarantine;
         std::optional<cef_detail::media_input_exports_s> export_queue;
         if (async_depth != 0U) {
@@ -810,15 +1014,21 @@ int main(int argc, char** argv)
 
         try {
             client->wait_ready();
-            if (export_queue) {
+            if (anisotropy) {
+                run_anisotropy(gpu, *exports.at(0), source, context, api, client);
+            } else if (mipmaps) {
+                run_mipmaps(gpu, *exports.at(0), source, context, api, client);
+            } else if (export_queue) {
                 run_async(*export_queue, source, context, api, client, inputs);
             } else {
                 run_serial(exports, source, context, api, client, inputs);
             }
 
-            client->wait_colors();
+            if (!mipmaps) {
+                client->wait_colors();
+            }
             client->report_video_frames();
-            if (!export_queue) {
+            if (!export_queue && !mipmaps) {
                 check_generations(api, client, *exports.at(0), reject_invalid_import);
             }
         } catch (...) {
@@ -831,8 +1041,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("Vulkan validation errors");
         }
 
-        std::cout << "Native input tracks painted both ordered per-input color patterns through GPU-only ingress and "
-                     "accelerated output\n";
+        std::cout << "GPU-only input and accelerated output comparisons passed\n";
     } catch (const std::exception& error) {
         std::fprintf(stderr, "%s\n", error.what());
         return 1;

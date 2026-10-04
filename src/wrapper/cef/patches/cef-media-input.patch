@@ -15,7 +15,7 @@ diff --git a/BUILD.gn b/BUILD.gn
 diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.cc
 --- a/libcef/browser/frame_host_impl.cc
 +++ b/libcef/browser/frame_host_impl.cc
-@@ -767,3 +767,23 @@
+@@ -767,3 +767,24 @@
      impl->ExecuteJavaScriptWithUserGestureForTests(javascript);
    }
  }
@@ -27,6 +27,7 @@ diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.
 +    std::optional<gfx::GpuMemoryBufferHandle> handle,
 +    const gfx::Size& size,
 +    int64_t timestamp_us,
++    bool mipmaps,
 +    cef::mojom::RenderFrame::SubmitMediaInputCallback callback) {
 +  CEF_REQUIRE_UIT_RETURN(false);
 +  // Never join the general unbounded pre-attachment command queue.
@@ -36,13 +37,13 @@ diff --git a/libcef/browser/frame_host_impl.cc b/libcef/browser/frame_host_impl.
 +  }
 +  render_frame_->SubmitMediaInput(token, input, source_generation,
 +                                  std::move(handle), size, timestamp_us,
-+                                  std::move(callback));
++                                  mipmaps, std::move(callback));
 +  return true;
 +}
 diff --git a/libcef/browser/frame_host_impl.h b/libcef/browser/frame_host_impl.h
 --- a/libcef/browser/frame_host_impl.h
 +++ b/libcef/browser/frame_host_impl.h
-@@ -82,6 +82,15 @@
+@@ -82,6 +82,16 @@
    void SendProcessMessage(CefProcessId target_process,
                            CefRefPtr<CefProcessMessage> message) override;
  
@@ -53,6 +54,7 @@ diff --git a/libcef/browser/frame_host_impl.h b/libcef/browser/frame_host_impl.h
 +      std::optional<gfx::GpuMemoryBufferHandle> handle,
 +      const gfx::Size& size,
 +      int64_t timestamp_us,
++      bool mipmaps,
 +      cef::mojom::RenderFrame::SubmitMediaInputCallback callback);
 +
    void SetFocused(bool focused);
@@ -70,10 +72,9 @@ diff --git a/libcef/common/mojom/BUILD.gn b/libcef/common/mojom/BUILD.gn
    ]
  
 diff --git a/libcef/common/mojom/cef.mojom b/libcef/common/mojom/cef.mojom
-index 46aa48d05..b47ead5c8 100644
 --- a/libcef/common/mojom/cef.mojom
 +++ b/libcef/common/mojom/cef.mojom
-@@ -12,6 +12,7 @@ import "services/network/public/mojom/url_request.mojom";
+@@ -12,6 +12,7 @@
  import "third_party/blink/public/mojom/loader/referrer.mojom";
  import "third_party/blink/public/mojom/tokens/tokens.mojom";
  import "ui/gfx/geometry/mojom/geometry.mojom";
@@ -81,7 +82,7 @@ index 46aa48d05..b47ead5c8 100644
  import "url/mojom/url.mojom";
  
  // Structure passed to UpdateDraggableRegions().
-@@ -50,6 +51,12 @@ struct RequestParams {
+@@ -50,6 +51,12 @@
  
  // Interface for communicating with a frame in the renderer process.
  interface RenderFrame {
@@ -89,12 +90,12 @@ index 46aa48d05..b47ead5c8 100644
 +  // null buffer + 16x16 size supplies transparent content. Otherwise GPU handles. 
 +  SubmitMediaInput(string document_token, uint32 input, uint64 source_generation,
 +                   gfx.mojom.GpuMemoryBufferHandle? buffer, gfx.mojom.Size size,
-+                   int64 timestamp_us) => (bool safe_to_reuse, bool delivered);
++                   int64 timestamp_us, bool mipmaps) => (bool safe_to_reuse, bool delivered);
 +
    // Browser process has received the FrameAttached() message.
    // |allow| will be false if we don't want to attach the frame.
    FrameAttachedAck(bool allow);
-@@ -130,6 +137,9 @@ struct NewBrowserInfo {
+@@ -130,6 +137,9 @@
  
  // Interface for communicating with browser management in the browser process.
  interface BrowserManager {
@@ -311,7 +312,6 @@ index a9a030ef9..ffbae72a2 100644
    if (!view) {
      return false;
 diff --git a/libcef/renderer/frame_impl.cc b/libcef/renderer/frame_impl.cc
-index a91adcc41..d623cdffc 100644
 --- a/libcef/renderer/frame_impl.cc
 +++ b/libcef/renderer/frame_impl.cc
 @@ -31,6 +31,7 @@
@@ -322,7 +322,7 @@ index a91adcc41..d623cdffc 100644
  #include "cef/libcef/renderer/render_frame_util.h"
  #include "cef/libcef/renderer/thread_util.h"
  #include "cef/libcef/renderer/v8_impl.h"
-@@ -416,10 +417,18 @@ void CefFrameImpl::OnContextCreated(v8::Local<v8::Context> context) {
+@@ -416,10 +417,18 @@
  }
  
  void CefFrameImpl::OnContextReleased() {
@@ -341,7 +341,7 @@ index a91adcc41..d623cdffc 100644
    // Called when this frame has been detached from the view. This *will* be
    // called for child frames when a parent frame is detached.
    // The browser may hold the last reference to |this|. Take a reference here to
-@@ -938,3 +947,76 @@ void CefFrameImpl::ContextLifecycleStateChanged(
+@@ -938,3 +947,77 @@
  #pragma warning(pop)
  #endif
  #endif
@@ -398,6 +398,7 @@ index a91adcc41..d623cdffc 100644
 +    std::optional<gfx::GpuMemoryBufferHandle> handle,
 +    const gfx::Size& size,
 +    int64_t timestamp_us,
++    bool mipmaps,
 +    SubmitMediaInputCallback callback) {
 +  CEF_REQUIRE_RT();
 +  if (!media_inputs_ || !IsMain() || !frame_) {
@@ -416,7 +417,7 @@ index a91adcc41..d623cdffc 100644
 +    return;
 +  }
 +  media_inputs_->Submit(token, input, source_generation, std::move(*handle),
-+                        size, timestamp_us, std::move(callback));
++                        size, timestamp_us, mipmaps, std::move(callback));
 +}
 diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
 --- a/libcef/renderer/frame_impl.h
@@ -440,7 +441,7 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
    // Forwarded from CefRenderFrameObserver.
    void OnWasShown();
    void OnDidCommitProvisionalLoad();
-@@ -147,7 +152,16 @@
+@@ -147,7 +152,17 @@
  
    void MaybeInitializeScriptContext();
  
@@ -453,6 +454,7 @@ diff --git a/libcef/renderer/frame_impl.h b/libcef/renderer/frame_impl.h
 +                        std::optional<gfx::GpuMemoryBufferHandle> handle,
 +                        const gfx::Size& size,
 +                        int64_t timestamp_us,
++                        bool mipmaps,
 +                        SubmitMediaInputCallback callback) override;
    void FrameAttachedAck(bool allow) override;
    void SendMessage(const std::string& name, base::ListValue arguments) override;
@@ -461,7 +463,7 @@ diff --git a/include/internal/cef_miximus_media_input.h b/include/internal/cef_m
 new file mode 100644
 --- /dev/null
 +++ b/include/internal/cef_miximus_media_input.h
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,67 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -516,6 +518,15 @@ new file mode 100644
 +    const cef_miximus_media_frame_t* frame,
 +    cef_miximus_media_done_t done,
 +    void* user);
++// v4 adds per-push input mipmapping (0 disabled, 1 enabled). Only the
++// Chromium-owned copy gets mip levels; the imported handle remains level zero.
++CEF_EXPORT int cef_miximus_send_media_frame_v4(
++    int browser_id,
++    const char* document_token,
++    const cef_miximus_media_frame_t* frame,
++    uint32_t mipmaps,
++    cef_miximus_media_done_t done,
++    void* user);
 +#ifdef __cplusplus
 +}
 +#endif
@@ -524,7 +535,7 @@ diff --git a/libcef/browser/browser_media_input.cc b/libcef/browser/browser_medi
 new file mode 100644
 --- /dev/null
 +++ b/libcef/browser/browser_media_input.cc
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,114 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -555,15 +566,17 @@ new file mode 100644
 +  done(user, safe, delivered);
 +}
 +}  // namespace
-+CEF_EXPORT int cef_miximus_send_media_frame_v3(
++CEF_EXPORT int cef_miximus_send_media_frame_v4(
 +    int browser_id,
 +    const char* token,
 +    const cef_miximus_media_frame_t* frame,
++    uint32_t mipmaps,
 +    cef_miximus_media_done_t done,
 +    void* user) {
 +  CEF_REQUIRE_UIT_RETURN(0);
 +  if (!token || !*token || !frame || !done || frame->size != sizeof(*frame) ||
-+      frame->input >= 8 || !frame->source_generation || frame->operation > 2) {
++      frame->input >= 8 || !frame->source_generation || frame->operation > 2 ||
++      mipmaps > 1) {
 +    return 0;
 +  }
 +#if BUILDFLAG(IS_WIN)
@@ -623,9 +636,19 @@ new file mode 100644
 +          token, frame->input, frame->source_generation, std::move(handle),
 +          frame->operation == 2 ? gfx::Size(16, 16)
 +                                : gfx::Size(frame->width, frame->height),
-+          frame->timestamp_us,
++          frame->timestamp_us, mipmaps != 0,
 +          mojo::WrapCallbackWithDefaultInvokeIfNotRun(
 +              base::BindOnce(&Complete, done, user), false, false));
++}
++
++CEF_EXPORT int cef_miximus_send_media_frame_v3(
++    int browser_id,
++    const char* token,
++    const cef_miximus_media_frame_t* frame,
++    cef_miximus_media_done_t done,
++    void* user) {
++  return cef_miximus_send_media_frame_v4(browser_id, token, frame, 0, done,
++                                         user);
 +}
 diff --git a/libcef/renderer/renderer_media_input.cc b/libcef/renderer/renderer_media_input.cc
 new file mode 100644
@@ -1006,7 +1029,7 @@ diff --git a/libcef/renderer/media_input_bridge.h b/libcef/renderer/media_input_
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.h
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,98 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -1062,6 +1085,7 @@ new file mode 100644
 +              gfx::GpuMemoryBufferHandle handle,
 +              const gfx::Size& size,
 +              int64_t timestamp_us,
++              bool mipmaps,
 +              Completion completion);
 +
 + private:
@@ -1108,7 +1132,7 @@ diff --git a/libcef/renderer/media_input_bridge.cc b/libcef/renderer/media_input
 new file mode 100644
 --- /dev/null
 +++ b/libcef/renderer/media_input_bridge.cc
-@@ -0,0 +1,334 @@
+@@ -0,0 +1,341 @@
 +// Copyright (c) 2026 The Chromium Embedded Framework Authors. All rights
 +// reserved. Use of this source code is governed by a BSD-style license that can
 +// be found in the LICENSE file.
@@ -1289,6 +1313,7 @@ new file mode 100644
 +                                 gfx::GpuMemoryBufferHandle handle,
 +                                 const gfx::Size& size,
 +                                 int64_t timestamp_us,
++                                 bool mipmaps,
 +                                 Completion completion) {
 +  CEF_REQUIRE_RT();
 +  if (failed_ || input >= kInputs || context_token != context_token_ ||
@@ -1331,15 +1356,19 @@ new file mode 100644
 +  auto* ri = context_->RasterInterface();
 +  const auto color = gfx::ColorSpace::CreateSRGB();
 +  auto& destination = destinations[index];
-+  if (!destination.image || destination.image->size() != size) {
++  // Mipmapped storage uses Skia's backing. GLES2 consumers can copy via the
++  // raster path; requesting GLES2_READ here would prevent this backing on GL.
++  const auto usage = gpu::SHARED_IMAGE_USAGE_RASTER_READ |
++                     gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
++                     gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
++                     (mipmaps ? gpu::SHARED_IMAGE_USAGE_MIPMAP
++                              : gpu::SHARED_IMAGE_USAGE_GLES2_READ);
++  if (!destination.image || destination.image->size() != size ||
++      destination.image->usage() != usage) {
 +    destination.image.reset();  // Its last release token governs destruction.
 +    destination.image =
 +        sii->CreateSharedImage({viz::SinglePlaneFormat::kRGBA_8888, size, color,
-+                                gpu::SHARED_IMAGE_USAGE_RASTER_READ |
-+                                    gpu::SHARED_IMAGE_USAGE_RASTER_WRITE |
-+                                    gpu::SHARED_IMAGE_USAGE_GLES2_READ |
-+                                    gpu::SHARED_IMAGE_USAGE_DISPLAY_READ,
-+                                "CefMediaInputDestination"},
++                                usage, "CefMediaInputDestination"},
 +                               gpu::kNullSurfaceHandle);
 +    if (!destination.image) {
 +      std::move(completion).Run(true, false);
@@ -1360,6 +1389,8 @@ new file mode 100644
 +      imported->BeginRasterAccess(ri, imported->creation_sync_token(), true);
 +  auto write =
 +      destination.image->BeginRasterAccess(ri, destination.release, false);
++  // CopySharedImage flushes its destination SkSurface. Ganesh's surface flush
++  // regenerates dirty mip levels before the completion query below can signal.
 +  ri->CopySharedImage(imported->mailbox(), destination.image->mailbox(), 0, 0,
 +                      0, 0, size.width(), size.height());
 +  gpu::RasterScopedAccess::EndAccess(std::move(write));

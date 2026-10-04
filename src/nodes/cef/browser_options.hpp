@@ -10,16 +10,17 @@ namespace miximus::nodes::cef {
 inline nlohmann::json browser_default_options()
 {
     return {
-        {"name",    "Browser"              },
-        {"enabled", true                   },
-        {"url",     "about:blank"          },
-        {"size",    gpu::vec2_t{1920, 1080}},
+        {"name",          "Browser"              },
+        {"enabled",       true                   },
+        {"input_mipmaps", false                  },
+        {"url",           "about:blank"          },
+        {"size",          gpu::vec2_t{1920, 1080}},
     };
 }
 
 inline option_result_e normalize_browser_option(std::string_view name, nlohmann::json* value)
 {
-    if (name == "enabled") {
+    if (name == "enabled" || name == "input_mipmaps") {
         return normalize_option_value<bool>(value);
     }
     if (name == "size") {

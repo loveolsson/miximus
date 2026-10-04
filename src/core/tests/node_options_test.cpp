@@ -97,6 +97,18 @@ TEST(NodeOptions, CefBrowserUsesOnePixelSizeAndAlwaysSupportsTransparency)
     EXPECT_EQ(node->normalize_option("transparent", &transparent), nodes::option_result_e::invalid);
 }
 
+TEST(NodeOptions, CefBrowserInputMipmapsDefaultOffAndRequireBoolean)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::register_all_nodes(&definitions);
+    const auto node = definitions.at("cef_browser").constructor();
+    EXPECT_EQ(node->get_default_options().at("input_mipmaps"), false);
+    auto enabled = nlohmann::json(true);
+    EXPECT_EQ(node->normalize_option("input_mipmaps", &enabled), nodes::option_result_e::ok);
+    auto invalid = nlohmann::json("yes");
+    EXPECT_EQ(node->normalize_option("input_mipmaps", &invalid), nodes::option_result_e::invalid);
+}
+
 TEST(NodeOptions, CefBrowserExposesEightStableTextureInputsInEveryBuild)
 {
     nodes::node_definition_map_t definitions;

@@ -29,7 +29,7 @@ class media_input_session_s
     std::unique_ptr<impl_s> impl_;
 
   public:
-    media_input_session_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> runtime);
+    media_input_session_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> runtime, bool mipmaps = false);
     ~media_input_session_s();
 
     void attach(int browser_id);

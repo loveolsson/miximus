@@ -66,6 +66,7 @@ export const CefBrowserNode = defineNode({
 
     status: () => new NodeStatusInterface(browserStatus),
     enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
+    input_mipmaps: () => new CheckboxInterface("Input mipmaps", false).setPort(false),
     url: () => new FocusTrackingStringInterface("URL", "about:blank"),
     size: () =>
       new Vec2Interface("Size", [1920, 1080], { precision: 0, step: 1, min: 1, max: 4096 })

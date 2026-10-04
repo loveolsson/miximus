@@ -678,3 +678,84 @@ GPU-backed checks ran with synchronization validation and reported no Vulkan val
 navigation cycles, all eight inputs delivered again; the subsequent three navigation cycles retired real allocations
 and returned reservations to zero. The navigation run delivered all 3,808 submitted input frames. The normal session
 probe also covered timestamps, mutable stream caches, rapid stop/reacquisition, reload, and shutdown.
+
+
+## Optional input mipmaps (revision 12, 2026-10-03)
+
+Browser nodes expose `input_mipmaps` / **Input mipmaps**, default false. The native option is validated as a boolean
+and stored with the normal graph options. Changing it recreates the session through existing asynchronous teardown;
+it therefore reloads the page. Every input push uses the session's immutable setting. The private v4 sender also
+accepts an explicit per-push setting, allowing native callers to toggle individual inputs without recreating a track.
+The v3 symbol and frame structure remain compatible and default to disabled.
+
+Chromium owns the mip chain. Miximus exports only the original RGBA level. The renderer's bounded copy destinations
+select Skia mipmapped SharedImages when requested, replacing an idle destination when its size or mipmap usage changes.
+The raster copy's destination-surface flush regenerates Ganesh mip levels before the existing GPU-finished query.
+The compositor now honors the transported SharedImage mipmap usage when wrapping the image and chooses trilinear
+sampling. It draws these quads separately to preserve batching compatibility. Existing copy completion, frame release
+SyncTokens, document generations and export quarantine are unchanged. Native admission charges every padded mip level
+for all potentially retained Chromium destination slots; it leaves exporter storage unchanged.
+
+Mip averages operate on stored sRGB-encoded channels, not linear-light RGB. This feature targets composited video;
+Canvas/WebGL/WebGPU consumers and other GPU backends are not qualified by the video probes. Windows still needs a
+revision-12 SDK build and hardware qualification.
+
+The Linux Quadro P2000 / NVIDIA 580.178.04 validation passed:
+
+- Full native build, web build, all 252 registered native tests, 168 Chromium capture tests, eight native media-source
+  tests, and `git diff --check`.
+- GPU-only 2560×1440 to 640×360 stripe comparison. Bilinear mode misses the bright columns; mipmap mode includes their
+  expected contribution. Five stages exercise off/on, red-to-green updates in reused storage, off, and on again on one
+  track. All 60 frames were presented, with no Vulkan validation errors.
+- Eight-input session lifecycle probes with mipmaps enabled, both normal and 1×1/odd/small input extents. They verify
+  output pixels, resize, disconnect, stop/clone/reacquisition, reload/navigation and release of all reservations.
+- Real application graph with four subscribed streams and two connected sources. Per-node off/on changes persist and
+  resume delivery. Stop/free, idle graph, reacquisition, independent resize, disconnect, rapid reload, disable/re-enable
+  and shutdown pass under Vulkan validation. Artifacts: `build/integration-tests/cef-inputs-20261003-143427`.
+
+A separate four-input 1920×1080 run with validation disabled measured 59.99, 59.99, 59.99 and 58.19 presented fps
+across a five-second steady interval, with nine additional transport drops. All option toggles and lifecycle checks
+also passed. This short run does not establish sustained four-input 60 fps or isolate the mipmap overhead from
+scheduler/driver variation. Artifacts: `build/integration-tests/cef-inputs-20261003-143805`.
+
+Build and probe logs are retained under `build/integration-tests/cef-mipmaps-r12`.
+
+The regular `build` selects `build-cef-source/distribution/miximus_cef_linux64_native_handle_r12`; existing saved
+browser nodes keep mipmapping disabled unless explicitly enabled.
+
+
+## Scoped anisotropic sampling (revision 13, 2026-10-03)
+
+The existing `input_mipmaps` node option and v4 per-push flag now also request up to 8× anisotropic
+sampling when Viz composites our injected video textures. Selection requires a video quad, a mipmapped
+image, and the exact `CefMediaInputDestination` SharedImage producer label. SharedImage IPC preserves
+that label; keep the renderer bridge and compositor check synchronized when changing it. Ordinary
+webcam/page textures do not request anisotropy through this patch. Explicit nearest-neighbor requests
+still take precedence. Skia clamps the request to device capabilities and uses mip filtering as its
+unsupported-hardware fallback. This sampling change reuses the current chain; it adds no generation pass.
+
+This applies to direct video compositing, including perspective transforms. A subsequent draw of an
+intermediate render-pass surface, Canvas, WebGL, or WebGPU is not automatically opted in. Revision 13
+retains revision 12's level-zero transport and Chromium-generated mip chains; copying Miximus source
+chains is a separate transport change.
+
+Revision 13 was built, packaged and staged in the regular `build`. The native build and all 252 CTest
+tests passed. On the Linux Quadro P2000, the GPU pixel probe passed all five mipmap off/on/color-change
+stages (60/60 frames), and the four-input perspective integration test passed node-option toggles,
+track retirement/reacquisition, resize, disconnect, reload, disable/re-enable and shutdown, with Vulkan
+validation enabled. The perspective test verifies delivery/lifecycle, not quantitative anisotropic
+image quality. Windows and other GPU backends remain unqualified. Logs are retained under
+`build/integration-tests/cef-anisotropy-r13` and
+`build/integration-tests/cef-inputs-20261003-150539`.
+
+A subsequent quantitative anisotropy regression (`cef_media_input_probe ... 1 --anisotropy`) compares
+46,080 accelerated-output pixels after an 8:1 vertical and 1:1 horizontal reduction. The pattern
+requires averaging along Y and preservation along X, distinguishing anisotropy from both bilinear
+and isotropic mip filtering. Revision 13 passed the disabled baseline, enabled stage and inverted
+pattern freshness stage: zero mismatches, maximum enabled linear-channel error 0.000394315
+(tolerance 0.02), 36/36 presented frames. The identical probe using revision 12's library passed the
+disabled baseline and failed the enabled stage on all 46,080 pixels (maximum error 0.5821164), as
+expected for the trilinear negative control. Vulkan validation was enabled. This closes the earlier
+directional-sampling verification gap, but the perspective lifecycle test still is not a quantitative
+perspective image-quality test. No production filtering changes were needed for these results.
+Logs are under `build/integration-tests/cef-anisotropy-quality-r13`.
