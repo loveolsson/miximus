@@ -73,7 +73,7 @@ export const CefBrowserNode = defineNode({
         .use(setType, t_vec2)
         .setPort(false),
     reload: () =>
-      new NodeActionInterface("Reload", [
+      new NodeActionInterface("Reload", "cef_browser", [
         { label: "Reload ↻", action: "reload" },
         { label: "Force ↻", action: "reload", payload: { ignore_cache: true } },
       ]),

@@ -44,7 +44,7 @@ export const ApplicationSettingsNode = defineNode({
   inputs: {
     refresh_fonts: () => new FontRegistryRefreshInterface(),
     clear_browser_cache: () =>
-      new NodeActionInterface("Browser cache", [
+      new NodeActionInterface("Browser cache", "application_settings", [
         { label: "Clear Browser Cache", action: "clear_browser_cache" },
       ]),
     frame_rate: () => new FrameRateInterface(),

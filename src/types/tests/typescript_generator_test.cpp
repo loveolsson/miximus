@@ -1,3 +1,4 @@
+#include "types/node_action_contracts.hpp"
 #include "types/node_status.hpp"
 #include "types/typescript_generator.hpp"
 #include "utils/process_id.hpp"
@@ -68,6 +69,32 @@ TEST(typescript_generator, every_publishable_status_contract_is_emitted)
                 ...);
         },
         status::contracts);
+}
+
+TEST(typescript_generator, action_catalog_exports_payloads_and_scoped_names)
+{
+    const auto output = generate_typescript();
+    EXPECT_NE(output.find("readonly ignore_cache?: boolean;"), std::string::npos);
+    EXPECT_EQ(output.find("readonly ignore_cache?: boolean | null;"), std::string::npos);
+    std::apply(
+        [&](auto... contracts) {
+            (
+                [&] {
+                    EXPECT_NE(output.find("export interface " + std::string(contracts.payload_name) + " {"),
+                              std::string::npos);
+                }(),
+                ...);
+        },
+        node_actions::contracts);
+    EXPECT_NE(output.find("readonly cef_browser: {"), std::string::npos);
+    EXPECT_NE(output.find("readonly application_settings: {"), std::string::npos);
+    EXPECT_NE(
+        output.find(
+            "readonly reload: {\n      readonly payload: browser_reload_payload_s;\n      readonly result: null;"),
+        std::string::npos);
+    EXPECT_NE(output.find("readonly clear_browser_cache: {\n      readonly payload: clear_browser_cache_payload_s;\n   "
+                          "   readonly result: null;"),
+              std::string::npos);
 }
 
 class typescript_output : public ::testing::Test

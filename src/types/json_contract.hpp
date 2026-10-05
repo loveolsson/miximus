@@ -18,6 +18,10 @@ concept described_json_object = boost::describe::has_describe_members<T>::value;
 template <typename T>
 concept described_json_enum = boost::describe::has_describe_enumerators<T>::value;
 
+// Explicitly defaulted members may be omitted on input, but are not nullable.
+template <auto Member>
+inline constexpr bool json_member_defaulted = false;
+
 namespace detail {
 
 template <typename T>
@@ -57,6 +61,9 @@ void write_described_json(nlohmann::json& json, const T& value, bool omit_empty_
 template <described_json_object T>
 void read_described_json(const nlohmann::json& json, T& value)
 {
+    if (!json.is_object()) {
+        throw nlohmann::json::type_error::create(302, "Expected a JSON object", &json);
+    }
     using members_t =
         boost::describe::describe_members<T, boost::describe::mod_public | boost::describe::mod_inherited>;
     boost::mp11::mp_for_each<members_t>([&](auto member) {
@@ -68,6 +75,13 @@ void read_described_json(const nlohmann::json& json, T& value)
                 member_value.reset();
             } else {
                 member_value = item->template get<typename optional_traits<member_t>::value_type>();
+            }
+        } else if constexpr (json_member_defaulted<member.pointer>) {
+            const auto item = json.find(member.name);
+            if (item == json.cend()) {
+                member_value = T{}.*member.pointer;
+            } else {
+                item->get_to(member_value);
             }
         } else {
             json.at(member.name).get_to(member_value);
@@ -93,7 +107,7 @@ void from_json(const nlohmann::json& json, T& value)
     const auto name   = json.get<std::string_view>();
     const auto result = enum_from_string<T>(name);
     if (!result.has_value()) {
-        throw std::invalid_argument("Invalid enumerator in a JSON contract");
+        throw nlohmann::json::type_error::create(302, "Invalid enumerator in a JSON contract", &json);
     }
     value = *result;
 }

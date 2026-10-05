@@ -238,12 +238,22 @@ TEST(SettingsNode, CacheClearValidatesBeforeAccessingTheRuntime)
     nodes::action_s unknown("$app", "unknown", {}, [](const nodes::action_result_s&) {});
     EXPECT_EQ(node->handle_action(context, unknown), nodes::action_dispatch_e::unhandled);
     unknown.fail(error_e::unsupported_action);
-    for (const auto& payload : {nlohmann::json(nullptr), nlohmann::json::array(), nlohmann::json{{"extra", true}}}) {
+    for (const auto& payload : {nlohmann::json(nullptr), nlohmann::json::array(), nlohmann::json(true)}) {
         std::optional<error_e> result;
         nodes::action_s        action(
             "$app", "clear_browser_cache", payload, [&](nodes::action_result_s value) { result = value.error; });
         EXPECT_EQ(node->handle_action(context, action), nodes::action_dispatch_e::handled);
         EXPECT_EQ(result, error_e::invalid_payload);
         EXPECT_FALSE(start);
+    }
+    for (const auto& payload : {nlohmann::json::object(), nlohmann::json{{"future_field", true}}}) {
+        start = {};
+        std::optional<error_e> result;
+        nodes::action_s        action(
+            "$app", "clear_browser_cache", payload, [&](nodes::action_result_s value) { result = value.error; });
+        EXPECT_EQ(node->handle_action(context, action), nodes::action_dispatch_e::handled);
+        EXPECT_FALSE(result);
+        EXPECT_TRUE(start);
+        action.fail(error_e::cancelled); // Do not start SDK work in this admission test.
     }
 }

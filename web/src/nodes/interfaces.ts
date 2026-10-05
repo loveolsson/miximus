@@ -1,3 +1,4 @@
+import type { NodeActionCommand, NodeActionNodeType } from "@/node_actions";
 import NodeActionComponent from "./options/NodeActionOption.vue";
 import { markRaw, reactive } from "vue";
 import { NodeInterface } from "@baklavajs/core";
@@ -116,17 +117,17 @@ export class FontRegistryRefreshInterface extends NodeInterface<null> {
   }
 }
 
-export interface NodeActionButton {
-  label: string;
-  action: string;
-  payload?: unknown;
-}
+export type NodeActionButton<T extends NodeActionNodeType = NodeActionNodeType> =
+  NodeActionCommand<T> & { readonly label: string };
 
 /** Transient node actions. The null interface value is never used as configuration. */
-export class NodeActionInterface extends NodeInterface<null> {
+export class NodeActionInterface<
+  T extends NodeActionNodeType = NodeActionNodeType,
+> extends NodeInterface<null> {
   constructor(
     label: string,
-    readonly actions: readonly NodeActionButton[],
+    readonly nodeType: T,
+    readonly actions: readonly NodeActionButton<NoInfer<T>>[],
   ) {
     super(label, null);
     this.setComponent(markRaw(NodeActionComponent));

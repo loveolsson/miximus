@@ -160,40 +160,51 @@ try {
     "result",
   );
   assert.equal(
-    (await action("clear_browser_cache", { unexpected: true }, "$app")).error,
+    (await action("clear_browser_cache", [], "$app")).error,
     "invalid_payload",
   );
   if (cefDisabled) {
     assert.equal(
-      (await action("clear_browser_cache", {}, "$app")).error,
+      (await action("clear_browser_cache", { future_field: true }, "$app"))
+        .error,
       "unavailable",
     );
   } else {
     // Clearing is available even with no active browser session.
     assert.equal(
-      (await action("clear_browser_cache", {}, "$app")).action,
+      (await action("clear_browser_cache", { future_field: true }, "$app"))
+        .action,
       "result",
     );
     await until(
       async () => (await config()).status.$app.browser_cache_clearing === false,
     );
   }
+  for (const payload of [
+    { ignore_cache: "yes" },
+    { ignore_cache: null },
+    "x".repeat(65536),
+    [],
+  ]) {
+    assert.equal((await action("reload", payload)).error, "invalid_payload");
+  }
+  assert.equal(
+    (await action("reload", { future_field: true })).error,
+    "unavailable",
+  );
   if (!cefDisabled) {
-    assert.equal(
-      (await action("reload", { ignore_cache: "yes" })).error,
-      "invalid_payload",
-    );
-    assert.equal(
-      (await action("reload", "x".repeat(65536))).error,
-      "invalid_payload",
-    );
     await update({ enabled: true });
     await until(
       async () => (await config()).status.browser.cef_state === "ready",
     );
     const before = await config();
     const options = before.nodes.find((node) => node.id === "browser").options;
-    for (const payload of [{}, { ignore_cache: true }]) {
+    for (const payload of [
+      {},
+      { ignore_cache: true },
+      { future_field: 123 },
+      { ignore_cache: false, future_field: true },
+    ]) {
       const oldLoads = loads;
       assert.equal((await action("reload", payload)).action, "result");
       await until(
@@ -213,7 +224,8 @@ try {
     );
     const loadsBeforeClear = loads;
     assert.equal(
-      (await action("clear_browser_cache", {}, "$app")).action,
+      (await action("clear_browser_cache", { future_field: true }, "$app"))
+        .action,
       "result",
     );
     await until(

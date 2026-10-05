@@ -4,6 +4,8 @@
 #include "nodes/action.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
+#include "types/cef_status.hpp"
+#include "types/node_action_contracts.hpp"
 #include "utils/failure_shutdown.hpp"
 
 #include <boost/asio/io_context.hpp>
@@ -747,6 +749,28 @@ TEST_F(action_manager_test_s, DelayedConfigOperationsCannotTargetAReplacement)
     current.target = access::config(*manager).at("n").node->handle();
     EXPECT_EQ(manager->handle_control_batch(nullptr, {}, {std::move(current)}).error, error_e::no_error);
     EXPECT_EQ(value(), 13);
+}
+
+TEST(node_actions, typed_contract_failures_are_decoding_errors)
+{
+    action_s action("browser",
+                    "reload",
+                    {
+                        {"ignore_cache", "yes"}
+    },
+                    [](auto) {});
+    EXPECT_FALSE(action.get_typed_payload<browser_reload_payload_s>());
+    action.payload = {
+        {"future_field", true}
+    };
+    const auto payload = action.get_typed_payload<browser_reload_payload_s>();
+    ASSERT_TRUE(payload);
+    EXPECT_FALSE(payload->ignore_cache);
+    action.payload = "unknown-state";
+    EXPECT_FALSE(action.get_typed_payload<cef_state_e>());
+    action.payload = "ready";
+    EXPECT_EQ(action.get_typed_payload<cef_state_e>(), cef_state_e::ready);
+    action.complete();
 }
 
 TEST(NodeActionCompletion, PreservesLongMessagesWithoutSerializingResults)

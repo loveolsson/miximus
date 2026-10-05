@@ -294,6 +294,30 @@ export interface rect_s {
   readonly size: vec2_t;
 }
 
+export interface browser_reload_payload_s {
+  readonly ignore_cache?: boolean;
+  readonly [key: string]: unknown;
+}
+
+export interface clear_browser_cache_payload_s {
+  readonly [key: string]: unknown;
+}
+
+export interface node_action_contracts_s {
+  readonly application_settings: {
+    readonly clear_browser_cache: {
+      readonly payload: clear_browser_cache_payload_s;
+      readonly result: null;
+    };
+  };
+  readonly cef_browser: {
+    readonly reload: {
+      readonly payload: browser_reload_payload_s;
+      readonly result: null;
+    };
+  };
+}
+
 export interface connected_status_s {
   readonly connected: boolean;
 }

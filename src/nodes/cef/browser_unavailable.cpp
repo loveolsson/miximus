@@ -6,6 +6,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
+#include "types/node_action_contracts.hpp"
 #include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
@@ -23,13 +24,17 @@ class unavailable_browser_s final : public node_i
 
     static void handle_reload(action_s& action)
     {
+        if (!action.get_typed_payload<decltype(node_actions::reload)::payload_type>()) {
+            action.fail(error_e::invalid_payload, "Invalid reload payload");
+            return;
+        }
         action.fail(error_e::unavailable, "CEF support is not enabled in this build");
     }
 
   public:
     action_dispatch_e handle_action(action_context_s& /* context */, action_s& action) const final
     {
-        if (action.name == "reload") {
+        if (action.name == node_actions::reload.name) {
             handle_reload(action);
             return action_dispatch_e::handled;
         }

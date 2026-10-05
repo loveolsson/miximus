@@ -1,6 +1,7 @@
 #include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "nodes/action.hpp"
+#include "types/node_action_contracts.hpp"
 #if MIXIMUS_ENABLE_CEF
 #include "nodes/cef/subsystem.hpp"
 #endif
@@ -116,8 +117,8 @@ class node_impl final : public node_i
 
     static void handle_clear_browser_cache(action_context_s& context, action_s& action)
     {
-        if (!action.payload.is_object() || !action.payload.empty()) {
-            action.fail(error_e::invalid_payload, "Clear browser cache expects an empty object");
+        if (!action.get_typed_payload<decltype(node_actions::clear_browser_cache)::payload_type>()) {
+            action.fail(error_e::invalid_payload, "Invalid clear browser cache payload");
             return;
         }
         context.defer(clear_browser_cache);
@@ -130,7 +131,7 @@ class node_impl final : public node_i
 
     action_dispatch_e handle_action(action_context_s& context, action_s& action) const final
     {
-        if (action.name == "clear_browser_cache") {
+        if (action.name == node_actions::clear_browser_cache.name) {
             handle_clear_browser_cache(context, action);
             return action_dispatch_e::handled;
         }

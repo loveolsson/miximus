@@ -20,7 +20,9 @@ is unchanged. Adding an action requires a node handler and a caller, without add
 
 All four request fields (`token`, `id`, `name`, `payload`) are required. Token, ID and name must be nonempty strings;
 payload may be any JSON value, including `{}` for an action without arguments. Missing/wrongly typed envelope fields
-return `malformed_payload`. The target node validates supported names and the action-specific payload schema.
+return `malformed_payload`. The target node validates supported names and deserializes the action-specific payload contract.
+Known object contracts ignore unknown fields for additive cross-version compatibility; known fields still require
+their declared types. The generic envelope continues to preserve arbitrary JSON for other actions.
 
 There are no action-specific byte, nesting, value-count or string-length limits, and no extra serialization pass to
 validate parsed JSON. The WebSocket transport caps all received messages at 32,000,000 bytes, including fragmented
@@ -90,7 +92,7 @@ never receive the settings-editing capability. A delayed settings update must su
 captured target handle, preventing updates to a replacement node with the same ID.
 
 Dedicated handlers may use `action.get_typed_payload<T>()`. It uses nlohmann deserialization and returns an empty
-optional for JSON decoding errors. The handler reports `invalid_payload`; dispatch hooks do not decode payloads.
+optional for JSON decoding errors, including invalid described enum values. The handler reports `invalid_payload`; dispatch hooks do not decode payloads.
 There are no generic action payload-size or complexity limits.
 
 ## Native control batches and future transactions
@@ -134,6 +136,18 @@ implicitly target a replacement. A disconnected client does not cancel accepted 
 
 ## Adding an action
 
+Define the payload in `types/node_action_contracts.hpp` with `BOOST_DESCRIBE_STRUCT`, then add a
+`node_actions::contract_s<Payload, Result>` entry with the node type, action name and payload type name to
+`node_actions::contracts`. Contracts are SDK-independent and available in CEF-disabled builds too. Use the
+contract's name in dispatch and its payload type with `get_typed_payload` in the dedicated handler. Current actions
+return `std::nullptr_t`; new result types also need support in the TypeScript generator.
+
+Described payloads require JSON objects, including empty contracts, and ignore unknown members. Required members
+remain required. Mark a member with `json_member_defaulted<&Payload::member> = true` only when omission should use
+its `Payload{}` initializer. This produces an optional, non-nullable TypeScript property. Explicit null still fails
+unless the member is nullable. `std::optional<T>` retains its existing missing/null semantics. Additive fields need
+backward-compatible defaults; changing a field's meaning is not made compatible merely by ignoring unknown keys.
+
 Include `nodes/action.hpp`, route the name in `handle_action`, and implement a dedicated handler. Return `frame` for
 frame-bound work and route it to a dedicated handler in `handle_frame_action`. Forward or move the entire action;
 there is no separate completion or action plan to construct. Keep frame handlers nonblocking and latch work for later
@@ -142,14 +156,18 @@ lifecycle stages when GPU recording is required.
 The reusable `NodeActionInterface` supplies a row of non-port buttons:
 
 ```ts
-reload: () => new NodeActionInterface("Reload", [
+reload: () => new NodeActionInterface("Reload", "cef_browser", [
   { label: "Reload ↻", action: "reload" },
   { label: "Force ↻", action: "reload", payload: { ignore_cache: true } },
 ]),
 ```
 
-Each button can supply an optional JSON payload. Custom controls can call
-`ws.request<node_action_request_s, node_action_result_s>(message, abortSignal)` directly. The helper adds the token,
+The native generator exports payload interfaces and `node_action_contracts_s`, scoped by node type and action name.
+`NodeActionInterface` uses this catalog to check button names and payload types. Payloads can be omitted only when the
+contract accepts an empty object. Unknown object fields remain allowed; known field types are checked.
+Custom controls use `requestNodeAction(ws, "cef_browser", nodeId, { action: "reload", payload: { ignore_cache: true } }, abortSignal)`
+from `node_actions.ts`. It types the request and result from the same catalog; the server still resolves the actual
+node type by ID. The underlying WebSocket helper adds the token,
 limits outstanding waits, and cleans up on replies, disconnect, a ten-second timeout, or abort. Aborting cancels
 only the local reply wait. The control aborts that wait on unmount and disables its buttons while waiting. Labels remain unchanged;
 errors are logged to the console without inline feedback.
@@ -157,7 +175,8 @@ The control itself does not write an option; action-derived changes arrive throu
 
 ## Browser reload
 
-The browser accepts `reload` with `{}` or `{ "ignore_cache": boolean }`; other fields/types are rejected.
+The browser accepts `reload` with the `browser_reload_payload_s` object contract. Omitted `ignore_cache` defaults
+to false; a present value must be boolean. Unknown fields are ignored.
 Configuration admission only recognizes the name and selects frame delivery. The dedicated frame-side reload handler
 validates the payload and requires an enabled, ready session matching the frame's URL, size and frame rate. The owning
 `session_request_s` posts reload to CEF's UI thread; the frame-consumer session API retains no lifecycle controls.
@@ -167,14 +186,15 @@ Only one reload task may be pending for a session. CEF `Reload()` uses normal ca
 Reload retains the browser and frame pool, cancels old page commands, and uses the existing navigation/capture-epoch
 handling. Completed frames remain available during loading. Normal browser status reports loading, new captured
 frames and failures. The action does not increment automatic restart counts, change options, or recreate a failed
-session. CEF-disabled builds explicitly reject reload as unavailable.
+session. CEF-disabled builds deserialize the same contract before rejecting valid reload requests as unavailable.
 
 ## Global settings actions
 
 Refresh Fonts is available in Global Settings and uses the existing application-wide font registry command.
 It is no longer repeated on individual text and teleprompter nodes.
 
-Clear Browser Cache sends `clear_browser_cache` with `{}` to the application settings node (`$app`). It clears
+Clear Browser Cache sends `clear_browser_cache` with the `clear_browser_cache_payload_s` object contract (normally `{}`,
+with unknown fields ignored) to the application settings node (`$app`). It clears
 CEF's shared HTTP cache for all browser nodes, without reloading pages or deleting cookies, local storage, or
 service-worker storage. It also works with no active browser nodes. CEF-disabled/unavailable runtimes return
 `unavailable`; concurrent clearing returns `busy`. The action acknowledges scheduling, and the settings node's
@@ -183,6 +203,10 @@ run on CEF's UI thread. Scheduling starts on the configuration thread after the 
 a frame boundary or access render-owned node state.
 
 ## Validation
+
+`core_test` also checks action payload defaults, unknown fields, object/type rejection and typed enum failures.
+Generator tests cover exported action contracts; `npm run build` checks the positive and negative TypeScript cases in
+`web/tests/node_actions.type-test.ts`.
 
 `core_test` covers configuration admission, atomic explicit settings, ordered best-effort action patches, connection-
 derived settings, authoritative broadcasts and persistence, owned payloads, 500-node FIFO frame delivery, per-instance

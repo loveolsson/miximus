@@ -74,7 +74,7 @@ TEST_F(node_status_registry_test_s, keyer_modes_serialize_as_existing_wire_names
         EXPECT_TRUE(registry.get("decklink").at("keyer_fallback_reason").is_null());
         EXPECT_EQ(nlohmann::json(name).get<decklink_keyer_mode_e>(), mode);
     }
-    EXPECT_THROW(nlohmann::json("invalid").get<decklink_keyer_mode_e>(), std::invalid_argument);
+    EXPECT_THROW(nlohmann::json("invalid").get<decklink_keyer_mode_e>(), nlohmann::json::type_error);
 }
 
 TEST_F(node_status_registry_test_s, cef_states_serialize_as_existing_wire_names)
@@ -112,8 +112,8 @@ TEST_F(node_status_registry_test_s, cef_states_serialize_as_existing_wire_names)
         EXPECT_EQ(nlohmann::json(name).get<cef_input_state_e>(), state);
     }
 
-    EXPECT_THROW(nlohmann::json("invalid").get<cef_state_e>(), std::invalid_argument);
-    EXPECT_THROW(nlohmann::json("invalid").get<cef_input_state_e>(), std::invalid_argument);
+    EXPECT_THROW(nlohmann::json("invalid").get<cef_state_e>(), nlohmann::json::type_error);
+    EXPECT_THROW(nlohmann::json("invalid").get<cef_input_state_e>(), nlohmann::json::type_error);
 }
 
 TEST_F(node_status_registry_test_s, described_status_is_serialized_and_delta_filtered)

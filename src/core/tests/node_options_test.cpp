@@ -1,3 +1,4 @@
+#include "nodes/action.hpp"
 #include "nodes/cef/media_input_types.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -9,7 +10,9 @@
 
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <optional>
 #include <string_view>
+#include <vector>
 
 namespace {
 using namespace miximus;
@@ -107,6 +110,47 @@ TEST(NodeOptions, CefBrowserInputMipmapsDefaultOffAndRequireBoolean)
     EXPECT_EQ(node->normalize_option("input_mipmaps", &enabled), nodes::option_result_e::ok);
     auto invalid = nlohmann::json("yes");
     EXPECT_EQ(node->normalize_option("input_mipmaps", &invalid), nodes::option_result_e::invalid);
+}
+
+TEST(NodeOptions, ReloadContractIsDecodedBeforeCheckingSessionAvailability)
+{
+    nodes::node_definition_map_t definitions;
+    nodes::register_all_nodes(&definitions);
+    const auto          node = definitions.at("cef_browser").constructor();
+    nodes::node_state_s state;
+    state.options            = node->get_default_options();
+    state.options["enabled"] = false;
+    const nodes::node_map_t          graph;
+    nodes::action_context_s::start_t start;
+    nodes::action_context_s          context(
+        state,
+        graph,
+        [](const nlohmann::json&) {
+            return nodes::set_options_result_s{.error = error_e::internal_error, .has_corrected_values = false};
+        },
+        start);
+    const auto dispatch = [&](const nlohmann::json& payload) {
+        std::optional<error_e> result;
+        nodes::action_s        action(
+            "browser", "reload", payload, [&](nodes::action_result_s reply) { result = reply.error; });
+        auto delivery = node->handle_action(context, action);
+        if (delivery == nodes::action_dispatch_e::frame) {
+            delivery = node->handle_frame_action(nullptr, state, action);
+        }
+        EXPECT_EQ(delivery, nodes::action_dispatch_e::handled);
+        EXPECT_FALSE(start);
+        return result;
+    };
+    for (const auto& payload : std::vector<nlohmann::json>{
+             nlohmann::json::object(), {{"future_field", 42}},
+              {{"ignore_cache", true}, {"future_field", 42}}
+    }) {
+        EXPECT_EQ(dispatch(payload), error_e::unavailable);
+    }
+    for (const auto& payload : std::vector<nlohmann::json>{
+             nullptr, nlohmann::json::array(), {{"ignore_cache", "yes"}}, {{"ignore_cache", nullptr}}}) {
+        EXPECT_EQ(dispatch(payload), error_e::invalid_payload);
+    }
 }
 
 TEST(NodeOptions, CefBrowserExposesEightStableTextureInputsInEveryBuild)

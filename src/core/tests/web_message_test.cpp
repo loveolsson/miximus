@@ -1,3 +1,4 @@
+#include "types/node_action_contracts.hpp"
 #include "types/web_message.hpp"
 #include "web_server/payload_parse.hpp"
 #include "web_server/server.hpp"
@@ -311,6 +312,46 @@ TEST(web_message, websocket_depth_guard_preserves_syntax_rejection_and_sibling_v
     EXPECT_TRUE(web_server::parse_websocket_payload(R"({"payload":[})").is_discarded());
     const auto wire = R"({"action":"command","payload":[{},[],{"a":[1,2]},null],"token":"t"})";
     EXPECT_EQ(web_server::parse_websocket_payload(wire), nlohmann::json::parse(wire));
+}
+
+TEST(web_message, action_payload_defaults_and_future_fields)
+{
+    const auto empty = nlohmann::json::object();
+    EXPECT_FALSE(empty.get<browser_reload_payload_s>().ignore_cache);
+    const nlohmann::json future = {
+        {"future_field", {1, 2, 3}}
+    };
+    EXPECT_FALSE(future.get<browser_reload_payload_s>().ignore_cache);
+    EXPECT_NO_THROW((void)future.get<clear_browser_cache_payload_s>());
+    for (bool enabled : {false, true}) {
+        const nlohmann::json payload = {
+            {"ignore_cache", enabled},
+            {"future_field", true   }
+        };
+        EXPECT_EQ(payload.get<browser_reload_payload_s>().ignore_cache, enabled);
+        const nlohmann::json encoded = browser_reload_payload_s{.ignore_cache = enabled};
+        EXPECT_EQ(encoded.at("ignore_cache"), enabled);
+    }
+    browser_reload_payload_s reused{.ignore_cache = true};
+    empty.get_to(reused);
+    EXPECT_FALSE(reused.ignore_cache);
+}
+
+TEST(web_message, action_payloads_require_objects_and_typed_known_fields)
+{
+    for (const auto& payload : std::vector<nlohmann::json>{nullptr, true, 42, "text", nlohmann::json::array()}) {
+        EXPECT_THROW((void)payload.get<browser_reload_payload_s>(), nlohmann::json::exception);
+        EXPECT_THROW((void)payload.get<clear_browser_cache_payload_s>(), nlohmann::json::exception);
+    }
+    for (const auto& value :
+         std::vector<nlohmann::json>{nullptr, 0, 1, "yes", nlohmann::json::array(), nlohmann::json::object()}) {
+        const nlohmann::json payload = {
+            {"ignore_cache", value}
+        };
+        EXPECT_THROW((void)payload.get<browser_reload_payload_s>(), nlohmann::json::exception);
+    }
+    // Defaulted action members must not make ordinary required request members optional.
+    EXPECT_THROW((void)nlohmann::json::object().get<web_message::remove_node_request_s>(), nlohmann::json::exception);
 }
 
 } // namespace

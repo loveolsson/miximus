@@ -7,6 +7,7 @@
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "subsystem.hpp"
+#include "types/node_action_contracts.hpp"
 #include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
 
@@ -175,10 +176,9 @@ class node_impl final : public node_i
 
     void handle_reload(core::app_state_s* app, const node_state_s& state, action_s action)
     {
-        const auto& payload = action.payload;
-        if (!payload.is_object() || payload.size() > 1 ||
-            (payload.size() == 1 && (!payload.contains("ignore_cache") || !payload.at("ignore_cache").is_boolean()))) {
-            action.fail(error_e::invalid_payload, "Reload expects an object with optional boolean ignore_cache");
+        const auto payload = action.get_typed_payload<decltype(node_actions::reload)::payload_type>();
+        if (!payload) {
+            action.fail(error_e::invalid_payload, "Invalid reload payload");
             return;
         }
         // Runtime/session objects belong exclusively to the render thread. The
@@ -188,7 +188,7 @@ class node_impl final : public node_i
             action.fail(error_e::unavailable, "Browser has no active session to reload");
             return;
         }
-        if (!request_->reload(payload.value("ignore_cache", false))) {
+        if (!request_->reload(payload->ignore_cache)) {
             action.fail(error_e::busy, "Browser is not ready to reload");
             return;
         }
@@ -206,11 +206,11 @@ class node_impl final : public node_i
 
     action_dispatch_e handle_action(action_context_s& /* context */, action_s& action) const final
     {
-        return action.name == "reload" ? action_dispatch_e::frame : action_dispatch_e::unhandled;
+        return action.name == node_actions::reload.name ? action_dispatch_e::frame : action_dispatch_e::unhandled;
     }
     action_dispatch_e handle_frame_action(core::app_state_s* app, const node_state_s& state, action_s& action) final
     {
-        if (action.name == "reload") {
+        if (action.name == node_actions::reload.name) {
             handle_reload(app, state, std::move(action));
             return action_dispatch_e::handled;
         }

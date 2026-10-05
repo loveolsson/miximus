@@ -6,6 +6,7 @@
 #include "gpu/types.hpp"
 #include "json_contract.hpp"
 #include "json_contract_descriptions.hpp"
+#include "node_action_contracts.hpp"
 #include "node_status.hpp"
 #include "topic.hpp"
 #include "utils/process_id.hpp"
@@ -20,6 +21,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -38,7 +41,7 @@ namespace miximus::typescript {
 namespace {
 
 template <typename T>
-void emit_interface(std::ostream& output, std::string_view name)
+void emit_interface(std::ostream& output, std::string_view name, bool open_object = false)
 {
     static_assert(boost::describe::has_describe_members<T>::value);
 
@@ -54,9 +57,14 @@ void emit_interface(std::ostream& output, std::string_view name)
         boost::describe::describe_members<T, boost::describe::mod_public | boost::describe::mod_inherited>;
     boost::mp11::mp_for_each<members_t>([&](auto member) {
         using member_t = std::remove_cvref_t<decltype(std::declval<T>().*member.pointer)>;
-        output << "  readonly " << member.name << (miximus::detail::optional_traits<member_t>::value ? "?" : "") << ": "
-               << typescript_member_type<member_t, member.pointer>() << ";\n";
+        output << "  readonly " << member.name
+               << ((miximus::detail::optional_traits<member_t>::value || json_member_defaulted<member.pointer>) ? "?"
+                                                                                                                : "")
+               << ": " << typescript_member_type<member_t, member.pointer>() << ";\n";
     });
+    if (open_object) {
+        output << "  readonly [key: string]: unknown;\n";
+    }
     output << "}\n\n";
 }
 
@@ -85,6 +93,35 @@ void emit_status_contracts(std::ostream& output, status::contract_s<T>... contra
               "export type node_status_s = Partial<\n";
     size_t remaining = sizeof...(T);
     ((output << "  " << contracts.name << (--remaining == 0 ? "\n>;\n" : " &\n")), ...);
+}
+
+template <typename... Contracts>
+void emit_action_contracts(std::ostream& output, Contracts... contracts)
+{
+    std::set<std::string_view>                                          emitted;
+    std::map<std::string_view, std::map<std::string_view, std::string>> nodes;
+    const auto                                                          emit = [&](auto contract) {
+        using contract_t = decltype(contract);
+        if (emitted.insert(contract.payload_name).second) {
+            emit_interface<typename contract_t::payload_type>(output, contract.payload_name, true);
+        }
+        const auto entry = "{\n      readonly payload: " + std::string(contract.payload_name) +
+                           ";\n      readonly result: " + typescript_type<typename contract_t::result_type>() +
+                           ";\n    }";
+        if (!nodes[contract.node_type].emplace(contract.name, entry).second) {
+            throw std::logic_error("Duplicate node action contract");
+        }
+    };
+    (emit(contracts), ...);
+    output << "export interface node_action_contracts_s {\n";
+    for (const auto& [node, actions] : nodes) {
+        output << "  readonly " << node << ": {\n";
+        for (const auto& [name, entry] : actions) {
+            output << "    readonly " << name << ": " << entry << ";\n";
+        }
+        output << "  };\n";
+    }
+    output << "}\n\n";
 }
 
 } // namespace
@@ -142,6 +179,8 @@ std::string generate_typescript()
     EMIT_NAMESPACED_TYPE(web_message, remove_connection_command_s);
     EMIT_NAMESPACED_TYPE(web_message, node_status_command_s);
     EMIT_NAMESPACED_TYPE(gpu, rect_s);
+
+    std::apply([&](auto... contract) { emit_action_contracts(output, contract...); }, node_actions::contracts);
 
     std::apply([&](auto... contract) { emit_status_contracts(output, contract...); }, status::contracts);
 

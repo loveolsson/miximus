@@ -16,12 +16,8 @@
 import { inject, onBeforeUnmount, ref } from "vue";
 import type { AbstractNode } from "@baklavajs/core";
 import type { NodeActionButton, NodeActionInterface } from "../interfaces";
-import {
-  action_e,
-  topic_e,
-  type node_action_request_s,
-  type node_action_result_s,
-} from "@/messages";
+import { action_e } from "@/messages";
+import { requestNodeAction } from "@/node_actions";
 import { websocket_key } from "@/websocket";
 
 const props = defineProps<{ modelValue: null; node: AbstractNode; intf: NodeActionInterface }>();
@@ -34,14 +30,11 @@ async function runAction(action: NodeActionButton): Promise<void> {
   if (!ws || pending.value) return;
   pending.value = true;
   try {
-    const response = await ws.request<node_action_request_s, node_action_result_s>(
-      {
-        action: action_e.command,
-        topic: topic_e.node_action,
-        id: props.node.id,
-        name: action.action,
-        payload: action.payload === undefined ? {} : action.payload,
-      },
+    const response = await requestNodeAction(
+      ws,
+      props.intf.nodeType,
+      props.node.id,
+      action,
       lifetime.signal,
     );
     if (lifetime.signal.aborted) return;

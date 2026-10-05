@@ -36,7 +36,9 @@ struct vector_traits<std::vector<T, Allocator>>
 template <typename T>
 std::string typescript_type()
 {
-    if constexpr (std::same_as<T, bool>) {
+    if constexpr (std::same_as<T, std::nullptr_t>) {
+        return "null";
+    } else if constexpr (std::same_as<T, bool>) {
         return "boolean";
     } else if constexpr (std::integral<T> || std::floating_point<T> || std::same_as<T, utils::flicks>) {
         return "number";
