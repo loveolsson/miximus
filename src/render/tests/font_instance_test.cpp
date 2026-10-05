@@ -32,7 +32,9 @@ class FontLayout : public testing::Test
         }
         render::font_registry_s registry;
         const auto              info = registry.find_font_variant(render::get_default_font_name(), "Regular");
-        ASSERT_TRUE(info);
+        if (!info.has_value()) {
+            FAIL() << "Bundled font variant is missing";
+        }
         ASSERT_FALSE(info->resource_path.empty());
         font_ = std::make_shared<render::font_loader_s>()->load_font(&*info);
         ASSERT_NE(font_, nullptr);
@@ -201,7 +203,9 @@ TEST(FontResources, AllBundledVariantsSurviveRegistryRefreshAndLoaderLifetime)
     for (const auto family : {"Liberation Sans", "Liberation Mono"}) {
         for (const auto style : {"Regular", "Bold", "Italic", "Bold Italic"}) {
             const auto info = registry.find_font_variant(family, style);
-            ASSERT_TRUE(info);
+            if (!info.has_value()) {
+                FAIL() << "Bundled font variant is missing";
+            }
             ASSERT_FALSE(info->resource_path.empty());
             EXPECT_TRUE(info->path.empty());
             registry.refresh();

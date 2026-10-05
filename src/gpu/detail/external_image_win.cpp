@@ -8,6 +8,7 @@
 #include <d3d11_1.h>
 #include <dxgi1_2.h>
 #include <format>
+#include <mutex>
 #include <stdexcept>
 #include <wrl/client.h>
 
@@ -27,7 +28,9 @@ void check_d3d(HRESULT result, const char* operation)
 
 struct external_image_platform_s
 {
-    ComPtr<ID3D11Device1> device;
+    ComPtr<ID3D11Device1>       device;
+    ComPtr<ID3D11DeviceContext> context;
+    std::mutex                  context_mutex;
 
     explicit external_image_platform_s(const device_state_s& owner)
     {
@@ -75,6 +78,23 @@ struct external_image_platform_s
                                     nullptr),
                   "create external-image D3D11 device");
         check_d3d(created.As(&device), "query D3D11.1 device");
+        created->GetImmediateContext(&context);
+    }
+
+    D3D11_TEXTURE2D_DESC describe(HANDLE handle)
+    {
+        const std::scoped_lock  lock(context_mutex);
+        ComPtr<ID3D11Texture2D> texture;
+        check_d3d(device->OpenSharedResource1(handle, IID_PPV_ARGS(&texture)), "open NT D3D11 texture");
+        D3D11_TEXTURE2D_DESC description{};
+        texture->GetDesc(&description);
+        texture.Reset();
+        // This device only validates shared textures; it never draws or presents.
+        // D3D11 defers resource destruction, so release alone does not retire the
+        // object opened on every frame. Flush this otherwise idle context after
+        // release. This is cleanup, not proof of external producer completion.
+        context->Flush();
+        return description;
     }
 };
 
@@ -102,11 +122,7 @@ import_texture(const std::shared_ptr<device_state_s>& device, const external_ima
     }
 
     // Opening on the LUID-matched device rejects handles from a different adapter.
-    ComPtr<ID3D11Texture2D> texture;
-    check_d3d(platform(device).device->OpenSharedResource1(descriptor.handle, IID_PPV_ARGS(&texture)),
-              "open NT D3D11 texture");
-    D3D11_TEXTURE2D_DESC description{};
-    texture->GetDesc(&description);
+    const auto description = platform(device).describe(descriptor.handle);
     const auto expected_format =
         descriptor.order == channel_order_e::rgba ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
     if ((descriptor.order != channel_order_e::rgba && descriptor.order != channel_order_e::bgra) ||

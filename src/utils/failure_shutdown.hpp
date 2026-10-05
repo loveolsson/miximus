@@ -25,7 +25,7 @@ bool failure_shutdown_requested() noexcept;
 // Publish a fully serialized, consistent snapshot; failure handling never locks the graph.
 void                                       publish_recovery_settings(std::filesystem::path path, std::string contents);
 std::shared_ptr<const recovery_settings_s> recovery_settings();
-void                                       freeze_recovery_settings() noexcept;
+void                                       freeze_recovery_settings();
 
 // Unique, exclusively created recovery files never replace existing settings or recovery files.
 std::filesystem::path write_recovery_settings(const recovery_settings_s& settings);

@@ -71,7 +71,7 @@ TEST(typescript_generator, every_publishable_status_contract_is_emitted)
         status::contracts);
 }
 
-TEST(typescript_generator, action_catalog_exports_payloads_and_scoped_names)
+TEST(typescript_generator, action_catalog_exports_payloads)
 {
     const auto output = generate_typescript();
     EXPECT_NE(output.find("readonly ignore_cache?: boolean;"), std::string::npos);
@@ -86,6 +86,11 @@ TEST(typescript_generator, action_catalog_exports_payloads_and_scoped_names)
                 ...);
         },
         node_actions::contracts);
+}
+
+TEST(typescript_generator, action_catalog_exports_scoped_names)
+{
+    const auto output = generate_typescript();
     EXPECT_NE(output.find("readonly cef_browser: {"), std::string::npos);
     EXPECT_NE(output.find("readonly application_settings: {"), std::string::npos);
     EXPECT_NE(

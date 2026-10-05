@@ -126,10 +126,13 @@ class node_impl : public node_i
 
         // Only an operator configuration change clears a failed endpoint. A
         // monitor refresh-rate change or resize notification must not retry it.
-        const bool enabled_changed = enabled_.observe(enabled);
+        const bool enabled_changed           = enabled_.observe(enabled);
+        const bool output_dimensions_changed = presenter_ && presenter_->output_dimensions_changed();
         if (presenter_ && !presenter_stopping_) {
             const auto metrics = presenter_->metrics();
-            if (!metrics.failure.empty() || metrics.stopped) {
+            // try_acquire() requests a stop when the drawable changes. That stop
+            // may finish before this frame; it is still an intentional rebuild.
+            if (!metrics.failure.empty() || (metrics.stopped && !output_dimensions_changed)) {
                 failure_ = metrics.failure.empty() ? "Screen presenter stopped" : metrics.failure;
                 presenter_->request_stop();
                 presenter_stopping_ = true;
@@ -140,7 +143,6 @@ class node_impl : public node_i
         }
         publish_error(app->status_registry());
         const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
-        const bool output_dimensions_changed  = presenter_ && presenter_->output_dimensions_changed();
         if (presenter_ && (presenter_settings_changed || window_settings_changed || output_dimensions_changed) &&
             !presenter_stopping_) {
             presenter_->request_stop();

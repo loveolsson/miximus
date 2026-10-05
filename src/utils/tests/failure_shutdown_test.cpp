@@ -9,6 +9,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -22,11 +23,33 @@ class recovery_files_test : public testing::Test
     std::filesystem::path directory;
     void                  SetUp() override
     {
+#ifdef _WIN32
+        // Windows death tests restart the executable; inspect the parent's recovery files.
+        if (testing::internal::InDeathTestChild()) {
+            wchar_t*   inherited = nullptr;
+            size_t     length    = 0;
+            const auto result    = _wdupenv_s(&inherited, &length, L"MIXIMUS_TEST_RECOVERY_DIRECTORY");
+            const std::unique_ptr<wchar_t, decltype(&std::free)> owned(inherited, &std::free);
+            ASSERT_EQ(result, 0);
+            ASSERT_NE(owned, nullptr);
+            directory = owned.get();
+            return;
+        }
+#endif
         const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
         directory = std::filesystem::temp_directory_path() / std::format("miximus-recovery-{}-{}", process_id(), stamp);
         ASSERT_TRUE(std::filesystem::create_directory(directory));
+#ifdef _WIN32
+        ASSERT_EQ(_wputenv_s(L"MIXIMUS_TEST_RECOVERY_DIRECTORY", directory.c_str()), 0);
+#endif
     }
-    void               TearDown() override { std::filesystem::remove_all(directory); }
+    void TearDown() override
+    {
+#ifdef _WIN32
+        _wputenv_s(L"MIXIMUS_TEST_RECOVERY_DIRECTORY", L"");
+#endif
+        std::filesystem::remove_all(directory);
+    }
     static std::string read(const std::filesystem::path& path)
     {
         std::ifstream file(path);

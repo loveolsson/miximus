@@ -161,51 +161,57 @@ app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s com
 
 app_state_s::~app_state_s()
 {
-    if (std::uncaught_exceptions() != 0) {
-        utils::start_shutdown_watchdog();
-    }
-    if (!window_system_) {
-        return;
-    }
+    try {
+        if (std::uncaught_exceptions() != 0) {
+            utils::start_shutdown_watchdog();
+        }
+        if (!window_system_) {
+            return;
+        }
 
-    cpu_task_worker_->request_stop();
-    decklink_registry_->uninstall();
-    cfg_work_ = nullptr;
+        cpu_task_worker_->request_stop();
+        decklink_registry_->uninstall();
+        cfg_work_ = nullptr;
 
-    // Capture-control work may still be retiring SDK buffers and upload
-    // streams after a node was removed. Drain it before destroying the shared
-    // transfer services it uses.
-    utils::begin_shutdown_step("DeckLink subsystem");
-    decklink_registry_.reset();
-    utils::report_shutdown_step_completed();
-    utils::begin_shutdown_step("NDI subsystem");
-    ndi_registry_.reset();
-    utils::report_shutdown_step_completed();
+        // Capture-control work may still be retiring SDK buffers and upload
+        // streams after a node was removed. Drain it before destroying the shared
+        // transfer services it uses.
+        utils::begin_shutdown_step("DeckLink subsystem");
+        decklink_registry_.reset();
+        utils::report_shutdown_step_completed();
+        utils::begin_shutdown_step("NDI subsystem");
+        ndi_registry_.reset();
+        utils::report_shutdown_step_completed();
 
 #if MIXIMUS_ENABLE_CEF
-    utils::begin_shutdown_step("CEF subsystem");
-    cef_subsystem_.reset();
-    utils::report_shutdown_step_completed();
+        utils::begin_shutdown_step("CEF subsystem");
+        cef_subsystem_.reset();
+        utils::report_shutdown_step_completed();
 #endif
-    utils::begin_shutdown_step("CPU task worker");
-    cpu_task_worker_.reset();
-    utils::report_shutdown_step_completed();
-    utils::begin_shutdown_step("GPU subsystem");
-    abort_gpu();
-    texture_readback_service_.reset();
-    texture_upload_service_.reset();
-    fallback_texture_.reset();
-    last_submission_ = {};
-    gpu_.reset();
-    window_system_.reset();
-    utils::report_shutdown_step_completed();
-    utils::begin_shutdown_step("application worker services");
-    try {
-        cfg_executor_.stop();
+        utils::begin_shutdown_step("CPU task worker");
+        cpu_task_worker_.reset();
+        utils::report_shutdown_step_completed();
+        utils::begin_shutdown_step("GPU subsystem");
+        abort_gpu();
+        texture_readback_service_.reset();
+        texture_upload_service_.reset();
+        fallback_texture_.reset();
+        last_submission_ = {};
+        gpu_.reset();
+        window_system_.reset();
+        utils::report_shutdown_step_completed();
+        utils::begin_shutdown_step("application worker services");
+        try {
+            cfg_executor_.stop();
+        } catch (...) {
+            utils::request_failure_shutdown("Failed to stop configuration worker");
+        }
+        cfg_thread_.join();
+    } catch (const std::exception& error) {
+        utils::fail_without_unwinding("Application teardown failed", error.what());
     } catch (...) {
-        utils::request_failure_shutdown("Failed to stop configuration worker");
+        utils::fail_without_unwinding("Application teardown failed");
     }
-    cfg_thread_.join();
 }
 
 } // namespace miximus::core

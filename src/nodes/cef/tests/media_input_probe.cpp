@@ -206,6 +206,28 @@ class client_s final
         fail("Software browser output; no CPU pixels consumed");
     }
 
+    void
+    accept_comparison(uint64_t expectation, bool has_expected, bool green, uint32_t mismatches, float maximum_error)
+    {
+        const std::scoped_lock lock(mutex_);
+        if (expectation == expectation_) {
+            last_mismatches_    = mismatches;
+            last_maximum_error_ = maximum_error;
+        }
+        if (mismatches != 0) {
+            return;
+        }
+        if (has_expected && expectation == expectation_) {
+            expectation_matched_ = true;
+        }
+        if (!green) {
+            red_ = true;
+        } else if (red_) {
+            green_ = true;
+        }
+        changed_.notify_all();
+    }
+
     void OnAcceleratedPaint(CefRefPtr<CefBrowser> /* browser */,
                             PaintElementType type,
                             const RectList& /* rects */,
@@ -230,7 +252,7 @@ class client_s final
 
             record.reset();
             std::optional<std::array<float, 4>> expected;
-            uint64_t                            expectation;
+            uint64_t                            expectation{};
             std::vector<expected_region_s>      regions;
             {
                 std::scoped_lock lock(mutex_);
@@ -270,26 +292,10 @@ class client_s final
                 uint32_t   mismatches{};
                 const auto bytes = counters_.readable_bytes();
                 std::memcpy(&mismatches, bytes.data(), sizeof(mismatches));
-                {
-                    std::scoped_lock lock(mutex_);
-                    if (expectation == expectation_) {
-                        last_mismatches_ = mismatches;
-                        std::memcpy(&last_maximum_error_, bytes.data() + sizeof(uint32_t), sizeof(float));
-                    }
-                }
-                if (mismatches == 0) {
-                    std::scoped_lock lock(mutex_);
-                    if ((expected || !regions.empty()) && expectation == expectation_) {
-                        expectation_matched_ = true;
-                    }
-                    if (!green) {
-                        red_ = true;
-                    } else if (red_) {
-                        green_ = true;
-                    }
-
-                    changed_.notify_all();
-                }
+                float maximum_error{};
+                std::memcpy(&maximum_error, bytes.data() + sizeof(uint32_t), sizeof(float));
+                accept_comparison(
+                    expectation, expected.has_value() || !regions.empty(), green, mismatches, maximum_error);
             }
         } catch (const std::exception& error) {
             fail(error.what());
@@ -467,7 +473,7 @@ bool send(cef_wrapper::send_media_frame_t             api,
 // colors and toggle on the same track to exercise pooled destination reuse.
 void run_mipmaps(gpu::device_s&                        gpu,
                  gpu::detail::external_image_export_s& exported,
-                 gpu::texture_s&                       source,
+                 gpu::texture_s&                       pattern,
                  gpu::recording_context_s&             context,
                  cef_wrapper::send_media_frame_t       api,
                  const CefRefPtr<client_s>&            client)
@@ -486,11 +492,11 @@ void run_mipmaps(gpu::device_s&                        gpu,
             if (!record) {
                 throw std::runtime_error("Mipmap probe recording unavailable");
             }
-            record->clear(source, {0, 0, 0, 1});
+            record->clear(pattern, {0, 0, 0, 1});
             record->clear(solid, green ? std::array<float, 4>{0, 1, 0, 1} : std::array<float, 4>{1, 0, 0, 1});
             for (int x = 0; x < 2560; x += 4) {
                 record->draw(solid,
-                             source,
+                             pattern,
                              {
                                  .destination = {float(x), 0, 1, 1440},
                                    .compositing = gpu::compositing_e::replace
@@ -499,7 +505,7 @@ void run_mipmaps(gpu::device_s&                        gpu,
             gpu::draw_s conversion;
             conversion.compositing = gpu::compositing_e::replace;
             conversion.transfer    = gpu::color_operation_e::encode_srgb_premultiplied;
-            exported.copy(*record, source, conversion);
+            exported.copy(*record, pattern, conversion);
             if (record->submit().wait(5s) != gpu::wait_result_e::ready) {
                 throw std::runtime_error("Mipmap pattern GPU completion failed");
             }
@@ -513,12 +519,27 @@ void run_mipmaps(gpu::device_s&                        gpu,
     }
 }
 
+std::vector<expected_region_s> anisotropic_regions(bool enabled, bool invert)
+{
+    std::vector<expected_region_s> regions;
+    for (uint32_t x = 64; x < 576; x += 16) {
+        const float red = (((x / 4) & 1) != 0U) != invert ? 0.0F : 1.0F;
+        regions.push_back({
+            .begin = x + 1, .end = x + 3, .color = {red, enabled ? 0.050876F : 0.0F, 0, 1}
+        });
+        regions.push_back({
+            .begin = x + 5, .end = x + 7, .color = {1.0F - red, enabled ? 0.050876F : 0.0F, 0, 1}
+        });
+    }
+    return regions;
+}
+
 // An 8:1 vertical reduction with no horizontal reduction. Red bars must stay
 // sharp in X (isotropic mips fail), while two green rows in eight must contribute
 // in Y (bilinear fails). Compare stripe interiors, avoiding filter boundaries.
 void run_anisotropy(gpu::device_s&                        gpu,
                     gpu::detail::external_image_export_s& exported,
-                    gpu::texture_s&                       source,
+                    gpu::texture_s&                       pattern,
                     gpu::recording_context_s&             context,
                     cef_wrapper::send_media_frame_t       api,
                     const CefRefPtr<client_s>&            client)
@@ -526,29 +547,19 @@ void run_anisotropy(gpu::device_s&                        gpu,
     auto    solid     = gpu.create_texture({.width = 1, .height = 1});
     int64_t timestamp = 0;
     for (int stage = 0; stage < 3; ++stage) {
-        const bool                     enabled = stage != 0;
-        const bool                     invert  = stage == 2;
-        std::vector<expected_region_s> regions;
-        for (uint32_t x = 64; x < 576; x += 16) {
-            const float red = (((x / 4) & 1) != 0U) != invert ? 0.0F : 1.0F;
-            regions.push_back({
-                x + 1, x + 3, {red, enabled ? 0.050876F : 0.0F, 0, 1}
-            });
-            regions.push_back({
-                x + 5, x + 7, {1.0F - red, enabled ? 0.050876F : 0.0F, 0, 1}
-            });
-        }
-        client->expect_regions(std::move(regions));
+        const bool enabled = stage != 0;
+        const bool invert  = stage == 2;
+        client->expect_regions(anisotropic_regions(enabled, invert));
         for (int frame = 0; frame < 12; ++frame) {
             auto record = context.try_record();
             if (!record) {
                 throw std::runtime_error("Anisotropic probe recording unavailable");
             }
-            record->clear(source, {0, 0, 0, 1});
+            record->clear(pattern, {0, 0, 0, 1});
             record->clear(solid, {1, 0, 0, 1});
             for (int x = invert ? 4 : 0; x < 640; x += 8) {
                 record->draw(solid,
-                             source,
+                             pattern,
                              {
                                  .destination = {float(x), 0, 4, 2880},
                                    .compositing = gpu::compositing_e::replace
@@ -558,7 +569,7 @@ void run_anisotropy(gpu::device_s&                        gpu,
             record->clear(solid, {0, 1, 0, 0});
             for (int y = 0; y < 2880; y += 8) {
                 record->draw(solid,
-                             source,
+                             pattern,
                              {
                                  .destination = {0, float(y), 640, 2},
                                    .compositing = gpu::compositing_e::source_over
@@ -567,7 +578,7 @@ void run_anisotropy(gpu::device_s&                        gpu,
             gpu::draw_s conversion;
             conversion.compositing = gpu::compositing_e::replace;
             conversion.transfer    = gpu::color_operation_e::encode_srgb_premultiplied;
-            exported.copy(*record, source, conversion);
+            exported.copy(*record, pattern, conversion);
             if (record->submit().wait(5s) != gpu::wait_result_e::ready) {
                 throw std::runtime_error("Anisotropic probe GPU completion failed");
             }
@@ -915,6 +926,20 @@ struct probe_options_s
     bool     reject_invalid_import{};
     bool     mipmaps{};
     bool     anisotropy{};
+
+    gpu::extent_s export_size() const
+    {
+        if (anisotropy) {
+            return {.width = 640, .height = 2880};
+        }
+        if (mipmaps) {
+            return {.width = 2560, .height = 1440};
+        }
+        if (square_size != 0U) {
+            return {.width = square_size, .height = square_size};
+        }
+        return {.width = 640, .height = 360};
+    }
 };
 
 probe_options_s parse_options(int argc, char** argv)
@@ -970,20 +995,16 @@ int main(int argc, char** argv)
         }
 
         std::cout.setf(std::ios::unitbuf);
-        const auto [inputs, async_depth, square_size, reject_invalid_import, mipmaps, anisotropy] =
-            parse_options(argc, argv);
+        const auto probe_options = parse_options(argc, argv);
+        const auto [inputs, async_depth, square_size, reject_invalid_import, mipmaps, anisotropy] = probe_options;
 
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
         options.external_image_import = true;
-        gpu::device_s       gpu(options);
-        const gpu::extent_s export_size = anisotropy ? gpu::extent_s{.width = 640, .height = 2880}
-                                          : mipmaps  ? gpu::extent_s{.width = 2560, .height = 1440}
-                                          : (square_size != 0U)
-                                              ? gpu::extent_s{.width = square_size, .height = square_size}
-                                              : gpu::extent_s{.width = 640, .height = 360};
+        gpu::device_s                                                      gpu(options);
+        const gpu::extent_s                                                export_size = probe_options.export_size();
         std::vector<std::unique_ptr<gpu::detail::external_image_export_s>> exports;
         for (uint32_t input = 0; (async_depth == 0U) && input < inputs; ++input) {
             exports.push_back(std::make_unique<gpu::detail::external_image_export_s>(gpu, export_size));

@@ -758,13 +758,15 @@ TEST(node_actions, typed_contract_failures_are_decoding_errors)
                     {
                         {"ignore_cache", "yes"}
     },
-                    [](auto) {});
+                    [](const auto&) {});
     EXPECT_FALSE(action.get_typed_payload<browser_reload_payload_s>());
     action.payload = {
         {"future_field", true}
     };
     const auto payload = action.get_typed_payload<browser_reload_payload_s>();
-    ASSERT_TRUE(payload);
+    if (!payload.has_value()) {
+        FAIL() << "Typed reload payload failed to decode";
+    }
     EXPECT_FALSE(payload->ignore_cache);
     action.payload = "unknown-state";
     EXPECT_FALSE(action.get_typed_payload<cef_state_e>());

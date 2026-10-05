@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -52,8 +53,9 @@ struct shutdown_state_s
             if (!detail.empty() && count + 2 < reason.size() - 1) {
                 reason.at(count)     = ':';
                 reason.at(count + 1) = ' ';
-                std::copy_n(
-                    detail.begin(), std::min(detail.size(), reason.size() - count - 3), reason.begin() + count + 2);
+                std::copy_n(detail.begin(),
+                            std::min(detail.size(), reason.size() - count - 3),
+                            reason.begin() + static_cast<std::ptrdiff_t>(count + 2));
             }
             failed.store(true, std::memory_order_release);
         }
@@ -129,6 +131,18 @@ shutdown_state_s& state()
     return instance;
 }
 
+shutdown_state_s& failure_state() noexcept
+{
+    try {
+        return state();
+    } catch (...) {
+        // Normal startup initializes the monitor before installing the terminate
+        // handler. If an earlier failure cannot even construct it, no watchdog or
+        // recovery worker exists; exit without unwinding the caller's resources.
+        std::_Exit(EXIT_FAILURE);
+    }
+}
+
 void handle_unexpected_termination() noexcept { fail_without_unwinding("Unhandled exception or noexcept violation"); }
 
 } // namespace
@@ -141,13 +155,13 @@ void initialize_shutdown_monitor()
 
 void request_failure_shutdown(std::string_view message, std::string_view detail) noexcept
 {
-    state().request(message, detail);
+    failure_state().request(message, detail);
 }
-bool failure_shutdown_requested() noexcept { return state().failed.load(std::memory_order_acquire); }
+bool failure_shutdown_requested() noexcept { return failure_state().failed.load(std::memory_order_acquire); }
 
 [[noreturn]] void fail_without_unwinding(std::string_view message, std::string_view detail) noexcept
 {
-    auto& monitor = state();
+    auto& monitor = failure_state();
     monitor.parked.store(true);
     monitor.request(message, detail);
     for (;;) {
@@ -165,7 +179,7 @@ void publish_recovery_settings(std::filesystem::path path, std::string contents)
     }
 }
 std::shared_ptr<const recovery_settings_s> recovery_settings() { return state().settings.load(); }
-void                                       freeze_recovery_settings() noexcept
+void                                       freeze_recovery_settings()
 {
     auto&                  monitor = state();
     const std::scoped_lock lock(monitor.snapshot_mutex);

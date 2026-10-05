@@ -446,6 +446,25 @@ The browser lifecycle coordinates a bounded command channel and a capture stream
 state and synchronization. Shared typed message codecs contain the CEF process-list layout. GPU capture still waits
 for every read of the borrowed native image before the callback returns.
 
+On Windows, the D3D11 device used to validate shared-texture descriptors never draws or presents. Each
+`OpenSharedResource1` creates a new resource object, and D3D11 may defer destruction after its COM reference is
+released. The validation path releases that object and flushes its idle immediate context under a mutex, preventing
+deferred objects from accumulating across frames. This flush is only destruction housekeeping; the CEF producer
+completion and Vulkan consumer completion contracts still apply. Without this cleanup, an isolated import loop
+reproduced `VK_ERROR_OUT_OF_DEVICE_MEMORY` after roughly 90,000 imports on the Windows NVIDIA test machine, matching
+a browser-to-screen soak that turned black after 25 minutes. The browser's three session retries cannot clean up
+resources retained by this application-owned D3D11 device. See Microsoft's documentation for
+[per-open resource objects](https://learn.microsoft.com/en-us/windows/win32/api/d3d11_1/nf-d3d11_1-id3d11device1-opensharedresource1)
+and [deferred destruction](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-flush).
+
+Run the explicit long Windows hardware regression with
+`build/src/gpu/gpu_vulkan_test.exe --gtest_filter=external_image_windows.DISABLED_RepeatedImportLifetimeStress --gtest_also_run_disabled_tests`.
+It repeatedly imports and releases a 1920x1080 shared image 360,000 times without CEF or GPU submissions; the normal
+Windows external-image test separately checks completed producer writes, handle lifetime, and copied pixel values.
+The post-fix Windows browser-to-screen soak on 2026-10-05 completed 96.7 minutes with approximately 348,000 browser
+frames, no browser restarts or reported browser/screen errors, and graceful shutdown. The 360,000-import stress
+test, 34 GPU tests, 14 staging-transfer tests, and eight-input CEF integration test also passed with validation.
+
 CEF-enabled and unavailable nodes are selected by CMake and share option definitions. Frame-pool storage estimates
 use the same format/sampling definition as actual allocation. Linux native imports use explicit scoped descriptor
 ownership, releasing duplicated descriptors only when Vulkan accepts ownership.

@@ -1,12 +1,13 @@
 #include "typescript_generator.hpp"
 
+#include <cstdio>
 #include <exception>
 #include <iostream>
 
 int main(int argc, char** argv)
 {
     if (argc != 2) {
-        std::cerr << "Usage: miximus_typescript_generator <output.ts>\n";
+        std::fputs("Usage: miximus_typescript_generator <output.ts>\n", stderr);
         return 1;
     }
 
@@ -15,7 +16,10 @@ int main(int argc, char** argv)
         std::cout << (changed ? "Generated " : "Unchanged ") << argv[1] << '\n';
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "TypeScript contract generation failed: " << error.what() << '\n';
+        std::fprintf(stderr, "TypeScript contract generation failed: %s\n", error.what());
+        return 1;
+    } catch (...) {
+        std::fputs("TypeScript contract generation failed: unknown exception\n", stderr);
         return 1;
     }
 }

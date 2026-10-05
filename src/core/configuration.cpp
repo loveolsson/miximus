@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -315,9 +316,11 @@ std::optional<json> configuration_s::get_node_status(std::string_view id) const
 void configuration_s::enable_recovery(const std::filesystem::path& path)
 {
     const std::unique_lock lock(node_manager_.nodes_mutex_);
-    node_manager_.configuration_changed_ = [manager = &node_manager_, path] {
+    // Keep callback copies independent of potentially allocating path copies.
+    node_manager_.configuration_changed_ = [manager = &node_manager_,
+                                            path    = std::make_shared<const std::filesystem::path>(path)] {
         const configuration_s config(*manager);
-        utils::publish_recovery_settings(path, config.serialize_graph_locked().dump(2));
+        utils::publish_recovery_settings(*path, config.serialize_graph_locked().dump(2));
     };
     node_manager_.checkpoint_configuration_locked();
 }

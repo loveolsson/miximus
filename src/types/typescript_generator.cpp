@@ -55,12 +55,13 @@ void emit_interface(std::ostream& output, std::string_view name, bool open_objec
 
     using members_t =
         boost::describe::describe_members<T, boost::describe::mod_public | boost::describe::mod_inherited>;
-    boost::mp11::mp_for_each<members_t>([&](auto member) {
-        using member_t = std::remove_cvref_t<decltype(std::declval<T>().*member.pointer)>;
-        output << "  readonly " << member.name
-               << ((miximus::detail::optional_traits<member_t>::value || json_member_defaulted<member.pointer>) ? "?"
-                                                                                                                : "")
-               << ": " << typescript_member_type<member_t, member.pointer>() << ";\n";
+    boost::mp11::mp_for_each<members_t>([&]<typename Descriptor>(Descriptor) {
+        using member_t = std::remove_cvref_t<decltype(std::declval<T>().*Descriptor::pointer)>;
+        output << "  readonly " << Descriptor::name
+               << ((miximus::detail::optional_traits<member_t>::value || json_member_defaulted<Descriptor::pointer>)
+                       ? "?"
+                       : "")
+               << ": " << typescript_member_type<member_t, Descriptor::pointer>() << ";\n";
     });
     if (open_object) {
         output << "  readonly [key: string]: unknown;\n";

@@ -10,12 +10,14 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 #include "utils/cpu_task_worker.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/string_map.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <stdexcept>
 #include <string>
@@ -126,7 +128,16 @@ struct source_labels_s::impl_s
     impl_s& operator=(const impl_s& other) = delete;
     impl_s(impl_s&& other)                 = delete;
     impl_s& operator=(impl_s&& other)      = delete;
-    ~impl_s() { (void)task.cancel(); }
+    ~impl_s()
+    {
+        try {
+            (void)task.cancel();
+        } catch (const std::exception& error) {
+            utils::request_failure_shutdown("Source-label task cancellation failed", error.what());
+        } catch (...) {
+            utils::request_failure_shutdown("Source-label task cancellation failed");
+        }
+    }
 
     void discard_pending()
     {

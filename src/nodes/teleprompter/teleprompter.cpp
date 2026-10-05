@@ -15,6 +15,7 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 #include "types/node_status_json.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
@@ -22,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -84,9 +86,15 @@ class node_impl : public node_i
 
     ~node_impl() override
     {
-        (void)text_future_.cancel();
-        for (auto& line : render_lines_) {
-            (void)line->ready.cancel();
+        try {
+            (void)text_future_.cancel();
+            for (auto& line : render_lines_) {
+                (void)line->ready.cancel();
+            }
+        } catch (const std::exception& error) {
+            utils::request_failure_shutdown("Teleprompter task cancellation failed", error.what());
+        } catch (...) {
+            utils::request_failure_shutdown("Teleprompter task cancellation failed");
         }
     }
 

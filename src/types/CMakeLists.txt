@@ -40,6 +40,14 @@ if(NOT CMAKE_CROSSCOMPILING)
     if(BUILD_TESTING)
         add_executable(typescript_generator_test tests/typescript_generator_test.cpp)
         target_link_libraries(typescript_generator_test PRIVATE typescript_generator_support GTest::gtest_main)
+        if(MSVC AND MIXIMUS_ENABLE_CLANG_TIDY)
+            # Clang 21 misdiagnoses MSVC's valid filesystem bitmask combination
+            # (_Attributes | _Last_write_time) in last_write_time(). Keep the
+            # workaround scoped to this test target and the affected toolchain.
+            set_property(TARGET typescript_generator_test APPEND PROPERTY CXX_CLANG_TIDY
+                "--checks=-clang-analyzer-optin.core.EnumCastOutOfRange"
+            )
+        endif()
         add_sanitizers(typescript_generator_test)
         gtest_discover_tests(typescript_generator_test)
     endif()

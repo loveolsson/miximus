@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <gtest/gtest.h>
+#include <latch>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -57,7 +58,7 @@ TEST(CpuTaskWorker, AbandonedResultDoesNotWaitForWork)
 struct blocked_worker_s
 {
     std::promise<void> started;
-    std::promise<void> release;
+    std::latch         release{1};
     cpu_task_worker_s  worker;
     bool               released{};
 
@@ -65,7 +66,7 @@ struct blocked_worker_s
     {
         (void)worker.submit(cpu_task_priority_e::normal, [this] {
             started.set_value();
-            release.get_future().wait();
+            release.wait();
         });
         started.get_future().wait();
     }
@@ -78,7 +79,7 @@ struct blocked_worker_s
     {
         if (!released) {
             released = true;
-            release.set_value();
+            release.count_down();
         }
     }
     ~blocked_worker_s() { unblock(); }

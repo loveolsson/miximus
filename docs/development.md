@@ -137,6 +137,13 @@ CEF's sandbox bootstrap. The flag has no additional effect there.
 The application logs its process ID during startup. `--stop-after` requests an ordinary graceful shutdown after the
 given positive number of seconds and is useful for repeatable runtime and sanitizer checks.
 
+On Windows, the main process prevents automatic system sleep and display idle-off for its entire running lifetime,
+including when no CEF browser source is active. A main-thread RAII guard requests
+`ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED` and restores the previous thread execution state after
+application teardown. Acquisition failures are logged and do not prevent startup. This does not change the saved
+Windows power plan, enable away mode, or block explicit user sleep actions. Other platforms retain their existing
+power-management behavior.
+
 Build the web client directly when working on it:
 
 ```bash

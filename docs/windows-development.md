@@ -123,9 +123,13 @@ $env:VCPKG_ROOT = Join-Path $vsInstall 'VC\vcpkg'
 if ($LASTEXITCODE -ne 0) { throw 'vcpkg installation failed' }
 & "$env:VCPKG_ROOT\vcpkg.exe" list
 
-cmake --preset windows-release
+cmake -S . -B build -G Ninja `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  "-DVCPKG_INSTALLED_DIR=$PWD/vcpkg_installed" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows -DVCPKG_HOST_TRIPLET=x64-windows `
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
-cmake --build --preset windows-release --parallel
+cmake --build build --parallel
 ```
 
 `CMakePresets.json` uses Ninja, MSVC, Release, `build/` and the vcpkg toolchain. Both the explicit install and the preset
@@ -135,6 +139,43 @@ cache on subsequent matching installs. The FFmpeg manifest features select devel
 command-line programs. CMake also installs missing manifest packages automatically. The preset sets the CMake 4
 compatibility floor needed by older submodules before their first `cmake_minimum_required()` call.
 Machine-specific overrides belong in the ignored `CMakeUserPresets.json`.
+
+### VS Code Play configuration
+
+The checked-in `windows-release` configure/build presets are hidden inheritance bases. After packaging the custom
+CEF SDK, create `CMakeUserPresets.json` at the repository root with the following content, adjusting the two local
+paths. This exposes one full-feature preset in CMake Tools:
+
+```json
+{
+  "version": 6,
+  "configurePresets": [{
+    "name": "windows-cef-release",
+    "displayName": "Windows Release with CEF and CUDA",
+    "inherits": "windows-release",
+    "environment": {
+      "VCPKG_ROOT": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg"
+    },
+    "cacheVariables": {
+      "MIXIMUS_ENABLE_CEF": "ON",
+      "MIXIMUS_CEF_ROOT": "C:/cef/distribution/miximus_cef_windows64_native_handle_r13",
+      "MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK": "OFF",
+      "MIXIMUS_ENABLE_CUDA": "ON",
+      "MIXIMUS_ENABLE_PRECOMPILED_HEADERS": "ON",
+      "BUILD_TESTING": "ON"
+    }
+  }],
+  "buildPresets": [{
+    "name": "windows-cef-release",
+    "configurePreset": "windows-cef-release"
+  }]
+}
+```
+
+Open the repository folder in VS Code and select `windows-cef-release` if CMake Tools asks. The **Miximus (Windows)**
+launch configuration initializes the x64 Visual Studio developer environment, configures and builds that preset,
+then launches `build/miximus.exe` with `build/` as its working directory. CUDA is compiled in; Play passes no
+`--use-cuda` argument, so transfers use staging by default. The local SDK paths and settings remain untracked.
 
 **Boost/WebSocket++ compatibility:** Upstream main documents the working Linux installation as Boost
 **1.90.0** (Ubuntu package `1.90.0-6ubuntu1`) and patched WebSocket++ package
@@ -215,7 +256,7 @@ nvidia-smi
 Ensure Vulkan `Bin` is on `PATH`. The wrapper accepts glslang 16.2.0 or newer; `MIXIMUS_GLSLANG_VERSION` is the
 minimum version, not an exact pin. `Vulkan_GLSLANG_VALIDATOR_EXECUTABLE` can select a specific compiler.
 After replacing an SDK, clear cached discovery paths with
-`cmake --preset windows-release -U 'Vulkan_*' -U MIXIMUS_SPIRV_VAL`, rebuild all shaders and rerun GPU validation.
+`cmake -S . -B build -U 'Vulkan_*' -U MIXIMUS_SPIRV_VAL`, rebuild all shaders and rerun GPU validation.
 Newer compilers can change SPIR-V output, so record the compiler used for each qualification. The shader compiler and validation layer can come
 from separate SDK versions; the Linux validation notes identify problems with the older 1.4.341 layer. Qualify the
 installed Windows layer independently and record its version.
@@ -226,12 +267,12 @@ Start with [the wrapper README](../src/wrapper/cef/README.md), [browser design](
 [media-input plan](cef-media-input-plan.md), and [implementation progress](cef-implementation-progress.md).
 The checked-in source inputs are:
 
-- `src/wrapper/cef/source-build.json`: revision **11**, exact CEF/Chromium/depot_tools revisions, automation digest,
+- `src/wrapper/cef/source-build.json`: revision **13**, exact CEF/Chromium/depot_tools revisions, automation digest,
   GN arguments, production and test patch digests.
 - `src/wrapper/cef/sdk.json`: CEF **152.0.8+g1ce985c+chromium-152.0.7977.134**, API **15200**. Its URL, checksum and
   platform describe a stock **Linux** SDK; they must not be reused for a Windows custom artifact.
 - The same manifest contains Windows build-argument and dependency-sync overrides. Both platforms use the
-  same production/test patches and private v3 media-input API; the Windows SDK build and source regressions pass.
+  same production/test patches and private v4 media-input API; the Windows SDK build and source regressions pass.
 - `src/wrapper/cef/source_build.py`: resumable `sync`, `prepare`, `build`, `test`, `package` stages using the
   shared manifest with host-platform build overrides. The local Windows revision-11 package and its application
   qualification results are recorded below; the stock Linux artifact metadata does not describe that package.
@@ -387,10 +428,10 @@ Pop-Location
 
 The following is the **full-feature configuration**, to use after preparing the patched Windows SDK.
 CEF and CUDA both build on Windows; the wrapper checks the SDK's version, patch provenance and DLL hash.
-Set `$cefSdk` to the actual packaged SDK root; the example is the locally validated revision-11 package.
+Set `$cefSdk` to the actual packaged SDK root; the example is the locally validated revision-13 package.
 
 ```powershell
-$cefSdk = 'C:\cef\distribution\miximus_cef_windows64_native_handle_r11'
+$cefSdk = 'C:\cef\distribution\miximus_cef_windows64_native_handle_r13'
 cmake -S . -B build -G Ninja `
   "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
   -DVCPKG_TARGET_TRIPLET=x64-windows `
@@ -528,6 +569,10 @@ ctest --test-dir build-tidy --output-on-failure
 Adjust the executable path for your installation; the locally verified version is 21.1.8. CMake does not enforce
 the major version. Keep tidy builds at four jobs, with no other build running concurrently. Precompiled headers
 are disabled automatically. Keep the ordinary `build` directory separate from tidy configuration and compilation.
+
+The TypeScript generator test target excludes `clang-analyzer-optin.core.EnumCastOutOfRange` under MSVC:
+Clang 21 reports the valid `_Attributes | _Last_write_time` bitmask inside MSVC's filesystem implementation.
+Other targets and platforms retain the check.
 
 ## Likely first build issues
 

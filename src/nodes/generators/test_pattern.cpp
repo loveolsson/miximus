@@ -10,6 +10,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "render/surface/surface.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/lookup.hpp"
 #include "utils/observed_value.hpp"
 
@@ -190,8 +191,14 @@ class node_impl : public node_i
 
     ~node_impl() override
     {
-        if (generation_) {
-            (void)generation_->worker.cancel();
+        try {
+            if (generation_) {
+                (void)generation_->worker.cancel();
+            }
+        } catch (const std::exception& error) {
+            utils::request_failure_shutdown("Test-pattern task cancellation failed", error.what());
+        } catch (...) {
+            utils::request_failure_shutdown("Test-pattern task cancellation failed");
         }
     }
 

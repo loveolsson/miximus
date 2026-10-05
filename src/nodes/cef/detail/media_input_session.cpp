@@ -112,7 +112,7 @@ struct reservation_s
                 destination_bytes += ((size_t(width) + 255) / 256 * 256) * ((size_t(height) + 63) / 64 * 64) * 4;
             }
         }
-        const size_t     amount = padded_width * padded_height * 4 * depth + destination_bytes * 8;
+        const size_t     amount = (padded_width * padded_height * 4 * depth) + (destination_bytes * 8);
         std::scoped_lock lock(budget->mutex);
         const size_t     delta = std::max(amount, high_water.at(input)) - high_water.at(input);
         if (delta > budget_s::LIMIT - budget->used) {

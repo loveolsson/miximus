@@ -15,11 +15,13 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 #include "types/node_status_json.hpp"
+#include "utils/failure_shutdown.hpp"
 #include "utils/observed_value.hpp"
 #include "utils/string_utils.hpp"
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <glm/common.hpp>
 #include <memory>
@@ -64,7 +66,16 @@ class node_impl : public node_i
     node_impl& operator=(const node_impl&) = delete;
     node_impl& operator=(node_impl&&)      = delete;
 
-    ~node_impl() override { (void)render_future_.cancel(); }
+    ~node_impl() override
+    {
+        try {
+            (void)render_future_.cancel();
+        } catch (const std::exception& error) {
+            utils::request_failure_shutdown("Text task cancellation failed", error.what());
+        } catch (...) {
+            utils::request_failure_shutdown("Text task cancellation failed");
+        }
+    }
 
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
     {
@@ -195,7 +206,7 @@ class node_impl : public node_i
         for (size_t offset = 0; offset < utf32_text.size();) {
             const auto remaining = text_view.substr(offset);
             const auto line      = font_instance->measure_line(remaining);
-            lines.push_back({remaining.substr(0, line.text_length), baseline});
+            lines.push_back({.text = remaining.substr(0, line.text_length), .baseline = baseline});
             if (line.metrics.has_ink) {
                 const auto start = baseline + line.metrics.ink_bounds.pos;
                 minimum          = glm::min(minimum, start);

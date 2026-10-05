@@ -8,9 +8,18 @@
   "configurePresets": [
     {
       "name": "windows-release",
+      "hidden": true,
       "displayName": "Windows x64 Release (vcpkg)",
       "description": "Run from an x64 Visual Studio developer shell with VCPKG_ROOT set.",
       "generator": "Ninja",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "toolset": {
+        "value": "host=x64",
+        "strategy": "external"
+      },
       "binaryDir": "${sourceDir}/build",
       "condition": {
         "type": "equals",
@@ -32,6 +41,7 @@
   "buildPresets": [
     {
       "name": "windows-release",
+      "hidden": true,
       "configurePreset": "windows-release"
     }
   ]

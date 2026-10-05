@@ -1,5 +1,8 @@
+#include "gpu/detail/device.hpp"
 #include "gpu/detail/external_image_copy.hpp"
 #include "gpu/detail/external_image_export.hpp"
+#include "gpu/detail/external_image_win.hpp"
+#include "gpu/detail/resource.hpp"
 #include "gpu/device.hpp"
 #include "logger/logger.hpp"
 
@@ -15,6 +18,33 @@ namespace miximus::gpu { namespace {
 
 using namespace std::chrono_literals;
 using Microsoft::WRL::ComPtr;
+
+TEST(external_image_windows, DISABLED_RepeatedImportLifetimeStress)
+{
+    // Explicit long hardware regression: the idle D3D11 validation device used
+    // to retain deferred resource destruction and fail near 90,000 imports on
+    // NVIDIA/Windows. No GPU submissions or CEF are needed to reproduce it.
+    if (!spdlog::get("gpu")) {
+        logger::init_loggers(spdlog::level::info);
+    }
+    auto device = std::make_shared<detail::device_state_s>();
+    device->initialize({.validation = true, .external_image_import = true});
+    auto                     exported = detail::create_external_image(device, {.width = 1920, .height = 1080});
+    detail::external_image_s descriptor{.handle = exported->external_memory_handle.get(), .extent = exported->extent};
+    for (int index = 0; index < 360000; ++index) {
+        SCOPED_TRACE(index);
+        ASSERT_NO_THROW({
+            auto imported = detail::import_external_image(device, descriptor);
+            imported.reset();
+        });
+        if (index % 10000 == 0) {
+            getlog("gpu")->info("Import stress completed {} iterations", index);
+        }
+    }
+    exported.reset();
+    device->collect();
+    EXPECT_EQ(device->errors.load(), 0U);
+}
 
 TEST(external_image_windows, ImportsCompletedD3D11WritesAndKeepsTheBorrowedHandle)
 {

@@ -17,6 +17,7 @@
 #include "utils/process_id.hpp"
 #include "utils/shutdown_signal.hpp"
 #include "utils/shutdown_watchdog.hpp"
+#include "utils/sleep_inhibitor.hpp"
 #include "utils/thread_priority.hpp"
 #include "web_server/server.hpp"
 
@@ -116,6 +117,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
     int exit_code = EXIT_SUCCESS;
     try {
         utils::install_shutdown_signal_handlers();
+        const utils::sleep_inhibitor_s sleep_inhibitor;
         {
             utils::start_shutdown_watchdog(60s);
             utils::begin_shutdown_step("application initialization");
