@@ -172,6 +172,12 @@ paths. This exposes one full-feature preset in CMake Tools:
 }
 ```
 
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows_build.ps1 -SetupOnly` after creating the
+local preset or updating Visual Studio/Windows SDK. It discovers the x64 compiler environment and records
+`INCLUDE`, `LIB`, `LIBPATH`, and tool search paths in the ignored local configure and build presets. This avoids
+depending on CMake Tools retaining its inferred Visual Studio environment between configure and Play/build.
+The regular launch task refreshes these settings automatically; other local preset options are preserved.
+
 Open the repository folder in VS Code and select `windows-cef-release` if CMake Tools asks. The **Miximus (Windows)**
 launch configuration initializes the x64 Visual Studio developer environment, configures and builds that preset,
 then launches `build/miximus.exe` with `build/` as its working directory. CUDA is compiled in; Play passes no
