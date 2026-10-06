@@ -6,10 +6,9 @@
     "configurations": [
         {
             "name": "Miximus (Windows)",
-            "preLaunchTask": "Build Miximus (Windows)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/miximus.exe",
+            "program": "${command:cmake.launchTargetPath}",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",

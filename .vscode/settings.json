@@ -127,8 +127,19 @@
     "text_encoding": "cpp"
   },
   "js/ts.tsdk.path": "web/node_modules/typescript/lib",
-  "cmake.useCMakePresets": "always",
-  "cmake.configureOnOpen": true,
+  "cmake.useCMakePresets": "never",
+  "cmake.generator": "Ninja",
+  "cmake.configureSettings": {
+    "CMAKE_TOOLCHAIN_FILE": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
+    "VCPKG_INSTALLED_DIR": "${workspaceFolder}/vcpkg_installed",
+    "VCPKG_TARGET_TRIPLET": "x64-windows",
+    "VCPKG_HOST_TRIPLET": "x64-windows",
+    "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+    "MIXIMUS_ENABLE_CEF": true,
+    "MIXIMUS_CEF_ROOT": "C:/cef/distribution/miximus_cef_windows64_native_handle_r13",
+    "MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK": false,
+    "MIXIMUS_ENABLE_CUDA": true
+  },
   "cmake.debugConfig": {
     "args": [],
     "cwd": "${workspaceFolder}/build"

@@ -138,55 +138,76 @@ not committed. vcpkg builds missing binaries from source for both Release and De
 cache on subsequent matching installs. The FFmpeg manifest features select development libraries without the
 command-line programs. CMake also installs missing manifest packages automatically. The preset sets the CMake 4
 compatibility floor needed by older submodules before their first `cmake_minimum_required()` call.
-Machine-specific overrides belong in the ignored `CMakeUserPresets.json`.
+### VS Code configuration
 
-### VS Code Play configuration
-
-The checked-in `windows-release` configure/build presets are hidden inheritance bases. After packaging the custom
-CEF SDK, create `CMakeUserPresets.json` at the repository root with the following content, adjusting the two local
-paths. This exposes one full-feature preset in CMake Tools:
+Use CMake Tools' normal kit/variant workflow (`cmake.useCMakePresets: "never"`). Keep the user's selected kit,
+Debug/Release variant, target, and debugger controls. Workspace configure settings must supply dependency discovery,
+CEF/CUDA feature enablement, and the qualified local CEF SDK path on every configure, including variant changes.
+They must not rely on values left in an existing cache. For this Windows installation:
 
 ```json
-{
-  "version": 6,
-  "configurePresets": [{
-    "name": "windows-cef-release",
-    "displayName": "Windows Release with CEF and CUDA",
-    "inherits": "windows-release",
-    "environment": {
-      "VCPKG_ROOT": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg"
-    },
-    "cacheVariables": {
-      "MIXIMUS_ENABLE_CEF": "ON",
-      "MIXIMUS_CEF_ROOT": "C:/cef/distribution/miximus_cef_windows64_native_handle_r13",
-      "MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK": "OFF",
-      "MIXIMUS_ENABLE_CUDA": "ON",
-      "MIXIMUS_ENABLE_PRECOMPILED_HEADERS": "ON",
-      "BUILD_TESTING": "ON"
-    }
-  }],
-  "buildPresets": [{
-    "name": "windows-cef-release",
-    "configurePreset": "windows-cef-release"
-  }]
+"cmake.configureSettings": {
+  "CMAKE_TOOLCHAIN_FILE": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_INSTALLED_DIR": "${workspaceFolder}/vcpkg_installed",
+  "VCPKG_TARGET_TRIPLET": "x64-windows",
+  "VCPKG_HOST_TRIPLET": "x64-windows",
+  "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+  "MIXIMUS_ENABLE_CEF": true,
+  "MIXIMUS_CEF_ROOT": "C:/cef/distribution/miximus_cef_windows64_native_handle_r13",
+  "MIXIMUS_CEF_ALLOW_UNQUALIFIED_SDK": false,
+  "MIXIMUS_ENABLE_CUDA": true
 }
 ```
 
-Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows_build.ps1 -SetupOnly` after creating the
-local preset or updating Visual Studio/Windows SDK. It discovers the x64 compiler environment and records
-`INCLUDE`, `LIB`, `LIBPATH`, and tool search paths in the ignored local configure and build presets. This avoids
-depending on CMake Tools retaining its inferred Visual Studio environment between configure and Play/build.
-The regular launch task refreshes these settings automatically; other local preset options are preserved.
+Use **CMake: Select a Kit**, **CMake: Select Variant**, and the normal build/debug controls. The selected Visual
+Studio kit supplies the compiler environment. `cmake.generator` retains `Ninja` to match the existing build directory:
+the remembered Visual Studio kit otherwise prefers a Visual Studio generator, and CMake Tools can delete the cache
+on that mismatch. This ordinary VS Code setting preserves the current generator without fixing the build variant.
+The launch configuration uses `${command:cmake.launchTargetPath}`
+so CMake Tools resolves/builds the selected target according to its normal `buildBeforeRun` setting. There is no
+custom pre-launch task forcing a preset, Release build, or worker count. CUDA is compiled in; the default launch
+arguments do not enable `--use-cuda` transfers.
 
-Open the repository folder in VS Code and select `windows-cef-release` if CMake Tools asks. The **Miximus (Windows)**
-launch configuration initializes the x64 Visual Studio developer environment, configures and builds that preset,
-then launches `build/miximus.exe` with `build/` as its working directory. CUDA is compiled in; Play passes no
-`--use-cuda` argument, so transfers use staging by default. The local SDK paths and settings remain untracked.
+Preserve the active `build/CMakeCache.txt`, including its generator, toolchain, build type, dependency paths,
+and optimization settings. Do not clear or reconfigure it as a side effect of editing VS Code settings. When
+returning from preset mode, the remembered IDE variant can differ from the cached build type; the user decides
+when to configure/build that variant. Snapshot the cache before switching modes and match its generator before
+activating the kit: during this restoration the extension removed the cache on a generator mismatch, and the
+original cache was restored from the snapshot. Existing command-line presets may remain available for explicit manual
+use, but they are not the IDE workflow. Do not regenerate them or invoke their setup scripts on Play.
+
+For a new build directory, use the dependency/bootstrap instructions above. Do not transplant that clean-clone
+procedure onto an already working build directory.
+
+The first restoration omitted the vcpkg toolchain parameters and relied on the old cache. Switching variant then
+failed to find Boost. Preserving the active cache alone does not meet the workspace configuration requirement:
+validate these settings from an empty, separate build directory and switch variants there before reporting success.
+The toolchain and triplets select the installed dependencies; the policy minimum supports older bundled CMake projects.
+
+Validation of the corrected settings: a fresh `build-vscode-validation` directory configured and generated for
+RelWithDebInfo, then reconfigured and generated for Debug, using the values read directly from workspace settings.
+Both retained CEF and CUDA enabled and found the installed dependencies. Logs are in
+`build/integration-tests/vscode-workflow-restoration/configure-{relwithdebinfo,debug}.log`.
+These were CLI configuration checks using the installed Visual Studio environment, not an IDE Play acceptance test.
+The active `build/CMakeCache.txt` remained identical to its saved snapshot during these checks.
+
+The next IDE RelWithDebInfo configure exposed a remaining migration problem: FreeType lookup failed, CMake
+reported a changed `CMAKE_RC_COMPILER`, and its cache-reset path left Ninja without `CMakeFiles/rules.ninja`.
+The log subsequently records successful Debug and RelWithDebInfo configurations. Restoring `CMakeCache.txt`
+alone had not restored a coherent generated build tree after the earlier generator changes. A matching cache
+hash and a fresh-directory configure were therefore insufficient evidence that the active tree was ready.
+
+The Debug-first configuration also exposed a separate FFmpeg discovery bug: vcpkg prioritizes `debug/lib`
+in Debug, so the unrestricted Release-library search cached Debug import libraries as Release. The wrapper
+now searches the two vcpkg library directories explicitly and repairs that specific erroneous cache entry.
+Validate Debug-first discovery and Debug-to-RelWithDebInfo switching as well as Release-first discovery.
 
 ### Windows Play regression (2026-10-06)
 
 The agent introduced an incomplete Windows IDE setup in `1fefe11` and incorrectly reported Play as verified.
-The corrective setup is in `e4ac595`. This was a build-environment and validation failure, unrelated to the
+The interim environment workaround was in `e4ac595`; it still imposed the wrong preset-based workflow. The
+subsequent restoration returns to the user's normal kit/variant controls and removes the custom launch task and
+preset-environment scripts. This was a build-environment and validation failure, unrelated to the
 D3D11 black-output fix or CUDA transfer selection.
 
 **What changed and what was wrong:**
@@ -223,17 +244,17 @@ the environment in one entry point, relying on inference in another, and validat
 
 1. Preserve existing SDK selections, build directory, feature flags and runtime arguments. Do not replace a
    working setup as incidental cleanup. Explain any necessary change to its entry points or environment.
-2. Keep configure and build environments explicit in the ignored local presets using `scripts/windows_build.ps1`.
-   Configuration success and a cached absolute `cl.exe` path do not establish usable standard-library headers,
-   Windows SDK headers, libraries, or linker tools. Do not remove these settings based on a warm-build success.
-3. Run `python scripts/test_windows_build_environment.py`. It uses an isolated project and a stripped parent
-   environment, requires the missing-environment negative control to fail with `C1083`, then requires a real
-   compile, link and execution using the actual local preset environments. It does not change application sources,
-   application build outputs, or local presets. Logs remain under `build/integration-tests/windows-build-environment/`.
-4. Validate the normal `build/` launch task separately. For changes to CMake Tools integration, also exercise
-   CMake Tools Play with compilation required and verify the intended executable starts. A launch-task result,
-   CLI preset result, CTest pass, or log showing preset reload is not proof that the IDE button was exercised.
-   If direct IDE interaction is unavailable, report that limitation explicitly instead of claiming Play was tested.
+2. Use the selected Visual Studio kit's environment for both configure and build. Configuration success and a
+   cached absolute `cl.exe` path do not establish usable standard-library headers, Windows SDK headers, libraries,
+   or linker tools. Do not substitute a developer-shell build for testing the selected kit.
+3. The interim isolated regression reproduced `C1083` without the compiler environment and successfully compiled,
+   linked, and ran with explicit preset environments. Its logs remain under
+   `build/integration-tests/windows-build-environment/`. That established the cause, but did not validate the
+   desired kit/variant workflow. Its preset-specific script was removed when that workflow was restored.
+4. Validate an actual compile/link through CMake Tools with the selected kit, then verify the intended executable
+   starts. Never clear/reconfigure the active cache merely to test settings. Use an isolated test workspace or
+   coordinate an IDE build with the user. A CLI build, CTest pass, or preset-reload log is not proof that the IDE
+   button was exercised. If direct IDE interaction is unavailable, report that limitation explicitly.
 5. Keep tidy and diagnostic configuration separate from the user's normal build. Do not merge an IDE-setup
    change on the strength of a developer-shell build alone. Record the entry point and actual work in validation.
 

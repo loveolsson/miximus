@@ -2,6 +2,13 @@
 
 Miximus is a C++20 real-time, node-based video mixer and compositor. The native process owns the authoritative graph and 60 Hz render loop; the Vue/Baklava web client is a synchronized remote editor.
 
+## Git authorization
+
+- Do not commit or perform any other mutating Git operation without the user's explicit instruction authorizing that specific operation and scope. This includes staging, switching or creating branches, fetching, pulling, merging, rebasing, cherry-picking, reverting, resetting, stashing, cleaning, and changing Git configuration or refs.
+- Instructions to implement, fix, build, test, review, or edit documentation do not authorize Git mutations. Authorization for an earlier operation does not carry over to later changes.
+- The agent must NEVER push, including ordinary pushes, force-pushes, and pushes through tools or APIs. Pushing is reserved for the user.
+- Read-only Git inspection is allowed. Leave file edits unstaged and uncommitted unless explicitly instructed otherwise.
+
 ## Read the relevant guide first
 
 - [Architecture](docs/architecture.md): runtime ownership, threads, frame lifecycle, graph evaluation, nodes, configuration, WebSocket synchronization, and status deltas.
@@ -32,7 +39,8 @@ More specific `AGENTS.md` files apply inside complex subtrees. Read the nearest 
 ## Validation
 
 - Preserve the user's working IDE/build setup. Before changing presets, tasks, launch settings, or build-environment handling, read the [Windows Play regression and acceptance rules](docs/windows-development.md#windows-play-regression-2026-10-06).
-- Windows CMake Play and the launch.json pre-launch task are separate entry points. A developer-shell build or an up-to-date IDE build does not validate either entry point's compiler environment. Require an actual compile and link with no inherited developer environment; run `python scripts/test_windows_build_environment.py` for Windows environment changes. State explicitly if the IDE button itself was not exercised.
+- Preserve VS Code's normal CMake kit, variant, target, and debug controls. Workspace settings must supply required dependency/toolchain parameters, feature flags, and the valid local CEF SDK path for every variant, without relying on leftover cache entries. Do not force presets, a build type, or custom configure/build tasks. Preserve the active `build/` cache and the user's selections. Validate configuration with these settings in an isolated build directory, including a variant change.
+- A developer-shell build or an up-to-date IDE build does not validate CMake Tools' build environment. Validate an actual compile and link through the selected kit without relying on a developer-shell parent. State explicitly if the IDE button itself was not exercised. Never reconfigure the user's active build just to validate an IDE-settings edit.
 
 - Format touched C/C++ files with `clang-format`.
 - Build native changes with `cmake --build build -j` and run `git diff --check`.
