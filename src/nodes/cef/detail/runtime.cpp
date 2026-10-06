@@ -54,6 +54,14 @@ class browser_app_s final
         // default-browser prompts, including for a fresh per-instance profile.
         command_line->AppendSwitch("no-first-run");
         command_line->AppendSwitch("no-default-browser-check");
+        // Embedded sources do not need Chrome's background USB landing-page
+        // discovery. Explicit page-initiated WebUSB access remains separate.
+        auto disabled_features = command_line->GetSwitchValue("disable-features").ToString();
+        if (!disabled_features.empty()) {
+            disabled_features += ',';
+        }
+        disabled_features += "WebUsbDeviceDetection";
+        command_line->AppendSwitchWithValue("disable-features", disabled_features);
     }
 
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }

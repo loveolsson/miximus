@@ -465,6 +465,10 @@ The post-fix Windows browser-to-screen soak on 2026-10-05 completed 96.7 minutes
 frames, no browser restarts or reported browser/screen errors, and graceful shutdown. The 360,000-import stress
 test, 34 GPU tests, 14 staging-transfer tests, and eight-input CEF integration test also passed with validation.
 
+CEF startup disables Chromium's `WebUsbDeviceDetection` feature, preserving other disabled-feature entries.
+This stops background USB landing-page discovery and its unnecessary device-property queries. It does not disable
+Windows USB devices or explicit page-initiated WebUSB requests; those can still initialize Chromium's USB manager.
+
 CEF-enabled and unavailable nodes are selected by CMake and share option definitions. Frame-pool storage estimates
 use the same format/sampling definition as actual allocation. Linux native imports use explicit scoped descriptor
 ownership, releasing duplicated descriptors only when Vulkan accepts ownership.
