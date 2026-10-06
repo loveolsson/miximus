@@ -183,6 +183,63 @@ launch configuration initializes the x64 Visual Studio developer environment, co
 then launches `build/miximus.exe` with `build/` as its working directory. CUDA is compiled in; Play passes no
 `--use-cuda` argument, so transfers use staging by default. The local SDK paths and settings remain untracked.
 
+### Windows Play regression (2026-10-06)
+
+The agent introduced an incomplete Windows IDE setup in `1fefe11` and incorrectly reported Play as verified.
+The corrective setup is in `e4ac595`. This was a build-environment and validation failure, unrelated to the
+D3D11 black-output fix or CUDA transfer selection.
+
+**What changed and what was wrong:**
+
+- `.vscode/settings.json` changed `cmake.useCMakePresets` from `never` to `always`, removed the old configure
+  settings, and enabled configuration on open. `CMakePresets.json` hid the base presets and added external x64
+  architecture/toolset metadata. The machine-local `windows-cef-release` preset selected the full Windows build.
+- The agent added a `launch.json` pre-launch task that ran `Enter-VsDevShell` before configuring/building.
+  This initialized the compiler environment only for that task and its children. It did not initialize the
+  already-running VS Code extension host or CMake Tools' separate Play/build command.
+- The local presets did not explicitly carry `INCLUDE`, `LIB`, `LIBPATH`, and compiler tool paths. The setup
+  depended on CMake Tools supplying its inferred Visual Studio environment at build time. The failing build
+  did not receive that environment, despite successful compiler discovery and configuration.
+- Before merging, the agent validated `build/` from an explicitly initialized Developer PowerShell. That proved
+  the source compiled in that shell, but concealed the missing environment in the user's actual entry point.
+  Reporting that Play was ready exceeded the evidence.
+
+**Why earlier Play runs appeared healthy:** the retained CMake Tools log from
+`output_logging_20261005T181012/3-CMakeBuild.log` contains three successful builds. Their build sections perform
+dependency bookkeeping, generated-file checks and DLL staging, with no C++ compilation or executable linking.
+They reused objects/executables from developer-shell builds. The later log,
+`output_logging_20261005T193438/3-CMakeBuild.log`, records configuration selecting Visual Studio and then
+`cmake --build .../build --target miximus --` failing in MSVC dependency scanning with `C1083` for `filesystem`,
+`type_traits`, and `chrono`. Once real compilation was necessary, the latent environment defect became visible.
+An up-to-date build is therefore not a valid environment test.
+
+The logs live under `%APPDATA%/Code/logs/20261005T180721/window1/exthost/` on the incident machine. They establish
+the missing build environment and inadequate validation. They do **not** isolate which CMake Tools internal
+cache/selection transition discarded its inferred environment, or prove that hiding a preset alone caused it.
+Do not describe an unproven extension bug as the exact root cause. The agent's concrete error was guaranteeing
+the environment in one entry point, relying on inference in another, and validating only the former environment.
+
+**Required prevention and acceptance:**
+
+1. Preserve existing SDK selections, build directory, feature flags and runtime arguments. Do not replace a
+   working setup as incidental cleanup. Explain any necessary change to its entry points or environment.
+2. Keep configure and build environments explicit in the ignored local presets using `scripts/windows_build.ps1`.
+   Configuration success and a cached absolute `cl.exe` path do not establish usable standard-library headers,
+   Windows SDK headers, libraries, or linker tools. Do not remove these settings based on a warm-build success.
+3. Run `python scripts/test_windows_build_environment.py`. It uses an isolated project and a stripped parent
+   environment, requires the missing-environment negative control to fail with `C1083`, then requires a real
+   compile, link and execution using the actual local preset environments. It does not change application sources,
+   application build outputs, or local presets. Logs remain under `build/integration-tests/windows-build-environment/`.
+4. Validate the normal `build/` launch task separately. For changes to CMake Tools integration, also exercise
+   CMake Tools Play with compilation required and verify the intended executable starts. A launch-task result,
+   CLI preset result, CTest pass, or log showing preset reload is not proof that the IDE button was exercised.
+   If direct IDE interaction is unavailable, report that limitation explicitly instead of claiming Play was tested.
+5. Keep tidy and diagnostic configuration separate from the user's normal build. Do not merge an IDE-setup
+   change on the strength of a developer-shell build alone. Record the entry point and actual work in validation.
+
+These checks prevent this specific missing-environment regression from passing unnoticed; they are not a claim
+that documentation can guarantee every future setup change is correct.
+
 **Boost/WebSocket++ compatibility:** Upstream main documents the working Linux installation as Boost
 **1.90.0** (Ubuntu package `1.90.0-6ubuntu1`) and patched WebSocket++ package
 `0.8.2+git20250909-2` (headers report **0.8.3-dev**). Its distribution changelog identifies upstream

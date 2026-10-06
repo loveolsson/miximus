@@ -31,6 +31,9 @@ More specific `AGENTS.md` files apply inside complex subtrees. Read the nearest 
 
 ## Validation
 
+- Preserve the user's working IDE/build setup. Before changing presets, tasks, launch settings, or build-environment handling, read the [Windows Play regression and acceptance rules](docs/windows-development.md#windows-play-regression-2026-10-06).
+- Windows CMake Play and the launch.json pre-launch task are separate entry points. A developer-shell build or an up-to-date IDE build does not validate either entry point's compiler environment. Require an actual compile and link with no inherited developer environment; run `python scripts/test_windows_build_environment.py` for Windows environment changes. State explicitly if the IDE button itself was not exercised.
+
 - Format touched C/C++ files with `clang-format`.
 - Build native changes with `cmake --build build -j` and run `git diff --check`.
 - Format touched web files with Prettier and run `npm run build` in `web/`.
