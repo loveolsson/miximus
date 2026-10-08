@@ -21,9 +21,7 @@ namespace miximus::nodes::ndi::detail {
 namespace {
 auto log() { return getlog("ndi"); }
 
-constexpr size_t SOURCE_QUEUE_CAPACITY = 4;
-constexpr size_t UPLOAD_SLOT_COUNT     = 8;
-constexpr auto   CAPTURE_TIMEOUT       = std::chrono::milliseconds(50);
+constexpr auto CAPTURE_TIMEOUT = std::chrono::milliseconds(50);
 
 using ndi_ticks_t = std::chrono::duration<int64_t, std::ratio<1, 10'000'000>>;
 
@@ -95,9 +93,8 @@ class input_capture_s::impl_s
     gpu::vec2i_t                                            upload_dimensions_{};
     gpu::transfer::host_pixel_format_e                      upload_pixel_format_{};
 
-    frame_queue_t frame_queue_{
-        {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = 1}
-    };
+    const size_t                  buffer_frames_;
+    frame_queue_t                 frame_queue_;
     std::optional<frame_ticket_t> prepared_frame_;
 
     std::optional<source_format_s> source_format_;
@@ -144,10 +141,10 @@ class input_capture_s::impl_s
             .memory_access     = gpu::transfer::host_memory_access_e::overwrite,
         };
         upload_stream_       = upload_service_->create_stream({
-                  .host_layout         = host_layout,
-                  .max_slots           = UPLOAD_SLOT_COUNT,
-                  .generate_mip_maps   = false,
-                  .conversion_sampling = gpu::sampling_e::mipmapped_linear,
+            .host_layout         = host_layout,
+            .max_slots           = input_buffer_slot_count(buffer_frames_),
+            .generate_mip_maps   = false,
+            .conversion_sampling = gpu::sampling_e::mipmapped_linear,
         });
         upload_dimensions_   = dimensions;
         upload_pixel_format_ = pixel_format;
@@ -256,8 +253,8 @@ class input_capture_s::impl_s
 
         const auto upload_id = upload->upload_id();
         auto       captured  = frame_queue_.create_frame(*media_clock_sample,
-                                                  arrival_time,
-                                                  captured_frame_data_s{
+                                                         arrival_time,
+                                                         captured_frame_data_s{
                                                              .stream        = std::move(stream),
                                                              .upload        = std::move(*upload),
                                                              .upload_id     = upload_id,
@@ -265,7 +262,7 @@ class input_capture_s::impl_s
                                                              .dimensions    = dimensions,
                                                              .ndi_timecode  = video_frame.timecode,
                                                              .ndi_timestamp = video_frame.timestamp,
-                                                  });
+                                                         });
         // Begin the transfer before entering the timed FIFO. Consumption still waits
         // for this exact upload, after the configured source buffering interval.
         if (!captured->mark_submitted() ||
@@ -346,11 +343,15 @@ class input_capture_s::impl_s
     impl_s(gpu::transfer::texture_upload_service_s* upload_service,
            utils::serial_executor_s*                control_executor,
            std::string                              source_name,
-           std::string                              receiver_name)
+           std::string                              receiver_name,
+           size_t                                   buffer_frames)
         : upload_service_(upload_service)
         , control_executor_(control_executor)
         , source_name_(std::move(source_name))
         , receiver_name_(std::move(receiver_name))
+        , buffer_frames_(validate_input_buffer_frames(buffer_frames))
+        , frame_queue_(
+              {.capacity = timed_buffer_queue_capacity(buffer_frames_), .playout_delay_frames = buffer_frames_})
     {
     }
 
@@ -534,19 +535,24 @@ class input_capture_s::impl_s
 input_capture_s::input_capture_s(gpu::transfer::texture_upload_service_s* upload_service,
                                  utils::serial_executor_s*                control_executor,
                                  std::string                              source_name,
-                                 std::string                              receiver_name)
-    : impl_(
-          std::make_unique<impl_s>(upload_service, control_executor, std::move(source_name), std::move(receiver_name)))
+                                 std::string                              receiver_name,
+                                 size_t                                   buffer_frames)
+    : impl_(std::make_unique<impl_s>(upload_service,
+                                     control_executor,
+                                     std::move(source_name),
+                                     std::move(receiver_name),
+                                     buffer_frames))
 {
 }
 
 std::shared_ptr<input_capture_s> input_capture_s::create(gpu::transfer::texture_upload_service_s* upload_service,
                                                          utils::serial_executor_s*                control_executor,
                                                          std::string                              source_name,
-                                                         std::string                              receiver_name)
+                                                         std::string                              receiver_name,
+                                                         size_t                                   buffer_frames)
 {
-    return std::shared_ptr<input_capture_s>(
-        new input_capture_s(upload_service, control_executor, std::move(source_name), std::move(receiver_name)));
+    return std::shared_ptr<input_capture_s>(new input_capture_s(
+        upload_service, control_executor, std::move(source_name), std::move(receiver_name), buffer_frames));
 }
 
 input_capture_s::~input_capture_s() = default;

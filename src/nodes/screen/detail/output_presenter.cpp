@@ -8,7 +8,7 @@
 #include "media/playout_timeline.hpp"
 #include "media/presentation_clock.hpp"
 #include "media/timed_output_queue.hpp"
-#include "types/output_buffer_limits.hpp"
+#include "types/buffer_limits.hpp"
 #include "utils/failure_shutdown.hpp"
 
 #include <algorithm>
@@ -27,7 +27,6 @@
 
 namespace miximus::nodes::screen::detail {
 namespace {
-constexpr size_t OUTPUT_QUEUE_HEADROOM        = 3;
 constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
 constexpr size_t RENDER_PIPELINE_HEADROOM     = 2;
 
@@ -42,7 +41,7 @@ size_t validate_buffer_frame_count(size_t buffer_frames)
 
 size_t get_queue_capacity(size_t buffer_frames)
 {
-    return validate_buffer_frame_count(buffer_frames) + OUTPUT_QUEUE_HEADROOM;
+    return timed_buffer_queue_capacity(validate_buffer_frame_count(buffer_frames));
 }
 
 size_t get_slot_count(size_t buffer_frames)

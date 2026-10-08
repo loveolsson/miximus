@@ -26,14 +26,22 @@ using namespace miximus::nodes::ndi::detail;
 
 auto log() { return getlog("ndi"); }
 
+struct capture_selection_s
+{
+    std::string source_name;
+    bool        enabled;
+    int         buffer_frames;
+    bool        operator==(const capture_selection_s&) const = default;
+};
+
 class node_impl : public node_i
 {
     std::shared_ptr<input_capture_s> capture_;
 
     std::shared_ptr<gpu::texture_s> framebuffer_;
 
-    utils::observed_value_s<uint64_t>                     source_version_;
-    utils::observed_value_s<std::pair<std::string, bool>> capture_selection_;
+    utils::observed_value_s<uint64_t>            source_version_;
+    utils::observed_value_s<capture_selection_s> capture_selection_;
 
     gpu::texture_frame_ptr rendered_input_frame_;
 
@@ -88,15 +96,15 @@ class node_impl : public node_i
             });
     }
 
-    void update_capture_lifecycle(core::app_state_s*                  app,
-                                  core::node_status_registry_s*       status_registry,
-                                  const std::pair<std::string, bool>& selection)
+    void update_capture_lifecycle(core::app_state_s*            app,
+                                  core::node_status_registry_s* status_registry,
+                                  const capture_selection_s&    selection)
     {
         if (capture_) {
             const auto phase = capture_->phase();
             if (phase == input_capture_s::phase_e::failed || phase == input_capture_s::phase_e::stopped) {
                 if (phase == input_capture_s::phase_e::failed) {
-                    log()->error("NDI input capture failed for \"{}\"", selection.first);
+                    log()->error("NDI input capture failed for \"{}\"", selection.source_name);
                     capture_->stop_async();
                 }
                 capture_.reset();
@@ -109,15 +117,18 @@ class node_impl : public node_i
         }
 
         stop_capture();
-        if (!selection.second || selection.first.empty()) {
+        if (!selection.enabled || selection.source_name.empty()) {
             capture_selection_.commit(selection);
             report_connection(status_registry, {.connected = false});
             return;
         }
 
-        log()->info("Scheduling NDI input setup for \"{}\"", selection.first);
-        capture_ = input_capture_s::create(
-            app->texture_upload_service(), app->ndi_registry()->control_executor(), selection.first, id_);
+        log()->info("Scheduling NDI input setup for \"{}\"", selection.source_name);
+        capture_ = input_capture_s::create(app->texture_upload_service(),
+                                           app->ndi_registry()->control_executor(),
+                                           selection.source_name,
+                                           id_,
+                                           static_cast<size_t>(selection.buffer_frames));
         capture_selection_.commit(selection);
         capture_->start_async();
     }
@@ -143,8 +154,9 @@ class node_impl : public node_i
                 core::status_delivery_e::immediate);
         }
 
-        const auto selection =
-            std::pair(state.get_option<std::string>("source_name"), state.get_option<bool>("enabled"));
+        const capture_selection_s selection{.source_name   = state.get_option<std::string>("source_name"),
+                                            .enabled       = state.get_option<bool>("enabled"),
+                                            .buffer_frames = app->frame_settings().ndi_input.buffer_frames};
         update_capture_lifecycle(app, status_registry, selection);
         publish_metrics(status_registry);
 

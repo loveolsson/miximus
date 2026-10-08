@@ -288,9 +288,10 @@ user, is **4–6 simultaneous 1080p60 inputs on the current GPU**; eight-port in
 ### Four-to-six-input tuning
 
 The graph campaign now accepts `--inputs 2..8`, independent source/browser dimensions, and warmup/steady intervals.
-`MIXIMUS_CEF_MEDIA_EXPORT_DEPTH=1..8` selects a **diagnostic** native export capacity before session creation; default
-remains two. Pending storage stays bounded at eight slots per input and the reservation estimate includes the selected
-depth. The existing Chromium destination override remains independent; default is three. No depth implies preroll.
+The original diagnostic environment overrides have since been replaced by Global Settings:
+`cef_export_buffer_frames=1..8` selects native export capacity (default two), and `cef_input_buffer_frames=2..8`
+selects Chromium destination capacity (default three). Pending storage stays bounded at eight slots per input and
+admission accounts for both selected depths. Changes recreate browser sessions. No depth implies preroll.
 
 Initial 15-second comparisons on the P2000, using 1080p inputs:
 

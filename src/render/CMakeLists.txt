@@ -1,6 +1,8 @@
 add_library(render)
 
 target_sources(render PRIVATE
+    image_file.cpp
+    image_file.hpp
     detail/color_lut.hpp
     detail/rec709_quantizer.hpp
     pill_label.cpp
@@ -25,6 +27,7 @@ add_sanitizers(render)
 
 if(BUILD_TESTING)
     add_executable(render_test
+        tests/image_file_test.cpp
         tests/surface_test.cpp
         tests/pill_label_test.cpp
         tests/font_instance_test.cpp

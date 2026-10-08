@@ -4,6 +4,7 @@
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
 #include "media/timed_source_queue.hpp"
+#include "types/buffer_limits.hpp"
 #include "utils/flicks.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/decklink-sdk/decklink_inc.hpp"
@@ -63,7 +64,8 @@ class input_capture_s
                     utils::serial_executor_s*                             control_executor,
                     decklink_sdk::decklink_ptr<IDeckLinkInput>            device,
                     std::shared_ptr<device_reservation_s<IDeckLinkInput>> reservation,
-                    std::string                                           device_name);
+                    std::string                                           device_name,
+                    size_t buffer_frames = decklink_input_buffer_limits_s::DEFAULT_FRAME_COUNT);
     ~input_capture_s();
 
     input_capture_s(const input_capture_s&)            = delete;

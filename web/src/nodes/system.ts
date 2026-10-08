@@ -55,6 +55,41 @@ export const ApplicationSettingsNode = defineNode({
         min: 256,
         max: 4096,
       }).setPort(false),
+    decklink_input_buffer_frames: () =>
+      new NumericInterface("Delay (source frames)", 3, {
+        precision: 0,
+        step: 1,
+        min: 1,
+        max: 8,
+      }).setPort(false),
+    ndi_input_buffer_frames: () =>
+      new NumericInterface("Delay (source frames)", 1, {
+        precision: 0,
+        step: 1,
+        min: 1,
+        max: 8,
+      }).setPort(false),
+    cef_capture_buffer_frames: () =>
+      new NumericInterface("Delay (browser frames)", 1, {
+        precision: 0,
+        step: 1,
+        min: 1,
+        max: 8,
+      }).setPort(false),
+    cef_export_buffer_frames: () =>
+      new NumericInterface("Export slots per texture input", 2, {
+        precision: 0,
+        step: 1,
+        min: 1,
+        max: 8,
+      }).setPort(false),
+    cef_input_buffer_frames: () =>
+      new NumericInterface("Chromium slots per texture input", 3, {
+        precision: 0,
+        step: 1,
+        min: 2,
+        max: 8,
+      }).setPort(false),
     decklink_output_buffer_frames: () =>
       new NumericInterface("Buffered frames", 4, {
         precision: 0,

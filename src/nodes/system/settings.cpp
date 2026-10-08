@@ -9,9 +9,9 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "register.hpp"
+#include "types/buffer_limits.hpp"
 #include "types/frame_rate.hpp"
 #include "types/node_status_json.hpp"
-#include "types/output_buffer_limits.hpp"
 #include "utils/observed_value.hpp"
 
 #include <nlohmann/json.hpp>
@@ -157,6 +157,11 @@ class node_impl final : public node_i
     nlohmann::json get_default_options() const final
     {
         return {
+            {"decklink_input_buffer_frames",  decklink_input_buffer_limits_s::DEFAULT_FRAME_COUNT      },
+            {"ndi_input_buffer_frames",       ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT           },
+            {"cef_capture_buffer_frames",     cef_capture_buffer_limits_s::DEFAULT_FRAME_COUNT         },
+            {"cef_export_buffer_frames",      cef_export_buffer_limits_s::DEFAULT_FRAME_COUNT          },
+            {"cef_input_buffer_frames",       cef_input_buffer_limits_s::DEFAULT_FRAME_COUNT           },
             {"frame_rate",                    DEFAULT_FRAME_RATE                                       },
             {"default_framebuffer_size",
              gpu::vec2_t{framebuffer_settings_s::DEFAULT_WIDTH, framebuffer_settings_s::DEFAULT_HEIGHT}},
@@ -168,6 +173,29 @@ class node_impl final : public node_i
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
+        if (name == "decklink_input_buffer_frames") {
+            return normalize_option_value<int>(value,
+                                               decklink_input_buffer_limits_s::MINIMUM_FRAME_COUNT,
+                                               decklink_input_buffer_limits_s::MAXIMUM_FRAME_COUNT);
+        }
+        if (name == "ndi_input_buffer_frames") {
+            return normalize_option_value<int>(
+                value, ndi_input_buffer_limits_s::MINIMUM_FRAME_COUNT, ndi_input_buffer_limits_s::MAXIMUM_FRAME_COUNT);
+        }
+        if (name == "cef_capture_buffer_frames") {
+            return normalize_option_value<int>(value,
+                                               cef_capture_buffer_limits_s::MINIMUM_FRAME_COUNT,
+                                               cef_capture_buffer_limits_s::MAXIMUM_FRAME_COUNT);
+        }
+        if (name == "cef_export_buffer_frames") {
+            return normalize_option_value<int>(value,
+                                               cef_export_buffer_limits_s::MINIMUM_FRAME_COUNT,
+                                               cef_export_buffer_limits_s::MAXIMUM_FRAME_COUNT);
+        }
+        if (name == "cef_input_buffer_frames") {
+            return normalize_option_value<int>(
+                value, cef_input_buffer_limits_s::MINIMUM_FRAME_COUNT, cef_input_buffer_limits_s::MAXIMUM_FRAME_COUNT);
+        }
         if (name == "frame_rate") {
             return normalize_frame_rate(value);
         }

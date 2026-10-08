@@ -326,9 +326,10 @@ void check_shared_budget_recovery(subsystem_s& subsystem, gpu::device_s& gpu)
 </script>
 )HTML";
     const session_s::options_s options{
-        .url        = "data:text/html," + CefURIEncode(page, false).ToString(),
-        .dimensions = {64, 64},
-        .frame_rate = 60,
+        .url                 = "data:text/html," + CefURIEncode(page, false).ToString(),
+        .dimensions          = {64, 64},
+        .frame_rate          = 60,
+        .input_buffer_frames = 8,
     };
 
     std::array<std::unique_ptr<session_request_s>, 4> requests;
@@ -425,13 +426,7 @@ void check_navigation(frame_probe_s&                    probe,
     wait_demand(session, 0, true);
 }
 
-void run(subsystem_s&       subsystem,
-         gpu::device_s&     gpu,
-         bool               small_inputs,
-         const std::string& navigation_url,
-         const std::string& profile,
-         bool               budget,
-         bool               mipmaps)
+std::string create_input_page_url(const std::string& navigation_url, const std::string& profile)
 {
     std::string page =
         R"HTML(
@@ -482,12 +477,24 @@ void run(subsystem_s&       subsystem,
             throw std::runtime_error("Could not write navigation fixture");
         }
     }
+    return navigation_url.empty() ? "data:text/html," + CefURIEncode(page, false).ToString()
+                                  : navigation_url + "/inputs.html";
+}
+
+void run(subsystem_s&       subsystem,
+         gpu::device_s&     gpu,
+         bool               small_inputs,
+         const std::string& navigation_url,
+         const std::string& profile,
+         bool               budget,
+         bool               mipmaps)
+{
     const session_s::options_s options{
-        .url           = navigation_url.empty() ? "data:text/html," + CefURIEncode(page, false).ToString()
-                                                : navigation_url + "/inputs.html",
-        .dimensions    = {640, 360},
-        .frame_rate    = 60,
-        .input_mipmaps = mipmaps,
+        .url                 = create_input_page_url(navigation_url, profile),
+        .dimensions          = {640, 360},
+        .frame_rate          = 60,
+        .input_mipmaps       = mipmaps,
+        .input_buffer_frames = budget ? 8U : 3U,
     };
     auto request = subsystem.create_session(options);
 

@@ -783,6 +783,12 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         frame_settings.decklink_output.buffer_frames = decklink_output_buffer_frames;
         frame_settings.ndi_output.buffer_frames      = ndi_output_buffer_frames;
         frame_settings.screen_output.buffer_frames   = screen_output_buffer_frames;
+        frame_settings.decklink_input.buffer_frames =
+            settings_state.options.at("decklink_input_buffer_frames").get<int>();
+        frame_settings.ndi_input.buffer_frames   = settings_state.options.at("ndi_input_buffer_frames").get<int>();
+        frame_settings.cef_capture.buffer_frames = settings_state.options.at("cef_capture_buffer_frames").get<int>();
+        frame_settings.cef_export.buffer_frames  = settings_state.options.at("cef_export_buffer_frames").get<int>();
+        frame_settings.cef_input.buffer_frames   = settings_state.options.at("cef_input_buffer_frames").get<int>();
         app->begin_frame(frame_settings, scheduler.begin_frame(frame_rate));
 
         {

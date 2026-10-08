@@ -3,26 +3,16 @@
 #include "wrapper/cef/media_input_abi.hpp"
 #include "wrapper/cef/platform.hpp"
 
-#include <charconv>
-#include <cstdlib>
-#include <string_view>
-
 namespace miximus::nodes::cef::detail {
 void install_media_inputs(const CefRefPtr<CefFrame>&     frame,
                           const CefRefPtr<CefV8Context>& context,
-                          const std::string&             token)
+                          const std::string&             token,
+                          uint32_t                       depth)
 {
     const auto install = cef_wrapper::find_install_media_inputs();
-    uint32_t   depth   = 3;
-    // Diagnostic override only; page JavaScript cannot increase pool capacity.
-    // The helper reads its immutable environment during renderer startup.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    if (const auto* configured = std::getenv("MIXIMUS_CEF_MEDIA_INPUT_DEPTH")) {
-        const std::string_view value(configured);
-        const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), depth);
-        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || depth < 1 || depth > 8) {
-            return;
-        }
+    if (depth < cef_input_buffer_limits_s::MINIMUM_FRAME_COUNT ||
+        depth > cef_input_buffer_limits_s::MAXIMUM_FRAME_COUNT) {
+        return;
     }
 
     if (install == nullptr || cef_wrapper::find_send_media_frame() == nullptr || install(token.c_str(), depth) == 0) {

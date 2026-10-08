@@ -3,6 +3,7 @@
 #include "gpu/transfer/texture_upload_fwd.hpp"
 #include "gpu/types.hpp"
 #include "media/timed_source_queue.hpp"
+#include "types/buffer_limits.hpp"
 #include "utils/flicks.hpp"
 #include "utils/serial_executor_fwd.hpp"
 
@@ -48,13 +49,16 @@ class input_capture_s : public std::enable_shared_from_this<input_capture_s>
     input_capture_s(gpu::transfer::texture_upload_service_s* upload_service,
                     utils::serial_executor_s*                control_executor,
                     std::string                              source_name,
-                    std::string                              receiver_name);
+                    std::string                              receiver_name,
+                    size_t buffer_frames = ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT);
 
   public:
-    static std::shared_ptr<input_capture_s> create(gpu::transfer::texture_upload_service_s* upload_service,
-                                                   utils::serial_executor_s*                control_executor,
-                                                   std::string                              source_name,
-                                                   std::string                              receiver_name);
+    static std::shared_ptr<input_capture_s>
+    create(gpu::transfer::texture_upload_service_s* upload_service,
+           utils::serial_executor_s*                control_executor,
+           std::string                              source_name,
+           std::string                              receiver_name,
+           size_t                                   buffer_frames = ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT);
 
     ~input_capture_s();
 

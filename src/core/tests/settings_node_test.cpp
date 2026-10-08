@@ -97,6 +97,64 @@ TEST(SettingsNode, ProvidesTheDefaultSettings)
               screen_output_buffer_limits_s::DEFAULT_FRAME_COUNT);
 }
 
+TEST(SettingsNode, ValidatesAllInputBufferControlsAndPreservesDefaultsForOlderOptions)
+{
+    const auto settings = create_settings_node();
+    auto       state    = settings->get_default_options();
+    // An older saved settings object omits these fields. Applying its values
+    // over defaults must retain the capture delays and CEF pool defaults.
+    EXPECT_EQ(settings
+                  ->set_options(state,
+                                {
+                                    {"screen_output_buffer_frames", 3}
+    })
+                  .error,
+              error_e::no_error);
+    EXPECT_EQ(state.at("decklink_input_buffer_frames"), 3);
+    EXPECT_EQ(state.at("ndi_input_buffer_frames"), 1);
+    EXPECT_EQ(state.at("cef_capture_buffer_frames"), 1);
+    EXPECT_EQ(state.at("cef_export_buffer_frames"), 2);
+    EXPECT_EQ(state.at("cef_input_buffer_frames"), 3);
+    for (const auto* key : {"decklink_input_buffer_frames",
+                            "ndi_input_buffer_frames",
+                            "cef_capture_buffer_frames",
+                            "cef_export_buffer_frames",
+                            "cef_input_buffer_frames"}) {
+        SCOPED_TRACE(key);
+        const int minimum = std::string_view(key) == "cef_input_buffer_frames" ? 2 : 1;
+        EXPECT_EQ(settings
+                      ->set_options(state,
+                                    {
+                                        {key, 8}
+        })
+                      .error,
+                  error_e::no_error);
+        EXPECT_EQ(state.at(key), 8);
+        EXPECT_TRUE(settings
+                        ->set_options(state,
+                                      {
+                                          {key, 100}
+        })
+                        .has_corrected_values);
+        EXPECT_EQ(state.at(key), 8);
+        EXPECT_TRUE(settings
+                        ->set_options(state,
+                                      {
+                                          {key, 0}
+        })
+                        .has_corrected_values);
+        EXPECT_EQ(state.at(key), minimum);
+        EXPECT_NE(settings
+                      ->set_options(state,
+                                    {
+                                        {key, "invalid"}
+        })
+                      .error,
+                  error_e::no_error);
+        EXPECT_EQ(state.at(key), minimum);
+    }
+}
+
 TEST(SettingsNode, CorrectsDefaultFramebufferSize)
 {
     using framebuffer_settings_s = core::app_state_s::frame_settings_s::framebuffer_settings_s;

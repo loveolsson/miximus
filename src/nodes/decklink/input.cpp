@@ -20,7 +20,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 
 namespace {
@@ -51,16 +50,31 @@ status::decklink_input_device_status_s make_device_status(const device_status_s&
     };
 }
 
+struct capture_selection_s
+{
+    std::string device_name;
+    bool        enabled;
+    int         buffer_frames;
+    bool        operator==(const capture_selection_s&) const = default;
+};
+
+struct device_status_event_s
+{
+    std::string                device_name;
+    std::optional<bool>        signal_locked;
+    std::optional<std::string> active_format;
+    bool                       operator==(const device_status_event_s&) const = default;
+};
+
 class node_impl : public node_i
 {
     std::unique_ptr<input_capture_s> capture_;
 
-    std::shared_ptr<gpu::texture_s>                       framebuffer_;
-    utils::observed_value_s<uint64_t>                     device_version_;
-    utils::observed_value_s<std::pair<std::string, bool>> capture_selection_;
-    utils::observed_value_s<BMDColorspace>                colorspace_;
-    utils::observed_value_s<std::tuple<std::string, std::optional<bool>, std::optional<std::string>>>
-        device_status_event_;
+    std::shared_ptr<gpu::texture_s>                framebuffer_;
+    utils::observed_value_s<uint64_t>              device_version_;
+    utils::observed_value_s<capture_selection_s>   capture_selection_;
+    utils::observed_value_s<BMDColorspace>         colorspace_;
+    utils::observed_value_s<device_status_event_s> device_status_event_;
 
     gpu::color_conversion_s yuv_conversion_{};
     gpu::mat3               gamut_conversion_{1.0F};
@@ -85,8 +99,10 @@ class node_impl : public node_i
     {
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
         auto       payload       = make_device_status(device_status ? *device_status : device_status_s{});
-        const bool important     = device_status_event_.observe(
-            std::tuple(std::string(device_name), payload.signal_locked, payload.active_format));
+        const bool important =
+            device_status_event_.observe(device_status_event_s{.device_name   = std::string(device_name),
+                                                               .signal_locked = payload.signal_locked,
+                                                               .active_format = payload.active_format});
         app->status_registry()->write(status_handle_,
                                       std::move(payload),
                                       important ? core::status_delivery_e::immediate
@@ -179,11 +195,13 @@ class node_impl : public node_i
         }
 
         log()->info("Scheduling DeckLink input setup for {}", device_name);
-        capture_ = std::make_unique<input_capture_s>(app->texture_upload_service(),
-                                                     app->decklink_registry()->control_executor(),
-                                                     std::move(device),
-                                                     std::move(reservation),
-                                                     std::string(device_name));
+        capture_ =
+            std::make_unique<input_capture_s>(app->texture_upload_service(),
+                                              app->decklink_registry()->control_executor(),
+                                              std::move(device),
+                                              std::move(reservation),
+                                              std::string(device_name),
+                                              static_cast<size_t>(app->frame_settings().decklink_input.buffer_frames));
         capture_->start_async();
         return true;
     }
@@ -223,7 +241,9 @@ class node_impl : public node_i
         publish_device_status(app, device_name);
         publish_metrics(sr);
 
-        const auto selection = std::pair(device_name, enabled);
+        const capture_selection_s selection{.device_name   = device_name,
+                                            .enabled       = enabled,
+                                            .buffer_frames = app->frame_settings().decklink_input.buffer_frames};
         if (capture_selection_.would_change(selection)) {
             stop_capture();
 

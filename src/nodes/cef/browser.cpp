@@ -16,7 +16,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 #include <utility>
 
 namespace {
@@ -51,6 +50,9 @@ class node_impl final : public node_i
             // fractional program rates; capture never skips received paints.
             .frame_rate    = static_cast<int>((rate.numerator + uint64_t(rate.denominator) - 1) / rate.denominator),
             .input_mipmaps = state.get_option<bool>("input_mipmaps"),
+            .capture_buffer_frames = static_cast<size_t>(app->frame_settings().cef_capture.buffer_frames),
+            .export_buffer_frames  = static_cast<size_t>(app->frame_settings().cef_export.buffer_frames),
+            .input_buffer_frames   = static_cast<size_t>(app->frame_settings().cef_input.buffer_frames),
         };
     }
 
@@ -71,17 +73,26 @@ class node_impl final : public node_i
         retry_after_ = std::chrono::steady_clock::now() + std::chrono::seconds(1ULL << restarts_);
     }
 
-    using lifecycle_t = std::tuple<cef_state_e, std::string, cef_input_state_e, std::string, std::string, uint64_t>;
-    utils::observed_value_s<lifecycle_t> reported_lifecycle_;
+    struct lifecycle_s
+    {
+        cef_state_e       state;
+        std::string       error;
+        cef_input_state_e input_state;
+        std::string       input_error;
+        std::string       timing_error;
+        uint64_t          restarts;
+        bool              operator==(const lifecycle_s&) const = default;
+    };
+    utils::observed_value_s<lifecycle_s> reported_lifecycle_;
 
     void publish_browser_status(core::node_status_registry_s* registry, const status::cef_browser_status_s& value)
     {
-        const bool important = reported_lifecycle_.observe(lifecycle_t{value.cef_state,
-                                                                       value.cef_error,
-                                                                       value.cef_inputs_state,
-                                                                       value.cef_inputs_error,
-                                                                       value.cef_timing_error,
-                                                                       value.cef_restarts});
+        const bool important = reported_lifecycle_.observe(lifecycle_s{.state        = value.cef_state,
+                                                                       .error        = value.cef_error,
+                                                                       .input_state  = value.cef_inputs_state,
+                                                                       .input_error  = value.cef_inputs_error,
+                                                                       .timing_error = value.cef_timing_error,
+                                                                       .restarts     = value.cef_restarts});
         registry->write(status_handle_,
                         value,
                         important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);

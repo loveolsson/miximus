@@ -27,6 +27,7 @@ export const enum node_type_e {
   sinus_source = "sinus_source",
   circle_source = "circle_source",
   test_pattern = "test_pattern",
+  image = "image",
   draw_box = "draw_box",
   infinite_multiviewer = "infinite_multiviewer",
   mix_tex_2 = "mix_tex_2",

@@ -2,7 +2,6 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
-#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
@@ -25,17 +24,9 @@ class input_video_buffer_s final : public IDeckLinkVideoBuffer
     uint32_t                                             buffer_size_;
     bool                                                 first_access_{true};
 
-    friend class input_video_buffer_allocator_s;
-
-    void activate() { ref_count_ = 1; }
-    void clear_upload() { upload_.reset(); }
-
   public:
-    input_video_buffer_s(input_video_buffer_allocator_s* allocator, uint32_t buffer_size)
-        : allocator_(allocator)
-        , buffer_size_(buffer_size)
-    {
-    }
+    input_video_buffer_s(input_video_buffer_allocator_s* allocator, uint32_t buffer_size);
+    ~input_video_buffer_s();
 
     auto take_upload() -> std::optional<gpu::transfer::texture_upload_lease_s>
     {
@@ -98,21 +89,13 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
   public:
     // DeckLink treats E_OUTOFMEMORY as the end of the capture-buffer pool.
     // Keep SDK-owned buffers bounded independently of transfer-slot lifetime.
-    static constexpr size_t BUFFER_COUNT              = 8;
-    static constexpr size_t INITIAL_UPLOAD_SLOT_COUNT = BUFFER_COUNT;
-    static constexpr size_t UPLOAD_SLOT_COUNT         = 16;
+    static constexpr size_t BUFFER_COUNT = 8;
 
   private:
-    struct buffer_slot_s
-    {
-        std::unique_ptr<input_video_buffer_s> buffer;
-        bool                                  active{};
-    };
-
     std::mutex                                              mutex_;
     std::condition_variable                                 idle_condition_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
-    std::array<buffer_slot_s, BUFFER_COUNT>                 buffers_;
+    const size_t                                            buffer_count_;
     size_t                                                  active_buffers_{};
     bool                                                    shutting_down_{};
     std::atomic_uint64_t                                    upload_acquire_slow_count_{};
@@ -123,8 +106,10 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
 
   public:
     input_video_buffer_allocator_s(uint32_t                                                buffer_size,
-                                   std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream)
+                                   std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream,
+                                   size_t                                                  buffer_count = BUFFER_COUNT)
         : upload_stream_(std::move(upload_stream))
+        , buffer_count_(buffer_count)
         , buffer_size_(buffer_size)
     {
     }
@@ -137,7 +122,7 @@ class input_video_buffer_allocator_s final : public IDeckLinkVideoBufferAllocato
     uint64_t upload_acquire_wait_max_us() const noexcept { return upload_acquire_wait_max_us_.load(); }
 
     HRESULT STDMETHODCALLTYPE AllocateVideoBuffer(IDeckLinkVideoBuffer** allocatedBuffer) noexcept override;
-    void                      return_buffer(input_video_buffer_s* buffer);
+    void                      release_buffer();
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept override
     {

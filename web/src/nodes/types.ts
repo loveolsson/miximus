@@ -39,6 +39,7 @@ import { ScreenOutputNode } from "./screen";
 import { DeckLinkInputNode, DeckLinkOutputNode } from "./decklink";
 import { NdiInputNode, NdiOutputNode } from "./ndi";
 import { TeleprompterNode } from "./teleprompter";
+import { ImageNode } from "./image";
 import { CefBrowserNode } from "./cef";
 import TextNode from "./text";
 
@@ -79,6 +80,7 @@ export function register_node_types(editor: Editor): void {
   editor.registerNodeType(NdiInputNode, { category: "Input" });
   editor.registerNodeType(NdiOutputNode, { category: "Output" });
   editor.registerNodeType(TeleprompterNode, { category: "Content" });
+  editor.registerNodeType(ImageNode, { category: "Content" });
   editor.registerNodeType(TextNode, { category: "Content" });
 }
 

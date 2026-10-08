@@ -3,4 +3,5 @@ PRIVATE
     register.hpp
     register.cpp
     test_pattern.cpp
+    image.cpp
 )

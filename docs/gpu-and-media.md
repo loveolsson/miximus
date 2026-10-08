@@ -68,10 +68,56 @@ Aborting the evaluation releases unpublished leases; already queued commands sti
 
 NDI and DeckLink capture enqueue each upload **before** publishing the frame into the timed input FIFO, independently
 of graph demand. The render thread selects by PTS and waits for that exact upload during consumption, after the
-configured buffering interval (currently one frame for NDI and three for DeckLink). It waits only until the exact upload
+configured buffering interval (default one frame for NDI and three for DeckLink). It waits only until the exact upload
 has a graphics-consumable submission ticket, then records `commands().wait_for(frame->upload_completion())`. GPU
 completion is a GPU dependency, not an additional CPU wait. Selection never filters frames by readiness.
 Pending graph commands may be submitted before consumption so their GPU work can overlap the selected input wait.
+
+## Global buffer settings
+
+Global Settings stores the following integer options on `$app`, in the range 1–8 except Chromium destination slots
+(2–8). A single Chromium slot stalls ordinary video playback because its current frame prevents reuse. Existing settings files inherit
+the defaults for missing options. Native validation clamps numeric values and rejects incompatible types.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `decklink_input_buffer_frames` | 3 | Input delay in source frames |
+| `ndi_input_buffer_frames` | 1 | Input delay in source frames |
+| `cef_capture_buffer_frames` | 1 | Browser-to-graph delay in browser frames |
+| `decklink_output_buffer_frames` | 4 | Output playout target in program frames |
+| `ndi_output_buffer_frames` | 4 | Output playout target in program frames |
+| `screen_output_buffer_frames` | 2 | Output playout target in program frames |
+| `cef_export_buffer_frames` | 2 | Native export slots per browser texture input |
+| `cef_input_buffer_frames` | 3 | Chromium destination slots per browser texture input |
+
+All six timed queues have capacity `target + 3`; capacity does not add to the requested playout delay. Transfer pools
+also cover frames held outside the queue: NDI and browser capture use `target + 7` slots; DeckLink's separate SDK and
+transfer bounds are described below. Browser texture-input slots are direct capacity limits, without preroll or an
+extra `+3`. CEF admission accounts for both configured export and destination depths, including retiring generations.
+Existing memory budgets still apply; larger depths can reduce the resolutions or simultaneous inputs that fit.
+
+Changes become visible at a frame boundary. Affected input captures and output sessions restart asynchronously using
+their existing lifecycle paths. Any of the three CEF controls recreates affected browser sessions, reloading pages and
+resetting page state. Outstanding SDK references and GPU work retire normally before their storage is reused.
+The old `MIXIMUS_CEF_MEDIA_EXPORT_DEPTH` and `MIXIMUS_CEF_MEDIA_INPUT_DEPTH` diagnostic overrides are replaced by these
+settings. `scripts/test_cef_inputs.py --buffer-settings` exercises live changes to the maximum, minimum and defaults.
+
+## Image file source
+
+The `image` node (Content → Image) exposes a `texture` output and a `file_path` option, using the same server-side
+File Path control as the teleprompter. Paths refer to the machine running Miximus and support UTF-8; relative paths
+resolve against the process working directory. Images retain their native dimensions. File reading, stb decoding,
+sRGB-to-linear conversion, alpha premultiplication and upload preparation run at background CPU-task priority.
+GPU uploads and mipmaps use the bounded transfer service; the render thread only polls for completed work.
+
+Changing the path starts a replacement and retains the last successful image until the new upload completes. Invalid
+files log one error per selection and retain the previous image. Clearing the path releases the output. Obsolete queued
+work is cancelled; already-running work owns its inputs, finishes safely, and cannot publish a stale selection. Files
+are loaded on selection, without a filesystem watcher. Clear and reselect a path to reload edited content. The node
+decodes a still frame; it does not play animated images or apply embedded color profiles.
+
+`scripts/test_image_node.py [--use-cuda]` exercises PNG/Unicode-path loading, replacement, failure retention, clearing, rapid edits
+and removal during loading through real CEF texture inputs. Decoder tests also cover premultiplied color values.
 
 ## Textures, drawing, and color
 
@@ -228,12 +274,14 @@ Keeping one lease for the full lifetime of a DeckLink buffer would upload only i
 slots after the initial pool. Completed GPU textures remain owned by the upload stream independently of the DeckLink
 buffer object.
 
-The custom allocator exposes at most eight reusable DeckLink buffer objects and reports `E_OUTOFMEMORY` when DeckLink
-has all eight checked out; this is how the SDK establishes the bounded capture pool. Its upload stream preallocates
-eight transfer slots and may grow to sixteen: four may be retained by timed selection, while the remainder cover the
-published texture, DeckLink DMA writes, uploads, and asynchronous reclaim without coupling capture cadence to the
-render thread. These limits are intentionally separate because DeckLink buffer-object reuse and transfer-slot lifetime
-are independent. Every address still comes from a transfer backend; there is no node-owned staging allocation.
+The custom allocator creates a lightweight wrapper for each SDK allocation request and deletes it on its final COM
+release. It does not cache wrappers. Each live wrapper retains the allocator, and shutdown waits for all wrappers to
+return. The SDK may still reuse a live wrapper across write cycles. For input delay `target`, queue capacity is
+`Q = target + 3`, the live-wrapper bound is `S = max(8, Q + 2)`, and the upload stream preallocates `S` transfer slots
+with a maximum of `S + Q + 1 + 2`. These bounds cover SDK writes, retained queue frames, the selected frame and GPU
+retirement. The existing first-access allocation wait and nonblocking subsequent acquisition are unchanged. SDK frame
+references remain retained through queue consumption or eviction. Every address still comes from a transfer backend;
+there is no node-owned staging allocation.
 
 The upload stream retains its current texture until the render thread consumes a newer submitted upload;
 publishing the replacement returns the former slot to the stream. The timing queue deliberately chooses whether a

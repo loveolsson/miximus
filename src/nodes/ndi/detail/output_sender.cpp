@@ -5,7 +5,7 @@
 #include "media/playout_timeline.hpp"
 #include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
-#include "types/output_buffer_limits.hpp"
+#include "types/buffer_limits.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
 
@@ -162,7 +162,7 @@ class output_sender_s::impl_s
     void run_stream(const stream_state_s& state)
     {
         media::timed_output_queue_s<sender_frame_s>              queue({
-                         .capacity = output_sender_s::get_queue_capacity(state.buffer_frames),
+            .capacity = output_sender_s::get_queue_capacity(state.buffer_frames),
         });
         media::playout_timeline_s                                timeline;
         media::presentation_timeline_s                           observed_latency;
@@ -227,7 +227,7 @@ class output_sender_s::impl_s
                 program_selection_offset_us_ = std::chrono::duration_cast<std::chrono::microseconds>(
                                                    selection.frame->program_target_time - program_target)
                                                    .count();
-                auto next = selection.frame->payload.readback;
+                auto next                    = selection.frame->payload.readback;
                 send_frame(state, selection.frame->payload, program_target - state.program_time_origin);
                 inflight = std::move(next);
             }
@@ -404,7 +404,7 @@ size_t output_sender_s::validate_buffer_frame_count(size_t buffer_frames)
 
 size_t output_sender_s::get_queue_capacity(size_t buffer_frames)
 {
-    return validate_buffer_frame_count(buffer_frames) + 3;
+    return timed_buffer_queue_capacity(validate_buffer_frame_count(buffer_frames));
 }
 
 size_t output_sender_s::get_readback_slot_count(size_t buffer_frames)

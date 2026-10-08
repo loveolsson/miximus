@@ -12,6 +12,7 @@ export default [
     files: ["src/**/*.{ts,vue}"],
     languageOptions: {
       globals: {
+        AbortController: "readonly",
         ResizeObserver: "readonly",
         MutationObserver: "readonly",
         HTMLElement: "readonly",

@@ -168,6 +168,59 @@ The native build hashes web sources, rebuilds `web/dist` only when needed, and b
 `static_files`. Shader sources in `shaders/` are compiled and validated into the build tree, then bundled separately as
 SPIR-V through the same file bundler. Web-build failures are reported at the end of the native build.
 
+## Packaging an existing build
+
+After a successful native build, run from the repository root:
+
+```bash
+cmake -P scripts/package.cmake
+```
+
+The script uses CMake 3.28+ and the platform's binary inspection tool to assemble `dist/`:
+Miximus, the `static_files` library containing the web UI/resources/shaders, recursively resolved
+application runtime libraries, and the CEF helper, runtime, resources and notices when CEF is enabled.
+It does not configure or build the project and leaves IDE settings and the build cache unchanged.
+Windows uses the configured compiler's `dumpbin` (or `llvm-objdump`/`objdump` on PATH), Linux uses
+`objdump`, and macOS uses `otool` plus `install_name_tool` for relocation.
+
+Select another build directory or a configuration for a multi-configuration generator with:
+
+```bash
+cmake -DBUILD_DIR=build-release -DCONFIG=Release -P scripts/package.cmake
+```
+
+For single-configuration generators, `CONFIG` is optional and must match the existing build type
+if supplied. Package on the same operating system as the build. Missing binaries, unresolved
+dependencies, and a recorded web-build failure stop packaging. Tests, debug symbols, settings,
+and unrelated files in the build root are not included.
+
+`dist/` is ignored by Git and owned by the packaging script. Each successful run replaces its
+previous contents, so keep personal settings and recordings elsewhere. An existing directory
+without the script's ownership record is refused. The lock, ownership record and temporary staging
+live in the Git-ignored `build-packaging/` directory, keeping bookkeeping out of `dist/`.
+Launch `dist/miximus.exe` on Windows,
+`dist/run-miximus` on Linux, or `dist/miximus` on macOS. The Linux launcher supplies library search
+paths while keeping CEF's Vulkan/ANGLE libraries isolated. Paths passed as arguments remain
+relative to the caller's working directory.
+
+System redistributables are prerequisites, not package contents. On Windows, install the matching
+Microsoft Visual C++ Redistributable separately; MSVC/UCRT DLLs are excluded regardless of whether
+they resolve from Windows, the build directory, or the CEF SDK. Windows system DLLs and installed
+GPU drivers are also excluded. Application dependencies such as Boost, FreeType, the NDI runtime
+and the custom CEF runtime remain in the package. NDI is bundled with
+`Processing.NDI.Lib.Licenses.txt` from the selected SDK; packaging fails if those notices cannot
+be found. For a nonstandard SDK layout, pass `-DNDI_LICENSE_FILE=/path/to/Processing.NDI.Lib.Licenses.txt`.
+Distribution must also meet the NDI SDK's license and attribution requirements.
+
+Linux libraries under `/lib`, `/usr/lib` and their `32`/`64` variants remain distribution package
+prerequisites, including libraries in multiarch subdirectories; the bundled NDI runtime is an
+explicit exception. Linux packages require a compatible
+platform baseline and those system dependencies installed. macOS system libraries remain on the
+host, as does its Vulkan/MoltenVK installation. Graphics/media drivers and Linux CEF sandbox setup
+are still required. The script does not
+produce an installer, code-sign the package, or collect all third-party redistribution notices.
+Windows packaging is exercised locally; Linux and macOS relocation require validation on those hosts.
+
 ## Adding or changing a node
 
 A complete node generally requires native and web changes.

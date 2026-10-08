@@ -97,11 +97,26 @@ class renderer_app_s final
     , public CefRenderProcessHandler
 {
     std::map<int, std::shared_ptr<context_state_s>> contexts_;
+    std::map<int, uint32_t>                         input_depths_;
     uint64_t                                        next_context_{};
     IMPLEMENT_REFCOUNTING(renderer_app_s);
 
   public:
     CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override { return this; }
+
+    void OnBrowserCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDictionaryValue> extra_info) override
+    {
+        // Browser creation data comes from trusted native configuration, never page JS.
+        const int depth                         = extra_info && extra_info->HasKey(MEDIA_INPUT_DEPTH_KEY)
+                                                      ? extra_info->GetInt(MEDIA_INPUT_DEPTH_KEY)
+                                                      : cef_input_buffer_limits_s::DEFAULT_FRAME_COUNT;
+        input_depths_[browser->GetIdentifier()] = depth >= cef_input_buffer_limits_s::MINIMUM_FRAME_COUNT &&
+                                                          depth <= cef_input_buffer_limits_s::MAXIMUM_FRAME_COUNT
+                                                      ? static_cast<uint32_t>(depth)
+                                                      : 0;
+    }
+
+    void OnBrowserDestroyed(CefRefPtr<CefBrowser> browser) override { input_depths_.erase(browser->GetIdentifier()); }
 
     void
     OnContextCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) override
@@ -133,7 +148,7 @@ class renderer_app_s final
         if (!context->Eval(invoke, "miximus-internal-command", 1, state->invoke, exception)) {
             return;
         }
-        install_media_inputs(frame, context, state->token);
+        install_media_inputs(frame, context, state->token, input_depths_.at(browser->GetIdentifier()));
         contexts_[browser->GetIdentifier()] = state;
         send_context(frame, protocol::CONTEXT_READY, state->token);
     }

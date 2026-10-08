@@ -12,9 +12,7 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <chrono>
-#include <cstdlib>
 #include <exception>
 #include <format>
 #include <mutex>
@@ -29,23 +27,6 @@ constexpr size_t INPUTS           = 8;
 constexpr size_t MAX_EXPORT_DEPTH = 8;
 // Metadata for Chromium-owned transparent content; no Vulkan export is allocated.
 constexpr gpu::extent_s DISCONNECTED_EXTENT{.width = 16, .height = 16};
-
-size_t export_depth()
-{
-    size_t depth = 2;
-    // Diagnostic native capacity; no page-controlled allocation growth.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    if (const auto* configured = std::getenv("MIXIMUS_CEF_MEDIA_EXPORT_DEPTH")) {
-        const std::string_view value(configured);
-        const auto             parsed = std::from_chars(value.data(), value.data() + value.size(), depth);
-        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || depth < 1 ||
-            depth > MAX_EXPORT_DEPTH) {
-            throw std::invalid_argument("MIXIMUS_CEF_MEDIA_EXPORT_DEPTH must be 1..8");
-        }
-    }
-
-    return depth;
-}
 
 bool is_main_renderer_message(const CefRefPtr<CefBrowser>&        browser,
                               const CefRefPtr<CefFrame>&          frame,
@@ -72,12 +53,14 @@ struct reservation_s
     std::shared_ptr<budget_s>  budget;
     std::array<size_t, INPUTS> high_water{};
     size_t                     depth;
+    size_t                     input_depth;
     bool                       mipmaps;
     size_t                     bytes{};
 
-    explicit reservation_s(std::shared_ptr<budget_s> owner, size_t export_slots, bool use_mipmaps)
+    explicit reservation_s(std::shared_ptr<budget_s> owner, size_t export_slots, size_t input_slots, bool use_mipmaps)
         : budget(std::move(owner))
         , depth(export_slots)
+        , input_depth(input_slots)
         , mipmaps(use_mipmaps)
     {
     }
@@ -95,13 +78,13 @@ struct reservation_s
 
     bool grow(size_t input, gpu::extent_s extent)
     {
-        // Conservative destination allowance: the helper can select up to eight
-        // Chromium slots. Keep each input's high-water charge until retirement,
+        // Use the same immutable depth sent to the renderer. Keep each input's
+        // high-water charge until retirement,
         // since a media consumer can retain a destination from an older size.
         const size_t padded_width  = (size_t(extent.width) + 255) / 256 * 256;
         const size_t padded_height = (size_t(extent.height) + 63) / 64 * 64;
         // Include padded storage for every mip level, including thin/odd images.
-        // Exports remain level zero; only the eight possible Chromium slots grow.
+        // Exports remain level zero; only the configured Chromium slots grow.
         size_t destination_bytes = padded_width * padded_height * 4;
         if (mipmaps) {
             auto width  = extent.width;
@@ -112,7 +95,7 @@ struct reservation_s
                 destination_bytes += ((size_t(width) + 255) / 256 * 256) * ((size_t(height) + 63) / 64 * 64) * 4;
             }
         }
-        const size_t     amount = (padded_width * padded_height * 4 * depth) + (destination_bytes * 8);
+        const size_t     amount = (padded_width * padded_height * 4 * depth) + (destination_bytes * input_depth);
         std::scoped_lock lock(budget->mutex);
         const size_t     delta = std::max(amount, high_water.at(input)) - high_water.at(input);
         if (delta > budget_s::LIMIT - budget->used) {
@@ -211,18 +194,24 @@ struct media_input_session_s::impl_s
         bool       drained{};
         bool       bridge_failed{};
 
-        state_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> owner, bool use_mipmaps)
+        state_s(gpu::device_s&                         device,
+                std::shared_ptr<media_input_runtime_s> owner,
+                bool                                   use_mipmaps,
+                size_t                                 export_frames,
+                size_t                                 input_frames)
             : runtime(std::move(owner))
             , api(cef_wrapper::find_send_media_frame())
             , mipmaps(use_mipmaps)
         {
+            validate_input_buffer_frames(export_frames);
+            validate_input_buffer_frames(input_frames, cef_input_buffer_limits_s::MINIMUM_FRAME_COUNT);
             if (!runtime || (api == nullptr)) {
                 error = "CEF runtime does not provide GPU media input v4";
                 return;
             }
 
-            const auto depth = export_depth();
-            reservation      = std::make_shared<reservation_s>(runtime->impl_->budget, depth, mipmaps);
+            const auto depth = export_frames;
+            reservation      = std::make_shared<reservation_s>(runtime->impl_->budget, depth, input_frames, mipmaps);
             exports          = std::make_unique<media_input_exports_s>(
                 device, depth, runtime->impl_->quarantine, 256ULL * 1024 * 1024, reservation);
         }
@@ -574,8 +563,12 @@ struct media_input_session_s::impl_s
 
     std::shared_ptr<state_s> state;
     std::jthread             worker;
-    impl_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> runtime, bool mipmaps)
-        : state(std::make_shared<state_s>(device, std::move(runtime), mipmaps))
+    impl_s(gpu::device_s&                         device,
+           std::shared_ptr<media_input_runtime_s> runtime,
+           bool                                   mipmaps,
+           size_t                                 export_frames,
+           size_t                                 input_frames)
+        : state(std::make_shared<state_s>(device, std::move(runtime), mipmaps, export_frames, input_frames))
     {
         if (state->exports) {
             worker = std::jthread([state = state](const std::stop_token& stop) {
@@ -593,8 +586,10 @@ struct media_input_session_s::impl_s
 
 media_input_session_s::media_input_session_s(gpu::device_s&                         device,
                                              std::shared_ptr<media_input_runtime_s> runtime,
-                                             bool                                   mipmaps)
-    : impl_(std::make_unique<impl_s>(device, std::move(runtime), mipmaps))
+                                             bool                                   mipmaps,
+                                             size_t                                 export_frames,
+                                             size_t                                 input_frames)
+    : impl_(std::make_unique<impl_s>(device, std::move(runtime), mipmaps, export_frames, input_frames))
 {
 }
 
@@ -758,7 +753,7 @@ media_input_metrics_s media_input_session_s::metrics() const
     std::scoped_lock      lock(state.mutex);
     media_input_metrics_s result{.available      = bool(state.exports),
                                  .failed         = state.exports && (state.bridge_failed || state.exports->failed() ||
-                                                             (state.drained && !state.closing)),
+                                                                     (state.drained && !state.closing)),
                                  .subscribed     = state.subscribed,
                                  .submitted      = state.submitted,
                                  .delivered      = state.delivered,

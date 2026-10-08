@@ -9,6 +9,7 @@
 #include "utils/failure_shutdown.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <exception>
@@ -20,12 +21,6 @@ namespace {
 using namespace miximus;
 using namespace miximus::decklink_sdk;
 using namespace miximus::nodes::decklink::detail;
-
-constexpr size_t SOURCE_PLAYOUT_DELAY_FRAMES = 3;
-// Selection happens on the render thread after the SDK callback may have
-// delivered the next frame. Account for both the frame becoming eligible and
-// that concurrent ingress frame in addition to the delayed frames.
-constexpr size_t SOURCE_QUEUE_CAPACITY = SOURCE_PLAYOUT_DELAY_FRAMES + 2;
 
 auto log() { return getlog("decklink"); }
 
@@ -66,9 +61,8 @@ class callback_s final
     std::mutex                                              frame_callback_mutex_;
     mutable std::mutex                                      upload_mutex_;
     std::shared_ptr<gpu::transfer::texture_upload_stream_s> upload_stream_;
-    media::timed_source_queue_s<captured_frame_data_s>      frame_queue_{
-             {.capacity = SOURCE_QUEUE_CAPACITY, .playout_delay_frames = SOURCE_PLAYOUT_DELAY_FRAMES}
-    };
+    const size_t                                            buffer_frames_;
+    media::timed_source_queue_s<captured_frame_data_s>      frame_queue_;
 
     std::atomic<BMDDisplayMode> pending_display_mode_{bmdModeUnknown};
     std::atomic<BMDColorspace>  colorspace_{bmdColorspaceRec709};
@@ -333,12 +327,16 @@ class callback_s final
                utils::serial_executor_s*                             control_executor,
                decklink_ptr<IDeckLinkInput>                          device,
                std::shared_ptr<device_reservation_s<IDeckLinkInput>> reservation,
-               std::string                                           device_name)
+               std::string                                           device_name,
+               size_t                                                buffer_frames)
         : upload_service_(upload_service)
         , control_executor_(control_executor)
         , device_(std::move(device))
         , reservation_(std::move(reservation))
         , device_name_(std::move(device_name))
+        , buffer_frames_(validate_input_buffer_frames(buffer_frames))
+        , frame_queue_(
+              {.capacity = timed_buffer_queue_capacity(buffer_frames_), .playout_delay_frames = buffer_frames_})
     {
     }
 
@@ -405,19 +403,23 @@ class callback_s final
                 .address_alignment_bytes = 64,
                 .memory_access           = gpu::transfer::host_memory_access_e::overwrite,
             };
-            const auto stream = upload_service_->create_stream({
-                .host_layout = host_layout,
-                // Timed selection may retain five completed DMA writes while
-                // DeckLink continues cycling its independent buffer objects.
-                // Additional slots cover the published texture and asynchronous
-                // upload/reclaim without making StartAccess wait on rendering.
-                .max_slots           = input_video_buffer_allocator_s::UPLOAD_SLOT_COUNT,
-                .initial_slots       = input_video_buffer_allocator_s::INITIAL_UPLOAD_SLOT_COUNT,
+            // SDK frames remain retained until consumption. Give their wrappers
+            // room for the entire queue plus concurrent capture; retain the
+            // existing eight-wrapper minimum for driver capture setup.
+            const auto queue_capacity = timed_buffer_queue_capacity(buffer_frames_);
+            const auto sdk_buffers    = std::max(input_video_buffer_allocator_s::BUFFER_COUNT, queue_capacity + 2);
+            // Account for SDK write leases, queued uploads, the selected frame
+            // and two retiring GPU evaluations. These are bounds, not latency.
+            const auto upload_slots = sdk_buffers + queue_capacity + 1 + 2;
+            const auto stream       = upload_service_->create_stream({
+                .host_layout         = host_layout,
+                .max_slots           = upload_slots,
+                .initial_slots       = sdk_buffers,
                 .generate_mip_maps   = false,
                 .conversion_sampling = gpu::sampling_e::mipmapped_linear,
             });
 
-            auto allocator = make_decklink_ptr<input_video_buffer_allocator_s>(bufferSize, stream);
+            auto allocator = make_decklink_ptr<input_video_buffer_allocator_s>(bufferSize, stream, sdk_buffers);
             {
                 const std::scoped_lock lock(upload_mutex_);
                 if (allocator_) {
@@ -823,11 +825,16 @@ input_capture_s::input_capture_s(gpu::transfer::texture_upload_service_s*       
                                  utils::serial_executor_s*                             control_executor,
                                  decklink_ptr<IDeckLinkInput>                          device,
                                  std::shared_ptr<device_reservation_s<IDeckLinkInput>> reservation,
-                                 std::string                                           device_name)
+                                 std::string                                           device_name,
+                                 size_t                                                buffer_frames)
     : impl_(std::make_unique<impl_s>())
 {
-    impl_->callback = make_decklink_ptr<callback_s>(
-        upload_service, control_executor, std::move(device), std::move(reservation), std::move(device_name));
+    impl_->callback = make_decklink_ptr<callback_s>(upload_service,
+                                                    control_executor,
+                                                    std::move(device),
+                                                    std::move(reservation),
+                                                    std::move(device_name),
+                                                    buffer_frames);
 }
 
 input_capture_s::~input_capture_s()

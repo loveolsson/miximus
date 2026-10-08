@@ -188,6 +188,10 @@ def main():
     parser.add_argument("--warmup-seconds", type=float, default=3)
     parser.add_argument("--steady-seconds", type=float, default=0)
     parser.add_argument(
+        "--buffer-settings", action="store_true",
+        help="Exercise live global buffer changes at both limits and restore defaults",
+    )
+    parser.add_argument(
         "--input-mipmaps",
         action="store_true",
         help="Enable and exercise browser input mipmap toggles",
@@ -335,6 +339,36 @@ def main():
                     for i, v in enumerate(p["samples"])
                 ),
             )
+            if args.buffer_settings:
+                defaults = dict(
+                    decklink_input_buffer_frames=3,
+                    ndi_input_buffer_frames=1,
+                    cef_capture_buffer_frames=1,
+                    cef_export_buffer_frames=2,
+                    cef_input_buffer_frames=3,
+                )
+                for label, values in (
+                    ("maximum", dict.fromkeys(defaults, 8)),
+                    ("minimum", dict(dict.fromkeys(defaults, 1), cef_input_buffer_frames=2)),
+                    ("defaults", defaults),
+                ):
+                    with Page.lock:
+                        loads = Page.loads
+                    command("update_node", id="$app", options=values)
+                    wait(
+                        f"global buffers: {label}",
+                        lambda s, p: p.get("generation", 0) > loads
+                        and s.get("cef_inputs_active") == args.inputs
+                        and len(p.get("samples", [])) == args.inputs
+                        and all(
+                            v["presented"] >= 30
+                            for v in p["samples"][: args.connected_inputs]
+                        ),
+                        allow_recovery=True,
+                    )
+                    saved = next(n for n in config()["nodes"] if n["id"] == "$app")
+                    if any(saved["options"][key] != value for key, value in values.items()):
+                        raise RuntimeError("Global buffer settings were not persisted")
             if args.steady_seconds:
                 if args.warmup_seconds:
                     time.sleep(args.warmup_seconds)

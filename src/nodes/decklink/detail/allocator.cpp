@@ -2,11 +2,9 @@
 
 #include "logger/logger.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <exception>
-#include <memory>
 #include <utility>
 
 namespace miximus::nodes::decklink::detail {
@@ -15,6 +13,20 @@ using namespace miximus::decklink_sdk;
 namespace {
 constexpr auto initial_upload_timeout = std::chrono::seconds(2);
 } // namespace
+
+input_video_buffer_s::input_video_buffer_s(input_video_buffer_allocator_s* allocator, uint32_t buffer_size)
+    : allocator_(allocator)
+    , buffer_size_(buffer_size)
+{
+    allocator_->AddRef();
+}
+
+input_video_buffer_s::~input_video_buffer_s()
+{
+    upload_.reset();
+    allocator_->release_buffer();
+    allocator_->Release();
+}
 
 HRESULT input_video_buffer_s::StartAccess(BMDBufferAccessFlags flags) noexcept
 {
@@ -39,11 +51,7 @@ ULONG input_video_buffer_s::Release() noexcept
 {
     const ULONG count = --ref_count_;
     if (count == 0) {
-        try {
-            allocator_->return_buffer(this);
-        } catch (...) {
-            logger::log_error_noexcept("decklink", "DeckLink buffer release failed");
-        }
+        delete this;
     }
     return count;
 }
@@ -91,20 +99,11 @@ HRESULT input_video_buffer_allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer
         if (shutting_down_ || !upload_stream_) {
             return E_OUTOFMEMORY;
         }
-        const auto slot =
-            std::ranges::find_if(buffers_, [](const buffer_slot_s& candidate) { return !candidate.active; });
-        if (slot == buffers_.end()) {
+        if (active_buffers_ >= buffer_count_) {
             return E_OUTOFMEMORY;
         }
-
-        if (!slot->buffer) {
-            slot->buffer = std::make_unique<input_video_buffer_s>(this, buffer_size_);
-        }
-        slot->active = true;
+        *allocatedBuffer = new input_video_buffer_s(this, buffer_size_);
         ++active_buffers_;
-        slot->buffer->activate();
-
-        *allocatedBuffer = static_cast<IDeckLinkVideoBuffer*>(slot->buffer.get());
         return S_OK;
     } catch (const std::exception& error) {
         logger::log_error_noexcept("decklink", "DeckLink buffer allocation failed: {}", error.what());
@@ -114,18 +113,10 @@ HRESULT input_video_buffer_allocator_s::AllocateVideoBuffer(IDeckLinkVideoBuffer
     return E_OUTOFMEMORY;
 }
 
-void input_video_buffer_allocator_s::return_buffer(input_video_buffer_s* buffer)
+void input_video_buffer_allocator_s::release_buffer()
 {
     const std::scoped_lock lock(mutex_);
-    const auto             slot = std::ranges::find_if(
-        buffers_, [buffer](const buffer_slot_s& candidate) { return candidate.buffer.get() == buffer; });
-    if (slot == buffers_.end() || !slot->active) {
-        getlog("decklink")->error("DeckLink allocator tried to release an unknown buffer");
-        return;
-    }
-
-    buffer->clear_upload();
-    slot->active = false;
+    assert(active_buffers_ > 0);
     --active_buffers_;
     if (shutting_down_ && active_buffers_ == 0) {
         idle_condition_.notify_all();

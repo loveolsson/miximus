@@ -49,7 +49,7 @@ There is no pending-task limit. An empty optional means the worker is shutting d
 `utils::cpu_task_priority_e`: `background`, `normal`, and `interactive`, declared from lowest to highest.
 Extend or reorder that enum to change scheduling centrally; its values are neither persisted nor part of the protocol.
 Higher priorities start first, with FIFO ordering among equal priorities. Text and teleprompter work use `normal`;
-test-pattern generation uses `background`.
+test-pattern generation and image-file decoding/upload preparation use `background`.
 Priority does not interrupt running work. The handle exposes `valid()`, `wait_for()`, `get()`, and `cancel()`.
 Cancellation succeeds only while queued, releases captured inputs, and makes
 `get()` throw `utils::cpu_task_cancelled_s`. A task is considered started when the worker claims it under the queue

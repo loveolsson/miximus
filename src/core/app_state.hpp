@@ -13,8 +13,8 @@
 #include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
+#include "types/buffer_limits.hpp"
 #include "types/frame_rate.hpp"
-#include "types/output_buffer_limits.hpp"
 #include "utils/asio.hpp"
 #include "utils/cpu_task_worker.hpp"
 
@@ -37,6 +37,32 @@ class app_state_s
   public:
     struct frame_settings_s
     {
+        struct decklink_input_settings_s
+        {
+            int buffer_frames{decklink_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        };
+        decklink_input_settings_s decklink_input;
+        struct ndi_input_settings_s
+        {
+            int buffer_frames{ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        };
+        ndi_input_settings_s ndi_input;
+        struct cef_capture_settings_s
+        {
+            int buffer_frames{cef_capture_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        };
+        cef_capture_settings_s cef_capture;
+        struct cef_export_settings_s
+        {
+            int buffer_frames{cef_export_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        };
+        cef_export_settings_s cef_export;
+        struct cef_input_settings_s
+        {
+            int buffer_frames{cef_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        };
+        cef_input_settings_s cef_input;
+
         struct decklink_output_settings_s
         {
             int buffer_frames{decklink_output_buffer_limits_s::DEFAULT_FRAME_COUNT};

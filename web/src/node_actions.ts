@@ -9,7 +9,7 @@ import type { ws_wrapper } from "./websocket";
 
 export type NodeActionNodeType = keyof node_action_contracts_s;
 
-type Command<Name, Payload> = { readonly action: Name } & ({} extends Payload
+type Command<Name, Payload> = { readonly action: Name } & (Record<string, never> extends Payload
   ? { readonly payload?: Payload }
   : { readonly payload: Payload });
 

@@ -4,6 +4,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_process_message.h"
 #include "nodes/cef/media_input_types.hpp"
+#include "types/buffer_limits.hpp"
 
 #include <functional>
 #include <memory>
@@ -29,7 +30,11 @@ class media_input_session_s
     std::unique_ptr<impl_s> impl_;
 
   public:
-    media_input_session_s(gpu::device_s& device, std::shared_ptr<media_input_runtime_s> runtime, bool mipmaps = false);
+    media_input_session_s(gpu::device_s&                         device,
+                          std::shared_ptr<media_input_runtime_s> runtime,
+                          bool                                   mipmaps = false,
+                          size_t export_frames = cef_export_buffer_limits_s::DEFAULT_FRAME_COUNT,
+                          size_t input_frames  = cef_input_buffer_limits_s::DEFAULT_FRAME_COUNT);
     ~media_input_session_s();
 
     void attach(int browser_id);

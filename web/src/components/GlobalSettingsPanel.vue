@@ -18,6 +18,7 @@
 
         <div v-for="section in sections" :key="section.title" class="settings-section">
           <h2>{{ section.title }}</h2>
+          <p v-if="section.description" class="settings-description">{{ section.description }}</p>
           <component
             :is="field.intf.component"
             v-for="field in section.fields"
@@ -54,6 +55,18 @@ const panelElement = ref<HTMLElement>();
 const sectionDefinitions = [
   { title: "Program", keys: ["frame_rate"] },
   { title: "Framebuffer", keys: ["default_framebuffer_size"] },
+  { title: "DeckLink Input", keys: ["decklink_input_buffer_frames"] },
+  { title: "NDI Input", keys: ["ndi_input_buffer_frames"] },
+  {
+    title: "Browser Capture",
+    keys: ["cef_capture_buffer_frames"],
+    description: "Changing the delay reloads browser pages.",
+  },
+  {
+    title: "Browser Texture Inputs",
+    keys: ["cef_export_buffer_frames", "cef_input_buffer_frames"],
+    description: "Changing slot counts reloads browser pages. Larger pools use more GPU memory.",
+  },
   {
     title: "DeckLink Output",
     keys: ["decklink_output_buffer_frames"],
@@ -72,6 +85,7 @@ interface SettingsField {
 const sections = computed(() =>
   sectionDefinitions.map((section) => ({
     title: section.title,
+    description: "description" in section ? section.description : undefined,
     fields: section.keys.flatMap((key): SettingsField[] => {
       const inputs = props.node.inputs as Record<string, ApplicationSettingsInterface>;
       const intf = inputs[key];

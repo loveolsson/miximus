@@ -19,8 +19,8 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "registry.hpp"
+#include "types/buffer_limits.hpp"
 #include "types/node_status_json.hpp"
-#include "types/output_buffer_limits.hpp"
 #include "types/settings_option.hpp"
 #include "utils/failure_shutdown.hpp"
 #include "utils/lookup.hpp"
@@ -44,7 +44,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -56,14 +55,13 @@ using namespace miximus::nodes::decklink;
 using namespace miximus::nodes::decklink::detail;
 using namespace std::chrono_literals;
 
-constexpr size_t OUTPUT_QUEUE_HEADROOM        = 3;
 constexpr size_t READBACK_PIPELINE_HEADROOM   = 3;
 constexpr size_t RETAINED_PROGRAM_FRAME_COUNT = 1;
 constexpr size_t PROGRAM_QUEUE_RESERVE        = 1;
 
 [[nodiscard]] constexpr size_t get_output_queue_capacity(size_t buffer_frames)
 {
-    return buffer_frames + OUTPUT_QUEUE_HEADROOM;
+    return timed_buffer_queue_capacity(buffer_frames);
 }
 
 [[nodiscard]] constexpr size_t get_readback_slot_count(size_t scheduled_frames, size_t program_queue_capacity)
@@ -336,10 +334,10 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
         const auto readback_slot_count = get_readback_slot_count(scheduled_frame_target_, output_queue_->capacity());
         const auto stream              = readback_service_->create_stream({
-                         .host_layout         = active_output->path->host_layout(),
-                         .max_slots           = readback_slot_count,
-                         .initial_slots       = readback_slot_count,
-                         .conversion_sampling = gpu::sampling_e::linear,
+            .host_layout         = active_output->path->host_layout(),
+            .max_slots           = readback_slot_count,
+            .initial_slots       = readback_slot_count,
+            .conversion_sampling = gpu::sampling_e::linear,
         });
         if (!stream->wait_for_initial_slots(5s)) {
             log()->error("Failed to initialize the DeckLink output transfer pool for {}", device_name_);
@@ -806,41 +804,41 @@ class callback_s final : public IDeckLinkVideoOutputCallback
             output_queue_.has_value() ? output_queue_->metrics() : media::timed_output_queue_metrics_s{};
         const auto runtime_metrics = runtime_metrics_.snapshot();
         auto       result          = metrics_s{
-                           .frames_completed                     = frames_completed_.load(),
-                           .frames_displayed_late                = frames_displayed_late_.load(),
-                           .frames_dropped                       = frames_dropped_.load(),
-                           .frames_flushed                       = frames_flushed_.load(),
-                           .program_frames_received              = output_metrics.pushed,
-                           .program_queue_overflow_drops         = output_metrics.overflow_drops,
-                           .program_timing_drops                 = output_metrics.selection_drops,
-                           .program_frames_repeated              = output_metrics.repeated,
-                           .program_frames_missing               = output_metrics.missing,
-                           .program_cadence_repeats              = runtime_metrics.cadence_repeats,
-                           .program_starvation_repeats           = runtime_metrics.starvation_repeats,
-                           .program_starvation_repeat_streak     = runtime_metrics.starvation_repeat_streak,
-                           .program_starvation_repeat_streak_max = runtime_metrics.starvation_repeat_streak_max,
-                           .output_refill_shortfalls             = runtime_metrics.refill_shortfalls,
-                           .content_frames_sampled               = content_frames_sampled_,
-                           .content_frame_repeats                = content_frame_repeats_,
-                           .content_repeat_streak                = content_repeat_streak_,
-                           .content_repeat_streak_max            = content_repeat_streak_max_,
-                           .completion_intervals                 = runtime_metrics.completion_intervals,
-                           .completion_interval_max_us =
+            .frames_completed                     = frames_completed_.load(),
+            .frames_displayed_late                = frames_displayed_late_.load(),
+            .frames_dropped                       = frames_dropped_.load(),
+            .frames_flushed                       = frames_flushed_.load(),
+            .program_frames_received              = output_metrics.pushed,
+            .program_queue_overflow_drops         = output_metrics.overflow_drops,
+            .program_timing_drops                 = output_metrics.selection_drops,
+            .program_frames_repeated              = output_metrics.repeated,
+            .program_frames_missing               = output_metrics.missing,
+            .program_cadence_repeats              = runtime_metrics.cadence_repeats,
+            .program_starvation_repeats           = runtime_metrics.starvation_repeats,
+            .program_starvation_repeat_streak     = runtime_metrics.starvation_repeat_streak,
+            .program_starvation_repeat_streak_max = runtime_metrics.starvation_repeat_streak_max,
+            .output_refill_shortfalls             = runtime_metrics.refill_shortfalls,
+            .content_frames_sampled               = content_frames_sampled_,
+            .content_frame_repeats                = content_frame_repeats_,
+            .content_repeat_streak                = content_repeat_streak_,
+            .content_repeat_streak_max            = content_repeat_streak_max_,
+            .completion_intervals                 = runtime_metrics.completion_intervals,
+            .completion_interval_max_us =
                 std::chrono::duration_cast<std::chrono::microseconds>(runtime_metrics.completion_interval_max).count(),
-                           .program_queue_depth           = runtime_metrics.output_queue_depth,
-                           .program_queue_depth_max       = runtime_metrics.output_queue_depth_max,
-                           .buffered_video_frames         = runtime_metrics.buffered_frames,
-                           .buffered_video_frames_min     = runtime_metrics.buffered_frames_min,
-                           .buffered_video_frames_max     = runtime_metrics.buffered_frames_max,
-                           .buffered_below_target_samples = runtime_metrics.buffered_below_target_samples,
-                           .buffered_zero_samples         = runtime_metrics.buffered_zero_samples,
-                           .output_latency_us =
+            .program_queue_depth           = runtime_metrics.output_queue_depth,
+            .program_queue_depth_max       = runtime_metrics.output_queue_depth_max,
+            .buffered_video_frames         = runtime_metrics.buffered_frames,
+            .buffered_video_frames_min     = runtime_metrics.buffered_frames_min,
+            .buffered_video_frames_max     = runtime_metrics.buffered_frames_max,
+            .buffered_below_target_samples = runtime_metrics.buffered_below_target_samples,
+            .buffered_zero_samples         = runtime_metrics.buffered_zero_samples,
+            .output_latency_us =
                 presentation_timeline_.latency().has_value()
-                                   ? std::chrono::duration_cast<std::chrono::microseconds>(*presentation_timeline_.latency()).count()
-                                   : 0,
-                           .program_selection_offset_us = program_selection_offset_us_,
-                           .completion_time_failures    = completion_time_failures_,
-                           .readback_stream             = {},
+                    ? std::chrono::duration_cast<std::chrono::microseconds>(*presentation_timeline_.latency()).count()
+                    : 0,
+            .program_selection_offset_us = program_selection_offset_us_,
+            .completion_time_failures    = completion_time_failures_,
+            .readback_stream             = {},
         };
         if (readback_stream_) {
             result.readback_stream = readback_stream_->metrics();
@@ -928,18 +926,47 @@ class callback_s final : public IDeckLinkVideoOutputCallback
 
 class node_impl : public node_i
 {
-    using selection_t = std::tuple<std::string, std::string, decklink_keyer_mode_e, bool, frame_rate_s, uint64_t, int>;
+    struct selection_s
+    {
+        std::string           device_name;
+        std::string           display_mode;
+        decklink_keyer_mode_e keyer_mode;
+        bool                  enabled;
+        frame_rate_s          frame_rate;
+        uint64_t              epoch;
+        int                   buffer_frames;
+        bool                  operator==(const selection_s&) const = default;
+    };
+    struct mode_options_key_s
+    {
+        std::string device_name;
+        uint64_t    version;
+        bool        operator==(const mode_options_key_s&) const = default;
+    };
+    struct device_status_event_s
+    {
+        std::string                device_name;
+        std::optional<bool>        reference_locked;
+        std::optional<std::string> active_format;
+        bool                       operator==(const device_status_event_s&) const = default;
+    };
+    struct keyer_status_event_s
+    {
+        decklink_keyer_mode_e      requested;
+        decklink_keyer_mode_e      active;
+        std::optional<std::string> fallback_reason;
+        bool                       operator==(const keyer_status_event_s&) const = default;
+    };
 
     decklink_ptr<callback_s>                  callback_;
     std::optional<callback_s::render_state_s> render_state_;
 
-    std::unique_ptr<output_frame_renderer_s>                  frame_renderer_;
-    utils::observed_value_s<selection_t>                      selection_;
-    utils::observed_value_s<uint64_t>                         device_version_;
-    utils::observed_value_s<std::pair<std::string, uint64_t>> mode_options_version_;
-    utils::observed_value_s<std::tuple<std::string, std::optional<bool>, std::optional<std::string>>>
-                                          device_status_event_;
-    std::chrono::steady_clock::time_point next_start_attempt_;
+    std::unique_ptr<output_frame_renderer_s>       frame_renderer_;
+    utils::observed_value_s<selection_s>           selection_;
+    utils::observed_value_s<uint64_t>              device_version_;
+    utils::observed_value_s<mode_options_key_s>    mode_options_version_;
+    utils::observed_value_s<device_status_event_s> device_status_event_;
+    std::chrono::steady_clock::time_point          next_start_attempt_;
 
     uint64_t render_target_drops_{};
 
@@ -987,21 +1014,24 @@ class node_impl : public node_i
     {
         const auto device_status = app->decklink_registry()->get_device_status(device_name);
         auto       payload       = make_device_status(device_status ? *device_status : device_status_s{});
-        const bool important     = device_status_event_.observe(
-            std::tuple(std::string(device_name), payload.reference_locked, payload.active_format));
+        const bool important =
+            device_status_event_.observe(device_status_event_s{.device_name      = std::string(device_name),
+                                                               .reference_locked = payload.reference_locked,
+                                                               .active_format    = payload.active_format});
         app->status_registry()->write(status_handle_,
                                       std::move(payload),
                                       important ? core::status_delivery_e::immediate
                                                 : core::status_delivery_e::rate_limited);
     }
 
-    utils::observed_value_s<std::tuple<decklink_keyer_mode_e, decklink_keyer_mode_e, std::optional<std::string>>>
-        keyer_status_event_;
+    utils::observed_value_s<keyer_status_event_s> keyer_status_event_;
 
     void publish_keyer_status(core::node_status_registry_s* registry, status::decklink_output_keyer_status_s payload)
     {
-        const bool important = keyer_status_event_.observe(
-            std::tuple(payload.requested_keyer_mode, payload.active_keyer_mode, payload.keyer_fallback_reason));
+        const bool important =
+            keyer_status_event_.observe(keyer_status_event_s{.requested       = payload.requested_keyer_mode,
+                                                             .active          = payload.active_keyer_mode,
+                                                             .fallback_reason = payload.keyer_fallback_reason});
         registry->write(status_handle_,
                         std::move(payload),
                         important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);
@@ -1013,7 +1043,8 @@ class node_impl : public node_i
             return;
         }
 
-        const auto options_key = std::pair(std::string(device_name), callback_->mode_options_version());
+        const auto options_key =
+            mode_options_key_s{.device_name = std::string(device_name), .version = callback_->mode_options_version()};
         if (mode_options_version_.observe(options_key)) {
             status_registry->write(status_handle_,
                                    status::display_modes_status_s{.display_modes = callback_->mode_options()},
@@ -1146,15 +1177,13 @@ class node_impl : public node_i
         result->demands_execution = enabled;
         publish_device_status(app, device_name);
 
-        const selection_t selection{
-            device_name,
-            display_mode,
-            keyer_mode,
-            enabled,
-            app->frame_settings().frame_rate,
-            app->frame_context().epoch,
-            buffer_frames,
-        };
+        const selection_s selection{.device_name   = device_name,
+                                    .display_mode  = display_mode,
+                                    .keyer_mode    = keyer_mode,
+                                    .enabled       = enabled,
+                                    .frame_rate    = app->frame_settings().frame_rate,
+                                    .epoch         = app->frame_context().epoch,
+                                    .buffer_frames = buffer_frames};
         if (selection_.observe(selection)) {
             stop_playback();
             render_target_drops_ = 0;

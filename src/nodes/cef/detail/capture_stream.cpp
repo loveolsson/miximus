@@ -7,24 +7,26 @@ namespace miximus::nodes::cef::detail {
 
 using namespace std::chrono_literals;
 
-capture_stream_s::capture_stream_s(gpu::device_s& device, gpu::vec2i_t dimensions, int frame_rate)
+capture_stream_s::capture_stream_s(gpu::device_s& device, gpu::vec2i_t dimensions, int frame_rate, size_t buffer_frames)
     : dimensions_(dimensions)
     , frame_rate_(frame_rate)
-    , pool_(device, dimensions, FRAME_CAPACITY, FRAME_BUDGET)
+    , pool_(device, dimensions, input_buffer_slot_count(buffer_frames), FRAME_BUDGET)
     , context_(device.create_recording_context(1))
+    , frames({.capacity = timed_buffer_queue_capacity(buffer_frames), .playout_delay_frames = buffer_frames})
 {
 }
 
-size_t capture_stream_s::texture_budget(gpu::vec2i_t dimensions)
+size_t capture_stream_s::texture_budget(gpu::vec2i_t dimensions, size_t buffer_frames)
 {
     if (dimensions.x < 1 || dimensions.y < 1 || dimensions.x > 8192 || dimensions.y > 8192) {
         throw std::invalid_argument("Invalid CEF viewport dimensions");
     }
-    const auto bytes = frame_pool_s::storage_bytes(dimensions);
-    if (bytes == 0 || bytes > FRAME_BUDGET / FRAME_CAPACITY) {
+    const auto capacity = input_buffer_slot_count(buffer_frames);
+    const auto bytes    = frame_pool_s::storage_bytes(dimensions);
+    if (bytes == 0 || bytes > FRAME_BUDGET / capacity) {
         throw std::invalid_argument("CEF viewport exceeds the session texture budget");
     }
-    return bytes * FRAME_CAPACITY;
+    return bytes * capacity;
 }
 
 bool capture_stream_s::capture(const CefAcceleratedPaintInfo& info, const std::atomic_bool& close_requested)

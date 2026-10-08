@@ -5,6 +5,7 @@
 #include "detail/frame_pool.hpp"
 #include "media/timed_source_queue.hpp"
 #include "media_input_types.hpp"
+#include "types/buffer_limits.hpp"
 #include "types/cef_status.hpp"
 
 #include <chrono>
@@ -31,6 +32,9 @@ class session_s
         gpu::vec2i_t dimensions{1920, 1080};
         int          frame_rate{60};
         bool         input_mipmaps{};
+        size_t       capture_buffer_frames{cef_capture_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        size_t       export_buffer_frames{cef_export_buffer_limits_s::DEFAULT_FRAME_COUNT};
+        size_t       input_buffer_frames{cef_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
         bool         operator==(const options_s&) const = default;
     };
 

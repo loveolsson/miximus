@@ -43,6 +43,8 @@ buffer wrappers with synthetic DMA writes. It checks pointer identity, 4096-byte
 preservation, two capture cycles on one SDK buffer, pool exhaustion while leases are held, allocator shutdown with an
 outstanding upload lease, retained GPU-frame ownership, and output reuse only after the last COM reference is released.
 It runs on both Vulkan and CUDA; it does not emulate DVP calls or claim DVP hardware validation.
+`DeckLinkWrappersBoundLiveObjectsAndRetainTheirAllocator` also checks live-wrapper exhaustion, allocation after final
+release, and access through a wrapper after the original allocator owner has released its reference.
 
 ```bash
 build/src/gpu/gpu_transfer_vulkan_test --gtest_filter='*DeckLinkUsesTransferMemory*'
@@ -65,3 +67,19 @@ backend mode with synchronization validation enabled. Both runs logged actual up
 DeckLink capture/playback and NDI sender/receiver, and shut down cleanly without logged errors or validation messages.
 The original saved settings hash remained unchanged. These checks validate the retained memory/lease paths with
 current backends; DVP still requires its own implementation and suitable-hardware validation.
+
+## Windows loopback validation recorded 2026-10-08
+
+The local DeckLink Duo has a physical cable from device 1 output to device 2 input. Use that direction for loopback
+tests. A generated 1280×720 test pattern drove device 1 at 720p60, and device 2 fed a local screen preview through the
+normal upload, conversion and rendering path. The test used temporary settings, with no NDI or network video output.
+
+With synchronization validation enabled, both Vulkan staging and CUDA passed live input-target changes to 1, 8 and 3.
+After each restart settled, a five-second sample received 300–301 source frames with signal lock and zero additional
+upload acquisition failures, upload slot drops, transfer failures, queue overflows or starvation repeats. The preview
+continued presenting, and both runs shut down cleanly without Vulkan validation errors. This is short functional
+coverage of live buffer reconfiguration, not a sustained timing soak or coverage of every SDI format.
+
+Local logs, temporary graphs and before/after counters are under
+`build/integration-tests/decklink-loopback-vulkan-20261008-070303/` and
+`build/integration-tests/decklink-loopback-cuda-20261008-070338/`.

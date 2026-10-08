@@ -76,10 +76,10 @@ TEST_F(transfer_vulkan, ExactUploadSelectionRetainsOldFrameAndProducesPaddedRead
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-         .image_dimensions  = {3, 2},
-         .pixel_format      = host_pixel_format_e::rgba_u8,
-         .row_stride_bytes  = 20,
-         .buffer_size_bytes = 40
+        .image_dimensions  = {3, 2},
+        .pixel_format      = host_pixel_format_e::rgba_u8,
+        .row_stride_bytes  = 20,
+        .buffer_size_bytes = 40
     };
 
     auto input =
@@ -202,12 +202,12 @@ TEST_F(transfer_vulkan, AbandonedOutputTargetCannotBeReusedDuringRecording)
 {
     texture_readback_service_s downloads(gpu(), 1 << 20);
     auto                       output = downloads.create_stream({
-                              .host_layout   = {.image_dimensions  = {4, 4},
-                                                .pixel_format      = host_pixel_format_e::rgba_u8,
-                                                .buffer_size_bytes = 64,
-                                                .memory_access     = host_memory_access_e::read_only},
-                              .max_slots     = 1,
-                              .initial_slots = 1
+        .host_layout   = {.image_dimensions  = {4, 4},
+                          .pixel_format      = host_pixel_format_e::rgba_u8,
+                          .buffer_size_bytes = 64,
+                          .memory_access     = host_memory_access_e::read_only},
+        .max_slots     = 1,
+        .initial_slots = 1
     });
     ASSERT_TRUE(output->wait_for_initial_slots(3s));
     auto target = output->try_acquire_render_target();
@@ -343,8 +343,8 @@ TEST_F(transfer_vulkan, SubmittedUploadsChainThroughConversionAndReadbackWithout
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-         .image_dimensions = {4, 4},
-           .pixel_format = host_pixel_format_e::rgba_u8, .buffer_size_bytes = 64
+        .image_dimensions = {4, 4},
+          .pixel_format = host_pixel_format_e::rgba_u8, .buffer_size_bytes = 64
     };
     auto input                  = uploads.create_stream({.host_layout         = layout,
                                                          .max_slots           = 2,
@@ -476,10 +476,10 @@ TEST_F(transfer_vulkan, PackedFramesUseBuffersAndPreserveRowPadding)
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-         .image_dimensions  = {6, 2},
-         .pixel_format      = host_pixel_format_e::v210,
-         .row_stride_bytes  = 32,
-         .buffer_size_bytes = 64,
+        .image_dimensions  = {6, 2},
+        .pixel_format      = host_pixel_format_e::v210,
+        .row_stride_bytes  = 32,
+        .buffer_size_bytes = 64,
     };
 
     auto input                    = uploads.create_stream({.host_layout = layout, .max_slots = 1, .initial_slots = 1});
@@ -541,14 +541,14 @@ TEST_F(transfer_vulkan, MappedDeckLinkAlignmentAndBudgetAreRespected)
 {
     texture_upload_service_s uploads(gpu(), 1 << 20);
     auto                     input = uploads.create_stream({
-                            .host_layout   = {.image_dimensions        = {48, 4},
-                                              .pixel_format            = host_pixel_format_e::v210,
-                                              .row_stride_bytes        = 128,
-                                              .buffer_size_bytes       = 512,
-                                              .address_alignment_bytes = 4096,
-                                              .memory_access           = host_memory_access_e::read_write},
-                            .max_slots     = 1,
-                            .initial_slots = 1
+        .host_layout   = {.image_dimensions        = {48, 4},
+                          .pixel_format            = host_pixel_format_e::v210,
+                          .row_stride_bytes        = 128,
+                          .buffer_size_bytes       = 512,
+                          .address_alignment_bytes = 4096,
+                          .memory_access           = host_memory_access_e::read_write},
+        .max_slots     = 1,
+        .initial_slots = 1
     });
     auto                     lease = input->acquire_upload_buffer_for(3s);
     if (!lease.has_value()) {
@@ -567,10 +567,10 @@ TEST_F(transfer_vulkan, FullHdFramesRetainEveryActiveByteAcrossRepeatedTransfers
     constexpr size_t           height = 1080;
     constexpr size_t           stride = (width * 4) + 64;
     const host_frame_layout_s  layout{
-         .image_dimensions  = {width, height},
-         .pixel_format      = host_pixel_format_e::rgba_u8,
-         .row_stride_bytes  = stride,
-         .buffer_size_bytes = stride * height
+        .image_dimensions  = {width, height},
+        .pixel_format      = host_pixel_format_e::rgba_u8,
+        .row_stride_bytes  = stride,
+        .buffer_size_bytes = stride * height
     };
 
     auto input =
@@ -681,10 +681,10 @@ TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers
         texture_upload_service_s   uploads(gpu(), 4 << 20);
         texture_readback_service_s downloads(gpu(), 4 << 20);
         const host_frame_layout_s  input_layout{
-             .image_dimensions  = {16, 8},
-             .pixel_format      = format,
-             .row_stride_bytes  = 80,
-             .buffer_size_bytes = 640,
+            .image_dimensions  = {16, 8},
+            .pixel_format      = format,
+            .row_stride_bytes  = 80,
+            .buffer_size_bytes = 640,
         };
         auto input = uploads.create_stream(
             {.host_layout = input_layout, .max_slots = 2, .initial_slots = 2, .generate_mip_maps = true});
@@ -803,11 +803,11 @@ TEST_F(transfer_vulkan, DeckLinkUsesTransferMemoryDirectlyAndRetainsItThroughSdk
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-         .image_dimensions        = {48, 2},
-         .pixel_format            = host_pixel_format_e::v210,
-         .row_stride_bytes        = 256,
-         .buffer_size_bytes       = 512,
-         .address_alignment_bytes = 4096
+        .image_dimensions        = {48, 2},
+        .pixel_format            = host_pixel_format_e::v210,
+        .row_stride_bytes        = 256,
+        .buffer_size_bytes       = 512,
+        .address_alignment_bytes = 4096
     };
 
     auto input =
@@ -917,6 +917,43 @@ TEST_F(transfer_vulkan, DeckLinkUsesTransferMemoryDirectlyAndRetainsItThroughSdk
     EXPECT_TRUE(until([&] { return output->try_acquire_render_target(); }));
     selected.reset();
     EXPECT_TRUE(until([&] { return input->try_acquire_upload_buffer(); }));
+}
+
+TEST_F(transfer_vulkan, DeckLinkWrappersBoundLiveObjectsAndRetainTheirAllocator)
+{
+    using namespace decklink_sdk;
+    using namespace nodes::decklink::detail;
+    texture_upload_service_s uploads(gpu(), 1 << 20);
+    auto                     stream    = uploads.create_stream({
+        .host_layout = {.image_dimensions  = {16, 16},
+                        .pixel_format      = host_pixel_format_e::rgba_u8,
+                        .row_stride_bytes  = 64,
+                        .buffer_size_bytes = 1024},
+        .max_slots   = 2
+    });
+    auto                     allocator = make_decklink_ptr<input_video_buffer_allocator_s>(1024, stream, 2);
+    IDeckLinkVideoBuffer*    first{};
+    IDeckLinkVideoBuffer*    second{};
+    IDeckLinkVideoBuffer*    excess{};
+    ASSERT_EQ(allocator->AllocateVideoBuffer(&first), S_OK);
+    ASSERT_EQ(allocator->AllocateVideoBuffer(&second), S_OK);
+    EXPECT_EQ(allocator->AllocateVideoBuffer(&excess), E_OUTOFMEMORY);
+    EXPECT_EQ(excess, nullptr);
+    EXPECT_EQ(first->AddRef(), 2U);
+    EXPECT_EQ(first->Release(), 1U);
+    EXPECT_EQ(allocator->AllocateVideoBuffer(&excess), E_OUTOFMEMORY);
+    EXPECT_EQ(first->Release(), 0U);
+    ASSERT_EQ(allocator->AllocateVideoBuffer(&excess), S_OK);
+    EXPECT_EQ(second->Release(), 0U);
+    // The last wrapper must keep its allocator alive without a cached object
+    // or a separate owner. Final release must also free its upload lease.
+    allocator = nullptr;
+    ASSERT_EQ(excess->StartAccess(bmdBufferAccessWrite), S_OK);
+    void* bytes{};
+    EXPECT_EQ(excess->GetBytes(&bytes), S_OK);
+    EXPECT_NE(bytes, nullptr);
+    EXPECT_EQ(excess->EndAccess(bmdBufferAccessWrite), S_OK);
+    EXPECT_EQ(excess->Release(), 0U);
 }
 
 #endif

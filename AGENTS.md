@@ -21,6 +21,8 @@ More specific `AGENTS.md` files apply inside complex subtrees. Read the nearest 
 
 ## Repository-wide rules
 
+- Prefer named, well-structured structs with descriptive fields over anonymous tuples for application records and state.
+
 - The server is authoritative for graph structure and options. Validate native changes before broadcasting them.
 - Native and TypeScript node types, interface names, option keys/defaults, protocol enums, conversions, and status keys must remain synchronized.
 - Normal `prepare`, `execute`, `complete`, and node destruction happen on the render thread with explicit GPU recording/resource ownership. Background work is explicit.

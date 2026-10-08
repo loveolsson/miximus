@@ -5,6 +5,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
 #include "include/cef_jsdialog_handler.h"
+#include "media_input_renderer.hpp"
 #include "media_input_session.hpp"
 #include "task.hpp"
 
@@ -81,7 +82,7 @@ class client_s final
     client_s(gpu::device_s& device, browser_session_s::options_s options, std::shared_ptr<shared_state_s> state)
         : state_(std::move(state))
         , options_(std::move(options))
-        , capture_(device, options_.dimensions, options_.frame_rate)
+        , capture_(device, options_.dimensions, options_.frame_rate, options_.capture_buffer_frames)
     {
     }
 
@@ -110,7 +111,9 @@ class client_s final
         CefBrowserSettings settings;
         settings.windowless_frame_rate = options_.frame_rate;
         settings.background_color      = CefColorSetARGB(0, 0, 0, 0);
-        creation_pending_ = CefBrowserHost::CreateBrowser(window, this, options_.url, settings, nullptr, nullptr);
+        auto extra                     = CefDictionaryValue::Create();
+        extra->SetInt(MEDIA_INPUT_DEPTH_KEY, static_cast<int>(options_.input_buffer_frames));
+        creation_pending_ = CefBrowserHost::CreateBrowser(window, this, options_.url, settings, extra, nullptr);
         if (!creation_pending_) {
             state_->fail("CEF rejected browser creation");
             state_->mark_closed();
@@ -378,8 +381,12 @@ session_s::session_s(gpu::device_s& device, options_s options, std::shared_ptr<m
         options.dimensions.y > 8192 || options.frame_rate < 1 || options.frame_rate > 1'000'000) {
         throw std::invalid_argument("Invalid CEF session options");
     }
-    impl_->state->inputs = std::make_shared<media_input_session_s>(device, std::move(inputs), options.input_mipmaps);
-    impl_->client        = new client_s(device, std::move(options), impl_->state);
+    validate_input_buffer_frames(options.capture_buffer_frames);
+    validate_input_buffer_frames(options.export_buffer_frames);
+    validate_input_buffer_frames(options.input_buffer_frames, cef_input_buffer_limits_s::MINIMUM_FRAME_COUNT);
+    impl_->state->inputs = std::make_shared<media_input_session_s>(
+        device, std::move(inputs), options.input_mipmaps, options.export_buffer_frames, options.input_buffer_frames);
+    impl_->client = new client_s(device, std::move(options), impl_->state);
 }
 
 session_s::~session_s() = default;
@@ -428,7 +435,7 @@ bool detail::browser_session_s::closed() const noexcept { return impl_->state->c
 
 size_t detail::browser_session_s::texture_budget(const options_s& options)
 {
-    return capture_stream_s::texture_budget(options.dimensions);
+    return capture_stream_s::texture_budget(options.dimensions, options.capture_buffer_frames);
 }
 
 bool detail::browser_session_s::resources_idle() const
