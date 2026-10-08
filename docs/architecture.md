@@ -29,6 +29,7 @@ this document continues to describe the current runtime until each migration sta
 - the Vulkan device, explicit recordings, bounded transfer services, and GLFW window service;
 - the configuration `boost::asio::io_context`, work guard, and configuration thread;
 - one dedicated CPU task worker for heavy work independent of frame boundaries;
+- a dedicated Windows STA file-dialog worker, stopped before graph/configuration teardown;
 - DeckLink, NDI, and font registries;
 - the typed node-status mailbox and configuration-thread snapshot store.
 

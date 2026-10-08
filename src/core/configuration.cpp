@@ -302,6 +302,16 @@ std::optional<json> configuration_s::get_node(std::string_view id) const
     return serialize_node(record->first, record->second, definition->second);
 }
 
+std::optional<node_handle_s> configuration_s::get_node_handle(std::string_view id) const
+{
+    const std::unique_lock lock(node_manager_.nodes_mutex_);
+    const auto             record = node_manager_.nodes_.find(id);
+    if (record == node_manager_.nodes_.end()) {
+        return std::nullopt;
+    }
+    return record->second.node->handle();
+}
+
 std::optional<json> configuration_s::get_node_status(std::string_view id) const
 {
     {

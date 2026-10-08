@@ -97,6 +97,20 @@ const command = {
   payload: {},
 };
 
+test("file browsing capability comes from each handshake and clears on disconnect", async () => {
+  const { ws, socket, sockets, fire } = await harness({ connected: false });
+  assert.equal(ws.canBrowseFiles, false);
+  socket.receive({ action: "socket_info", id: 1, bundle_hash: "test", can_browse_files: true });
+  assert.equal(ws.canBrowseFiles, true);
+  socket.onclose({ code: 1006, reason: "offline" });
+  assert.equal(ws.canBrowseFiles, false);
+  fire(2000);
+  await flush();
+  sockets[1].receive({ action: "socket_info", id: 2, bundle_hash: "test", can_browse_files: false });
+  assert.equal(ws.canBrowseFiles, false);
+  ws.destroy();
+});
+
 test("correlates action results and server errors with cleanup", async () => {
   const { ws, socket, timers } = await harness();
   const result = ws.request(command);

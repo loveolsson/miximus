@@ -11,6 +11,7 @@ export type {
   connection_s,
   error_s,
   font_registry_request_s,
+  file_dialog_request_s,
   message_s,
   node_s,
   node_action_request_s,

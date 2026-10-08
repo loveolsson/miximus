@@ -724,7 +724,11 @@ TEST_F(action_manager_test_s, LateAsyncReplyDoesNotRetainOrMutateRemovedNode)
 
 TEST_F(action_manager_test_s, DelayedConfigOperationsCannotTargetAReplacement)
 {
-    const auto old = access::config(*manager).at("n").node->handle();
+    configuration_s configuration(*manager);
+    EXPECT_FALSE(configuration.get_node_handle("missing").has_value());
+    const auto selected = configuration.get_node_handle("n");
+    ASSERT_TRUE(selected.has_value());
+    const auto old = *selected;
     EXPECT_EQ(manager->handle_remove_node("n"), error_e::no_error);
     ASSERT_EQ(manager->handle_add_node("action_test",
                                        "n",

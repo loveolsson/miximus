@@ -44,6 +44,7 @@ export const enum topic_e {
   config = "config",
   node_status = "node_status",
   node_action = "node_action",
+  file_dialog = "file_dialog",
 }
 
 export const enum error_e {
@@ -185,6 +186,13 @@ export interface node_action_request_s {
   readonly payload: unknown;
 }
 
+export interface file_dialog_request_s {
+  readonly action: action_e.command;
+  readonly topic: topic_e.file_dialog;
+  readonly token?: string | null;
+  readonly id: string;
+}
+
 export interface node_action_result_s {
   readonly action: action_e.result;
   readonly token: string;
@@ -213,6 +221,7 @@ export interface socket_info_s {
   readonly action: action_e.socket_info;
   readonly id: number;
   readonly bundle_hash: string;
+  readonly can_browse_files: boolean;
 }
 
 export interface result_s {

@@ -1,9 +1,8 @@
 import { defineNode, NodeInterface } from "@baklavajs/core";
-import { TextInputInterface } from "@baklavajs/renderer-vue";
 import { setType } from "@baklavajs/interface-types";
 import { t_framebuffer, t_f64, t_rect } from "./interface_types";
 import { node_type_e } from "./node_type";
-import { NumericInterface, StatusDropdownInterface } from "./interfaces";
+import { FilePathInterface, NumericInterface, StatusDropdownInterface } from "./interfaces";
 
 export const TeleprompterNode = defineNode({
   type: node_type_e.teleprompter,
@@ -16,7 +15,7 @@ export const TeleprompterNode = defineNode({
         t_f64,
       ),
     rect: () => new NodeInterface<null>("Rect", null).use(setType, t_rect),
-    file_path: () => new TextInputInterface("File Path", "").setPort(false),
+    file_path: () => new FilePathInterface("File Path"),
     font_name: () => new StatusDropdownInterface("Font", "font_names"),
     font_variant: () => new StatusDropdownInterface("Variant", "font_variants", "Regular"),
     font_size: () =>

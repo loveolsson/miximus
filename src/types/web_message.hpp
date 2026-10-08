@@ -30,7 +30,8 @@ BOOST_DESCRIBE_ENUM(topic_e,
                     font_registry,
                     config,
                     node_status,
-                    node_action)
+                    node_action,
+                    file_dialog)
 BOOST_DESCRIBE_ENUM(error_e,
                     no_error,
                     internal_error,
@@ -99,6 +100,7 @@ struct socket_info_s
 
     int64_t     id{};
     std::string bundle_hash;
+    bool        can_browse_files{};
 };
 
 struct result_s
@@ -207,7 +209,7 @@ BOOST_DESCRIBE_STRUCT(command_s, (), (action, token, topic, origin_id, origin_to
 BOOST_DESCRIBE_STRUCT(node_s, (), (type, id, schema_version, options))
 BOOST_DESCRIBE_STRUCT(config_s, (), (schema_version, nodes, connections, status))
 BOOST_DESCRIBE_STRUCT(ping_response_s, (), (response))
-BOOST_DESCRIBE_STRUCT(socket_info_s, (), (id, bundle_hash))
+BOOST_DESCRIBE_STRUCT(socket_info_s, (), (id, bundle_hash, can_browse_files))
 BOOST_DESCRIBE_STRUCT(result_s, (), (token))
 BOOST_DESCRIBE_STRUCT(node_action_result_s, (), (token, data))
 BOOST_DESCRIBE_STRUCT(config_result_s, (), (token, config))

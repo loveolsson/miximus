@@ -1,3 +1,13 @@
+add_library(file_dialog file_dialog.hpp)
+target_link_libraries(file_dialog PRIVATE Threads::Threads miximus_types)
+if(WIN32)
+    target_sources(file_dialog PRIVATE file_dialog_win.cpp)
+    target_link_libraries(file_dialog PRIVATE ole32 shell32 user32 uuid)
+else()
+    target_sources(file_dialog PRIVATE file_dialog_stub.cpp)
+endif()
+add_sanitizers(file_dialog)
+
 add_library(cpu_task_worker INTERFACE cpu_task_worker.hpp)
 target_link_libraries(cpu_task_worker INTERFACE Threads::Threads)
 

@@ -155,6 +155,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                     .node_statuses = [status_registry = app.status_registry()] { return status_registry->get_all(); },
                     .node          = std::bind_front(&core::configuration_s::get_node, &configuration),
                     .node_status   = std::bind_front(&core::configuration_s::get_node_status, &configuration),
+                    .file_dialog_available = utils::file_dialog_s::supported(),
                 });
 
                 // Add adapters _after_ config is loaded to prevent spam to the adapters during load
@@ -201,6 +202,7 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
             utils::start_shutdown_watchdog();
             getlog("app")->info("Exiting...");
             app.cpu_task_worker()->request_stop();
+            shutdown_step("file dialog service", [&] { app.file_dialog()->stop(); });
             shutdown_step("web subsystem", [&] {
                 app.status_registry()->stop();
                 web_server->stop();

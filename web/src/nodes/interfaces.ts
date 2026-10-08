@@ -9,6 +9,7 @@ import type { node_status_s, settings_option_s, vec2_t } from "@/generated/json_
 export { NumericInterface, type NumericOptions } from "./numeric";
 
 import FocusTrackingStringComponent from "./options/FocusTrackingStringOption.vue";
+import FilePathComponent from "./options/FilePathOption.vue";
 import Vec2Component from "./options/Vec2Option.vue";
 import StatusDropdownComponent from "./options/StatusDropdownOption.vue";
 import DropdownComponent from "./options/DropdownOption.vue";
@@ -23,6 +24,14 @@ export class FocusTrackingStringInterface extends NodeInterface<string> {
   constructor(name: string, defaultValue = "") {
     super(name, defaultValue);
     this.setComponent(markRaw(FocusTrackingStringComponent));
+    this.setPort(false);
+  }
+}
+
+export class FilePathInterface extends NodeInterface<string> {
+  constructor(name: string, defaultValue = "") {
+    super(name, defaultValue);
+    this.setComponent(markRaw(FilePathComponent));
     this.setPort(false);
   }
 }

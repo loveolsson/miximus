@@ -534,7 +534,7 @@ same request. Console handlers must not save configuration or destroy applicatio
 
 Shutdown order is deliberate:
 
-1. Stop the web server and clear adapters.
+1. Stop the application-owned file-dialog worker, then stop the web server and clear adapters.
 2. Freeze the cached authoritative settings snapshot before destroying the graph.
 3. Abort pending recordings and clear nodes on the render thread.
 4. Uninstall device discovery and drain DeckLink/NDI control workers and SDK leases.
@@ -573,6 +573,35 @@ Each boundary is announced before teardown starts and logged again when complete
 subsystem currently stalled.
 Internal tasks, executors, SDK calls, and individual resources must not report progress; they are implementation details
 of the subsystem whose completed shutdown is being monitored. Do not casually reorder these lifetimes.
+
+## Local file selection on Windows
+
+Image and Teleprompter file-path controls offer Browse when the web editor is served directly by the Windows
+Miximus process over localhost or its local IP address. Manual path entry remains available on every platform.
+The WebSocket `socket_info` handshake includes the per-connection `can_browse_files` capability alongside the
+bundle hash. A typed `file_dialog` command with a node ID opens one native dialog, with an immediate result or
+access/busy error. The server rechecks actual connection endpoints, Host, and any supplied Origin for each command;
+forwarded requests and remote clients cannot launch dialogs. There is no file-dialog HTTP endpoint.
+This feature assumes a direct connection:
+a proxy that hides its presence cannot establish the browser's location and is not a supported access path.
+The separate Vite development origin does not expose Browse.
+
+The application owns a dedicated Windows STA dialog worker. The web server only checks connection permissions
+and dispatches the typed command to the configuration adapter, which starts the application service.
+File browsing never blocks rendering, configuration,
+or CPU media work. The request acknowledges admission only; selection and cancellation produce no second reply.
+Concurrent requests are rejected as busy. The selected UTF-8 path is posted to the configuration executor and submitted through
+`node_manager_s::handle_control_batch` with the original node-instance handle. Normal option validation,
+rejection, persistence checkpoints, and broadcasts apply, including broadcasts to the initiating editor.
+Removal/replacement of the node rejects the delayed update. Cancellation leaves settings untouched.
+Delayed selection/update failures are logged on the server. Visibility clears on disconnect and is refreshed by
+the next handshake. The initiating connection can disappear without cancelling an already accepted dialog.
+Application shutdown closes the dialog on its owning thread and joins the worker before stopping the web server
+and tearing down the configuration adapters and graph. The web server has no dialog lifetime or shutdown responsibility.
+
+Run `python scripts/test_file_dialog.py` on an interactive Windows desktop to exercise the native dialog,
+Unicode paths, cancellation, concurrent requests, removal rejection, and shutdown. The runner owns its
+Miximus process and private settings and refuses to change an already-running application.
 
 ## Node action controls
 

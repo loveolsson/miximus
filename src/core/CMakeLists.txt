@@ -40,6 +40,7 @@ PRIVATE
     Boost::program_options
 PUBLIC
     cpu_task_worker
+    file_dialog
     miximus_types
     Boost::headers
     logger

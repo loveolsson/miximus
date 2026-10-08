@@ -36,6 +36,14 @@ error_e web_server_impl::handle_user_command(nlohmann::json&& doc, int64_t conne
         return error_e::invalid_topic;
     }
 
+    if (*topic == topic_e::file_dialog) {
+        const auto connection = connections_by_id_.find(connection_id);
+        if (!config_getters_.file_dialog_available || connection == connections_by_id_.end() ||
+            !is_request_local(endpoint_.get_con_from_hdl(connection->second))) {
+            return error_e::unavailable;
+        }
+    }
+
     const auto& subscription = get_subscription_by_topic(*topic);
     if (!subscription) {
         return error_e::internal_error;
@@ -141,6 +149,8 @@ void web_server_impl::on_open(const con_hdl_t& hdl)
          web_message::socket_info_s{
              .id          = id,
              .bundle_hash = std::string(static_files::get_web_files().bundle_hash),
+             .can_browse_files =
+                 config_getters_.file_dialog_available && is_request_local(endpoint_.get_con_from_hdl(hdl)),
          });
 }
 

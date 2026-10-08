@@ -1,4 +1,5 @@
 #pragma once
+#include "types/error.hpp"
 #include "types/topic.hpp"
 #include "utils/asio_fwd.hpp"
 
@@ -7,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace miximus::web_server {
@@ -21,6 +23,7 @@ struct config_getters_t
     json_getter_t       node_statuses;
     keyed_json_getter_t node;
     keyed_json_getter_t node_status;
+    bool                file_dialog_available{};
 };
 
 class server_s

@@ -17,6 +17,7 @@
 #include "types/frame_rate.hpp"
 #include "utils/asio.hpp"
 #include "utils/cpu_task_worker.hpp"
+#include "utils/file_dialog.hpp"
 
 #include <chrono>
 #include <functional>
@@ -103,6 +104,7 @@ class app_state_s
     std::unique_ptr<work_guard_t>             cfg_work_;
     std::thread                               cfg_thread_;
     std::unique_ptr<utils::cpu_task_worker_s> cpu_task_worker_;
+    std::unique_ptr<utils::file_dialog_s>     file_dialog_;
 
     std::unique_ptr<gpu::window_system_s>                      window_system_;
     std::unique_ptr<gpu::device_s>                             gpu_;
@@ -165,6 +167,7 @@ class app_state_s
     auto                     ndi_registry() noexcept { return ndi_registry_.get(); }
     auto                     font_registry() noexcept { return font_registry_.get(); }
     auto                     cpu_task_worker() noexcept { return cpu_task_worker_.get(); }
+    auto                     file_dialog() noexcept { return file_dialog_.get(); }
     auto                     status_registry() noexcept { return status_registry_.get(); }
     nodes::cef::subsystem_s* cef_subsystem() noexcept { return cef_subsystem_.get(); }
     const std::string&       cef_error() const noexcept { return cef_error_; }

@@ -25,6 +25,10 @@ export class ws_wrapper extends EventEmitter<ws_events> {
   private closing = false;
   private last_bundle_hash?: string;
 
+  public get canBrowseFiles(): boolean {
+    return this.info?.can_browse_files === true;
+  }
+
   constructor() {
     super();
     this.connect();

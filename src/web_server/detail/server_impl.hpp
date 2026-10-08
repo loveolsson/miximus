@@ -51,6 +51,7 @@ class web_server_impl
     void        handle_api_v1_get_node(const server_t::connection_ptr& con, std::string_view id) const;
     void        handle_api_v1_get_node_status(const server_t::connection_ptr& con, std::string_view id) const;
     void        handle_api_v1_post_control(const server_t::connection_ptr& con);
+    static bool is_request_local(const server_t::connection_ptr& con);
     error_e     handle_user_command(nlohmann::json&& doc, int64_t connection_id);
     void        on_message(const con_hdl_t& hdl, const msg_ptr_t& msg);
     void        on_open(const con_hdl_t& hdl);

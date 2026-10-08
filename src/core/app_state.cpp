@@ -114,6 +114,7 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     : command_line_options_(std::move(command_line_options))
     , cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
     , cpu_task_worker_(std::make_unique<utils::cpu_task_worker_s>())
+    , file_dialog_(std::make_unique<utils::file_dialog_s>())
     , window_system_(std::make_unique<gpu::window_system_s>())
     , gpu_(std::make_unique<gpu::device_s>(gpu_options(command_line_options_)))
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
@@ -170,6 +171,7 @@ app_state_s::~app_state_s()
         }
 
         cpu_task_worker_->request_stop();
+        file_dialog_->stop();
         decklink_registry_->uninstall();
         cfg_work_ = nullptr;
 
