@@ -46,6 +46,12 @@ struct recording_context_state_s : std::enable_shared_from_this<recording_contex
 
 struct recording_state_s
 {
+    struct external_image_access_s
+    {
+        VkImageLayout         layout;
+        VkPipelineStageFlags2 stage;
+        VkAccessFlags2        access;
+    };
     std::shared_ptr<device_state_s>                owner;
     std::shared_ptr<recording_context_state_s>     context;
     arena_s*                                       arena{};
@@ -81,6 +87,16 @@ struct recording_state_s
     recording_state_s& operator=(recording_state_s&&)      = delete;
 
     void retain(const std::shared_ptr<resource_state_s>& resource);
+    // Whole-image external ownership. Producer readiness remains the bridge's
+    // responsibility; acquisition bypasses the ordinary submission prologue.
+    void acquire_external_image(const std::shared_ptr<texture_state_s>& image,
+                                uint32_t                                foreign_queue,
+                                VkImageLayout                           foreign_layout,
+                                external_image_access_s                 use);
+    void release_external_image(const std::shared_ptr<texture_state_s>& image,
+                                uint32_t                                foreign_queue,
+                                VkImageLayout                           foreign_layout,
+                                external_image_access_s                 use);
     void transition(const std::shared_ptr<texture_state_s>& image,
                     VkImageLayout                           layout,
                     VkPipelineStageFlags2                   stage,

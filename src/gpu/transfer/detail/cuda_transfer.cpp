@@ -472,7 +472,6 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
         .pImageMemoryBarriers     = nullptr,
     };
     VkBufferMemoryBarrier2 buffer_barrier{};
-    VkImageMemoryBarrier2  image_barrier{};
     if (state.frame.buffer()) {
         const auto& buffer = state.frame.buffer().state_;
         record.state_->retain(buffer);
@@ -504,35 +503,23 @@ void cuda_transfer_s::record_ownership_transfer(recording_s& record, ownership_o
                                           VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
                                           mip);
             }
+            record.state_->release_external_image(
+                image,
+                VK_QUEUE_FAMILY_EXTERNAL,
+                VK_IMAGE_LAYOUT_GENERAL,
+                {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = source_stage, .access = source_access});
         } else {
-            // The matching release left every level in GENERAL. Seed local layouts
-            // without a prologue: Vulkan must acquire ownership before touching it.
-            record.state_->layouts.try_emplace(image.get(), image->mip_levels, VK_IMAGE_LAYOUT_GENERAL);
+            record.state_->acquire_external_image(
+                image,
+                VK_QUEUE_FAMILY_EXTERNAL,
+                VK_IMAGE_LAYOUT_GENERAL,
+                {.layout = VK_IMAGE_LAYOUT_GENERAL, .stage = target_stage, .access = target_access});
             if (state.direction == transfer_direction_e::cpu_to_gpu) {
                 image->content_version.fetch_add(1, std::memory_order_relaxed);
                 record.state_->mip_dirty[image.get()] = true;
             }
         }
-        image_barrier = {
-            .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-            .pNext               = nullptr,
-            .srcStageMask        = source_stage,
-            .srcAccessMask       = source_access,
-            .dstStageMask        = target_stage,
-            .dstAccessMask       = target_access,
-            .oldLayout           = VK_IMAGE_LAYOUT_GENERAL,
-            .newLayout           = VK_IMAGE_LAYOUT_GENERAL,
-            .srcQueueFamilyIndex = source_family,
-            .dstQueueFamilyIndex = target_family,
-            .image               = image->image,
-            .subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                                    .baseMipLevel   = 0,
-                                    .levelCount     = image->mip_levels,
-                                    .baseArrayLayer = 0,
-                                    .layerCount     = 1},
-        };
-        dependency.imageMemoryBarrierCount = 1;
-        dependency.pImageMemoryBarriers    = &image_barrier;
+        return;
     }
     state.owner->vk.vkCmdPipelineBarrier2(record.state_->arena->commands, &dependency);
 }

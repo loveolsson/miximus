@@ -107,6 +107,63 @@ VkDescriptorSet recording_state_s::allocate_descriptor(VkDescriptorSetLayout lay
     return descriptor;
 }
 
+void recording_state_s::acquire_external_image(const std::shared_ptr<texture_state_s>& image,
+                                               uint32_t                                foreign_queue,
+                                               VkImageLayout                           foreign_layout,
+                                               external_image_access_s                 use)
+{
+    if (submission_attempted || !image || image->owner != owner || layouts.contains(image.get())) {
+        throw std::invalid_argument("External image acquisition requires its first use on an active owning recording");
+    }
+    retain(image);
+    // Never let a submission prologue touch an image before acquiring ownership.
+    layouts.try_emplace(image.get(), image->mip_levels, use.layout);
+    const VkImageMemoryBarrier2 barrier{
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .dstStageMask        = use.stage,
+        .dstAccessMask       = use.access,
+        .oldLayout           = foreign_layout,
+        .newLayout           = use.layout,
+        .srcQueueFamilyIndex = foreign_queue,
+        .dstQueueFamilyIndex = foreign_queue == VK_QUEUE_FAMILY_IGNORED ? VK_QUEUE_FAMILY_IGNORED : owner->queue_family,
+        .image               = image->image,
+        .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = image->mip_levels, .layerCount = 1},
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier};
+    owner->vk.vkCmdPipelineBarrier2(arena->commands, &dependency);
+}
+
+void recording_state_s::release_external_image(const std::shared_ptr<texture_state_s>& image,
+                                               uint32_t                                foreign_queue,
+                                               VkImageLayout                           foreign_layout,
+                                               external_image_access_s                 use)
+{
+    if (submission_attempted || !image || image->owner != owner || !layouts.contains(image.get())) {
+        throw std::invalid_argument("External image release requires a recorded image on its owning device");
+    }
+    auto& local_layouts = layouts.at(image.get());
+    if (!std::ranges::all_of(local_layouts, [use](VkImageLayout layout) { return layout == use.layout; })) {
+        throw std::invalid_argument("External image release layout does not match recorded uses");
+    }
+    retain(image);
+    const VkImageMemoryBarrier2 barrier{
+        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+        .srcStageMask        = use.stage,
+        .srcAccessMask       = use.access,
+        .oldLayout           = use.layout,
+        .newLayout           = foreign_layout,
+        .srcQueueFamilyIndex = owner->queue_family,
+        .dstQueueFamilyIndex = foreign_queue,
+        .image               = image->image,
+        .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = image->mip_levels, .layerCount = 1},
+    };
+    const VkDependencyInfo dependency{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier};
+    owner->vk.vkCmdPipelineBarrier2(arena->commands, &dependency);
+    std::ranges::fill(local_layouts, foreign_layout);
+}
+
 void recording_state_s::transition(const std::shared_ptr<texture_state_s>& image,
                                    VkImageLayout                           layout,
                                    VkPipelineStageFlags2                   stage,

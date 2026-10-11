@@ -42,55 +42,21 @@ completion_s external_image_copy_s::submit(recording_s&              record,
         .deviceIndex = 0,
     };
 
-    // As in the CUDA bridge, prevent the submission prologue from transitioning
-    // the imported image before the explicit ownership-acquire barrier.
-    state.layouts.try_emplace(image.get(), 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-    VkImageMemoryBarrier2 barrier{
-        .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .pNext               = nullptr,
-        .srcStageMask        = 0,
-        .srcAccessMask       = 0,
-        .dstStageMask        = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-        .dstAccessMask       = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-        .oldLayout           = VK_IMAGE_LAYOUT_GENERAL,
-        .newLayout           = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        .srcQueueFamilyIndex = external_image_queue_family,
-        .dstQueueFamilyIndex = state.owner->queue_family,
-        .image               = image->image,
-        .subresourceRange    = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                                .baseMipLevel   = 0,
-                                .levelCount     = 1,
-                                .baseArrayLayer = 0,
-                                .layerCount     = 1},
-    };
-
-    VkDependencyInfo dependency{
-        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .pNext                    = nullptr,
-        .dependencyFlags          = 0,
-        .memoryBarrierCount       = 0,
-        .pMemoryBarriers          = nullptr,
-        .bufferMemoryBarrierCount = 0,
-        .pBufferMemoryBarriers    = nullptr,
-        .imageMemoryBarrierCount  = 1,
-        .pImageMemoryBarriers     = &barrier,
-    };
-
-    state.owner->vk.vkCmdPipelineBarrier2(state.arena->commands, &dependency);
+    state.acquire_external_image(image,
+                                 external_image_queue_family,
+                                 VK_IMAGE_LAYOUT_GENERAL,
+                                 {.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  .stage  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                  .access = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT});
 
     record.draw(texture_s(image), destination, conversion);
     state.transition(image, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT);
-    barrier.srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-    barrier.srcAccessMask       = VK_ACCESS_2_MEMORY_READ_BIT;
-    barrier.dstStageMask        = VK_PIPELINE_STAGE_2_NONE;
-    barrier.dstAccessMask       = VK_ACCESS_2_NONE;
-    barrier.oldLayout           = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.srcQueueFamilyIndex = state.owner->queue_family;
-    barrier.dstQueueFamilyIndex = external_image_queue_family;
-
-    state.owner->vk.vkCmdPipelineBarrier2(state.arena->commands, &dependency);
+    state.release_external_image(image,
+                                 external_image_queue_family,
+                                 VK_IMAGE_LAYOUT_GENERAL,
+                                 {.layout = VK_IMAGE_LAYOUT_GENERAL,
+                                  .stage  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                  .access = VK_ACCESS_2_MEMORY_READ_BIT});
     return enqueue_recording(record.state_,
                              std::span{&wait, fence.semaphore != VK_NULL_HANDLE ? size_t{1} : size_t{0}});
 }
