@@ -23,7 +23,15 @@ TEST(Texture, LinearAndIntegerTexturesUseOnlyTheBaseLevel)
 
     EXPECT_EQ(texture_s::mip_map_level_count({1920, 1080}, rgba_unorm8, linear), 1);
     EXPECT_EQ(texture_s::mip_map_level_count({1920, 1080}, rgba_unorm8, nearest), 1);
-    EXPECT_EQ(texture_s::mip_map_level_count({1920, 1080}, r32_uint, mipmapped_linear), 1);
+    EXPECT_EQ(texture_s::mip_map_level_count({1920, 1080}, r32_uint, nearest), 1);
+}
+
+TEST(Texture, IntegerMipmapsAreRejectedByEstimation)
+{
+    EXPECT_THROW((void)texture_s::mip_map_level_count({8, 8}, format_e::r32_uint, sampling_e::mipmapped_linear),
+                 std::invalid_argument);
+    EXPECT_THROW((void)texture_s::estimate_storage_byte_size({8, 8}, format_e::r32_uint, sampling_e::mipmapped_linear),
+                 std::invalid_argument);
 }
 
 TEST(Texture, MipLevelCalculationRejectsInvalidDimensions)

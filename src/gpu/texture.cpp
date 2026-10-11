@@ -98,7 +98,11 @@ int texture_s::mip_map_level_count(vec2i_t dimensions, format_e storage_format, 
         throw std::invalid_argument("texture dimensions must be positive");
     }
 
-    if (storage_format_info(storage_format).integer || sampling != sampling_e::mipmapped_linear) {
+    if (storage_format_info(storage_format).integer && sampling == sampling_e::mipmapped_linear) {
+        throw std::invalid_argument("integer transfer images cannot have filtered mipmaps");
+    }
+
+    if (sampling != sampling_e::mipmapped_linear) {
         return 1;
     }
 
