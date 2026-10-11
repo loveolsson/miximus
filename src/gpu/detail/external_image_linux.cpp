@@ -74,8 +74,8 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
     image->extent   = descriptor.extent;
     image->format   = format_e::rgba_unorm8;
     image->sampling = sampling_e::linear;
-    // Imported contents must be preserved; a future ownership-acquire helper
-    // must seed its recording layout before the usual submission prologue.
+    // Imported contents must be preserved; acquire_external_image() seeds the
+    // recording layout before the usual submission prologue.
     image->layouts = {VK_IMAGE_LAYOUT_GENERAL};
 
     VkSubresourceLayout plane{
@@ -110,8 +110,8 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
         .mipLevels             = 1,
         .arrayLayers           = 1,
         .samples               = VK_SAMPLE_COUNT_1_BIT,
-        .tiling                = query.tiling,
-        .usage                 = query.usage,
+        .tiling                = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+        .usage                 = VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode           = {},
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices   = nullptr,
