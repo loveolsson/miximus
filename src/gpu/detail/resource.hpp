@@ -46,6 +46,7 @@ struct texture_state_s : resource_state_s
     std::atomic_uint64_t mip_version{UINT64_MAX};
 
     ~texture_state_s();
+    void initialize_views(VkFormat native_format);
 };
 
 struct buffer_state_s : resource_state_s

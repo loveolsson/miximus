@@ -1,5 +1,6 @@
 #include "detail/device.hpp"
 
+#include "detail/external_image_properties.hpp"
 #include "detail/external_image_support.hpp"
 #include "detail/external_memory.hpp"
 #include "detail/recording.hpp"
@@ -857,41 +858,17 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
             throw std::runtime_error("CUDA shared images require external-memory support");
         }
 
-        VkPhysicalDeviceExternalImageFormatInfo external_format{
-            .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
-            .pNext      = nullptr,
-            .handleType = detail::opaque_memory_handle_type,
-        };
-        VkPhysicalDeviceImageFormatInfo2 query{
-            .sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-            .pNext  = &external_format,
-            .format = info.format,
-            .type   = info.imageType,
-            .tiling = info.tiling,
-            .usage  = info.usage,
-            .flags  = 0,
-        };
-        VkExternalImageFormatProperties external_properties{
-            .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
-            .pNext                    = nullptr,
-            .externalMemoryProperties = {},
-        };
-        VkImageFormatProperties2 properties{
-            .sType                 = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-            .pNext                 = &external_properties,
-            .imageFormatProperties = {},
-        };
-        check(state_->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(state_->physical, &query, &properties),
-              "query CUDA shared image format");
-        if ((external_properties.externalMemoryProperties.externalMemoryFeatures &
-             VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) == 0U) {
+        const auto properties = detail::query_external_image_properties(
+            *state_, info.format, info.tiling, info.usage, detail::opaque_memory_handle_type);
+        check(properties.result, "query CUDA shared image format");
+        if ((properties.memory.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) == 0U) {
             throw std::runtime_error("CUDA shared image format is not exportable");
         }
 
         VkExternalMemoryImageCreateInfo external{
             .sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
             .pNext       = nullptr,
-            .handleTypes = static_cast<VkExternalMemoryHandleTypeFlags>(external_format.handleType),
+            .handleTypes = static_cast<VkExternalMemoryHandleTypeFlags>(detail::opaque_memory_handle_type),
         };
         info.pNext = &external;
         check(state_->vk.vkCreateImage(state_->device, &info, nullptr, &image->image), "create CUDA shared image");
@@ -909,28 +886,7 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
               "allocate image");
     }
 
-    VkImageViewCreateInfo view{
-        .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext            = nullptr,
-        .flags            = 0,
-        .image            = image->image,
-        .viewType         = VK_IMAGE_VIEW_TYPE_2D,
-        .format           = info.format,
-        .components       = {},
-        .subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                             .baseMipLevel   = 0,
-                             .levelCount     = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount     = 1},
-    };
-    check(state_->vk.vkCreateImageView(state_->device, &view, nullptr, &image->view), "image view");
-    image->sampled_view = image->view;
-    if (levels > 1) {
-        view.subresourceRange.levelCount = levels;
-        check(state_->vk.vkCreateImageView(state_->device, &view, nullptr, &image->sampled_view),
-              "mipmapped image view");
-    }
-
+    image->initialize_views(info.format);
     return texture_s(std::move(image));
 }
 

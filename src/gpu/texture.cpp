@@ -131,6 +131,24 @@ size_t texture_s::estimate_storage_byte_size(vec2i_t dimensions, format_e storag
 
 namespace detail {
 
+void texture_state_s::initialize_views(VkFormat native_format)
+{
+    VkImageViewCreateInfo description{
+        .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image            = image,
+        .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+        .format           = native_format,
+        .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1},
+    };
+    check(owner->vk.vkCreateImageView(owner->device, &description, nullptr, &view), "create image view");
+    sampled_view = view;
+    if (mip_levels > 1) {
+        description.subresourceRange.levelCount = mip_levels;
+        check(owner->vk.vkCreateImageView(owner->device, &description, nullptr, &sampled_view),
+              "create mipmapped image view");
+    }
+}
+
 texture_state_s::~texture_state_s()
 {
     if (image == nullptr) {

@@ -1,5 +1,6 @@
 #include "device.hpp"
 #include "external_image.hpp"
+#include "external_image_properties.hpp"
 #include "recording.hpp"
 #include "resource.hpp"
 
@@ -37,25 +38,7 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
             throw std::invalid_argument("Unsupported DMA-BUF image channel order");
     }
 
-    VkDrmFormatModifierPropertiesListEXT modifiers{
-        .sType                        = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT,
-        .pNext                        = nullptr,
-        .drmFormatModifierCount       = 0,
-        .pDrmFormatModifierProperties = nullptr,
-    };
-
-    VkFormatProperties2 formats{
-        .sType            = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2,
-        .pNext            = &modifiers,
-        .formatProperties = {},
-    };
-
-    device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, format, &formats);
-    std::vector<VkDrmFormatModifierPropertiesEXT> entries(modifiers.drmFormatModifierCount);
-    modifiers.pDrmFormatModifierProperties = entries.data();
-
-    device->instance_vk.vkGetPhysicalDeviceFormatProperties2(device->physical, format, &formats);
-    entries.resize(modifiers.drmFormatModifierCount);
+    const auto entries = image_modifiers(*device, format);
     const auto found =
         std::ranges::find(entries, descriptor.modifier, &VkDrmFormatModifierPropertiesEXT::drmFormatModifier);
     constexpr auto required = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
@@ -73,40 +56,16 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
         .pQueueFamilyIndices   = nullptr,
     };
 
-    VkPhysicalDeviceExternalImageFormatInfo external_query{
-        .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
-        .pNext      = &modifier_query,
-        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
-    };
-
-    VkPhysicalDeviceImageFormatInfo2 query{
-        .sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-        .pNext  = &external_query,
-        .format = format,
-        .type   = VK_IMAGE_TYPE_2D,
-        .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
-        .usage  = VK_IMAGE_USAGE_SAMPLED_BIT,
-        .flags  = 0,
-    };
-
-    VkExternalImageFormatProperties external_properties{
-        .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES,
-        .pNext                    = nullptr,
-        .externalMemoryProperties = {},
-    };
-
-    VkImageFormatProperties2 properties{
-        .sType                 = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-        .pNext                 = &external_properties,
-        .imageFormatProperties = {},
-    };
-
-    check(device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties),
-          "query DMA-BUF image format");
-    if ((external_properties.externalMemoryProperties.externalMemoryFeatures &
-         VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) == 0 ||
-        descriptor.extent.width > properties.imageFormatProperties.maxExtent.width ||
-        descriptor.extent.height > properties.imageFormatProperties.maxExtent.height) {
+    const auto properties = query_external_image_properties(*device,
+                                                            format,
+                                                            VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+                                                            VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                            VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                                            &modifier_query);
+    check(properties.result, "query DMA-BUF image format");
+    if ((properties.memory.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) == 0 ||
+        descriptor.extent.width > properties.image.maxExtent.width ||
+        descriptor.extent.height > properties.image.maxExtent.height) {
         throw std::runtime_error("DMA-BUF image format/extent is not importable");
     }
 
@@ -212,23 +171,7 @@ std::shared_ptr<texture_state_s> import_external_image(const std::shared_ptr<dev
 
     check(device->vk.vkBindImageMemory(device->device, image->image, image->external_memory, 0), "bind DMA-BUF image");
 
-    VkImageViewCreateInfo view{
-        .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext            = nullptr,
-        .flags            = 0,
-        .image            = image->image,
-        .viewType         = VK_IMAGE_VIEW_TYPE_2D,
-        .format           = format,
-        .components       = {},
-        .subresourceRange = {.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                             .baseMipLevel   = 0,
-                             .levelCount     = 1,
-                             .baseArrayLayer = 0,
-                             .layerCount     = 1},
-    };
-
-    check(device->vk.vkCreateImageView(device->device, &view, nullptr, &image->view), "create DMA-BUF sampled view");
-    image->sampled_view = image->view;
+    image->initialize_views(format);
     return image;
 }
 

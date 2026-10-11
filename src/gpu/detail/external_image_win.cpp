@@ -1,6 +1,7 @@
 #include "external_image_win.hpp"
 
 #include "device.hpp"
+#include "external_image_properties.hpp"
 #include "resource.hpp"
 
 #include <bit>
@@ -28,8 +29,8 @@ ComPtr<ID3D11Device> create_matching_device(const device_state_s& owner, UINT fl
 {
     VkPhysicalDeviceIDProperties identity{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
     VkPhysicalDeviceProperties2  properties{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        .pNext = &identity,
+         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+         .pNext = &identity,
     };
     owner.instance_vk.vkGetPhysicalDeviceProperties2(owner.physical, &properties);
     if (identity.deviceLUIDValid == VK_FALSE) {
@@ -149,29 +150,12 @@ std::shared_ptr<texture_state_s> import_d3d11_image(const std::shared_ptr<device
         throw std::invalid_argument("D3D11 texture does not meet the external-image contract");
     }
 
-    const auto                              format = descriptor.format;
-    const auto                              usage  = descriptor.usage;
-    VkPhysicalDeviceExternalImageFormatInfo external_query{
-        .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
-        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT,
-    };
-    VkPhysicalDeviceImageFormatInfo2 query{
-        .sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
-        .pNext  = &external_query,
-        .format = format,
-        .type   = VK_IMAGE_TYPE_2D,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage  = usage,
-    };
-    VkExternalImageFormatProperties external_properties{.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
-    VkImageFormatProperties2        properties{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-        .pNext = &external_properties,
-    };
-    check(device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties),
-          "query D3D11 image import");
-    if ((external_properties.externalMemoryProperties.externalMemoryFeatures &
-         VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) == 0) {
+    const auto format     = descriptor.format;
+    const auto usage      = descriptor.usage;
+    const auto properties = query_external_image_properties(
+        *device, format, VK_IMAGE_TILING_OPTIMAL, usage, VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT);
+    check(properties.result, "query D3D11 image import");
+    if ((properties.memory.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) == 0) {
         throw std::runtime_error("D3D11 image format is not importable by Vulkan");
     }
 
@@ -234,15 +218,7 @@ std::shared_ptr<texture_state_s> import_d3d11_image(const std::shared_ptr<device
         return image;
     }
 
-    VkImageViewCreateInfo view{
-        .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image            = image->image,
-        .viewType         = VK_IMAGE_VIEW_TYPE_2D,
-        .format           = format,
-        .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1},
-    };
-    check(device->vk.vkCreateImageView(device->device, &view, nullptr, &image->view), "create D3D11 image view");
-    image->sampled_view = image->view;
+    image->initialize_views(format);
     return image;
 }
 
