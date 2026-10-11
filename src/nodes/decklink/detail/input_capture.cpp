@@ -6,6 +6,7 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
 #include "media/frame_fingerprint.hpp"
+#include "nodes/uploaded_source_frame.hpp"
 #include "utils/failure_shutdown.hpp"
 #include "wrapper/decklink-sdk/platform_compat.hpp"
 
@@ -412,11 +413,11 @@ class callback_s final
             // and two retiring GPU evaluations. These are bounds, not latency.
             const auto upload_slots = sdk_buffers + queue_capacity + 1 + 2;
             const auto stream       = upload_service_->create_stream({
-                .host_layout         = host_layout,
-                .max_slots           = upload_slots,
-                .initial_slots       = sdk_buffers,
-                .generate_mip_maps   = false,
-                .conversion_sampling = gpu::sampling_e::mipmapped_linear,
+                      .host_layout         = host_layout,
+                      .max_slots           = upload_slots,
+                      .initial_slots       = sdk_buffers,
+                      .generate_mip_maps   = false,
+                      .conversion_sampling = gpu::sampling_e::mipmapped_linear,
             });
 
             auto allocator = make_decklink_ptr<input_video_buffer_allocator_s>(bufferSize, stream, sdk_buffers);
@@ -656,23 +657,19 @@ class callback_s final
             return nullptr;
         }
 
-        auto& frame = *ticket.frame();
-        auto& info  = frame.payload();
-        if (ticket.selection() == media::prepared_frame_selection_e::new_frame) {
-            const auto wait_result = info.stream ? info.stream->wait_for_upload_submission(info.upload_id)
-                                                 : gpu::transfer::texture_upload_wait_result_e::stopped;
-            if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
+        auto&      frame = *ticket.frame();
+        auto&      info  = frame.payload();
+        const auto result =
+            nodes::consume_source_upload(frame_queue_, ticket, [](auto& info) { info.input_frame = nullptr; });
+        if (result.error != nodes::source_upload_error_e::none) {
+            if (result.error == nodes::source_upload_error_e::wait) {
                 if (!warned_wait_failure_) {
                     log()->warn("DeckLink timed input failed waiting for upload {} (result {})",
                                 info.upload_id.sequence,
-                                static_cast<int>(wait_result));
+                                static_cast<int>(result.wait_result));
                     warned_wait_failure_ = true;
                 }
-                frame_queue_.fail(ticket);
-                return nullptr;
-            }
-            info.frame = info.stream->select_submitted_upload(info.upload_id);
-            if (!info.frame || info.stream->retained_upload_id() != info.upload_id || !frame.mark_ready()) {
+            } else if (result.error == nodes::source_upload_error_e::consume) {
                 if (!warned_consume_failure_) {
                     log()->warn("DeckLink timed input failed to consume upload {} (retained {}, texture {}, "
                                 "readiness {})",
@@ -682,24 +679,13 @@ class callback_s final
                                 static_cast<int>(frame.readiness()));
                     warned_consume_failure_ = true;
                 }
-                frame_queue_.fail(ticket);
-                return nullptr;
-            }
-            info.input_frame = nullptr;
-        } else if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
-            info.frame = info.stream ? info.stream->retained_frame_for(info.upload_id) : nullptr;
-            if (!info.frame) {
-                frame_queue_.fail(ticket);
-                return nullptr;
-            }
-        }
-
-        if (!ticket.await() || !frame_queue_.commit(ticket)) {
-            if (!warned_commit_failure_) {
-                log()->warn("DeckLink timed input failed to commit upload {} (readiness {})",
-                            info.upload_id.sequence,
-                            static_cast<int>(frame.readiness()));
-                warned_commit_failure_ = true;
+            } else if (result.error == nodes::source_upload_error_e::commit) {
+                if (!warned_commit_failure_) {
+                    log()->warn("DeckLink timed input failed to commit upload {} (readiness {})",
+                                info.upload_id.sequence,
+                                static_cast<int>(frame.readiness()));
+                    warned_commit_failure_ = true;
+                }
             }
             return nullptr;
         }
@@ -708,17 +694,7 @@ class callback_s final
 
     void release_frame(frame_ticket_t& ticket)
     {
-        if (ticket.selection() != media::prepared_frame_selection_e::new_frame || ticket.frame() == nullptr ||
-            ticket.frame()->readiness() != media::source_frame_readiness_e::submitted) {
-            return;
-        }
-
-        auto& info = ticket.frame()->payload();
-        if (info.stream) {
-            info.stream->discard_upload(info.upload_id);
-        }
-        info.input_frame = nullptr;
-        frame_queue_.cancel(ticket);
+        nodes::cancel_source_upload(frame_queue_, ticket, [](auto& info) { info.input_frame = nullptr; });
     }
 
     void reset_frames() { frame_queue_.reset(); }

@@ -5,6 +5,7 @@
 #include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
+#include "nodes/uploaded_source_frame.hpp"
 #include "utils/environment.hpp"
 #ifdef MIXIMUS_TEST_DECKLINK
 #include "nodes/decklink/detail/allocator.hpp"
@@ -72,15 +73,76 @@ class transfer_vulkan : public testing::Test
     }
 };
 
+TEST_F(transfer_vulkan, TimedUploadConsumptionRepeatsAndCancelsExactLeases)
+{
+    struct payload_s
+    {
+        std::shared_ptr<texture_upload_stream_s> stream;
+        texture_upload_lease_s                   upload;
+        texture_upload_id_s                      upload_id;
+        texture_frame_ptr                        frame;
+        bool                                     source_released{};
+    };
+    texture_upload_service_s               uploads(gpu(), 1 << 20);
+    auto                                   stream = uploads.create_stream({
+                                          .host_layout   = {.image_dimensions  = {2, 2},
+                                                            .pixel_format      = host_pixel_format_e::rgba_u8,
+                                                            .row_stride_bytes  = 8,
+                                                            .buffer_size_bytes = 16},
+                                          .max_slots     = 2,
+                                          .initial_slots = 2
+    });
+    media::timed_source_queue_s<payload_s> queue;
+    const auto                             duration = utils::to_flicks(1.0 / 60.0);
+    auto                                   push     = [&](uint64_t sequence) {
+        auto upload = stream->acquire_upload_buffer_for(3s);
+        if (!upload) {
+            throw std::runtime_error("Missing test upload slot");
+        }
+        const auto id = upload->upload_id();
+        std::ranges::fill(upload->writable_host_bytes(), std::byte{42});
+        if (!upload->submit()) {
+            throw std::runtime_error("Test upload rejected");
+        }
+        auto frame = std::make_shared<media::source_frame_s<payload_s>>(
+            media::media_clock_sample_s{.stream_epoch   = 1,
+                                                                              .frame_sequence = sequence,
+                                                                              .media_pts = duration * static_cast<int64_t>(sequence),
+                                                                              .frame_duration = duration},
+            duration * static_cast<int64_t>(sequence),
+            payload_s{.stream = stream, .upload = std::move(*upload), .upload_id = id, .frame = {}},
+            media::source_frame_readiness_e::submitted);
+        queue.push(frame);
+        queue.advance(duration * static_cast<int64_t>(sequence), duration * static_cast<int64_t>(sequence), false);
+        return frame;
+    };
+    auto first    = push(1);
+    auto selected = queue.select_nearest(duration);
+    auto release  = [](auto& info) { info.source_released = true; };
+    ASSERT_EQ(nodes::consume_source_upload(queue, selected, release).error, nodes::source_upload_error_e::none);
+    EXPECT_TRUE(first->payload().source_released);
+    EXPECT_EQ(stream->retained_upload_id(), first->payload().upload_id);
+    auto repeated = queue.select_nearest(duration);
+    ASSERT_EQ(repeated.selection(), media::prepared_frame_selection_e::repeat);
+    EXPECT_EQ(nodes::consume_source_upload(queue, repeated, release).error, nodes::source_upload_error_e::none);
+    auto second    = push(2);
+    auto cancelled = queue.select_nearest(duration * 2);
+    nodes::cancel_source_upload(queue, cancelled, release);
+    EXPECT_TRUE(second->payload().source_released);
+    EXPECT_EQ(second->readiness(), media::source_frame_readiness_e::failed);
+    EXPECT_EQ(queue.metrics().transfer_cancellations, 1U);
+    EXPECT_EQ(stream->retained_upload_id(), first->payload().upload_id);
+}
+
 TEST_F(transfer_vulkan, ExactUploadSelectionRetainsOldFrameAndProducesPaddedReadback)
 {
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-        .image_dimensions  = {3, 2},
-        .pixel_format      = host_pixel_format_e::rgba_u8,
-        .row_stride_bytes  = 20,
-        .buffer_size_bytes = 40
+         .image_dimensions  = {3, 2},
+         .pixel_format      = host_pixel_format_e::rgba_u8,
+         .row_stride_bytes  = 20,
+         .buffer_size_bytes = 40
     };
 
     auto input =
@@ -203,12 +265,12 @@ TEST_F(transfer_vulkan, AbandonedOutputTargetCannotBeReusedDuringRecording)
 {
     texture_readback_service_s downloads(gpu(), 1 << 20);
     auto                       output = downloads.create_stream({
-        .host_layout   = {.image_dimensions  = {4, 4},
-                          .pixel_format      = host_pixel_format_e::rgba_u8,
-                          .buffer_size_bytes = 64,
-                          .memory_access     = host_memory_access_e::read_only},
-        .max_slots     = 1,
-        .initial_slots = 1
+                              .host_layout   = {.image_dimensions  = {4, 4},
+                                                .pixel_format      = host_pixel_format_e::rgba_u8,
+                                                .buffer_size_bytes = 64,
+                                                .memory_access     = host_memory_access_e::read_only},
+                              .max_slots     = 1,
+                              .initial_slots = 1
     });
     ASSERT_TRUE(output->wait_for_initial_slots(3s));
     auto target = output->try_acquire_render_target();
@@ -344,8 +406,8 @@ TEST_F(transfer_vulkan, SubmittedUploadsChainThroughConversionAndReadbackWithout
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-        .image_dimensions = {4, 4},
-          .pixel_format = host_pixel_format_e::rgba_u8, .buffer_size_bytes = 64
+         .image_dimensions = {4, 4},
+           .pixel_format = host_pixel_format_e::rgba_u8, .buffer_size_bytes = 64
     };
     auto input                  = uploads.create_stream({.host_layout         = layout,
                                                          .max_slots           = 2,
@@ -477,10 +539,10 @@ TEST_F(transfer_vulkan, PackedFramesUseBuffersAndPreserveRowPadding)
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-        .image_dimensions  = {6, 2},
-        .pixel_format      = host_pixel_format_e::v210,
-        .row_stride_bytes  = 32,
-        .buffer_size_bytes = 64,
+         .image_dimensions  = {6, 2},
+         .pixel_format      = host_pixel_format_e::v210,
+         .row_stride_bytes  = 32,
+         .buffer_size_bytes = 64,
     };
 
     auto input                    = uploads.create_stream({.host_layout = layout, .max_slots = 1, .initial_slots = 1});
@@ -542,14 +604,14 @@ TEST_F(transfer_vulkan, MappedDeckLinkAlignmentAndBudgetAreRespected)
 {
     texture_upload_service_s uploads(gpu(), 1 << 20);
     auto                     input = uploads.create_stream({
-        .host_layout   = {.image_dimensions        = {48, 4},
-                          .pixel_format            = host_pixel_format_e::v210,
-                          .row_stride_bytes        = 128,
-                          .buffer_size_bytes       = 512,
-                          .address_alignment_bytes = 4096,
-                          .memory_access           = host_memory_access_e::read_write},
-        .max_slots     = 1,
-        .initial_slots = 1
+                            .host_layout   = {.image_dimensions        = {48, 4},
+                                              .pixel_format            = host_pixel_format_e::v210,
+                                              .row_stride_bytes        = 128,
+                                              .buffer_size_bytes       = 512,
+                                              .address_alignment_bytes = 4096,
+                                              .memory_access           = host_memory_access_e::read_write},
+                            .max_slots     = 1,
+                            .initial_slots = 1
     });
     auto                     lease = input->acquire_upload_buffer_for(3s);
     if (!lease.has_value()) {
@@ -568,10 +630,10 @@ TEST_F(transfer_vulkan, FullHdFramesRetainEveryActiveByteAcrossRepeatedTransfers
     constexpr size_t           height = 1080;
     constexpr size_t           stride = (width * 4) + 64;
     const host_frame_layout_s  layout{
-        .image_dimensions  = {width, height},
-        .pixel_format      = host_pixel_format_e::rgba_u8,
-        .row_stride_bytes  = stride,
-        .buffer_size_bytes = stride * height
+         .image_dimensions  = {width, height},
+         .pixel_format      = host_pixel_format_e::rgba_u8,
+         .row_stride_bytes  = stride,
+         .buffer_size_bytes = stride * height
     };
 
     auto input =
@@ -682,10 +744,10 @@ TEST_F(transfer_vulkan, RawChannelOrdersAndMipmapsSurviveRepeatedDirectTransfers
         texture_upload_service_s   uploads(gpu(), 4 << 20);
         texture_readback_service_s downloads(gpu(), 4 << 20);
         const host_frame_layout_s  input_layout{
-            .image_dimensions  = {16, 8},
-            .pixel_format      = format,
-            .row_stride_bytes  = 80,
-            .buffer_size_bytes = 640,
+             .image_dimensions  = {16, 8},
+             .pixel_format      = format,
+             .row_stride_bytes  = 80,
+             .buffer_size_bytes = 640,
         };
         auto input = uploads.create_stream(
             {.host_layout = input_layout, .max_slots = 2, .initial_slots = 2, .generate_mip_maps = true});
@@ -804,11 +866,11 @@ TEST_F(transfer_vulkan, DeckLinkUsesTransferMemoryDirectlyAndRetainsItThroughSdk
     texture_upload_service_s   uploads(gpu(), 1 << 20);
     texture_readback_service_s downloads(gpu(), 1 << 20);
     const host_frame_layout_s  layout{
-        .image_dimensions        = {48, 2},
-        .pixel_format            = host_pixel_format_e::v210,
-        .row_stride_bytes        = 256,
-        .buffer_size_bytes       = 512,
-        .address_alignment_bytes = 4096
+         .image_dimensions        = {48, 2},
+         .pixel_format            = host_pixel_format_e::v210,
+         .row_stride_bytes        = 256,
+         .buffer_size_bytes       = 512,
+         .address_alignment_bytes = 4096
     };
 
     auto input =
@@ -926,11 +988,11 @@ TEST_F(transfer_vulkan, DeckLinkWrappersBoundLiveObjectsAndRetainTheirAllocator)
     using namespace nodes::decklink::detail;
     texture_upload_service_s uploads(gpu(), 1 << 20);
     auto                     stream    = uploads.create_stream({
-        .host_layout = {.image_dimensions  = {16, 16},
-                        .pixel_format      = host_pixel_format_e::rgba_u8,
-                        .row_stride_bytes  = 64,
-                        .buffer_size_bytes = 1024},
-        .max_slots   = 2
+                               .host_layout = {.image_dimensions  = {16, 16},
+                                               .pixel_format      = host_pixel_format_e::rgba_u8,
+                                               .row_stride_bytes  = 64,
+                                               .buffer_size_bytes = 1024},
+                               .max_slots   = 2
     });
     auto                     allocator = make_decklink_ptr<input_video_buffer_allocator_s>(1024, stream, 2);
     IDeckLinkVideoBuffer*    first{};

@@ -178,7 +178,7 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(gpu_transfer_vulkan_test tests/transfer_vulkan_test.cpp)
-    target_link_libraries(gpu_transfer_vulkan_test PRIVATE environment gpu logger GTest::gtest_main)
+    target_link_libraries(gpu_transfer_vulkan_test PRIVATE environment gpu logger media GTest::gtest_main)
     if(TARGET decklink)
         target_sources(gpu_transfer_vulkan_test PRIVATE ${PROJECT_SOURCE_DIR}/src/nodes/decklink/detail/allocator.cpp)
         target_link_libraries(gpu_transfer_vulkan_test PRIVATE decklink)

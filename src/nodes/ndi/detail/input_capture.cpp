@@ -2,6 +2,7 @@
 
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
+#include "nodes/uploaded_source_frame.hpp"
 #include "types/frame_rate.hpp"
 #include "utils/serial_executor.hpp"
 #include "wrapper/ndi-sdk/ndi_inc.hpp"
@@ -141,10 +142,10 @@ class input_capture_s::impl_s
             .memory_access     = gpu::transfer::host_memory_access_e::overwrite,
         };
         upload_stream_       = upload_service_->create_stream({
-            .host_layout         = host_layout,
-            .max_slots           = input_buffer_slot_count(buffer_frames_),
-            .generate_mip_maps   = false,
-            .conversion_sampling = gpu::sampling_e::mipmapped_linear,
+                  .host_layout         = host_layout,
+                  .max_slots           = input_buffer_slot_count(buffer_frames_),
+                  .generate_mip_maps   = false,
+                  .conversion_sampling = gpu::sampling_e::mipmapped_linear,
         });
         upload_dimensions_   = dimensions;
         upload_pixel_format_ = pixel_format;
@@ -253,8 +254,8 @@ class input_capture_s::impl_s
 
         const auto upload_id = upload->upload_id();
         auto       captured  = frame_queue_.create_frame(*media_clock_sample,
-                                                         arrival_time,
-                                                         captured_frame_data_s{
+                                                  arrival_time,
+                                                  captured_frame_data_s{
                                                              .stream        = std::move(stream),
                                                              .upload        = std::move(*upload),
                                                              .upload_id     = upload_id,
@@ -262,7 +263,7 @@ class input_capture_s::impl_s
                                                              .dimensions    = dimensions,
                                                              .ndi_timecode  = video_frame.timecode,
                                                              .ndi_timestamp = video_frame.timestamp,
-                                                         });
+                                                  });
         // Begin the transfer before entering the timed FIFO. Consumption still waits
         // for this exact upload, after the configured source buffering interval.
         if (!captured->mark_submitted() ||
@@ -463,42 +464,26 @@ class input_capture_s::impl_s
             return std::nullopt;
         }
 
-        auto& ticket = *prepared_frame_;
-        auto& frame  = *ticket.frame();
-        auto& info   = frame.payload();
-        if (ticket.selection() == media::prepared_frame_selection_e::new_frame) {
-            const auto wait_result = info.stream ? info.stream->wait_for_upload_submission(info.upload_id)
-                                                 : gpu::transfer::texture_upload_wait_result_e::stopped;
-            if (wait_result != gpu::transfer::texture_upload_wait_result_e::ready) {
+        auto&      ticket = *prepared_frame_;
+        auto&      frame  = *ticket.frame();
+        auto&      info   = frame.payload();
+        const auto result = consume_source_upload(frame_queue_, ticket, [](auto& /* info */) {});
+        if (result.error != source_upload_error_e::none) {
+            if (result.error == source_upload_error_e::wait) {
                 if (!warned_wait_failure_) {
                     log()->warn("NDI timed input failed waiting for upload {}", info.upload_id.sequence);
                     warned_wait_failure_ = true;
                 }
-                frame_queue_.fail(ticket);
-                return std::nullopt;
-            }
-
-            info.frame = info.stream->select_submitted_upload(info.upload_id);
-            if (!info.frame || info.stream->retained_upload_id() != info.upload_id || !frame.mark_ready()) {
+            } else if (result.error == source_upload_error_e::consume) {
                 if (!warned_consume_failure_) {
                     log()->warn("NDI timed input failed to consume upload {}", info.upload_id.sequence);
                     warned_consume_failure_ = true;
                 }
-                frame_queue_.fail(ticket);
-                return std::nullopt;
-            }
-        } else if (ticket.selection() == media::prepared_frame_selection_e::repeat) {
-            info.frame = info.stream ? info.stream->retained_frame_for(info.upload_id) : nullptr;
-            if (!info.frame) {
-                frame_queue_.fail(ticket);
-                return std::nullopt;
-            }
-        }
-
-        if (!ticket.await() || !frame_queue_.commit(ticket)) {
-            if (!warned_commit_failure_) {
-                log()->warn("NDI timed input failed to commit upload {}", info.upload_id.sequence);
-                warned_commit_failure_ = true;
+            } else if (result.error == source_upload_error_e::commit) {
+                if (!warned_commit_failure_) {
+                    log()->warn("NDI timed input failed to commit upload {}", info.upload_id.sequence);
+                    warned_commit_failure_ = true;
+                }
             }
             return std::nullopt;
         }
@@ -510,15 +495,8 @@ class input_capture_s::impl_s
 
     void release_prepared_frame()
     {
-        if (prepared_frame_.has_value() &&
-            prepared_frame_->selection() == media::prepared_frame_selection_e::new_frame &&
-            prepared_frame_->frame() != nullptr &&
-            prepared_frame_->frame()->readiness() == media::source_frame_readiness_e::submitted) {
-            auto& info = prepared_frame_->frame()->payload();
-            if (info.stream) {
-                info.stream->discard_upload(info.upload_id);
-            }
-            frame_queue_.cancel(*prepared_frame_);
+        if (prepared_frame_) {
+            cancel_source_upload(frame_queue_, *prepared_frame_, [](auto& /* info */) {});
         }
         prepared_frame_.reset();
     }
