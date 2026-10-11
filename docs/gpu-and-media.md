@@ -576,6 +576,36 @@ transfer services. Missing fonts, failed allocation, or unavailable upload slots
 
 ## Real-time queues and workers
 
+### Shared mechanics and separate policies
+
+External image bridges use `recording_state_s::acquire_external_image()` and
+`release_external_image()` for whole-image ownership barriers, resource retention, and local layout tracking.
+Acquire bypasses the submission prologue; release verifies the recorded layout. The bridge still establishes
+producer readiness and consumer retirement using its own semaphore, callback, or SDK protocol. Native image views
+and external-format queries also share implementation helpers, while platform handle ownership and modifier
+selection remain explicit. Integer textures with filtered mipmaps are rejected by both allocation and estimation.
+
+Upload and readback slots share `slot_resources_s`: its members retire registration before frame storage and release
+the RAII memory reservation last. Allocation failures unwind in the same order. Resource workers still own allocation
+and teardown; the direction-specific slot state machines, exact upload IDs, and external leases remain separate.
+NDI and DeckLink share exact selected-upload consumption and cancellation in `nodes/uploaded_source_frame.hpp`;
+DeckLink releases its SDK source reference at the original point, after successful consumption and before queue commit.
+
+Texture pools intentionally retain different policies. CEF preallocates immutable pool generations with synchronized
+leases; FFmpeg allocates on its decode worker, retires obsolete resolutions, and accounts against a shared playback
+budget; screen output recycles through presentation retirement. Their common GPU reuse check is `texture_s::idle()`.
+A universal pool would need to encode all three allocation, synchronization, and retirement policies, so the current
+consolidation stops at shared resource lifetime and transfer-slot allocation mechanics. The CEF media-input ticket
+pool additionally tracks external consumer completion and must not infer it from ordinary texture idleness.
+
+CPU-generated textures likewise retain their publication policies above the shared `cpu_task_s` worker. Image and
+test-pattern requests compare owned request values; text and label batches use generations; teleprompter lines retain
+their own scrolling cache. Cancellation, stale-result rejection, retry, and retention of previous images remain local
+because those observable behaviors differ. A common generation state machine would require policy branches rather
+than remove them.
+
+### Queue ownership
+
 `media::timed_source_queue_s<T>` aligns incoming frames to the program timeline, while
 `media::timed_output_queue_s<T>` selects frames for presentation. Transfer services maintain their own bounded free,
 pending, and in-flight slots. When no free slot exists, dropping a frame is generally preferable to blocking the
