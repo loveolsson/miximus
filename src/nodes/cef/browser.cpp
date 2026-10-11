@@ -6,6 +6,7 @@
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
+#include "nodes/source_timing_status.hpp"
 #include "subsystem.hpp"
 #include "types/node_action_contracts.hpp"
 #include "types/node_status_json.hpp"
@@ -143,27 +144,7 @@ class node_impl final : public node_i
         publish_browser_status(status, browser_status);
         if (metrics) {
             const auto& queue = metrics->source_queue;
-            status->write(id_,
-                          status::source_timing_status_s{
-                              .source_queue_pushed                  = queue.pushed,
-                              .source_queue_depth                   = queue.queued,
-                              .source_queue_overflow_drops          = queue.overflow_drops,
-                              .source_queue_selection_drops         = queue.selection_drops,
-                              .source_queue_repeated                = queue.repeated,
-                              .source_queue_starvation_repeats      = queue.starvation_repeats,
-                              .source_queue_timing_repeats          = queue.timing_repeats,
-                              .source_queue_missing                 = queue.missing,
-                              .source_queue_discontinuities         = queue.discontinuities,
-                              .source_queue_transfer_failures       = queue.transfer_failures,
-                              .source_queue_transfer_cancellations  = queue.transfer_cancellations,
-                              .source_recovered_rate                = queue.recovered_rate,
-                              .source_observed_rate                 = queue.observed_rate,
-                              .source_phase_offset_us               = queue.phase_offset,
-                              .source_phase_error_us                = queue.phase_error,
-                              .source_phase_adjustment_us           = queue.phase_adjustment,
-                              .source_repeat_next_frame_lead_min_us = queue.repeat_next_frame_lead_min,
-                              .source_repeat_next_frame_lead_max_us = queue.repeat_next_frame_lead_max,
-                          });
+            status->write(id_, source_timing_status(queue));
         }
     }
 

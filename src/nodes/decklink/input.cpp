@@ -12,6 +12,7 @@
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
+#include "nodes/source_timing_status.hpp"
 #include "registry.hpp"
 #include "types/node_status_json.hpp"
 #include "utils/observed_value.hpp"
@@ -131,28 +132,7 @@ class node_impl : public node_i
                                    .content_repeat_streak_max  = metrics.content_repeat_streak_max,
                                    .available_video_frames     = metrics.available_video_frames,
                                });
-        status_registry->write(
-            id_,
-            status::source_timing_status_s{
-                .source_queue_pushed                  = metrics.source_queue.pushed,
-                .source_queue_depth                   = metrics.source_queue.queued,
-                .source_queue_overflow_drops          = metrics.source_queue.overflow_drops,
-                .source_queue_selection_drops         = metrics.source_queue.selection_drops,
-                .source_queue_repeated                = metrics.source_queue.repeated,
-                .source_queue_starvation_repeats      = metrics.source_queue.starvation_repeats,
-                .source_queue_timing_repeats          = metrics.source_queue.timing_repeats,
-                .source_queue_missing                 = metrics.source_queue.missing,
-                .source_queue_discontinuities         = metrics.source_queue.discontinuities,
-                .source_queue_transfer_failures       = metrics.source_queue.transfer_failures,
-                .source_queue_transfer_cancellations  = metrics.source_queue.transfer_cancellations,
-                .source_recovered_rate                = metrics.source_queue.recovered_rate,
-                .source_observed_rate                 = metrics.source_queue.observed_rate,
-                .source_phase_offset_us               = metrics.source_queue.phase_offset,
-                .source_phase_error_us                = metrics.source_queue.phase_error,
-                .source_phase_adjustment_us           = metrics.source_queue.phase_adjustment,
-                .source_repeat_next_frame_lead_min_us = metrics.source_queue.repeat_next_frame_lead_min,
-                .source_repeat_next_frame_lead_max_us = metrics.source_queue.repeat_next_frame_lead_max,
-            });
+        status_registry->write(id_, source_timing_status(metrics.source_queue));
     }
 
     void prepare_active_capture(core::app_state_s* app, core::node_status_registry_s* status_registry)
