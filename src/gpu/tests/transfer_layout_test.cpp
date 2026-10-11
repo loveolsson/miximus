@@ -1,8 +1,27 @@
+#include "gpu/transfer/detail/memory_budget.hpp"
 #include "gpu/transfer/detail/transfer_layout.hpp"
 
 #include <gtest/gtest.h>
 
 namespace miximus::gpu::transfer::detail { namespace {
+
+TEST(MemoryReservation, FailedGrowthRetainsAccountingAndMoveTransfersOwnership)
+{
+    memory_budget_s budget(100);
+    {
+        memory_reservation_s first(budget, 60);
+        EXPECT_THROW(first.resize(101), std::bad_alloc);
+        EXPECT_EQ(budget.usage(), 60U);
+        memory_reservation_s second(budget, 20);
+        second = std::move(first);
+        EXPECT_EQ(budget.usage(), 60U);
+        second.resize(40);
+        EXPECT_EQ(budget.usage(), 40U);
+        EXPECT_THROW((void)memory_reservation_s(budget, 61), std::bad_alloc);
+        EXPECT_EQ(budget.usage(), 40U);
+    }
+    EXPECT_EQ(budget.usage(), 0U);
+}
 
 host_frame_layout_s make_layout(host_pixel_format_e format)
 {

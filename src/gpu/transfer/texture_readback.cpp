@@ -1,6 +1,7 @@
 #include "texture_readback.hpp"
 
 #include "detail/conversion_texture.hpp"
+#include "detail/slot_resources.hpp"
 #include "gpu/detail/fatal.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/texture_frame.hpp"
@@ -43,13 +44,9 @@ enum class task_type_e : uint8_t
 
 } // namespace
 
-struct texture_readback_slot_s
+struct texture_readback_slot_s : slot_resources_s
 {
-    // Registrations must retire before their frame, including exception cleanup.
-    texture_frame_ptr                                    frame;
-    std::unique_ptr<frame_staging_s>                     staging;
     slot_state_e                                         state{slot_state_e::free};
-    size_t                                               reserved_bytes{};
     utils::flicks                                        program_target_time{};
     completion_s                                         render_ready;
     bool                                                 transfer_submitted{};
@@ -95,13 +92,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
     {
     }
 
-    void release_slot(texture_readback_slot_s& slot)
-    {
-        slot.staging.reset();
-        slot.frame.reset();
-        memory_.release_memory(slot.reserved_bytes);
-        slot.reserved_bytes = 0;
-    }
+    void release_slot(texture_readback_slot_s& slot) { slot.release(); }
 
     void allocate_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream)
     {
@@ -114,60 +105,39 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
             }
         }
 
-        size_t reserved{};
-        bool   reserved_memory{};
         try {
-            reserved = estimate_slot_memory_usage(stream->transfer_plan, sampling_e::linear);
-            if (!memory_.reserve_memory(reserved)) {
-                throw std::bad_alloc();
-            }
-            reserved_memory = true;
-
-            stream->conversion.initialize(device_,
-                                          stream->transfer_plan.host_layout.image_dimensions,
-                                          stream->config.conversion_sampling,
-                                          memory_);
-
-            auto slot            = std::make_shared<texture_readback_slot_s>();
-            slot->reserved_bytes = reserved;
-            slot->frame =
-                std::make_shared<texture_frame_s>(device_, stream->transfer_plan.host_layout, sampling_e::linear);
-            slot->frame->set_conversion_texture(stream->conversion.texture);
-            auto staging  = std::make_unique<frame_staging_s>(device_,
-                                                             stream->transfer_plan,
-                                                             frame_staging_s::direction_e::gpu_to_cpu,
-                                                             slot->frame.get(),
-                                                             &recording_context_);
-            slot->staging = std::move(staging);
-
-            const auto actual_reserved =
-                slot_memory_usage(stream->transfer_plan, slot->staging->allocation_bytes(), sampling_e::linear);
-            if (!memory_.resize_memory_reservation(reserved, actual_reserved)) {
-                throw std::bad_alloc();
-            }
-            reserved             = actual_reserved;
-            slot->reserved_bytes = actual_reserved;
+            auto slot = std::make_shared<texture_readback_slot_s>();
+            slot->initialize(device_,
+                             recording_context_,
+                             stream->transfer_plan,
+                             sampling_e::linear,
+                             frame_staging_s::direction_e::gpu_to_cpu,
+                             stream->conversion,
+                             stream->config.conversion_sampling,
+                             memory_);
 
             bool active{};
             {
                 const std::scoped_lock lock(stream->mutex);
-                --stream->pending_allocations;
                 active = stream->active;
                 if (active) {
                     stream->allocation_failed      = false;
                     stream->retry_allocation_after = {};
                     stream->slots.emplace_back(slot);
-                    stream->free_slots.emplace_back(slot);
+                    try {
+                        stream->free_slots.emplace_back(slot);
+                    } catch (...) {
+                        stream->slots.pop_back();
+                        throw;
+                    }
                 }
+                --stream->pending_allocations;
             }
             stream->initial_slots_condition.notify_all();
             if (!active) {
                 release_slot(*slot);
             }
         } catch (const std::exception& error) {
-            if (reserved_memory) {
-                memory_.release_memory(reserved);
-            }
             {
                 const std::scoped_lock lock(stream->mutex);
                 --stream->pending_allocations;
