@@ -92,7 +92,7 @@ struct texture_readback_service_state_s : transfer_worker_s<texture_readback_ser
     {
     }
 
-    void release_slot(texture_readback_slot_s& slot) { slot.release(); }
+    static void release_slot(texture_readback_slot_s& slot) { slot.release(); }
 
     void allocate_slot(const std::shared_ptr<texture_readback_stream_state_s>& stream)
     {

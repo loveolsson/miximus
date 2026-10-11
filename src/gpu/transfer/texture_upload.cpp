@@ -90,7 +90,7 @@ struct texture_upload_service_state_s : transfer_worker_s<texture_upload_service
     {
     }
 
-    void release_slot_resources(texture_upload_slot_s& slot) { slot.release(); }
+    static void release_slot_resources(texture_upload_slot_s& slot) { slot.release(); }
 
     void allocate_slot(const std::shared_ptr<texture_upload_stream_state_s>& stream)
     {
