@@ -1,8 +1,8 @@
 #include "device.hpp"
 #include "external_image_sync.hpp"
+#include "gpu/detail/native_handle.hpp"
 #include "recording.hpp"
 #include "resource.hpp"
-#include "utils/owned_fd.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -82,8 +82,8 @@ import_read_fence(const std::shared_ptr<device_state_s>& device, int dma_buf, st
 
     // Snapshot the fence once and wait only on this private callback/worker.
     // Do not enqueue an unresolved foreign dependency that could stall the graph.
-    utils::owned_fd_s sync_file{export_fence.fd};
-    const auto        start = std::chrono::steady_clock::now();
+    gpu::detail::native_handle_s sync_file{export_fence.fd};
+    const auto                   start = std::chrono::steady_clock::now();
     for (;;) {
         const auto elapsed   = std::chrono::steady_clock::now() - start;
         const auto remaining = std::max(std::chrono::milliseconds::zero(),

@@ -1,5 +1,5 @@
+#include "gpu/detail/native_handle.hpp"
 #include "probe_platform.hpp"
-#include "utils/owned_fd.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -22,8 +22,8 @@ void log_producer_fence(gpu::detail::native_handle_s::value_t handle)
     if (ioctl(handle, DMA_BUF_IOCTL_EXPORT_SYNC_FILE, &exported) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF producer fence");
     }
-    utils::owned_fd_s fence{exported.fd};
-    sync_file_info    info{};
+    gpu::detail::native_handle_s fence{exported.fd};
+    sync_file_info               info{};
     if (ioctl(fence.get(), SYNC_IOC_FILE_INFO, &info) < 0) {
         throw std::system_error(errno, std::generic_category(), "inspect CEF sync-file metadata");
     }
