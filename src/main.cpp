@@ -10,6 +10,7 @@
 #include "core/test_instrumentation/render_thread_delay.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
+#include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
 #include "types/web_message_json.hpp"
 #include "utils/failure_shutdown.hpp"
@@ -71,7 +72,7 @@ void shutdown_step(std::string name, Work&& work) noexcept
 }
 
 void publish_scheduler_status(core::app_state_s*                     app,
-                              const core::node_status_handle_s&      status_handle,
+                              std::string_view                       node_id,
                               const core::frame_scheduler_s&         scheduler,
                               const core::frame_scheduler_metrics_s& metrics)
 {
@@ -80,7 +81,7 @@ void publish_scheduler_status(core::app_state_s*                     app,
     };
 
     const auto& context = app->frame_context();
-    app->status_registry()->write(status_handle,
+    app->status_registry()->write(node_id,
                                   status::application_scheduler_status_s{
                                       .clock_source              = std::string(scheduler.clock_name()),
                                       .frame_number              = context.frame_number,
@@ -185,8 +186,8 @@ int miximus_main(core::command_line_options_s command_line_options, std::string_
                     gpu::window_s::poll();
 
                     const auto& metrics = frame_scheduler.finish_frame();
-                    publish_scheduler_status(&app, node_manager.settings_status_handle(), frame_scheduler, metrics);
-                    render_thread_delay_test.publish_status(&app, node_manager.settings_status_handle());
+                    publish_scheduler_status(&app, nodes::system::SETTINGS_NODE_ID, frame_scheduler, metrics);
+                    render_thread_delay_test.publish_status(&app, nodes::system::SETTINGS_NODE_ID);
                 }
 
                 if (stop_time.has_value() && !utils::shutdown_requested()) {

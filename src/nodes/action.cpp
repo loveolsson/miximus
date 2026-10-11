@@ -86,17 +86,12 @@ struct action_s::response_s
     }
 };
 
-action_s::action_s(std::string                        node_id,
-                   std::string                        action_name,
-                   nlohmann::json                     action_payload,
-                   reply_t                            reply,
-                   std::optional<core::node_handle_s> node_target)
+action_s::action_s(std::string node_id, std::string action_name, nlohmann::json action_payload, reply_t reply)
     : response_(std::make_shared<response_s>(std::move(reply)))
     , owns_(true)
     , id(std::move(node_id))
     , name(std::move(action_name))
     , payload(std::move(action_payload))
-    , target(std::move(node_target))
 {
 }
 action_s::~action_s() { fail(error_e::internal_error, "Node action was abandoned without a result"); }
@@ -108,7 +103,6 @@ action_s::action_s(action_s&& other) noexcept
     , id(std::move(other.id))
     , name(std::move(other.name))
     , payload(std::move(other.payload))
-    , target(std::move(other.target))
     , sequence(other.sequence)
 {
 }
@@ -121,7 +115,6 @@ action_s& action_s::operator=(action_s&& other) noexcept
         id        = std::move(other.id);
         name      = std::move(other.name);
         payload   = std::move(other.payload);
-        target    = std::move(other.target);
         sequence  = other.sequence;
     }
     return *this;

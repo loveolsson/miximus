@@ -103,7 +103,7 @@ class node_impl : public node_i
             device_status_event_.observe(device_status_event_s{.device_name   = std::string(device_name),
                                                                .signal_locked = payload.signal_locked,
                                                                .active_format = payload.active_format});
-        app->status_registry()->write(status_handle_,
+        app->status_registry()->write(id_,
                                       std::move(payload),
                                       important ? core::status_delivery_e::immediate
                                                 : core::status_delivery_e::rate_limited);
@@ -116,7 +116,7 @@ class node_impl : public node_i
         }
 
         const auto metrics = capture_->metrics();
-        status_registry->write(status_handle_,
+        status_registry->write(id_,
                                status::decklink_input_metrics_status_s{
                                    .frames_received            = metrics.frames_received,
                                    .frames_missing             = metrics.frames_missing,
@@ -132,7 +132,7 @@ class node_impl : public node_i
                                    .available_video_frames     = metrics.available_video_frames,
                                });
         status_registry->write(
-            status_handle_,
+            id_,
             status::source_timing_status_s{
                 .source_queue_pushed                  = metrics.source_queue.pushed,
                 .source_queue_depth                   = metrics.source_queue.queued,
@@ -223,7 +223,7 @@ class node_impl : public node_i
         const auto current_version     = app->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(current_version);
         if (device_list_changed) {
-            sr->write(status_handle_,
+            sr->write(id_,
                       status::device_names_status_s{.device_names = app->decklink_registry()->get_input_options()},
                       core::status_delivery_e::immediate);
         }

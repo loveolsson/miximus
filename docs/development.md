@@ -579,7 +579,7 @@ of the subsystem whose completed shutdown is being monitored. Do not casually re
 Image and Teleprompter file-path controls offer Browse when the web editor is served directly by the Windows
 Miximus process over localhost or its local IP address. Manual path entry remains available on every platform.
 The WebSocket `socket_info` handshake includes the per-connection `can_browse_files` capability alongside the
-bundle hash. A typed `file_dialog` command with a node ID opens one native dialog, with an immediate result or
+bundle hash. A typed `file_dialog` command with a node ID and option field opens one native dialog, with an immediate result or
 access/busy error. The server rechecks actual connection endpoints, Host, and any supplied Origin for each command;
 forwarded requests and remote clients cannot launch dialogs. There is no file-dialog HTTP endpoint.
 This feature assumes a direct connection:
@@ -587,13 +587,16 @@ a proxy that hides its presence cannot establish the browser's location and is n
 The separate Vite development origin does not expose Browse.
 
 The application owns a dedicated Windows STA dialog worker. The web server only checks connection permissions
-and dispatches the typed command to the configuration adapter, which starts the application service.
+and forwards the typed command through the configuration adapter to the node manager. The manager asks the actual
+node for owned dialog options for that field under the graph lock, then starts the application service after unlocking.
+Image and Teleprompter provide their own titles and filters; neither the adapter nor the platform service switches on
+serialized node types.
 File browsing never blocks rendering, configuration,
 or CPU media work. The request acknowledges admission only; selection and cancellation produce no second reply.
-Concurrent requests are rejected as busy. The selected UTF-8 path is posted to the configuration executor and submitted through
-`node_manager_s::handle_control_batch` with the original node-instance handle. Normal option validation,
-rejection, persistence checkpoints, and broadcasts apply, including broadcasts to the initiating editor.
-Removal/replacement of the node rejects the delayed update. Cancellation leaves settings untouched.
+Concurrent requests are rejected as busy. The selected UTF-8 path is posted to the configuration executor as a regular
+`node_manager_s::handle_update_node(nodeID, {{field, path}})` operation. Normal node lookup, option validation,
+persistence, and broadcasts apply, including broadcasts to the initiating editor. There is no expected-instance check.
+A missing node produces the normal `not_found` error. Cancellation leaves settings untouched.
 Delayed selection/update failures are logged on the server. Visibility clears on disconnect and is refreshed by
 the next handshake. The initiating connection can disappear without cancelling an already accepted dialog.
 Application shutdown closes the dialog on its owning thread and joins the worker before stopping the web server

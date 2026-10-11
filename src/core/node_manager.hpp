@@ -3,7 +3,6 @@
 #include "core/configuration_fwd.hpp"
 #include "core/frame_scheduler_fwd.hpp"
 #include "core/node_actions.hpp"
-#include "core/node_status_handle.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "core/origin_info.hpp"
 #include "nodes/node_fwd.hpp"
@@ -68,17 +67,23 @@ class node_manager_s
     nodes::node_map_t                                        nodes_;
     nodes::node_map_t                                        nodes_copy_;
     std::unordered_set<std::string>                          removed_nodes_;
-    nodes::con_set_t                                         connections_;
-    nodes::node_definition_map_t                             node_definitions_;
-    adapter_list_t                                           adapters_;
-    std::function<void()>                                    configuration_changed_;
-    void                                                     checkpoint_configuration_locked();
-    node_status_registry_s*                                  status_registry_{nullptr};
-    node_status_handle_s                                     settings_status_handle_;
-    utils::observed_value_s<uint64_t>                        reported_status_epoch_;
+    struct removal_notice_s
+    {
+        std::string                  id;
+        std::optional<origin_info_s> origin;
+    };
+    std::vector<removal_notice_s>     removal_notices_;
+    nodes::con_set_t                  connections_;
+    nodes::node_definition_map_t      node_definitions_;
+    adapter_list_t                    adapters_;
+    std::function<void()>             configuration_changed_;
+    void                              checkpoint_configuration_locked();
+    node_status_registry_s*           status_registry_{nullptr};
+    utils::observed_value_s<uint64_t> reported_status_epoch_;
 
     node_actions_s::batch_t take_frame_updates();
     void                    close_actions();
+    void                    publish_frame_status(node_status_registry_s& registry);
 
     error_e handle_add_node_locked(std::string_view                    type,
                                    std::string_view                    id,
@@ -88,7 +93,6 @@ class node_manager_s
 
   public:
     explicit node_manager_s(node_status_registry_s* status_registry = nullptr);
-    const node_status_handle_s& settings_status_handle() const { return settings_status_handle_; }
     ~node_manager_s();
 
     error_e handle_add_node(std::string_view                    type,
@@ -109,16 +113,13 @@ class node_manager_s
     {
         std::string    id;
         nlohmann::json options;
-        // Supply for delayed native work that must not target an ID replacement.
-        std::optional<node_handle_s> target{};
     };
     struct action_request_s
     {
-        std::string                  id;
-        std::string                  name;
-        nlohmann::json               payload;
-        node_actions_s::reply_t      reply;
-        std::optional<node_handle_s> target{};
+        std::string             id;
+        std::string             name;
+        nlohmann::json          payload;
+        node_actions_s::reply_t reply;
     };
 
     // Native config batch (not a transaction protocol). Explicit options validate atomically;
@@ -138,6 +139,9 @@ class node_manager_s
                                std::string_view        name,
                                const nlohmann::json&   payload,
                                node_actions_s::reply_t reply);
+
+    // Configuration-thread request; completion posts an ordinary option update.
+    error_e handle_file_dialog(app_state_s* app, std::string_view id, std::string_view field);
 
     nlohmann::json get_node_status(std::string_view id) const;
 

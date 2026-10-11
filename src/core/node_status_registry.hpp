@@ -1,5 +1,4 @@
 #pragma once
-#include "node_status_handle.hpp"
 #include "types/node_status_json.hpp"
 
 #include <boost/asio/io_context.hpp>
@@ -31,6 +30,11 @@ class node_status_registry_s
         std::string    node_id;
         nlohmann::json status;
     };
+    struct removal_s
+    {
+        std::string           node_id;
+        std::function<void()> notify;
+    };
     using callback_t = std::function<void(const std::vector<status_update_s>&)>;
 
   private:
@@ -56,14 +60,12 @@ class node_status_registry_s
     };
     struct state_s;
     std::shared_ptr<state_s> state_;
-    void                     enqueue(const node_status_handle_s& node,
-                                     std::type_index             type,
-                                     std::unique_ptr<value_i>    value,
-                                     status_delivery_e           delivery);
-    static void              schedule(const std::shared_ptr<state_s>& state);
-    static void              drain(const std::shared_ptr<state_s>& state);
-    static void              emit_due(const std::shared_ptr<state_s>& state);
-    static void              arm_timer(const std::shared_ptr<state_s>& state);
+    void
+    enqueue(std::string_view node, std::type_index type, std::unique_ptr<value_i> value, status_delivery_e delivery);
+    static void schedule(const std::shared_ptr<state_s>& state);
+    static void drain(const std::shared_ptr<state_s>& state);
+    static void emit_due(const std::shared_ptr<state_s>& state);
+    static void arm_timer(const std::shared_ptr<state_s>& state);
 
   public:
     explicit node_status_registry_s(boost::asio::io_context&            executor,
@@ -81,21 +83,18 @@ class node_status_registry_s
     // Render thread only. Own the complete typed group; do no JSON work here.
     // An event bypasses the node cadence at publication and resets its deadline.
     template <status::registered_contract T>
-    void write(const node_status_handle_s& node, T value, status_delivery_e delivery = status_delivery_e::rate_limited)
+    void write(std::string_view node, T value, status_delivery_e delivery = status_delivery_e::rate_limited)
     {
-        if (node.active()) {
-            enqueue(node, typeid(T), std::make_unique<value_s<T>>(std::move(value)), delivery);
-        }
+        enqueue(node, typeid(T), std::make_unique<value_s<T>>(std::move(value)), delivery);
     }
 
     // Render thread, after complete(): publish one frame, coalescing any waiting frames.
-    void publish();
+    void publish(std::vector<removal_s> removals = {});
     // Stop publication/callbacks during teardown. Queued handlers own their state, never this object.
     void stop() noexcept;
 
     // Configuration thread (or quiescent startup/tests) only. Reads materialize the latest processed typed batch
-    // without advancing WS cadence.
-    void           remove_node(const node_status_handle_s& node);
+    // without advancing WS cadence. Removals travel with the final frame publication.
     nlohmann::json get(std::string_view node_id) const;
     nlohmann::json get_all() const;
 };

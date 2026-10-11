@@ -127,7 +127,7 @@ class node_impl final : public node_i
 
     void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
-        const auto path = state.get_option<std::string>("file_path");
+        const auto path = state.get_option<std::string_view>("file_path");
         if (path != desired_path_) {
             desired_path_ = path;
             failed_path_.reset();
@@ -143,9 +143,9 @@ class node_impl final : public node_i
         finish_generation();
         if (!generation_ && !path.empty() && published_path_ != path && failed_path_ != path) {
             auto task = app->cpu_task_worker()->submit(
-                utils::cpu_task_priority_e::background, load_image, app->texture_upload_service(), path);
+                utils::cpu_task_priority_e::background, load_image, app->texture_upload_service(), std::string(path));
             if (task) {
-                generation_.emplace(generation_s{.path = path, .worker = std::move(*task), .upload = {}});
+                generation_.emplace(generation_s{.path = std::string(path), .worker = std::move(*task), .upload = {}});
             }
         }
         rendered_frame_ = frame_;
@@ -154,6 +154,20 @@ class node_impl final : public node_i
     }
 
     void complete(core::app_state_s* /*app*/) final { rendered_frame_.reset(); }
+
+    std::optional<utils::file_dialog_request_s> file_dialog_request(std::string_view    field,
+                                                                    const node_state_s& state) const final
+    {
+        if (field != "file_path") {
+            return std::nullopt;
+        }
+        return utils::file_dialog_request_s{
+            .title        = "Miximus - Select image",
+            .initial_path = state.get_option<std::string>(field),
+            .filters = {{.label = "Images", .pattern = "*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gif;*.psd;*.hdr;*.pic;*.pnm"},
+                        {.label = "All files", .pattern = "*.*"}},
+        };
+    }
 
     nlohmann::json get_default_options() const final
     {

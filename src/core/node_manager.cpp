@@ -167,7 +167,6 @@ node_manager_s::node_manager_s(node_status_registry_s* status_registry)
     if (error != error_e::no_error) {
         throw std::logic_error("Failed to create the application settings node");
     }
-    settings_status_handle_ = nodes_.at(std::string(nodes::system::SETTINGS_NODE_ID)).node->status_handle();
 }
 
 error_e node_manager_s::handle_add_node(std::string_view                    type,
@@ -281,15 +280,7 @@ error_e node_manager_s::handle_remove_node(std::string_view id, const std::optio
         remove_connection_locked(rcon, origin);
     }
 
-    for (auto& adapter : adapters_) {
-        adapter->emit_remove_node(id, origin);
-    }
-
-    if (status_registry_ != nullptr) {
-        status_registry_->remove_node(node->status_handle());
-    } else {
-        node->status_handle().retire();
-    }
+    removal_notices_.push_back({.id = std::string(id), .origin = origin});
     removed_nodes_.emplace(node_it->first);
     if (const auto pending = pending_nodes_.find(id); pending != pending_nodes_.end()) {
         cancelled.swap(pending->second.actions);
@@ -487,12 +478,11 @@ void node_manager_s::admit_action_locked(app_state_s*                        app
         return;
     }
     const auto found = nodes_.find(action.id);
-    if (found == nodes_.end() || (action.target && found->second.node->handle() != *action.target)) {
-        action.fail(error_e::not_found, "Target node was removed or replaced");
+    if (found == nodes_.end()) {
+        action.fail(error_e::not_found, "Target node was not found");
         return;
     }
-    auto& record                      = found->second;
-    action.target                     = record.node->handle();
+    auto&                   record    = found->second;
     auto                    candidate = record.state;
     bool                    corrected = false;
     nodes::action_context_s context(
@@ -600,8 +590,7 @@ nodes::set_options_result_s node_manager_s::handle_control_batch(app_state_s*   
                             std::move(request.payload),
                             [replies, reply = std::move(request.reply)](nodes::action_result_s result) mutable {
                                 replies->push(std::move(reply), std::move(result));
-                            },
-                            std::move(request.target)),
+                            }),
                         .start = {}});
     }
     auto reject = [&](nodes::set_options_result_s result) {
@@ -620,7 +609,7 @@ nodes::set_options_result_s node_manager_s::handle_control_batch(app_state_s*   
         update_notices_t                    notices;
         for (const auto& update : updates) {
             const auto found = nodes_.find(update.id);
-            if (found == nodes_.end() || (update.target && found->second.node->handle() != *update.target)) {
+            if (found == nodes_.end()) {
                 return reject({.error = error_e::not_found, .has_corrected_values = false});
             }
             auto [candidate, inserted] = candidates.try_emplace(update.id);
@@ -718,9 +707,6 @@ void node_manager_s::close_actions()
         const std::unique_lock lock(nodes_mutex_);
         actions_closed_ = true;
         pending.swap(pending_nodes_);
-        for (const auto& [id, record] : nodes_) {
-            record.node->handle().retire();
-        }
     }
     for (auto& [id, node] : pending) {
         for (auto& action : node.actions) {
@@ -793,7 +779,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 
         {
             const auto& frame_context = app->frame_context();
-            app->status_registry()->write(settings_status_handle_,
+            app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
                                           status::application_frame_status_s{
                                               .frame_rate            = app->frame_settings().frame_rate,
                                               .frame_duration_flicks = frame_context.frame_duration.count(),
@@ -838,7 +824,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
             const auto to_microseconds = [](utils::flicks duration) {
                 return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
             };
-            app->status_registry()->write(settings_status_handle_,
+            app->status_registry()->write(nodes::system::SETTINGS_NODE_ID,
                                           status::application_lifecycle_status_s{
                                               .prepare_duration_us    = to_microseconds(prepare_end - prepare_start),
                                               .submit_duration_us     = to_microseconds(submit_end - prepare_end),
@@ -854,7 +840,27 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
     }
 
     // Transfer owned typed status only after every node has completed the frame.
-    app->status_registry()->publish();
+    publish_frame_status(*app->status_registry());
+}
+
+void node_manager_s::publish_frame_status(node_status_registry_s& registry)
+{
+    std::vector<removal_notice_s> notices;
+    {
+        const std::unique_lock lock(nodes_mutex_);
+        notices.swap(removal_notices_);
+    }
+    std::vector<node_status_registry_s::removal_s> removals;
+    removals.reserve(notices.size());
+    for (auto& notice : notices) {
+        removals.push_back({.node_id = notice.id, .notify = [this, notice = std::move(notice)] {
+                                const std::unique_lock lock(nodes_mutex_);
+                                for (auto& adapter : adapters_) {
+                                    adapter->emit_remove_node(notice.id, notice.origin);
+                                }
+                            }});
+    }
+    registry.publish(std::move(removals));
 }
 
 void node_manager_s::clear_nodes(app_state_s* app)

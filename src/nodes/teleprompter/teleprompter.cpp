@@ -107,13 +107,13 @@ class node_impl : public node_i
 
         if (font_list_changed) {
             app->status_registry()->write(
-                status_handle_,
+                id_,
                 status::font_names_status_s{.font_names = app->font_registry()->get_font_options()},
                 core::status_delivery_e::immediate);
         }
         if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
-                status_handle_,
+                id_,
                 status::font_variants_status_s{
                     .font_variants = app->font_registry()->get_font_variant_options(font_name),
                 },
@@ -368,6 +368,19 @@ class node_impl : public node_i
     }
 
     void complete(core::app_state_s* /*app*/) final { rendered_line_frames_.clear(); }
+
+    std::optional<utils::file_dialog_request_s> file_dialog_request(std::string_view    field,
+                                                                    const node_state_s& state) const final
+    {
+        if (field != "file_path") {
+            return std::nullopt;
+        }
+        return utils::file_dialog_request_s{
+            .title        = "Miximus - Select teleprompter file",
+            .initial_path = state.get_option<std::string>(field),
+            .filters      = {{.label = "Text files", .pattern = "*.txt"}, {.label = "All files", .pattern = "*.*"}},
+        };
+    }
 
     nlohmann::json get_default_options() const final
     {

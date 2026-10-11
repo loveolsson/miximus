@@ -16,6 +16,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -93,9 +94,8 @@ class node_impl final : public node_i
                                                                        .input_error  = value.cef_inputs_error,
                                                                        .timing_error = value.cef_timing_error,
                                                                        .restarts     = value.cef_restarts});
-        registry->write(status_handle_,
-                        value,
-                        important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);
+        registry->write(
+            id_, value, important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);
     }
 
     void publish_metrics(core::node_status_registry_s* status, const std::optional<session_t::metrics_s>& metrics)
@@ -143,7 +143,7 @@ class node_impl final : public node_i
         publish_browser_status(status, browser_status);
         if (metrics) {
             const auto& queue = metrics->source_queue;
-            status->write(status_handle_,
+            status->write(id_,
                           status::source_timing_status_s{
                               .source_queue_pushed                  = queue.pushed,
                               .source_queue_depth                   = queue.queued,
@@ -194,7 +194,7 @@ class node_impl final : public node_i
         }
         // Runtime/session objects belong exclusively to the render thread. The
         // frame may include configuration accepted after action admission.
-        if (!state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty() || !request_ ||
+        if (!state.get_option<bool>("enabled") || state.get_option<std::string_view>("url").empty() || !request_ ||
             !session_ || !selection_ || *selection_ != session_options(app, state)) {
             action.fail(error_e::unavailable, "Browser has no active session to reload");
             return;
@@ -232,7 +232,7 @@ class node_impl final : public node_i
     {
         auto*      status  = app->status_registry();
         const bool enabled = state.get_option<bool>("enabled");
-        const auto url     = state.get_option<std::string>("url");
+        const auto url     = state.get_option<std::string_view>("url");
         if (app->cef_subsystem() == nullptr || !enabled || url.empty()) {
             stop();
             selection_.reset();

@@ -1,10 +1,10 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
-#include "core/node_status_handle.hpp"
 #include "core/node_status_registry_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
 #include "nodes/option_result.hpp"
 #include "types/error.hpp"
+#include "utils/file_dialog.hpp"
 #include "utils/observed_value.hpp"
 
 #include <nlohmann/json_fwd.hpp>
@@ -29,9 +29,8 @@ class node_i
     void register_interface(interface_i& iface);
 
   protected:
-    interface_map_t            interfaces_;
-    std::string                id_;
-    core::node_status_handle_s status_handle_;
+    interface_map_t interfaces_;
+    std::string     id_;
 
     utils::observed_value_s<bool> reported_connection_;
     void report_connection(core::node_status_registry_s* registry, status::connected_status_s connection);
@@ -53,6 +52,10 @@ class node_i
      * lightweight one-time setup that does not require the render thread.
      */
     virtual void init(std::string_view id);
+
+    // Configuration-thread admission: return owned dialog options for a supported field.
+    virtual std::optional<utils::file_dialog_request_s> file_dialog_request(std::string_view    field,
+                                                                            const node_state_s& state) const;
 
     // Name dispatch only. Dedicated config handlers may edit settings through
     // the separately supplied context, reply, or schedule independent work.
@@ -103,9 +106,7 @@ class node_i
     [[nodiscard]] static option_result_e normalize_common_option(std::string_view name, nlohmann::json* value);
     [[nodiscard]] set_options_result_s   set_options(nlohmann::json& state, const nlohmann::json& options) const;
 
-    const core::node_handle_s& handle() const { return status_handle_; }
-
-    const core::node_status_handle_s& status_handle() const { return status_handle_; }
+    std::string_view id() const { return id_; }
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
     const interface_i*     find_interface(std::string_view name) const;

@@ -191,6 +191,7 @@ export interface file_dialog_request_s {
   readonly topic: topic_e.file_dialog;
   readonly token?: string | null;
   readonly id: string;
+  readonly field: string;
 }
 
 export interface node_action_result_s {

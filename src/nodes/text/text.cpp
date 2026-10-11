@@ -87,13 +87,13 @@ class node_impl : public node_i
         if (font_list_changed) {
             text_info_->needs_update = true;
             app->status_registry()->write(
-                status_handle_,
+                id_,
                 status::font_names_status_s{.font_names = app->font_registry()->get_font_options()},
                 core::status_delivery_e::immediate);
         }
         if (font_list_changed || font_name_changed) {
             app->status_registry()->write(
-                status_handle_,
+                id_,
                 status::font_variants_status_s{
                     .font_variants = app->font_registry()->get_font_variant_options(font_name),
                 },
@@ -220,10 +220,10 @@ class node_impl : public node_i
         const gpu::vec2i_t surface_size = maximum - minimum + gpu::vec2i_t{padding * 2};
 
         if (!info.upload_stream || info.surface_size != surface_size) {
-            info.surface_size                 = surface_size;
-            const auto host_buffer_size_bytes = sizeof(render::surface_s::pixel_t) *
-                                                static_cast<size_t>(surface_size.x) *
-                                                static_cast<size_t>(surface_size.y);
+            info.surface_size                                               = surface_size;
+            const auto                               host_buffer_size_bytes = sizeof(render::surface_s::pixel_t) *
+                                                                              static_cast<size_t>(surface_size.x) *
+                                                                              static_cast<size_t>(surface_size.y);
             const gpu::transfer::host_frame_layout_s host_layout{
                 .image_dimensions        = surface_size,
                 .pixel_format            = gpu::transfer::host_pixel_format_e::rgba_u8,

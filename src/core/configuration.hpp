@@ -1,5 +1,4 @@
 #pragma once
-#include "core/node_handle.hpp"
 #include "core/node_manager_fwd.hpp"
 
 #include <nlohmann/json_fwd.hpp>
@@ -34,8 +33,6 @@ class configuration_s
     nlohmann::json                get_config() const;
     nlohmann::json                get_snapshot() const;
     std::optional<nlohmann::json> get_node(std::string_view id) const;
-    // Owned identity for delayed configuration updates; never retains the node.
-    std::optional<node_handle_s>  get_node_handle(std::string_view id) const;
     std::optional<nlohmann::json> get_node_status(std::string_view id) const;
     void                          save_file(const std::filesystem::path& path) const;
 };

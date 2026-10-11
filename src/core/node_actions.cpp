@@ -51,8 +51,8 @@ void node_actions_s::batch_t::dispatch(app_state_s* app, const nodes::node_map_t
             continue;
         }
         const auto found = snapshot.find(request.id);
-        if (found == snapshot.end() || !request.target || found->second.node->handle() != *request.target) {
-            request.fail(error_e::not_found, "Target node was removed or replaced");
+        if (found == snapshot.end()) {
+            request.fail(error_e::not_found, "Target node was not found");
             continue;
         }
         auto action = std::move(request);

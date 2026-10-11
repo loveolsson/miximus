@@ -40,7 +40,9 @@ async function browse() {
   pending.value = true;
   error.value = "";
   try {
-    const response = await requestFileDialog(ws, props.node.id, lifetime.signal);
+    const field = Object.entries(props.node.inputs).find(([, intf]) => intf === props.intf)?.[0];
+    if (!field) throw new Error("File field is not part of this node");
+    const response = await requestFileDialog(ws, props.node.id, field, lifetime.signal);
     if (response.action === action_e.error) {
       error.value = response.message || response.error;
     }

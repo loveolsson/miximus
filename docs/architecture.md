@@ -242,7 +242,7 @@ configuration envelope; heterogeneous option and node-status values remain JSON 
 Per-node commands use the [node action system](node-actions.md). Configuration-side admission may derive validated
 settings changes, return immediately, start independent service work, or attach an action to the pending frame update.
 Native control batches validate explicit settings atomically, then admit attached actions individually in order.
-Frame actions share the settings cutoff and run before `prepare()` against that stable snapshot. One move-only action object owns payload, identity and exactly-once response responsibility throughout config, frame,
+Frame actions share the settings cutoff and run before `prepare()` against that stable snapshot. One move-only action object owns the node ID, payload and exactly-once response responsibility throughout config, frame,
 and asynchronous handling. Only config admission receives the separate settings-editing capability. Actions are transient; their accepted settings changes broadcast and persist
 normally. The existing WebSocket request/result/error envelopes are unchanged; a wire batch envelope is still deferred.
 
@@ -255,7 +255,7 @@ with designated initialization:
 
 ```cpp
 status_registry->write(
-    status_handle_,
+    id_,
     status::connected_status_s{
         .connected = true,
     });
@@ -263,11 +263,11 @@ status_registry->write(
 
 `write()` is render-thread-only and accepts only `status::registered_contract` types. It owns the typed value through
 a templated, type-erased entry; the mailbox does not enumerate status types. Temporary vectors and strings move into
-the entry, while lvalue payloads are copied. Nodes use an instance-specific `status_handle_`, initialized with their ID.
+the entry, while lvalue payloads are copied. Nodes publish using their existing node ID.
 
 After all nodes complete, `publish()` hands the frame to the existing configuration executor. There is at most one
 scheduled drain, with one batch processing and one coalesced batch waiting. Waiting frames keep the newest complete
-value per node instance and contract type, so backlog scales with live nodes and registered groups rather than elapsed
+value per node ID and contract type, so backlog scales with live nodes and registered groups rather than elapsed
 frames. Publication uses a short mailbox mutex; JSON conversion, snapshot copies, and broadcasting never hold it.
 The ordinary empty-mailbox handoff swaps the batch. Coalescing may retire superseded typed payloads on the producer;
 this is bounded by the pending groups, but large catalogues still warrant version gating.
@@ -299,10 +299,13 @@ tracked separately. Only modified fields participate in outbound comparisons, so
 compared with per-frame metrics. Configuration snapshots release the graph lock before copying status JSON. Getters and
 removal run on the configuration thread, or while that executor is quiescent during startup/tests.
 
-Authoritative removal retires the instance handle and removes its JSON snapshot on the configuration thread. Staged
-or queued values from that instance are discarded, including when the ID has been reused. The mailbox prunes retired
-instances during publication. The reserved settings handle is shared by its node, frame lifecycle metrics, and scheduler
-metrics; scheduler metrics sampled after `finish_frame()` join the next frame's batch.
+Status is addressed by node ID, including the reserved settings ID shared by node, frame, and scheduler metrics.
+Authoritative removal immediately updates the configuration graph, but its adapter notification waits until the end
+of the render frame. That publication carries an ID-addressed removal marker alongside the status batch. On the
+configuration executor, the status sender discards queued values and rate-limited/cached status for those IDs before
+notifying adapters. The next render snapshot excludes removed nodes, so no later frame writes their status.
+No instance identities or same-ID replacement checks are used. Automation must avoid reusing IDs while earlier work
+is outstanding. Scheduler metrics sampled after `finish_frame()` join the next frame's batch.
 
 Startup installs the broadcast callback before the first publication. It retains only a weak server reference, never
 node or adapter pointers. Shutdown stops status publication before stopping the web server. Posted handlers own their

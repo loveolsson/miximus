@@ -11,6 +11,7 @@
 #include "utils/observed_value.hpp"
 
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace miximus::nodes::cef {
@@ -43,10 +44,10 @@ class unavailable_browser_s final : public node_i
 
     void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
     {
-        const bool stopped = !state.get_option<bool>("enabled") || state.get_option<std::string>("url").empty();
+        const bool stopped = !state.get_option<bool>("enabled") || state.get_option<std::string_view>("url").empty();
         report_connection(app->status_registry(), {.connected = false});
         app->status_registry()->write(
-            status_handle_,
+            id_,
             status::cef_browser_status_s{.cef_state        = stopped ? cef_state_e::stopped : cef_state_e::unavailable,
                                          .cef_error        = stopped ? "" : app->cef_error(),
                                          .cef_inputs_error = {}},

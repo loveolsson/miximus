@@ -64,7 +64,7 @@ class node_impl : public node_i
         }
 
         const auto metrics = capture_->metrics();
-        status_registry->write(status_handle_,
+        status_registry->write(id_,
                                status::ndi_input_metrics_status_s{
                                    .frames_received      = metrics.frames_received,
                                    .invalid_frames       = metrics.invalid_frames,
@@ -73,7 +73,7 @@ class node_impl : public node_i
                                    .upload_slot_drops    = metrics.upload_slot_drops,
                                });
         status_registry->write(
-            status_handle_,
+            id_,
             status::source_timing_status_s{
                 .source_queue_pushed                  = metrics.source_queue.pushed,
                 .source_queue_depth                   = metrics.source_queue.queued,
@@ -149,7 +149,7 @@ class node_impl : public node_i
         const auto current_version = app->ndi_registry()->get_source_list_version();
         if (source_version_.observe(current_version)) {
             status_registry->write(
-                status_handle_,
+                id_,
                 status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()},
                 core::status_delivery_e::immediate);
         }

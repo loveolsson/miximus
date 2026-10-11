@@ -49,7 +49,7 @@ class node_impl : public node_i
 
     void publish_error(core::node_status_registry_s* registry)
     {
-        registry->write(status_handle_,
+        registry->write(id_,
                         status::screen_output_status_s{.screen_error = failure_},
                         reported_error_.observe(failure_) ? core::status_delivery_e::immediate
                                                           : core::status_delivery_e::rate_limited);
@@ -63,7 +63,7 @@ class node_impl : public node_i
 
         const auto metrics = presenter_->metrics();
         status_registry->write(
-            status_handle_,
+            id_,
             status::screen_output_metrics_status_s{
                 .clock_quality    = metrics.uses_present_wait ? "Display completion estimate" : "Nominal FIFO estimate",
                 .frames_submitted = metrics.frames_submitted,
@@ -100,13 +100,13 @@ class node_impl : public node_i
     {
         const auto monitor_version = gpu::window_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
-            app->status_registry()->write(status_handle_,
+            app->status_registry()->write(id_,
                                           status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()},
                                           core::status_delivery_e::immediate);
         }
 
         const auto enabled                = state.get_option<bool>("enabled", false);
-        const auto monitor_id             = state.get_option<std::string>("monitor_id");
+        const auto monitor_id             = state.get_option<std::string_view>("monitor_id");
         auto       nominal_frame_duration = app->frame_context().frame_duration;
         if (const auto refresh_rate = gpu::window_s::get_monitor_refresh_rate(monitor_id); refresh_rate.has_value()) {
             nominal_frame_duration = utils::k_flicks_one_second / *refresh_rate;

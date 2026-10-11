@@ -188,7 +188,7 @@ def main():
                 denied = WebSocket(headers=headers)
                 try:
                     assert denied.info["can_browse_files"] is False
-                    assert denied.request(action="command", topic="file_dialog", id="image")["error"] == "unavailable"
+                    assert denied.request(action="command", topic="file_dialog", field="file_path", id="image")["error"] == "unavailable"
                     assert not dialog(app.pid)
                 finally:
                     denied.close()
@@ -202,12 +202,15 @@ def main():
             events = observer.events
             assert observer.request(action="subscribe", topic="update_node")["action"] == "result"
             assert observer.request(action="command", topic="file_dialog")["error"] == "malformed_payload"
-            assert observer.request(action="command", topic="file_dialog", id="missing")["error"] == "not_found"
+            assert observer.request(action="command", topic="file_dialog", field="file_path", id="missing")["error"] == "not_found"
+
+            assert observer.request(action="command", topic="file_dialog", id="image")["error"] == "malformed_payload"
+            assert observer.request(action="command", topic="file_dialog", field="name", id="image")["error"] == "invalid_options"
 
             def browse(node_id):
                 # Reply must arrive before any user selection, not when the dialog closes.
                 def admitted():
-                    reply = observer.request(action="command", topic="file_dialog", id=node_id)
+                    reply = observer.request(action="command", topic="file_dialog", field="file_path", id=node_id)
                     if reply.get("error") == "busy":
                         return None  # Shell teardown can outlast window visibility.
                     assert reply["action"] == "result", reply
@@ -221,7 +224,7 @@ def main():
 
             for node_id, path in [("image", image), ("text", text)]:
                 token, hwnd = browse(node_id)
-                assert observer.request(action="command", topic="file_dialog", id=node_id)["error"] == "busy"
+                assert observer.request(action="command", topic="file_dialog", field="file_path", id=node_id)["error"] == "busy"
                 for _ in range(5):
                     assert config()
                 select(hwnd, path)

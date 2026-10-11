@@ -22,7 +22,7 @@ BOOST_DESCRIBE_STRUCT(unregistered_status_s, (), (connected))
 
 template <typename T>
 concept publishable_status =
-    requires(node_status_registry_s& registry, const T& value) { registry.write(node_status_handle_s("node"), value); };
+    requires(node_status_registry_s& registry, const T& value) { registry.write(std::string("node"), value); };
 
 static_assert(publishable_status<status::connected_status_s>);
 static_assert(!publishable_status<unregistered_status_s>);
@@ -32,9 +32,9 @@ struct node_status_registry_test_s : testing::Test
 {
     boost::asio::io_context                              executor;
     node_status_registry_s                               registry{executor, std::chrono::milliseconds(20)};
-    node_status_handle_s                                 decklink{"decklink"};
-    node_status_handle_s                                 browser{"browser"};
-    node_status_handle_s                                 output{"output"};
+    std::string                                          decklink{"decklink"};
+    std::string                                          browser{"browser"};
+    std::string                                          output{"output"};
     std::vector<node_status_registry_s::status_update_s> updates;
     size_t                                               callbacks{};
 
@@ -227,26 +227,46 @@ TEST_F(node_status_registry_test_s, owns_values_and_clears_optional_fields)
     }));
 }
 
-TEST_F(node_status_registry_test_s, removal_discards_staged_and_queued_old_instances)
+TEST_F(node_status_registry_test_s, removal_discards_status_before_notifying_on_config_executor)
 {
     registry.write(output, status::connected_status_s{.connected = true});
     flush();
     registry.write(output, status::connected_status_s{.connected = false});
     registry.publish();
-    registry.write(output, status::screen_output_status_s{.screen_error = "staged"});
-    registry.remove_node(output);
+    registry.write(output, status::screen_output_status_s{.screen_error = "last frame"});
+    bool removed = false;
+    registry.publish({
+        {.node_id = output, .notify = [&] {
+             EXPECT_TRUE(executor.get_executor().running_in_this_thread());
+             EXPECT_TRUE(registry.get(output).empty());
+             EXPECT_TRUE(updates.empty());
+             removed = true;
+         }}
+    });
+    EXPECT_FALSE(removed);
+    EXPECT_TRUE(flush().empty());
+    EXPECT_TRUE(removed);
     EXPECT_TRUE(registry.get_all().empty());
-    const node_status_handle_s replacement("output");
-    registry.write(replacement, status::screen_output_status_s{.screen_error = "replacement"});
+    // IDs are ordinary addresses; a later publication uses that same address.
     registry.write(output, status::connected_status_s{.connected = true});
-    const auto result = flush();
-    ASSERT_EQ(result.size(), 1);
-    EXPECT_EQ(registry.get("output"),
-              nlohmann::json({
-                  {"screen_error", "replacement"}
-    }));
-    registry.remove_node(output); // A late retirement must not erase the replacement.
-    EXPECT_EQ(registry.get("output").at("screen_error"), "replacement");
+    EXPECT_EQ(flush().size(), 1);
+}
+
+TEST_F(node_status_registry_test_s, removal_without_status_is_delivered_and_shutdown_drops_notifications)
+{
+    size_t removed = 0;
+    registry.publish({
+        {.node_id = "missing", .notify = [&] { ++removed; }}
+    });
+    flush();
+    EXPECT_EQ(removed, 1);
+    registry.publish({
+        {.node_id = "missing", .notify = [&] { ++removed; }}
+    });
+    registry.stop();
+    executor.restart();
+    executor.run();
+    EXPECT_EQ(removed, 1);
 }
 
 TEST_F(node_status_registry_test_s, overlapping_contract_fields_keep_last_write_order)
@@ -368,7 +388,7 @@ TEST(node_status_cadence, immediate_event_resets_deadline_and_continuous_writes_
     using namespace std::chrono_literals;
     boost::asio::io_context                            executor;
     node_status_registry_s                             registry(executor, 60ms);
-    const node_status_handle_s                         node("node");
+    const std::string                                  node("node");
     boost::asio::steady_timer                          event(executor);
     boost::asio::steady_timer                          writer(executor);
     std::vector<std::chrono::steady_clock::time_point> sent;
@@ -414,10 +434,10 @@ TEST(node_status_cadence, immediate_event_resets_deadline_and_continuous_writes_
 TEST(node_status_cadence, removal_and_shutdown_cancel_delayed_publication)
 {
     using namespace std::chrono_literals;
-    boost::asio::io_context    executor;
-    node_status_registry_s     registry(executor, 1h);
-    const node_status_handle_s node("node");
-    size_t                     callbacks = 0;
+    boost::asio::io_context executor;
+    node_status_registry_s  registry(executor, 1h);
+    const std::string       node("node");
+    size_t                  callbacks = 0;
     registry.set_callback([&](const auto&) { ++callbacks; });
     registry.write(node, status::connected_status_s{.connected = false});
     registry.publish();
@@ -426,10 +446,10 @@ TEST(node_status_cadence, removal_and_shutdown_cancel_delayed_publication)
     registry.publish();
     executor.restart();
     executor.poll();
-    registry.remove_node(node);
+    registry.publish({{.node_id = node}});
     executor.run(); // Would hang for an hour if removal didn't cancel its timer.
     EXPECT_EQ(callbacks, 1);
-    const node_status_handle_s replacement("node");
+    const std::string replacement("node");
     registry.write(replacement, status::connected_status_s{.connected = true});
     registry.publish();
     executor.restart();

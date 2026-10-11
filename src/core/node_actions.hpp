@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/node_handle.hpp"
 #include "nodes/action.hpp"
 #include "nodes/node_map.hpp"
 

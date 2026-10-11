@@ -95,6 +95,7 @@ struct file_dialog_request_s
     static constexpr topic_e   topic  = topic_e::file_dialog;
     std::optional<std::string> token;
     std::string                id;
+    std::string                field;
 };
 
 struct config_request_s
@@ -123,7 +124,7 @@ BOOST_DESCRIBE_STRUCT(add_connection_request_s, (), (token, connection))
 BOOST_DESCRIBE_STRUCT(remove_connection_request_s, (), (token, connection))
 BOOST_DESCRIBE_STRUCT(font_registry_request_s, (), (token, command))
 BOOST_DESCRIBE_STRUCT(node_action_request_s, (), (token, id, name, payload))
-BOOST_DESCRIBE_STRUCT(file_dialog_request_s, (), (token, id))
+BOOST_DESCRIBE_STRUCT(file_dialog_request_s, (), (token, id, field))
 BOOST_DESCRIBE_STRUCT(config_request_s, (), (token))
 BOOST_DESCRIBE_STRUCT(node_status_request_s, (), (token, id))
 

@@ -27,22 +27,21 @@ struct node_status_registry_s::state_s
         std::unique_ptr<value_i> value;
     };
     using groups_t = std::unordered_map<std::type_index, entry_s>;
-    using batch_t  = std::unordered_map<std::shared_ptr<node_status_handle_s::identity_s>, groups_t>;
+    using batch_t  = utils::unordered_string_map_t<groups_t>;
 
-    // Caller holds mutex; displaced payloads stay in frame/retired until it is released.
-    void merge_frame(batch_t& retired);
+    // Caller holds mutex; displaced payloads stay in frame until it is released.
+    void merge_frame();
     struct snapshot_s
     {
-        std::shared_ptr<node_status_handle_s::identity_s> identity;
-        groups_t                                          pending;
-        nlohmann::json                                    status    = nlohmann::json::object();
-        nlohmann::json                                    broadcast = nlohmann::json::object();
-        std::unordered_set<std::string>                   dirty_fields;
-        std::chrono::steady_clock::time_point             next_report;
-        bool                                              immediate{};
+        groups_t                              pending;
+        nlohmann::json                        status    = nlohmann::json::object();
+        nlohmann::json                        broadcast = nlohmann::json::object();
+        std::unordered_set<std::string>       dirty_fields;
+        std::chrono::steady_clock::time_point next_report;
+        bool                                  immediate{};
 
         bool dirty() const { return !pending.empty() || !dirty_fields.empty(); }
-        void materialize();
+        void materialize(std::string_view id);
     };
 
     explicit state_s(boost::asio::io_context& context, std::chrono::steady_clock::duration interval)
@@ -58,9 +57,10 @@ struct node_status_registry_s::state_s
     uint64_t sequence{};
     // Only typed mailbox transfers use this lock. Never serialize, read snapshots,
     // broadcast, or destroy a displaced payload while holding it.
-    std::mutex mutex;
-    batch_t    pending;
-    bool       scheduled{};
+    std::mutex             mutex;
+    batch_t                pending;
+    bool                   scheduled{};
+    std::vector<removal_s> removals;
     // Configuration executor owned.
     utils::unordered_string_map_t<snapshot_s>            snapshots;
     callback_t                                           callback;
@@ -96,13 +96,13 @@ void node_status_registry_s::stop() noexcept
     }
 }
 
-void node_status_registry_s::enqueue(const node_status_handle_s& node,
-                                     std::type_index             type,
-                                     std::unique_ptr<value_i>    value,
-                                     status_delivery_e           delivery)
+void node_status_registry_s::enqueue(std::string_view         node,
+                                     std::type_index          type,
+                                     std::unique_ptr<value_i> value,
+                                     status_delivery_e        delivery)
 {
     if (!state_->stopped.load()) {
-        auto& groups = state_->frame[node.identity_];
+        auto& groups = state_->frame[std::string(node)];
         if (const auto previous = groups.find(type); previous != groups.end()) {
             if (previous->second.delivery == status_delivery_e::immediate) {
                 delivery = status_delivery_e::immediate;
@@ -127,24 +127,13 @@ void node_status_registry_s::schedule(const std::shared_ptr<state_s>& state)
     }
 }
 
-void node_status_registry_s::state_s::merge_frame(batch_t& retired)
+void node_status_registry_s::state_s::merge_frame()
 {
     if (pending.empty()) {
         pending.swap(frame);
         return;
     }
-    for (auto it = pending.begin(); it != pending.end();) {
-        if (!it->first->active.load()) {
-            auto old = it++;
-            retired.insert(pending.extract(old));
-        } else {
-            ++it;
-        }
-    }
     for (auto& [node, groups] : frame) {
-        if (!node->active.load()) {
-            continue;
-        }
         auto& pending_groups = pending[node];
         for (auto& [type, entry] : groups) {
             if (auto it = pending_groups.find(type); it != pending_groups.end()) {
@@ -159,7 +148,7 @@ void node_status_registry_s::state_s::merge_frame(batch_t& retired)
     }
 }
 
-void node_status_registry_s::publish()
+void node_status_registry_s::publish(std::vector<removal_s> removals)
 {
     auto& state = *state_;
     if (state.stopped.load()) {
@@ -167,11 +156,13 @@ void node_status_registry_s::publish()
     }
     bool post = false;
     // Swapped-out groups and replaced values are destroyed after unlocking.
-    state_s::batch_t retired;
     {
         const std::scoped_lock lock(state.mutex);
-        state.merge_frame(retired);
-        if (!state.pending.empty() && !state.scheduled) {
+        state.merge_frame();
+        for (auto& removal : removals) {
+            state.removals.push_back(std::move(removal));
+        }
+        if ((!state.pending.empty() || !state.removals.empty()) && !state.scheduled) {
             state.scheduled = true;
             post            = true;
         }
@@ -185,34 +176,44 @@ void node_status_registry_s::publish()
 // NOLINTNEXTLINE(misc-no-recursion) -- schedule uses asio::post, so each drain starts on a fresh stack.
 void node_status_registry_s::drain(const std::shared_ptr<state_s>& state)
 {
-    state_s::batch_t batch;
+    state_s::batch_t       batch;
+    std::vector<removal_s> removals;
     {
         const std::scoped_lock lock(state->mutex);
         batch.swap(state->pending);
+        removals.swap(state->removals);
     }
     if (state->stopped.load()) {
         return;
     }
 
+    // These nodes have completed their last frame. Discard their queued and
+    // rate-limited values before emitting any further status or removal notice.
+    for (const auto& removal : removals) {
+        batch.erase(removal.node_id);
+        state->snapshots.erase(removal.node_id);
+    }
     for (auto& [node, groups] : batch) {
-        if (!node->active.load()) {
-            continue;
-        }
-        auto& snapshot = state->snapshots[node->id];
-        if (snapshot.identity != node) {
-            snapshot          = state_s::snapshot_s{};
-            snapshot.identity = node;
-        }
+        auto& snapshot = state->snapshots[node];
         for (auto& [type, entry] : groups) {
             snapshot.immediate = snapshot.immediate || entry.delivery == status_delivery_e::immediate;
             snapshot.pending.insert_or_assign(type, std::move(entry));
         }
     }
     emit_due(state);
+    for (auto& removal : removals) {
+        if (removal.notify && !state->stopped.load()) {
+            try {
+                removal.notify();
+            } catch (const std::exception& error) {
+                logger::log_error_noexcept("app", "Failed to announce node removal: {}", error.what());
+            }
+        }
+    }
     bool post = false;
     {
         const std::scoped_lock lock(state->mutex);
-        post             = !state->pending.empty() && !state->stopped.load();
+        post             = (!state->pending.empty() || !state->removals.empty()) && !state->stopped.load();
         state->scheduled = post;
     }
     // Yield between batches so HTTP and graph commands cannot be starved by telemetry.
@@ -221,7 +222,7 @@ void node_status_registry_s::drain(const std::shared_ptr<state_s>& state)
     }
 }
 
-void node_status_registry_s::state_s::snapshot_s::materialize()
+void node_status_registry_s::state_s::snapshot_s::materialize(std::string_view id)
 {
     std::vector<entry_s*> ordered;
     ordered.reserve(pending.size());
@@ -238,7 +239,7 @@ void node_status_registry_s::state_s::snapshot_s::materialize()
                 status[name] = std::move(value);
             }
         } catch (const std::exception& error) {
-            logger::log_error_noexcept("app", "Failed to serialize status for {}: {}", identity->id, error.what());
+            logger::log_error_noexcept("app", "Failed to serialize status for {}: {}", id, error.what());
         }
     }
     pending.clear();
@@ -252,11 +253,10 @@ void node_status_registry_s::emit_due(const std::shared_ptr<state_s>& state)
     const auto                   now = std::chrono::steady_clock::now();
     std::vector<status_update_s> updates;
     for (auto& [id, snapshot] : state->snapshots) {
-        if (!snapshot.identity->active.load() || !snapshot.dirty() ||
-            (!snapshot.immediate && now < snapshot.next_report)) {
+        if (!snapshot.dirty() || (!snapshot.immediate && now < snapshot.next_report)) {
             continue;
         }
-        snapshot.materialize();
+        snapshot.materialize(id);
         auto delta = nlohmann::json::object();
         for (const auto& name : snapshot.dirty_fields) {
             const auto& value    = snapshot.status.at(name);
@@ -302,7 +302,7 @@ void node_status_registry_s::arm_timer(const std::shared_ptr<state_s>& state)
     }
     std::optional<std::chrono::steady_clock::time_point> deadline;
     for (const auto& [id, snapshot] : state->snapshots) {
-        if (snapshot.identity->active.load() && snapshot.dirty() && (!deadline || snapshot.next_report < *deadline)) {
+        if (snapshot.dirty() && (!deadline || snapshot.next_report < *deadline)) {
             deadline = snapshot.next_report;
         }
     }
@@ -324,26 +324,13 @@ void node_status_registry_s::arm_timer(const std::shared_ptr<state_s>& state)
     });
 }
 
-void node_status_registry_s::remove_node(const node_status_handle_s& node)
-{
-    node.retire();
-    if (!node.identity_) {
-        return;
-    }
-    const auto it = state_->snapshots.find(node.identity_->id);
-    if (it != state_->snapshots.end() && it->second.identity == node.identity_) {
-        state_->snapshots.erase(it);
-        arm_timer(state_);
-    }
-}
-
 nlohmann::json node_status_registry_s::get(std::string_view node_id) const
 {
     const auto it = state_->snapshots.find(node_id);
-    if (it == state_->snapshots.end() || !it->second.identity->active.load()) {
+    if (it == state_->snapshots.end()) {
         return nlohmann::json::object();
     }
-    it->second.materialize();
+    it->second.materialize(node_id);
     return it->second.status;
 }
 
@@ -351,10 +338,8 @@ nlohmann::json node_status_registry_s::get_all() const
 {
     auto result = nlohmann::json::object();
     for (auto& [id, snapshot] : state_->snapshots) {
-        if (snapshot.identity->active.load()) {
-            snapshot.materialize();
-            result[id] = snapshot.status;
-        }
+        snapshot.materialize(id);
+        result[id] = snapshot.status;
     }
     return result;
 }

@@ -48,7 +48,7 @@ action and reply when their work actually finishes, using the same result/error 
 
 A well-formed native request is wrapped once in move-only `nodes::action_s`. The same object travels through
 configuration admission, pending frame updates, frame dispatch, and optional asynchronous work. It owns its ID,
-name, JSON payload, resolved node-instance handle, and response responsibility. Wire token correlation stays in
+name, JSON payload, and response responsibility. Wire token correlation stays in
 its responder callback. No settings, borrowed graph references, or transaction policy belong to the action.
 
 `complete(result)` and `fail(error, message)` share one synchronized settlement state with timeout handling.
@@ -88,8 +88,8 @@ render-owned node resources. Replies settled during admission are also delivered
 A frame action returns `frame`, leaving ownership with the caller, which moves it into the pending node update.
 The dedicated config handler can copy resolved arguments into the action payload when it needs admission-time values.
 Otherwise frame handlers see the original payload and the selected frame's final settings. Frame and async handlers
-never receive the settings-editing capability. A delayed settings update must submit a new config operation with its
-captured target handle, preventing updates to a replacement node with the same ID.
+never receive the settings-editing capability. A delayed settings update posts an ordinary ID-addressed config operation to the configuration executor.
+Normal lookup and option validation apply when it runs.
 
 Dedicated handlers may use `action.get_typed_payload<T>()`. It uses nlohmann deserialization and returns an empty
 optional for JSON decoding errors, including invalid described enum values. The handler reports `invalid_payload`; dispatch hooks do not decode payloads.
@@ -110,17 +110,18 @@ Transactions, transaction tokens, and transaction rollback policy are not implem
 must answer every deferred or unprocessed action on abort, plus its transaction token; already settled action results
 stand. Actions themselves remain unaware of that policy. The WS envelope and client correlation behavior are unchanged.
 
-## Frame delivery, identity, and expiry
+## Frame delivery and expiry
 
 Per-node pending update records own whole actions under the same graph lock as settings. At frame start,
 `take_frame_updates()` copies the updated node snapshot and moves the actions out exactly once. Dispatch runs before
 all-node `prepare()`, regardless of render demand, in admission FIFO order. Actions are never persisted or replayed.
 
-The authoritative graph resolves each action's `node_handle_s`. Removal cancels pending actions with `not_found`;
-a replacement gets a fresh identity. Dispatch compares identity with the selected frame snapshot. A removal after
-the cutoff does not invalidate the already selected frame. Handles retain identity metadata, never node resources.
+Configuration admission and frame dispatch resolve nodes by ID. Removal cancels pending actions with `not_found`.
+A removal after the frame cutoff does not invalidate the already selected render snapshot. Asynchronous work owns
+its inputs and never retains borrowed node references. Node IDs are the addressing contract; automation is responsible
+for avoiding reuse while earlier operations remain outstanding.
 
-There are 64 pending frame actions per node instance, no global or per-frame count cap, and a five-second waiting
+There are 64 pending frame actions per node, no global or per-frame count cap, and a five-second waiting
 expiry. `action_s` owns its deadline and timeout failure. With an application executor, its timer can settle an expired
 action even if frame delivery stalls; dispatch also checks the deadline. Tests/native callers without an executor use
 the same explicit deadline check. Already settled entries are reclaimed before checking per-node capacity.
@@ -131,8 +132,7 @@ Timer callbacks share only response state and race safely with completion, cance
 cancel side effects already started. The executor must outlive actions with timers attached to it.
 
 Discarding a frame batch reports `cancelled`; ignoring a delivered action reports `internal_error`. Async owners must
-complete, fail, or release their actions on shutdown. A consumed action may finish after its node is removed, but cannot
-implicitly target a replacement. A disconnected client does not cancel accepted work, and requests are never replayed.
+complete, fail, or release their actions on shutdown. A consumed action may finish after its node is removed; any later settings update resolves its ID normally. A disconnected client does not cancel accepted work, and requests are never replayed.
 
 ## Adding an action
 
@@ -209,8 +209,8 @@ Generator tests cover exported action contracts; `npm run build` checks the posi
 `web/tests/node_actions.type-test.ts`.
 
 `core_test` covers configuration admission, atomic explicit settings, ordered best-effort action patches, connection-
-derived settings, authoritative broadcasts and persistence, owned payloads, 500-node FIFO frame delivery, per-instance
-capacity, replacement across frame cutoffs, asynchronous ownership, expiry, cancellation, reply exceptions, and typed
+derived settings, authoritative broadcasts and persistence, owned payloads, 500-node FIFO frame delivery, per-node
+capacity, ID-based dispatch across frame cutoffs, asynchronous ownership, expiry, cancellation, reply exceptions, and typed
 wire decoding.
 `npm test` in `web/` covers correlated replies, server errors, disconnect without replay, timeout, abort, capacity,
 and serialization failures using the real WebSocket wrapper with a controlled transport.
@@ -240,4 +240,4 @@ Configuration-admission redesign validation:
 - All five existing WebSocket client tests passed without client or wire-contract changes.
 - Both WebSocket integration variants passed with Vulkan validation enabled and no validation errors.
 - Manager-level tests include 500-node FIFO delivery, settings/action batches, settings derived from connections,
-  action-origin broadcasts, delayed expected-instance checks, and completion ownership across removal and shutdown.
+  action-origin broadcasts, delayed ID-based updates, and completion ownership across removal and shutdown.

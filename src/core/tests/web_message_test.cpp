@@ -20,6 +20,21 @@
 namespace {
 using namespace miximus;
 
+TEST(web_message, FileDialogRequiresNodeAndField)
+{
+    nlohmann::json request = {
+        {"id",    "image"    },
+        {"field", "file_path"}
+    };
+    const auto parsed = request.get<web_message::file_dialog_request_s>();
+    EXPECT_EQ(parsed.id, "image");
+    EXPECT_EQ(parsed.field, "file_path");
+    request.erase("field");
+    EXPECT_THROW((void)request.get<web_message::file_dialog_request_s>(), nlohmann::json::exception);
+    request["field"] = 42;
+    EXPECT_THROW((void)request.get<web_message::file_dialog_request_s>(), nlohmann::json::exception);
+}
+
 class server_mock_s final : public web_server::server_s
 {
   public:

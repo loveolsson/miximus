@@ -1,5 +1,6 @@
 #include "core/configuration.hpp"
 #include "core/node_manager.hpp"
+#include "core/node_status_registry.hpp"
 #include "logger/logger.hpp"
 #include "nodes/action.hpp"
 #include "nodes/interface.hpp"
@@ -34,7 +35,11 @@ struct node_manager_test_access_s
     static node_actions_s::batch_t  take(node_manager_s& manager) { return manager.take_frame_updates(); }
     static const nodes::node_map_t& snapshot(node_manager_s& manager) { return manager.nodes_copy_; }
     static const nodes::node_map_t& config(node_manager_s& manager) { return manager.nodes_; }
-    static void                     close(node_manager_s& manager) { manager.close_actions(); }
+    static void                     publish(node_manager_s& manager, node_status_registry_s& registry)
+    {
+        manager.publish_frame_status(registry);
+    }
+    static void close(node_manager_s& manager) { manager.close_actions(); }
 };
 namespace {
 using nodes::action_dispatch_e;
@@ -206,10 +211,12 @@ struct update_s
 class recording_adapter_s final : public node_manager_s::adapter_i
 {
     std::reference_wrapper<std::vector<update_s>> updates_;
+    std::function<void(std::string_view)>         removed_;
 
   public:
-    explicit recording_adapter_s(std::vector<update_s>& updates)
+    explicit recording_adapter_s(std::vector<update_s>& updates, std::function<void(std::string_view)> removed = {})
         : updates_(updates)
+        , removed_(std::move(removed))
     {
     }
     void emit_add_node(std::string_view /* type */,
@@ -218,7 +225,12 @@ class recording_adapter_s final : public node_manager_s::adapter_i
                        const std::optional<origin_info_s>& /* origin */) final
     {
     }
-    void emit_remove_node(std::string_view /* id */, const std::optional<origin_info_s>& /* origin */) final {}
+    void emit_remove_node(std::string_view id, const std::optional<origin_info_s>& /* origin */) final
+    {
+        if (removed_) {
+            removed_(id);
+        }
+    }
     void emit_update_node(std::string_view                    id,
                           const nlohmann::json&               options,
                           bool                                corrected,
@@ -269,6 +281,48 @@ struct action_manager_test_s : testing::Test
         return access::config(*manager).at(std::string(id)).state.options.at("value").get<int>();
     }
 };
+
+TEST_F(action_manager_test_s, RemovalNotificationWaitsForFramePublicationAndClearsStatus)
+{
+    boost::asio::io_context executor;
+    node_status_registry_s  registry(executor);
+    std::vector<update_s>   updates;
+    size_t                  removals = 0;
+    manager->add_adapter(std::make_unique<recording_adapter_s>(updates, [&](std::string_view id) {
+        EXPECT_TRUE(executor.get_executor().running_in_this_thread());
+        EXPECT_EQ(id, "n");
+        EXPECT_TRUE(registry.get(id).empty());
+        ++removals;
+    }));
+    frame();
+    registry.write("n", status::connected_status_s{.connected = true});
+    registry.publish();
+    executor.run();
+    ASSERT_FALSE(registry.get("n").empty());
+    ASSERT_EQ(manager->handle_remove_node("n"), error_e::no_error);
+    EXPECT_EQ(manager
+                  ->handle_update_node("n",
+                                       {
+                                           {"value", 1}
+    })
+                  .error,
+              error_e::not_found);
+    EXPECT_EQ(removals, 0);
+    // The old render snapshot can still finish its frame after config removal.
+    EXPECT_TRUE(access::snapshot(*manager).contains("n"));
+    registry.write("n", status::connected_status_s{.connected = false});
+    access::publish(*manager, registry);
+    EXPECT_EQ(removals, 0);
+    executor.restart();
+    executor.run();
+    EXPECT_EQ(removals, 1);
+    frame();
+    EXPECT_FALSE(access::snapshot(*manager).contains("n"));
+    access::publish(*manager, registry);
+    executor.restart();
+    executor.run();
+    EXPECT_EQ(removals, 1);
+}
 
 TEST_F(action_manager_test_s, RecoverySnapshotTracksAcceptedGraphChanges)
 {
@@ -432,7 +486,7 @@ TEST_F(action_manager_test_s, FrameConsumptionCanTransferCompletionToAsyncWork)
     ASSERT_EQ(observed->deferred.size(), 1);
     EXPECT_EQ(observed->deferred.front().name, "async_frame");
     EXPECT_EQ(observed->deferred.front().payload.at("marker"), 7);
-    EXPECT_EQ(observed->deferred.front().target, access::config(*manager).at("n").node->handle());
+    EXPECT_EQ(observed->deferred.front().id, "n");
     observed->deferred.front().complete({.data = "done"});
     observed->deferred.front().complete(); // Already settled, cannot reply twice.
     observed->deferred.clear();
@@ -467,7 +521,7 @@ TEST_F(action_manager_test_s, AbandonedAsyncCompletionsAndIgnoredFrameActionsFai
     EXPECT_EQ(replies[4].error, error_e::no_error);
 }
 
-TEST_F(action_manager_test_s, Enforces64PerInstanceAndDoesNotApplyRejectedActionSettings)
+TEST_F(action_manager_test_s, Enforces64PerNodeAndDoesNotApplyRejectedActionSettings)
 {
     for (size_t i = 0; i < 64; ++i) {
         send("echo", i);
@@ -506,22 +560,19 @@ TEST_F(action_manager_test_s, DeliversHundredsOfNodesInOneFrame)
     EXPECT_EQ(observed->frames.size(), 500);
 }
 
-TEST_F(action_manager_test_s, RemovalCancelsPendingWorkAndReplacementHasFreshCapacity)
+TEST_F(action_manager_test_s, RemovalClearsPendingWorkAndQueueCapacity)
 {
-    const auto                         old      = access::config(*manager).at("n").node->handle();
     const std::weak_ptr<nodes::node_i> lifetime = access::config(*manager).at("n").node;
     for (size_t i = 0; i < 64; ++i) {
         send("echo");
     }
     ASSERT_EQ(manager->handle_remove_node("n"), error_e::no_error);
-    EXPECT_FALSE(old.active());
     EXPECT_TRUE(lifetime.expired());
     ASSERT_EQ(replies.size(), 64);
     for (const auto& reply : replies) {
         EXPECT_EQ(reply.error, error_e::not_found);
     }
     ASSERT_EQ(manager->handle_add_node("action_test", "n", nlohmann::json::object()), error_e::no_error);
-    EXPECT_NE(old, access::config(*manager).at("n").node->handle());
     send("echo");
     frame();
     ASSERT_EQ(replies.size(), 65);
@@ -549,17 +600,22 @@ TEST_F(action_manager_test_s, ChangesAfterBoundaryDoNotInvalidateAlreadySelected
     EXPECT_EQ(replies.back().data.at("value"), 7);
 }
 
-TEST_F(action_manager_test_s, IdentityRejectsDeliveryToReplacementSnapshot)
+TEST_F(action_manager_test_s, FrameDeliveryLooksUpNodeById)
 {
     send("echo");
     auto batch = access::take(*manager);
     ASSERT_EQ(manager->handle_remove_node("n"), error_e::no_error);
-    ASSERT_EQ(manager->handle_add_node("action_test", "n", nlohmann::json::object()), error_e::no_error);
+    ASSERT_EQ(manager->handle_add_node("action_test",
+                                       "n",
+                                       {
+                                           {"value", 7}
+    }),
+              error_e::no_error);
     auto next = access::take(*manager);
     batch.dispatch(nullptr, access::snapshot(*manager));
     ASSERT_EQ(replies.size(), 1);
-    EXPECT_EQ(replies[0].error, error_e::not_found);
-    EXPECT_TRUE(observed->frames.empty());
+    EXPECT_EQ(replies[0].error, error_e::no_error);
+    EXPECT_EQ(replies[0].data.at("value"), 7);
 }
 
 TEST_F(action_manager_test_s, ExpiryAbandonedFramesAndShutdownSettleRequestsOutsideLocks)
@@ -588,9 +644,7 @@ TEST_F(action_manager_test_s, ExpiryAbandonedFramesAndShutdownSettleRequestsOuts
         replies.push_back(std::move(result));
     };
     EXPECT_EQ(manager->handle_control_batch(nullptr, {}, {std::move(reentrant)}).error, error_e::no_error);
-    const auto handle = access::config(*manager).at("n").node->handle();
     access::close(*manager);
-    EXPECT_FALSE(handle.active());
     EXPECT_EQ(replies.size(), 3);
     access::close(*manager);
     EXPECT_EQ(replies.size(), 3);
@@ -722,37 +776,62 @@ TEST_F(action_manager_test_s, LateAsyncReplyDoesNotRetainOrMutateRemovedNode)
     EXPECT_EQ(value(), 12);
 }
 
-TEST_F(action_manager_test_s, DelayedConfigOperationsCannotTargetAReplacement)
+TEST_F(action_manager_test_s, DelayedConfigOperationsUseNormalIdLookupAndValidation)
 {
-    configuration_s configuration(*manager);
-    EXPECT_FALSE(configuration.get_node_handle("missing").has_value());
-    const auto selected = configuration.get_node_handle("n");
-    ASSERT_TRUE(selected.has_value());
-    const auto old = *selected;
+    auto action = request("increment");
     EXPECT_EQ(manager->handle_remove_node("n"), error_e::no_error);
+    EXPECT_EQ(manager
+                  ->handle_update_node("n",
+                                       {
+                                           {"value", 20}
+    })
+                  .error,
+              error_e::not_found);
     ASSERT_EQ(manager->handle_add_node("action_test",
                                        "n",
                                        {
                                            {"value", 12}
     }),
               error_e::no_error);
-    const std::vector<node_manager_s::option_update_s> updates{
-        {.id = "n", .options = {{"value", 20}}, .target = old}
-    };
-    EXPECT_EQ(manager->handle_control_batch(nullptr, updates, {request("increment")}).error, error_e::not_found);
-    ASSERT_EQ(replies.size(), 1);
-    EXPECT_EQ(replies[0].error, error_e::not_found);
-    replies.clear();
-    auto action   = request("increment");
-    action.target = old;
+    EXPECT_EQ(manager
+                  ->handle_update_node("n",
+                                       {
+                                           {"value", -1}
+    })
+                  .error,
+              error_e::invalid_options);
+    EXPECT_EQ(manager
+                  ->handle_update_node("n",
+                                       {
+                                           {"value", 20}
+    })
+                  .error,
+              error_e::no_error);
     EXPECT_EQ(manager->handle_control_batch(nullptr, {}, {std::move(action)}).error, error_e::no_error);
     ASSERT_EQ(replies.size(), 1);
-    EXPECT_EQ(replies[0].error, error_e::not_found);
-    EXPECT_EQ(value(), 12);
-    auto current   = request("increment");
-    current.target = access::config(*manager).at("n").node->handle();
-    EXPECT_EQ(manager->handle_control_batch(nullptr, {}, {std::move(current)}).error, error_e::no_error);
-    EXPECT_EQ(value(), 13);
+    EXPECT_EQ(replies[0].error, error_e::no_error);
+    EXPECT_EQ(value(), 21);
+}
+
+TEST_F(action_manager_test_s, FileDialogOptionsComeFromNodeAndField)
+{
+    for (const auto type : {"image", "teleprompter"}) {
+        auto [node, error] = manager->create_node(type);
+        ASSERT_EQ(error, error_e::no_error);
+        nodes::node_state_s state;
+        state.options = {
+            {"file_path", "initial.txt"}
+        };
+        const auto request = node->file_dialog_request("file_path", state);
+        if (!request.has_value()) {
+            FAIL() << "Node did not provide file dialog options";
+        }
+        state.options["file_path"] = "changed.txt";
+        EXPECT_EQ(request->initial_path, "initial.txt");
+        EXPECT_FALSE(request->filters.empty());
+        EXPECT_FALSE(node->file_dialog_request("name", state));
+    }
+    EXPECT_FALSE(access::config(*manager).at("n").node->file_dialog_request("file_path", {}));
 }
 
 TEST(node_actions, typed_contract_failures_are_decoding_errors)
@@ -832,15 +911,12 @@ TEST(NodeAction, MovesTheWholeRequestAndSettlesExactlyOnce)
     {
         action_s original(
             "n", "test", {1, 2, 3}, [&](action_result_s result) { replies.push_back(std::move(result)); });
-        original.target     = node_handle_s("n");
-        const auto identity = original.target;
-        auto       moved    = std::move(original);
+        auto moved = std::move(original);
         // Verify the documented moved-from no-op contract, not accidental reuse.
         // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
         original.fail(error_e::internal_error);
         EXPECT_EQ(moved.id, "n");
         EXPECT_EQ(moved.name, "test");
-        EXPECT_EQ(moved.target, identity);
         EXPECT_EQ(moved.get_typed_payload<std::vector<int>>(), (std::vector<int>{1, 2, 3}));
         EXPECT_FALSE(moved.get_typed_payload<int>());
         moved.complete({.data = "done"});

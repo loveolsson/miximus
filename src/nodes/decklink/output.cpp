@@ -1018,7 +1018,7 @@ class node_impl : public node_i
             device_status_event_.observe(device_status_event_s{.device_name      = std::string(device_name),
                                                                .reference_locked = payload.reference_locked,
                                                                .active_format    = payload.active_format});
-        app->status_registry()->write(status_handle_,
+        app->status_registry()->write(id_,
                                       std::move(payload),
                                       important ? core::status_delivery_e::immediate
                                                 : core::status_delivery_e::rate_limited);
@@ -1032,7 +1032,7 @@ class node_impl : public node_i
             keyer_status_event_.observe(keyer_status_event_s{.requested       = payload.requested_keyer_mode,
                                                              .active          = payload.active_keyer_mode,
                                                              .fallback_reason = payload.keyer_fallback_reason});
-        registry->write(status_handle_,
+        registry->write(id_,
                         std::move(payload),
                         important ? core::status_delivery_e::immediate : core::status_delivery_e::rate_limited);
     }
@@ -1046,14 +1046,14 @@ class node_impl : public node_i
         const auto options_key =
             mode_options_key_s{.device_name = std::string(device_name), .version = callback_->mode_options_version()};
         if (mode_options_version_.observe(options_key)) {
-            status_registry->write(status_handle_,
+            status_registry->write(id_,
                                    status::display_modes_status_s{.display_modes = callback_->mode_options()},
                                    core::status_delivery_e::immediate);
         }
         publish_keyer_status(status_registry, callback_->keyer_status());
 
         const auto metrics = callback_->metrics();
-        status_registry->write(status_handle_,
+        status_registry->write(id_,
                                status::decklink_output_metrics_status_s{
                                    .frames_completed                     = metrics.frames_completed,
                                    .frames_displayed_late                = metrics.frames_displayed_late,
@@ -1088,7 +1088,7 @@ class node_impl : public node_i
                                    .render_target_drops                  = render_target_drops_,
                                });
         status_registry->write(
-            status_handle_,
+            id_,
             status::download_stream_status_s{
                 .download_slots                      = metrics.readback_stream.slots,
                 .download_slots_free                 = metrics.readback_stream.free_slots,
@@ -1164,7 +1164,7 @@ class node_impl : public node_i
         const auto device_list_version = app->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(device_list_version);
         if (device_list_changed) {
-            status->write(status_handle_,
+            status->write(id_,
                           status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()},
                           core::status_delivery_e::immediate);
         }

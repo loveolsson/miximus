@@ -46,10 +46,7 @@ bool web_server_impl::is_request_local(const server_t::connection_ptr& con)
         return false;
     }
     const auto& origin = con->get_request_header("Origin");
-    if (!origin.empty() && origin != expected_origin) {
-        return false;
-    }
-    return true;
+    return origin.empty() || origin == expected_origin;
 }
 
 } // namespace miximus::web_server::detail

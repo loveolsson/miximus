@@ -13,14 +13,13 @@ add_library(app
     frame_scheduler.hpp
     frame_scheduler_fwd.hpp
     frame_scheduler.cpp
-    node_handle.hpp
     node_actions.hpp
     node_actions.cpp
     node_manager.hpp
     node_manager_fwd.hpp
     node_manager.cpp
+    node_file_dialog.cpp
     origin_info.hpp
-    node_status_handle.hpp
     node_status_registry.hpp
     node_status_registry_fwd.hpp
     node_status_registry.cpp

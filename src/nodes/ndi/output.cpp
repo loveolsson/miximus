@@ -82,9 +82,9 @@ class node_impl : public node_i
         };
         if (readback_stream_) {
             const auto readback_metrics = readback_stream_->metrics();
-            status_registry->write(status_handle_, output_status);
+            status_registry->write(id_, output_status);
             status_registry->write(
-                status_handle_,
+                id_,
                 status::download_stream_status_s{
                     .download_slots                      = readback_metrics.slots,
                     .download_slots_free                 = readback_metrics.free_slots,
@@ -101,7 +101,7 @@ class node_impl : public node_i
                     .download_allocation_failed          = readback_metrics.allocation_failed,
                 });
         } else {
-            status_registry->write(status_handle_, output_status);
+            status_registry->write(id_, output_status);
         }
     }
 

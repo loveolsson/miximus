@@ -7,7 +7,6 @@
 #include "web_server/server.hpp"
 #include "web_server/typed_server.hpp"
 
-#include <boost/asio/post.hpp>
 #include <nlohmann/json.hpp>
 
 #include <exception>
@@ -48,17 +47,16 @@ class websocket_config_s final : public node_manager_s::adapter_i
 
     std::weak_ptr<web_server::server_s> server_lifetime_;
 
-    void    handle_node_action(const web_message::node_action_request_s& message, int64_t origin_id);
-    void    handle_add_node(const web_message::add_node_request_s& message, int64_t origin_id);
-    void    handle_remove_node(const web_message::remove_node_request_s& message, int64_t origin_id);
-    void    handle_update_node(const web_message::update_node_request_s& message, int64_t origin_id);
-    void    handle_add_connection(const web_message::add_connection_request_s& message, int64_t origin_id);
-    void    handle_remove_connection(const web_message::remove_connection_request_s& message, int64_t origin_id);
-    void    handle_config(const web_message::config_request_s& message, int64_t origin_id);
-    void    handle_node_status(const web_message::node_status_request_s& message, int64_t origin_id);
-    void    handle_font_registry(const web_message::font_registry_request_s& message, int64_t origin_id);
-    void    handle_file_dialog(const web_message::file_dialog_request_s& message, int64_t origin_id);
-    error_e open_file_dialog(std::string_view id);
+    void handle_node_action(const web_message::node_action_request_s& message, int64_t origin_id);
+    void handle_add_node(const web_message::add_node_request_s& message, int64_t origin_id);
+    void handle_remove_node(const web_message::remove_node_request_s& message, int64_t origin_id);
+    void handle_update_node(const web_message::update_node_request_s& message, int64_t origin_id);
+    void handle_add_connection(const web_message::add_connection_request_s& message, int64_t origin_id);
+    void handle_remove_connection(const web_message::remove_connection_request_s& message, int64_t origin_id);
+    void handle_config(const web_message::config_request_s& message, int64_t origin_id);
+    void handle_node_status(const web_message::node_status_request_s& message, int64_t origin_id);
+    void handle_font_registry(const web_message::font_registry_request_s& message, int64_t origin_id);
+    void handle_file_dialog(const web_message::file_dialog_request_s& message, int64_t origin_id);
 
     void emit_add_node(std::string_view                    type,
                        std::string_view                    id,
@@ -114,49 +112,9 @@ websocket_config_s::websocket_config_s(app_state_s*                             
         topic_e::node_status, std::bind_front(&websocket_config_s::handle_node_status, this));
 }
 
-error_e websocket_config_s::open_file_dialog(std::string_view id)
-{
-    if (!app_ || !app_->file_dialog()) {
-        return error_e::unavailable;
-    }
-    const auto node   = configuration_.get_node(id);
-    const auto target = configuration_.get_node_handle(id);
-    if (!node || !target) {
-        return error_e::not_found;
-    }
-    const auto type = node->at("type").get<std::string>();
-    if (type != "image" && type != "teleprompter") {
-        return error_e::invalid_type;
-    }
-    return app_->file_dialog()->open(
-        type == "image",
-        node->at("options").value("file_path", std::string{}),
-        [executor = app_->cfg_executor(), manager = &manager_, target = *target](utils::file_dialog_result_s selected) {
-            boost::asio::post(*executor, [manager, target, selected = std::move(selected)]() mutable {
-                auto error = selected.error;
-                try {
-                    if (error == error_e::no_error && selected.path) {
-                        const node_manager_s::option_update_s update{
-                            .id      = std::string(target.id()),
-                            .options = {{"file_path", std::move(*selected.path)}},
-                            .target  = target,
-                        };
-                        error = manager->handle_control_batch(nullptr, std::span(&update, 1), {}).error;
-                    }
-                } catch (const std::exception& exception) {
-                    getlog("app")->error("File selection for {} failed: {}", target.id(), exception.what());
-                    return;
-                }
-                if (error != error_e::no_error && error != error_e::cancelled) {
-                    getlog("app")->warn("File selection for {} rejected: {}", target.id(), static_cast<int>(error));
-                }
-            });
-        });
-}
-
 void websocket_config_s::handle_file_dialog(const web_message::file_dialog_request_s& message, int64_t origin_id)
 {
-    const auto result = message.id.empty() ? error_e::invalid_payload : open_file_dialog(message.id);
+    const auto result = manager_.handle_file_dialog(app_, message.id, message.field);
     const auto token  = message.token.value_or("");
     if (result == error_e::no_error) {
         server_.send_message(web_message::result_s{.token = token}, origin_id);

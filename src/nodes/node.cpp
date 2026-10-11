@@ -29,15 +29,17 @@ node_i::handle_frame_action(core::app_state_s* /* app */, const node_state_s& /*
     return action_dispatch_e::unhandled;
 }
 
-void node_i::init(std::string_view id)
+std::optional<utils::file_dialog_request_s> node_i::file_dialog_request(std::string_view /*field*/,
+                                                                        const node_state_s& /*state*/) const
 {
-    id_            = id;
-    status_handle_ = core::node_status_handle_s(id);
+    return std::nullopt;
 }
+
+void node_i::init(std::string_view id) { id_ = id; }
 
 void node_i::report_connection(core::node_status_registry_s* registry, status::connected_status_s connection)
 {
-    registry->write(status_handle_,
+    registry->write(id_,
                     connection,
                     reported_connection_.observe(connection.connected) ? core::status_delivery_e::immediate
                                                                        : core::status_delivery_e::rate_limited);

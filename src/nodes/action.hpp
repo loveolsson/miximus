@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/app_state_fwd.hpp"
-#include "core/node_handle.hpp"
 #include "nodes/node_map_fwd.hpp"
 #include "nodes/option_result.hpp"
 #include "types/error.hpp"
@@ -43,17 +42,12 @@ class action_s
   public:
     using clock_t = std::chrono::steady_clock;
     using reply_t = std::function<void(action_result_s)>;
-    std::string                        id;
-    std::string                        name;
-    nlohmann::json                     payload;
-    std::optional<core::node_handle_s> target;
-    size_t                             sequence{};
+    std::string    id;
+    std::string    name;
+    nlohmann::json payload;
+    size_t         sequence{};
 
-    action_s(std::string                        id,
-             std::string                        name,
-             nlohmann::json                     payload,
-             reply_t                            reply,
-             std::optional<core::node_handle_s> target = {});
+    action_s(std::string id, std::string name, nlohmann::json payload, reply_t reply);
     ~action_s();
     action_s(const action_s&)            = delete;
     action_s& operator=(const action_s&) = delete;

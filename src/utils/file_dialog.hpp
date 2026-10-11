@@ -5,8 +5,21 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace miximus::utils {
+
+struct file_dialog_filter_s
+{
+    std::string label;
+    std::string pattern;
+};
+struct file_dialog_request_s
+{
+    std::string                       title;
+    std::string                       initial_path;
+    std::vector<file_dialog_filter_s> filters;
+};
 
 struct file_dialog_result_s
 {
@@ -27,7 +40,7 @@ class file_dialog_s
     file_dialog_s(const file_dialog_s&)            = delete;
     file_dialog_s& operator=(const file_dialog_s&) = delete;
     static bool    supported();
-    error_e        open(bool image, std::string initial_path, completion_t completion);
+    error_e        open(file_dialog_request_s request, completion_t completion);
     void           stop();
 };
 

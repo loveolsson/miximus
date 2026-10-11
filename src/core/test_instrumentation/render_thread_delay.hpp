@@ -1,10 +1,10 @@
 #pragma once
 #include "core/app_state_fwd.hpp"
-#include "core/node_status_handle.hpp"
 
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace miximus::core::test_instrumentation {
 
@@ -19,7 +19,7 @@ class render_thread_delay_test_s
     explicit render_thread_delay_test_s(const app_state_s& app);
 
     void inject_before_render_frame();
-    void publish_status(app_state_s* app, const node_status_handle_s& status_handle) const;
+    void publish_status(app_state_s* app, std::string_view node_id) const;
 };
 
 } // namespace miximus::core::test_instrumentation
