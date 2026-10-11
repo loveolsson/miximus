@@ -46,7 +46,7 @@ def main():
     settings = work / "settings.json"
     connection = dict(from_node="video", from_interface="texture", to_node="browser", to_interface="input_0")
     settings.write_text(json.dumps(dict(schema_version=1, nodes=[
-        dict(id="video", type="ffmpeg_playback_looping", options=dict(filename=str(filename))),
+        dict(id="video", type="ffmpeg_playback_looping", options=dict(filename=str(filename), enabled=False)),
         dict(id="browser", type="cef_browser", options=dict(url=f"http://127.0.0.1:{server.server_port}/", size=[320,180])),
     ], connections=[connection])), encoding="utf-8")
     records = []
@@ -85,6 +85,14 @@ def main():
             raise RuntimeError(f"{label} timed out: {latest}")
 
         try:
+            def is_disabled(s):
+                return (s.get("connected") is False and s.get("playback_position_seconds") == 0
+                        and s.get("playback_decoded_frames") == 0 and s.get("playback_queue_depth") == 0)
+
+            wait("initially disabled", is_disabled)
+            time.sleep(1)
+            assert is_disabled(status()), "Disabled playback started"
+            command("update_node", id="video", options=dict(enabled=True))
             first = wait("playing", lambda s: s.get("connected") and s.get("playback_position_seconds", 0) > 1)
             if args.expect_hardware and first.get("playback_backend") == "software":
                 raise RuntimeError("Hardware decode fell back: " + str(first))
@@ -92,6 +100,14 @@ def main():
                 wait("late frames dropped", lambda s: s.get("playback_dropped_frames", 0) > 0)
             if not args.filename:
                 wait("looping", lambda s: s.get("playback_loops", 0) >= 2)
+            for mode in ["always_play", "pause_inactivity", "pause_and_rewind_inactive"]:
+                command("update_node", id="video", options=dict(playback_mode=mode, enabled=False))
+                wait("disabled " + mode, is_disabled)
+                time.sleep(1)
+                assert is_disabled(status()), "Disabled playback advanced"
+                command("update_node", id="video", options=dict(enabled=True))
+                wait("enabled " + mode, lambda s: s.get("connected") and s.get("playback_position_seconds", 0) > .5)
+            command("update_node", id="video", options=dict(playback_mode="always_play"))
             running_position = status()["playback_position_seconds"]
             command("remove_connection", connection=connection)
             wait("always playing while inactive", lambda s: s.get("playback_position_seconds", 0) > running_position + .5)

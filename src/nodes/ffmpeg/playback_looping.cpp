@@ -63,7 +63,7 @@ class node_impl final : public node_i
         registry_ = app->ffmpeg_registry();
         mode_     = state.get_enum_option_unchecked<playback_mode_e>("playback_mode");
         detail::playback_options_s options{
-            .filename                = state.get_option<std::string>("filename"),
+            .filename = state.get_option<bool>("enabled") ? state.get_option<std::string>("filename") : std::string{},
             .attempt_hardware_decode = state.get_option<bool>("attempt_hardware_decode"),
             .buffered_frames         = app->frame_settings().ffmpeg.buffer_frames,
         };
@@ -173,6 +173,7 @@ class node_impl final : public node_i
     {
         return {
             {"name",                    "Video playback (looping)"},
+            {"enabled",                 true                      },
             {"filename",                ""                        },
             {"playback_mode",           "always_play"             },
             {"attempt_hardware_decode", true                      }
@@ -189,7 +190,7 @@ class node_impl final : public node_i
             return normalize_enum_option_value<playback_mode_e>(value);
         }
 
-        if (name == "attempt_hardware_decode") {
+        if (name == "enabled" || name == "attempt_hardware_decode") {
             return normalize_option_value<bool>(value);
         }
 

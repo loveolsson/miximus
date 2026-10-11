@@ -27,6 +27,7 @@ export const FfmpegPlaybackLoopingNode = defineNode({
           ],
         },
       ]),
+    enabled: () => new CheckboxInterface("Enabled", true).setPort(false),
     filename: () => new FilePathInterface("Filename"),
     playback_mode: () =>
       new DropdownInterface("Playback mode", "always_play", [

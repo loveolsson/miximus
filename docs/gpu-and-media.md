@@ -355,6 +355,10 @@ the program clock, drops overdue frames, drains the decoder before looping, and
 supports continuous playback, pause while inactive, and pause/rewind while inactive.
 Audio packets are currently discarded.
 
+The playback node's `enabled` option defaults to true. Disabling retires its session,
+clears the texture output, and resets the playback position. Re-enabling opens the
+selected file from the beginning. This overrides all inactivity playback modes.
+
 Alpha remains full resolution and full range independently of YUV range/chroma.
 Straight (including unspecified) source alpha is applied after transfer/gamut
 conversion, producing the project's linear premultiplied RGBA textures. Explicit
