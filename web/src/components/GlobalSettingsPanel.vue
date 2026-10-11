@@ -57,6 +57,7 @@ const sectionDefinitions = [
   { title: "Framebuffer", keys: ["default_framebuffer_size"] },
   { title: "DeckLink Input", keys: ["decklink_input_buffer_frames"] },
   { title: "NDI Input", keys: ["ndi_input_buffer_frames"] },
+  { title: "Video Playback", keys: ["ffmpeg_decoded_buffer_frames"] },
   {
     title: "Browser Capture",
     keys: ["cef_capture_buffer_frames"],

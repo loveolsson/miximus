@@ -22,6 +22,7 @@ add_executable(miximus
 
 target_link_libraries(miximus
 PRIVATE
+    environment
     web_server
     logger
     render

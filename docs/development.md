@@ -179,6 +179,8 @@ cmake -P scripts/package.cmake
 The script uses CMake 3.28+ and the platform's binary inspection tool to assemble `dist/`:
 Miximus, the `static_files` library containing the web UI/resources/shaders, recursively resolved
 application runtime libraries, and the CEF helper, runtime, resources and notices when CEF is enabled.
+FFmpeg playback libraries are included. On Windows, all FFmpeg component DLLs staged by the
+build are packaged with their recursively resolved dependencies, including optional codec libraries.
 It does not configure or build the project and leaves IDE settings and the build cache unchanged.
 Windows uses the configured compiler's `dumpbin` (or `llvm-objdump`/`objdump` on PATH), Linux uses
 `objdump`, and macOS uses `otool` plus `install_name_tool` for relocation.
@@ -213,8 +215,8 @@ be found. For a nonstandard SDK layout, pass `-DNDI_LICENSE_FILE=/path/to/Proces
 Distribution must also meet the NDI SDK's license and attribution requirements.
 
 Linux libraries under `/lib`, `/usr/lib` and their `32`/`64` variants remain distribution package
-prerequisites, including libraries in multiarch subdirectories; the bundled NDI runtime is an
-explicit exception. Linux packages require a compatible
+prerequisites, including libraries in multiarch subdirectories; the bundled NDI and FFmpeg libraries are
+explicit exceptions. Linux packages require a compatible
 platform baseline and those system dependencies installed. macOS system libraries remain on the
 host, as does its Vulkan/MoltenVK installation. Graphics/media drivers and Linux CEF sandbox setup
 are still required. The script does not

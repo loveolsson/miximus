@@ -342,6 +342,130 @@ All application-provided DeckLink callbacks and buffers are complete `IUnknown` 
 
 SDK 16 buffer access uses `IDeckLinkVideoBuffer`: query it, call `StartAccess`, retrieve bytes, and call `EndAccess`. Linux SDK `REFIID` values do not provide normal C++ equality; follow the existing `QueryInterface` comparisons and COM pointer wrapper.
 
+## FFmpeg playback
+
+`src/nodes/ffmpeg` owns the looping playback node, registry, decoder, playback workers,
+transport timeline, and tests. Core owns a forward-declared registry, as with NDI and
+DeckLink. The registry starts and retires sessions off the render thread and drains
+them before the shared transfer services are destroyed. Dependency discovery and
+platform hardware-backend candidates live in `src/wrapper/ffmpeg`.
+
+Each session decodes on a dedicated thread into a bounded queue. Playback follows
+the program clock, drops overdue frames, drains the decoder before looping, and
+supports continuous playback, pause while inactive, and pause/rewind while inactive.
+Audio packets are currently discarded.
+
+Alpha remains full resolution and full range independently of YUV range/chroma.
+Straight (including unspecified) source alpha is applied after transfer/gamut
+conversion, producing the project's linear premultiplied RGBA textures. Explicit
+premultiplied source metadata is undone in encoded RGB before transfer decoding,
+then reapplied in linear RGB. Zero alpha produces zero RGB. Alpha-bearing streams
+use software decoders when native hardware would lose their alpha plane; WebM VP8
+and VP9 alpha select FFmpeg's libvpx decoder, enabled by the vcpkg `vpx` feature.
+This extends the shared GPU conversion, without CPU color conversion.
+
+Decoded integer RGB/YUV samples retain their layout and precision in bounded upload
+buffers. The shared GPU component conversion extends the existing broadcast color
+pipeline for component addressing, bit depth, range, chroma siting, transfer functions,
+and source primaries. FFmpeg does not perform a separate CPU YUV-to-RGB conversion.
+
+Hardware candidates are Vulkan then D3D11VA on Windows, Vulkan then VAAPI on Linux,
+and VideoToolbox on macOS. Failed hardware initialization or decoding retries the
+next backend before falling back to software. Vulkan is restricted to fixed-function
+H.264/HEVC/VP9/AV1 decoding; FFmpeg's compute decoder startup is unsuitable here.
+Public FFmpeg device/frame contexts restrict the device view to decoding and check
+the driver's video-format usages before allocating surfaces. Unsupported combinations
+fall back without issuing invalid Vulkan calls; no FFmpeg patch is used.
+
+FFmpeg 9.0.2 selects Vulkan devices in unsorted `vkEnumeratePhysicalDevices` order,
+as does the compositor's diagnostic list. Playback tries the compositor's index
+first and verifies the opened device's UUID. If creation fails or the UUID differs,
+it tries the remaining indices from that list once each before falling back.
+FFmpeg retains ownership of its separate decoder device and queue setup; no
+assumption about index equality permits using a different physical GPU.
+
+The FFmpeg registry initializes hardware device contexts during application startup,
+before graph rendering begins, and retains them until playback workers have stopped.
+Sessions acquire FFmpeg references to these immutable contexts, with separate codec
+state and frame pools. Upstream context/queue locks serialize shared native calls.
+Unavailable backends remain unavailable for that run instead of retrying device
+creation during playback. Device creation/destruction can stall other GPU clients
+inside the driver even on a background thread; retaining contexts avoids that cost
+on file changes and hardware-option toggles. It does not eliminate codec/frame-pool
+initialization costs or change software-frame upload scheduling.
+
+`ffmpeg_gpu_test` is an explicit hardware test, outside ordinary CTest. It checks
+pool-budget reclamation and retention through display references and GPU completion.
+Windows builds with CEF disabled also test application-device D3D11 ingestion using
+`MIXIMUS_FFMPEG_TEST_VIDEO`, and UHD budget-exhaustion fallback followed by a second
+hardware session using `MIXIMUS_FFMPEG_UHD_TEST_VIDEO`. Set these environment variables
+to suitable H.264 fixtures (1920x1080 and 3840x2160 respectively) and run with Vulkan
+validation enabled on a D3D11-capable test host.
+
+Eligible Vulkan frames copy their raw planes into an exported device-local buffer.
+The GPU subsystem imports that allocation on the same physical device/driver and
+uses the shared component conversion pipeline. The decode worker waits for both
+the source copy and compositor conversion to finish before publishing the texture;
+rendering never waits for those operations. Opaque handles stay in implementation
+code, resources remain retained through completion, and the registry bounds these
+buffers/textures to a shared 512 MiB budget with bounded per-session texture slots.
+Hardware frames are never downloaded. Failed surface ingestion retries another hardware
+backend, then explicitly restarts software decoding; software frames use the normal bounded
+upload service. Status reports the actual backend, transfer path and fallback reason.
+When fallback selects software, the decode worker retires unused hardware pool
+textures and returns their shared-budget reservations. Displayed, queued, or GPU-busy
+textures remain charged until safe to retire; reclamation continues even while the
+software queue is full or paused.
+
+Windows D3D11VA uses a decoder device matched to the compositor's adapter using the same
+LUID selection code as CEF. A worker copies the decoded array slice into a shader-readable
+NV12/P010/P016 texture and packs its unchanged component bytes into a shared RGBA8 carrier.
+CEF and playback use the same D3D11 NT-handle validation and Vulkan memory importer.
+The application requests Windows external-image import independently of CEF, so
+disabling browser support does not disable D3D11 playback ingestion.
+Vulkan copies the carrier into a device-local component buffer and runs `unpack_video`;
+the packing shader performs no color conversion. A D3D11 event query establishes producer
+completion, and Vulkan completion gates carrier reuse. Neither operation blocks rendering.
+The extra plane texture, carrier and component buffer are included in playback admission.
+Direct multi-plane import was rejected during qualification: the Windows NVIDIA driver
+accepted an NV12 import but produced incorrect chroma. The single-plane carrier avoids
+assuming that a successful import query proves compatible plane layouts.
+
+Linux VAAPI/DRM surfaces attempt upstream FFmpeg's direct Vulkan mapping, then use the same
+Vulkan component bridge. Direct mapping forbids a hidden host transfer. This path still
+needs Linux hardware qualification and an FFmpeg build with `--enable-libdrm`,
+`--enable-vaapi` and `--enable-vulkan`. The currently pinned vcpkg port's `vaapi`
+feature does not enable libdrm; that Linux package cannot provide this mapping.
+Use an upstream FFmpeg SDK built with those options for Linux qualification.
+macOS VideoToolbox decoding exists in FFmpeg, but
+Miximus has no native surface-sharing bridge there yet; playback explicitly falls back to
+software instead of downloading hardware frames.
+
+On the Windows NVIDIA test host, the driver's supported video usages reject the
+FFmpeg Vulkan frame pool. H.264, 10-bit HEVC and VP9 therefore use D3D11VA with
+GPU-resident shared-memory ingestion; AV1, ProRes and FFV1 use software. GPU-resident Vulkan ingestion is
+implemented but has not passed end-to-end qualification on a compatible device.
+Linux and macOS runtime qualification remains outstanding. HDR tone mapping,
+deinterlacing, display rotation/sample-aspect correction, and floating-point/paletted
+pixel formats are not supported by this initial path.
+
+`scripts/test_ffmpeg_codecs.py --require-hardware` generates six codec fixtures with
+audio, exercises both decode settings through the real app and a CEF media input,
+requires GPU-resident ingestion for every hardware-decoded case, checks
+dimensions/looping/rendered color samples, and saves PNG/JSON/log evidence in
+`build/integration-tests/`. `--require-vulkan` additionally requires GPU-resident
+H.264/HEVC ingestion. `scripts/test_ffmpeg_playback.py` checks inactivity, rewind,
+queue resizing, rapid replacement, bad-file recovery, and shutdown; use
+`--filename FILE --expect-hardware` with a compressed fixture to test hardware.
+Add `--stall-render` to inject 150 ms render stalls and require late-frame drops.
+Both scripts refuse an existing app and use private settings. Run with the normal
+GPU validation environment; these are application tests, not ordinary CTest cases.
+`scripts/test_ffmpeg_alpha.py` generates transparent QuickTime Animation, ProRes
+4444, VP8/VP9 WebM, and 16-bit RGBA FFV1 videos. It checks transparent output and
+native compositing over black/white against linear-light references, with hardware
+attempts both enabled and disabled. GPU tests separately verify straight and
+explicitly premultiplied encoded samples, including hidden RGB at zero alpha.
+
 ## NDI
 
 The NDI registry runs a discovery thread, owns copied source names, protects them with a shared mutex, and increments

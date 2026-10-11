@@ -22,13 +22,14 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
         throw std::invalid_argument("RGBA buffer conversion requires UNORM16 working storage");
     }
 
-    const size_t minimum_stride = ((size_t{image->extent.width} + 5) / 6) * 16;
+    const bool   video          = operation == conversion_operation_e::unpack_video;
+    const size_t minimum_stride = video ? 4 : ((size_t{image->extent.width} + 5) / 6) * 16;
     if (stride == 0U) {
         stride = minimum_stride;
     }
 
     if (((stride % 4) != 0U) || stride < minimum_stride || stride / 4 > UINT32_MAX ||
-        image->extent.height > buffer->bytes / stride ||
+        (!video && image->extent.height > buffer->bytes / stride) || (video && buffer->bytes < 80) ||
         buffer->bytes > owner->properties.limits.maxStorageBufferRange) {
         throw std::invalid_argument("invalid conversion buffer/stride");
     }
@@ -137,6 +138,14 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
 } // namespace miximus::gpu::detail
 
 namespace miximus::gpu {
+
+void recording_s::unpack_video(const buffer_s& source, const texture_s& destination, const color_transform_s& color)
+{
+    if (!state_ || !source || !destination) {
+        throw std::invalid_argument("invalid video conversion handles");
+    }
+    state_->convert(source.state_, destination.state_, 4, detail::conversion_operation_e::unpack_video, color);
+}
 
 void recording_s::unpack_v210(const buffer_s&          source,
                               const texture_s&         destination,

@@ -332,6 +332,18 @@ export interface connected_status_s {
   readonly connected: boolean;
 }
 
+export interface ffmpeg_playback_status_s {
+  readonly playback_backend: string;
+  readonly playback_transfer_path: string;
+  readonly playback_fallback_reason: string;
+  readonly playback_error: string;
+  readonly playback_position_seconds: number;
+  readonly playback_decoded_frames: number;
+  readonly playback_dropped_frames: number;
+  readonly playback_loops: number;
+  readonly playback_queue_depth: number;
+}
+
 export interface browser_cache_status_s {
   readonly browser_cache_clearing: boolean;
 }
@@ -600,6 +612,7 @@ export interface screen_output_metrics_status_s {
 // prettier-ignore
 export type node_status_s = Partial<
   connected_status_s &
+  ffmpeg_playback_status_s &
   browser_cache_status_s &
   cef_browser_status_s &
   device_names_status_s &

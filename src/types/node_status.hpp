@@ -28,6 +28,19 @@ struct browser_cache_status_s
     bool browser_cache_clearing{};
 };
 
+struct ffmpeg_playback_status_s
+{
+    std::string playback_backend;
+    std::string playback_transfer_path;
+    std::string playback_fallback_reason;
+    std::string playback_error;
+    double      playback_position_seconds{};
+    uint64_t    playback_decoded_frames{};
+    uint64_t    playback_dropped_frames{};
+    uint64_t    playback_loops{};
+    size_t      playback_queue_depth{};
+};
+
 struct cef_browser_status_s
 {
     cef_state_e       cef_state{cef_state_e::stopped};
@@ -524,6 +537,17 @@ BOOST_DESCRIBE_STRUCT(screen_output_metrics_status_s,
                        measured_refresh_hz))
 
 // Publication and TypeScript generation share this catalog. Register new status groups here.
+BOOST_DESCRIBE_STRUCT(ffmpeg_playback_status_s,
+                      (),
+                      (playback_backend,
+                       playback_transfer_path,
+                       playback_fallback_reason,
+                       playback_error,
+                       playback_position_seconds,
+                       playback_decoded_frames,
+                       playback_dropped_frames,
+                       playback_loops,
+                       playback_queue_depth))
 template <typename T>
 struct contract_s
 {
@@ -535,6 +559,7 @@ struct contract_s
     contract_s<type> { #type }
 inline constexpr auto contracts = std::tuple{
     STATUS_CONTRACT(connected_status_s),
+    STATUS_CONTRACT(ffmpeg_playback_status_s),
     STATUS_CONTRACT(browser_cache_status_s),
     STATUS_CONTRACT(cef_browser_status_s),
     STATUS_CONTRACT(device_names_status_s),

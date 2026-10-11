@@ -1,6 +1,7 @@
 #include "gpu/device.hpp"
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/runtime.hpp"
+#include "utils/environment.hpp"
 #include "wrapper/cef/platform.hpp"
 
 #include <cstdio>
@@ -18,8 +19,7 @@ int main(int argc, char** argv)
         std::cout.setf(std::ios::unitbuf);
         miximus::logger::init_loggers(spdlog::level::warn);
         miximus::gpu::device_options_s options;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         miximus::gpu::device_s gpu(options);
         const auto             before = miximus::cef_wrapper::vulkan_loader_path();
         std::cout << "Miximus Vulkan loader: " << before << '\n';

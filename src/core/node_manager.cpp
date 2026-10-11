@@ -772,6 +772,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
         frame_settings.decklink_input.buffer_frames =
             settings_state.options.at("decklink_input_buffer_frames").get<int>();
         frame_settings.ndi_input.buffer_frames   = settings_state.options.at("ndi_input_buffer_frames").get<int>();
+        frame_settings.ffmpeg.buffer_frames      = settings_state.options.at("ffmpeg_decoded_buffer_frames").get<int>();
         frame_settings.cef_capture.buffer_frames = settings_state.options.at("cef_capture_buffer_frames").get<int>();
         frame_settings.cef_export.buffer_frames  = settings_state.options.at("cef_export_buffer_frames").get<int>();
         frame_settings.cef_input.buffer_frames   = settings_state.options.at("cef_input_buffer_frames").get<int>();

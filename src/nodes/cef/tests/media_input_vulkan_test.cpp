@@ -5,6 +5,7 @@
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/media_input_exports.hpp"
 #include "nodes/cef/detail/media_input_pool.hpp"
+#include "utils/environment.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -24,11 +25,9 @@ TEST(media_input_vulkan, EightInputsReuseExportSlotsAfterCompletedGpuCopies)
     }
 
     gpu::device_options_s options;
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    if (const auto* uuid = std::getenv("MIXIMUS_VULKAN_DEVICE")) {
-        options.device_uuid = uuid;
+    options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
+    if (const auto uuid = miximus::utils::environment_value("MIXIMUS_VULKAN_DEVICE")) {
+        options.device_uuid = *uuid;
     }
 
     options.external_image_import = true;
@@ -145,8 +144,7 @@ class export_queue_test : public testing::Test
         }
 
         gpu::device_options_s options;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation            = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         options.external_image_import = true;
         device                        = std::make_unique<gpu::device_s>(options);
         quarantine                    = std::make_unique<media_input_exports_s::quarantine_s>();

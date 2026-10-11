@@ -1,3 +1,11 @@
+add_library(environment environment.hpp)
+if(WIN32)
+    target_sources(environment PRIVATE environment_win.cpp)
+else()
+    target_sources(environment PRIVATE environment_posix.cpp)
+endif()
+add_sanitizers(environment)
+
 add_library(file_dialog file_dialog.hpp)
 target_link_libraries(file_dialog PRIVATE Threads::Threads miximus_types)
 if(WIN32)

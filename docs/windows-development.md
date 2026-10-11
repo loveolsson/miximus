@@ -95,14 +95,17 @@ verified by the source builder. A clean clone does not contain local `3rd-party`
 artifacts, `node_modules`, or the developer's settings. Obtain them explicitly; do not copy a Linux build cache.
 
 The checked-in `vcpkg.json` lists packages and `vcpkg-configuration.json` pins the default registry to commit
-`ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0` (tag `2025.06.13`), including GLFW 3.4 and FFmpeg 7.1.1
-with `postproc`. The registry reference also selects that tag, so version history does not depend on a moving HEAD.
+`ef7dbf94b9198bc58f45951adcf1f041fcbc5ea0` (tag `2025.06.13`), including GLFW 3.4.
+The registry reference also selects that tag, so version history does not depend on a moving HEAD.
 The manifest installs the directly used Boost packages, FFmpeg components, FreeType, GLFW,
 GLM, nlohmann-json, websocketpp and zlib. Submodule dependencies and vendor SDKs remain separate.
 
 Boost packages use a separate registry pin at `66c0373dc7fca549e5803087b9487edfe3aca0a1`
 (tag `2026.01.16`), selecting Boost **1.90.0** consistently across all Boost modules. The other libraries
-retain the default registry pin, including FFmpeg 7.1.1 with `postproc`.
+retain the default registry pin except FFmpeg and its explicitly listed Vulkan/dav1d dependencies.
+Those use upstream registry commit `e456309491fd875487bf02b8a0dca76c1b1b00cc`, selecting
+FFmpeg 9.0.2 with Vulkan, dav1d and libvpx (plus VAAPI on Linux). Libvpx preserves
+VP8/VP9 WebM alpha streams. No Miximus FFmpeg patch is required.
 
 Use the vcpkg bundled with Visual Studio 2026, or an existing standalone vcpkg installation. There is no need
 to clone another copy when Visual Studio already provides it. Set `VCPKG_ROOT` for the current shell:
@@ -278,11 +281,11 @@ below requires the custom CEF SDK. Installation success does not establish appli
 or hardware correctness.
 
 Sources: [vcpkg manifest/CMake integration](https://learn.microsoft.com/en-us/vcpkg/users/buildsystems/cmake-integration),
-[pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/2025.06.13/ports/ffmpeg/vcpkg.json).
+[pinned FFmpeg port](https://github.com/microsoft/vcpkg/blob/e456309491fd875487bf02b8a0dca76c1b1b00cc/ports/ffmpeg/vcpkg.json).
 
 Use `x64-windows` consistently (dynamic CRT/libraries); avoid mixing x86, static-CRT, MinGW, Debug and Release
-artifacts. FFmpeg's `postproc` feature selects GPL code in this baseline. The current wrapper requests avcodec,
-avformat, avdevice, avutil, avfilter, swscale, postproc and swresample, including development headers/import libraries;
+artifacts. The current wrapper requests avcodec,
+avformat, avdevice, avutil, avfilter, swscale and swresample, including development headers/import libraries;
 an `ffmpeg.exe` download alone is insufficient. Fontconfig, X11/Xrandr and libdrm are Linux/non-Windows dependencies,
 not required Windows packages.
 
@@ -663,7 +666,7 @@ Other targets and platforms retain the check.
 | Symptom | Inspect/fix |
 | --- | --- |
 | FFmpeg discovery | Each component now uses independent `FFMPEG_<component>_*` cache variables on every platform; Windows additionally selects the matching Debug/Release import library. Old shared `INCLUDE_DIRS`/`LIBRARIES` entries are ignored. |
-| Missing `postproc` | Confirm the chosen FFmpeg build supplies the requested development component. The proposed vcpkg baseline includes it; any removal from Miximus needs an explicit dependency cleanup, not a fake success. |
+| Missing `postproc` | The current wrapper no longer requires this unused component. Check for an outdated checkout or stale dependency configuration. |
 | Missing Boost headers | Check all directly used header packages as well as Program_options and URL; the install list includes Asio, Container, Describe, Locale, Mp11 and UUID (used by the asset bundler). |
 | MIDL not found / DeckLink header errors | Use the x64 developer environment, correct SDK root and full IDL set. Confirm generated files are dependencies of every consumer. |
 | MSVC errors in Windows-only code | Check `font_registry_win.cpp`, monitor and COM code, const correctness, Win32 macro collisions, Unicode paths, and required Windows system libraries. Fix target/platform ownership rather than globally weakening diagnostics. |

@@ -10,6 +10,8 @@ add_library(gpu
     device_diagnostics_json.cpp
     drawing.hpp
     drawing.cpp
+    video_frame.hpp
+    video_frame.cpp
     resource_types.hpp
     texture.hpp
     texture.cpp
@@ -23,6 +25,8 @@ add_library(gpu
     presenter.cpp
     detail/native_handle.cpp
     detail/external_memory.hpp
+    detail/external_buffer.hpp
+    detail/external_buffer.cpp
     detail/device.hpp
     detail/external_image_support.hpp
     detail/external_image_support.cpp
@@ -39,7 +43,7 @@ add_library(gpu
 )
 if(WIN32)
     target_sources(gpu PRIVATE detail/native_handle_win.cpp detail/external_memory_win.cpp
-        detail/external_image_win.cpp detail/external_image_copy_win.cpp detail/external_image_export_win.cpp)
+        detail/external_image_win.cpp detail/external_video_copy_win.cpp detail/d3d11_video_pack.cpp detail/external_image_copy_win.cpp detail/external_image_export_win.cpp)
     target_sources(gpu PRIVATE detail/external_image_support_win.cpp
         detail/external_image_copy.cpp detail/external_image_export.cpp)
     target_link_libraries(gpu PRIVATE d3d11_dependencies)
@@ -78,13 +82,13 @@ add_sanitizers(gpu)
 if(BUILD_TESTING)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(gpu_dma_buf_vulkan_test tests/dma_buf_image_test.cpp)
-        target_link_libraries(gpu_dma_buf_vulkan_test PRIVATE gpu vulkan_dependencies magic_enum::magic_enum logger GTest::gtest_main)
+        target_link_libraries(gpu_dma_buf_vulkan_test PRIVATE environment gpu vulkan_dependencies magic_enum::magic_enum logger GTest::gtest_main)
         add_sanitizers(gpu_dma_buf_vulkan_test)
     endif()
     add_executable(gpu_vulkan_test tests/device_test.cpp tests/external_image_device_test.cpp)
-    target_link_libraries(gpu_vulkan_test PRIVATE gpu logger GTest::gtest_main nlohmann_json::nlohmann_json)
+    target_link_libraries(gpu_vulkan_test PRIVATE environment gpu logger GTest::gtest_main nlohmann_json::nlohmann_json)
     if(WIN32)
-        target_sources(gpu_vulkan_test PRIVATE tests/external_image_win_test.cpp)
+        target_sources(gpu_vulkan_test PRIVATE tests/external_image_win_test.cpp tests/d3d11_video_test.cpp)
         target_link_libraries(gpu_vulkan_test PRIVATE d3d11_dependencies vulkan_dependencies magic_enum::magic_enum)
     endif()
     add_sanitizers(gpu_vulkan_test)
@@ -156,6 +160,7 @@ if(BUILD_TESTING)
         tests/geometry_test.cpp
         tests/texture_test.cpp
         tests/transfer_layout_test.cpp
+        tests/video_color_test.cpp
         tests/device_diagnostics_test.cpp
         tests/external_image_support_test.cpp
     )
@@ -173,7 +178,7 @@ endif()
 
 if(BUILD_TESTING)
     add_executable(gpu_transfer_vulkan_test tests/transfer_vulkan_test.cpp)
-    target_link_libraries(gpu_transfer_vulkan_test PRIVATE gpu logger GTest::gtest_main)
+    target_link_libraries(gpu_transfer_vulkan_test PRIVATE environment gpu logger GTest::gtest_main)
     if(TARGET decklink)
         target_sources(gpu_transfer_vulkan_test PRIVATE ${PROJECT_SOURCE_DIR}/src/nodes/decklink/detail/allocator.cpp)
         target_link_libraries(gpu_transfer_vulkan_test PRIVATE decklink)
@@ -188,7 +193,7 @@ endif()
 
 if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(gpu_window_test tests/window_test.cpp)
-    target_link_libraries(gpu_window_test PRIVATE gpu logger glfw GTest::gtest_main)
+    target_link_libraries(gpu_window_test PRIVATE environment gpu logger glfw GTest::gtest_main)
     add_sanitizers(gpu_window_test)
     if(MIXIMUS_TEST_VULKAN)
         gtest_discover_tests(gpu_window_test PROPERTIES LABELS "window;hardware")

@@ -11,6 +11,7 @@
 #include "nodes/cef/detail/media_input_renderer.hpp"
 #include "nodes/cef/detail/runtime.hpp"
 #include "nodes/cef/detail/task.hpp"
+#include "utils/environment.hpp"
 #include "wrapper/cef/media_input_abi.hpp"
 #include "wrapper/cef/platform.hpp"
 
@@ -1000,8 +1001,7 @@ int main(int argc, char** argv)
 
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation            = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         options.external_image_import = true;
         gpu::device_s                                                      gpu(options);
         const gpu::extent_s                                                export_size = probe_options.export_size();

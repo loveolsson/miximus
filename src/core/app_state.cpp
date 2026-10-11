@@ -7,11 +7,13 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
+#include "utils/environment.hpp"
 #include "utils/failure_shutdown.hpp"
 #if MIXIMUS_ENABLE_CEF
 #include "nodes/cef/subsystem.hpp"
 #endif
 #include "nodes/decklink/registry.hpp"
+#include "nodes/ffmpeg/registry.hpp"
 #include "nodes/ndi/registry.hpp"
 #include "render/font/font_loader.hpp"
 #include "render/font/font_registry.hpp"
@@ -33,18 +35,17 @@ gpu::device_options_s gpu_options(const command_line_options_s& command_line)
     options.use_cuda       = command_line.use_cuda;
     options.presentation   = true;
     options.max_recordings = 32;
-#if MIXIMUS_ENABLE_CEF
+#if MIXIMUS_ENABLE_CEF || defined(_WIN32)
+    // Windows playback imports D3D11 surfaces even without browser nodes.
     options.external_image_import = true;
 #endif
     // Startup reads only: the app does not mutate the process environment.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    if (const auto* uuid = std::getenv("MIXIMUS_VULKAN_DEVICE_UUID")) {
-        options.device_uuid = uuid;
+    if (const auto uuid = miximus::utils::environment_value("MIXIMUS_VULKAN_DEVICE_UUID")) {
+        options.device_uuid = *uuid;
     }
 
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    if (const auto* validation = std::getenv("MIXIMUS_VULKAN_VALIDATION")) {
-        options.validation = std::string_view(validation) == "1";
+    if (const auto validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION")) {
+        options.validation = std::string_view(*validation) == "1";
     }
 
     return options;
@@ -128,6 +129,7 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     submit_gpu();
     texture_upload_service_   = std::make_unique<gpu::transfer::texture_upload_service_s>(*gpu_);
     texture_readback_service_ = std::make_unique<gpu::transfer::texture_readback_service_s>(*gpu_);
+    ffmpeg_registry_          = std::make_unique<nodes::ffmpeg::ffmpeg_registry_s>(*gpu_, *texture_upload_service_);
 #if MIXIMUS_ENABLE_CEF
     try {
         auto profile = command_line_options_.settings_path;
@@ -190,6 +192,9 @@ app_state_s::~app_state_s()
         cef_subsystem_.reset();
         utils::report_shutdown_step_completed();
 #endif
+        utils::begin_shutdown_step("FFmpeg subsystem");
+        ffmpeg_registry_.reset();
+        utils::report_shutdown_step_completed();
         utils::begin_shutdown_step("CPU task worker");
         cpu_task_worker_.reset();
         utils::report_shutdown_step_completed();

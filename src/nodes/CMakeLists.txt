@@ -25,10 +25,10 @@ add_library(nodes
 
 add_subdirectory(decklink)
 add_subdirectory(ndi)
+add_subdirectory(ffmpeg)
 add_subdirectory(cef)
 add_subdirectory(math)
 add_subdirectory(screen)
-add_subdirectory(ffmpeg)
 add_subdirectory(utils)
 add_subdirectory(teleprompter)
 add_subdirectory(text)

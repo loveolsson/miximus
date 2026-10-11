@@ -69,6 +69,13 @@ export const ApplicationSettingsNode = defineNode({
         min: 1,
         max: 8,
       }).setPort(false),
+    ffmpeg_decoded_buffer_frames: () =>
+      new NumericInterface("Buffered decoded frames", 4, {
+        precision: 0,
+        step: 1,
+        min: 1,
+        max: 8,
+      }).setPort(false),
     cef_capture_buffer_frames: () =>
       new NumericInterface("Delay (browser frames)", 1, {
         precision: 0,

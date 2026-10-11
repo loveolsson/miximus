@@ -1,6 +1,7 @@
 #include "gpu/detail/external_image_support.hpp"
 #include "gpu/device.hpp"
 #include "logger/logger.hpp"
+#include "utils/environment.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -15,11 +16,9 @@ device_options_s test_options()
 {
     device_options_s options;
     // Read-only test configuration; the process environment is never mutated.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    if (const auto* uuid = std::getenv("MIXIMUS_VULKAN_DEVICE")) {
-        options.device_uuid = uuid;
+    options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
+    if (const auto uuid = miximus::utils::environment_value("MIXIMUS_VULKAN_DEVICE")) {
+        options.device_uuid = *uuid;
     }
     return options;
 }

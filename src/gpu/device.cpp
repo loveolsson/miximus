@@ -262,12 +262,12 @@ bool device_state_s::initialize_instance()
     };
     VkValidationFeatureEnableEXT synchronization = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
     VkValidationFeaturesEXT      validation{
-             .sType                          = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
-             .pNext                          = &debug_info,
-             .enabledValidationFeatureCount  = 1,
-             .pEnabledValidationFeatures     = &synchronization,
-             .disabledValidationFeatureCount = 0,
-             .pDisabledValidationFeatures    = nullptr,
+        .sType                          = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT,
+        .pNext                          = &debug_info,
+        .enabledValidationFeatureCount  = 1,
+        .pEnabledValidationFeatures     = &synchronization,
+        .disabledValidationFeatureCount = 0,
+        .pDisabledValidationFeatures    = nullptr,
     };
     if (options.validation) {
         check(vkEnumerateInstanceLayerProperties(&count, nullptr), "instance layers");
@@ -324,7 +324,7 @@ device_state_s::select_cuda_extensions([[maybe_unused]] std::span<const uint8_t,
     if (options.use_cuda) {
         cuda_device_index = transfer::detail::find_cuda_device(uuid, cuda_missing_support);
         if (cuda_device_index >= 0) {
-            for (const auto* extension : {detail::cuda_memory_extension, detail::cuda_semaphore_extension}) {
+            for (const auto* extension : {detail::opaque_memory_extension, detail::cuda_semaphore_extension}) {
                 if (!std::ranges::any_of(extensions, [&](const auto& available) {
                         return std::strcmp(available.extensionName, extension) == 0;
                     })) {
@@ -338,7 +338,7 @@ device_state_s::select_cuda_extensions([[maybe_unused]] std::span<const uint8_t,
     }
     cuda_external_memory = cuda_device_index >= 0;
     if (cuda_external_memory) {
-        device_extensions.push_back(detail::cuda_memory_extension);
+        device_extensions.push_back(detail::opaque_memory_extension);
         device_extensions.push_back(detail::cuda_semaphore_extension);
     }
 #else
@@ -469,8 +469,8 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         const bool candidate_maintenance = (maintenance.swapchainMaintenance1 != 0U) &&
                                            has_device_extension(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) &&
                                            surface_maintenance_available;
-        entry.buffer_conversion     = candidate_conversion;
-        entry.swapchain_maintenance = candidate_maintenance;
+        entry.buffer_conversion          = candidate_conversion;
+        entry.swapchain_maintenance      = candidate_maintenance;
 
         const bool supported =
             device_properties.properties.apiVersion >= VK_API_VERSION_1_3 &&
@@ -497,10 +497,10 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         separate_present_queue = options.presentation && families[selected_queue_family].queueCount > 1;
         swapchain_maintenance  = options.presentation && candidate_maintenance;
         present_wait           = options.presentation && present_wait_features.presentWait != 0U &&
-                       present_id_features.presentId != 0U &&
-                       has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
-                       has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);
-        device_extensions = select_cuda_extensions(identity.deviceUUID, extensions);
+                                 present_id_features.presentId != 0U &&
+                                 has_device_extension(VK_KHR_PRESENT_WAIT_EXTENSION_NAME) &&
+                                 has_device_extension(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+        device_extensions      = select_cuda_extensions(identity.deviceUUID, extensions);
         if (options.presentation) {
             device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         }
@@ -522,6 +522,7 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
         selected_extensions  = std::move(extensions);
     }
 
+    enable_external_buffer_import(selected_extensions, device_extensions);
     enable_external_image_import(selected_extensions, device_extensions);
     report.external_image_import =
         describe_external_image_import(external_image_import, options.external_image_import, selected_extensions);
@@ -538,6 +539,19 @@ std::vector<const char*> device_state_s::select_physical_device(bool surface_mai
     }
 
     return device_extensions;
+}
+
+void device_state_s::enable_external_buffer_import(std::span<const VkExtensionProperties> selected_extensions,
+                                                   std::vector<const char*>&              device_extensions)
+{
+    opaque_buffer_import = std::ranges::any_of(selected_extensions, [](const auto& extension) {
+        return std::string_view(extension.extensionName) == opaque_memory_extension;
+    });
+    if (opaque_buffer_import && !std::ranges::any_of(device_extensions, [](const char* name) {
+            return std::string_view(name) == opaque_memory_extension;
+        })) {
+        device_extensions.push_back(opaque_memory_extension);
+    }
 }
 
 void device_state_s::enable_external_image_import(std::span<const VkExtensionProperties> selected_extensions,
@@ -832,8 +846,8 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
         .samples     = VK_SAMPLE_COUNT_1_BIT,
         .tiling      = VK_IMAGE_TILING_OPTIMAL,
         .usage       = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .sharingMode           = {},
+                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = {},
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices   = nullptr,
         .initialLayout         = {},
@@ -850,7 +864,7 @@ texture_s device_s::create_texture(extent_s extent, format_e format, sampling_e 
         VkPhysicalDeviceExternalImageFormatInfo external_format{
             .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
             .pNext      = nullptr,
-            .handleType = detail::cuda_memory_handle_type,
+            .handleType = detail::opaque_memory_handle_type,
         };
         VkPhysicalDeviceImageFormatInfo2 query{
             .sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
@@ -956,7 +970,7 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
             .pNext      = nullptr,
             .flags      = 0,
             .usage      = info.usage,
-            .handleType = detail::cuda_memory_handle_type,
+            .handleType = detail::opaque_memory_handle_type,
         };
         VkExternalBufferProperties properties{
             .sType                    = VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES,
@@ -1003,10 +1017,10 @@ buffer_s device_s::create_buffer(size_t bytes, host_access_e access, size_t alig
     buffer->mapped   = mapped.pMappedData;
     const auto flags = std::span(state_->memory.memoryTypes)[mapped.memoryType].propertyFlags;
     buffer->info     = {
-            .bytes         = static_cast<size_t>(mapped.size),
-            .device_local  = (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0,
-            .host_coherent = (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
-            .host_cached   = (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0,
+        .bytes         = static_cast<size_t>(mapped.size),
+        .device_local  = (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0,
+        .host_coherent = (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0,
+        .host_cached   = (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0,
     };
 
     if ((buffer->mapped != nullptr) && reinterpret_cast<uintptr_t>(buffer->mapped) % alignment != 0) {

@@ -37,7 +37,7 @@ if(BUILD_TESTING)
     if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(cef_media_input_vulkan_test tests/media_input_vulkan_test.cpp
             ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
-        target_link_libraries(cef_media_input_vulkan_test PRIVATE cef_media_exports gpu logger
+        target_link_libraries(cef_media_input_vulkan_test PRIVATE environment cef_media_exports gpu logger
             vulkan_dependencies magic_enum::magic_enum GTest::gtest_main)
         miximus_compile_shader(cef_media_input_vulkan_test ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
         target_compile_definitions(cef_media_input_vulkan_test PRIVATE
@@ -49,7 +49,7 @@ if(BUILD_TESTING)
         endif()
     endif()
     add_executable(cef_ingress_vulkan_test tests/frame_pool_test.cpp)
-    target_link_libraries(cef_ingress_vulkan_test PRIVATE cef_ingress logger GTest::gtest_main)
+    target_link_libraries(cef_ingress_vulkan_test PRIVATE environment cef_ingress logger GTest::gtest_main)
     add_sanitizers(cef_ingress_vulkan_test)
     miximus_stage_runtime_dlls(cef_ingress_vulkan_test)
     if(MIXIMUS_TEST_VULKAN)
@@ -93,7 +93,7 @@ if(MIXIMUS_ENABLE_CEF)
         endif()
         add_executable(cef_subsystem_probe tests/subsystem_probe.cpp)
         target_sources(cef_subsystem_probe PRIVATE ${CEF_PROBE_PLATFORM} ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
-        target_link_libraries(cef_subsystem_probe PRIVATE vulkan_dependencies magic_enum::magic_enum)
+        target_link_libraries(cef_subsystem_probe PRIVATE environment vulkan_dependencies magic_enum::magic_enum)
         miximus_compile_shader(cef_subsystem_probe ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
         target_compile_definitions(cef_subsystem_probe PRIVATE
             MIXIMUS_CEF_COMPARE_SHADER="${CMAKE_CURRENT_BINARY_DIR}/shaders/color_compare.comp.spv")
@@ -102,7 +102,7 @@ if(MIXIMUS_ENABLE_CEF)
         add_sanitizers(cef_subsystem_probe)
         add_executable(cef_media_input_probe tests/media_input_probe.cpp
             ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
-        target_link_libraries(cef_media_input_probe PRIVATE cef_runtime cef_sdk cef_media_exports gpu logger
+        target_link_libraries(cef_media_input_probe PRIVATE environment cef_runtime cef_sdk cef_media_exports gpu logger
             vulkan_dependencies magic_enum::magic_enum ${CMAKE_DL_LIBS})
         miximus_compile_shader(cef_media_input_probe ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
         target_compile_definitions(cef_media_input_probe PRIVATE
@@ -111,7 +111,7 @@ if(MIXIMUS_ENABLE_CEF)
         add_sanitizers(cef_media_input_probe)
         add_executable(cef_media_input_session_probe tests/media_input_session_probe.cpp
             ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.cpp)
-        target_link_libraries(cef_media_input_session_probe PRIVATE cef_runtime cef_sdk gpu logger
+        target_link_libraries(cef_media_input_session_probe PRIVATE environment cef_runtime cef_sdk gpu logger
             vulkan_dependencies magic_enum::magic_enum)
         miximus_compile_shader(cef_media_input_session_probe ${PROJECT_SOURCE_DIR}/src/gpu/tests/color_compare.comp)
         target_compile_definitions(cef_media_input_session_probe PRIVATE
@@ -119,15 +119,15 @@ if(MIXIMUS_ENABLE_CEF)
         set_target_properties(cef_media_input_session_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
         add_sanitizers(cef_media_input_session_probe)
         add_executable(cef_runtime_probe tests/runtime_probe.cpp)
-        target_link_libraries(cef_runtime_probe PRIVATE cef_runtime cef_sdk gpu logger ${CMAKE_DL_LIBS})
+        target_link_libraries(cef_runtime_probe PRIVATE environment cef_runtime cef_sdk gpu logger ${CMAKE_DL_LIBS})
         set_target_properties(cef_runtime_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
         add_sanitizers(cef_runtime_probe)
         add_executable(cef_accelerated_probe tests/accelerated_probe.cpp ${CEF_PROBE_PLATFORM})
-        target_link_libraries(cef_accelerated_probe PRIVATE cef_runtime cef_sdk gpu logger)
+        target_link_libraries(cef_accelerated_probe PRIVATE environment cef_runtime cef_sdk gpu logger)
         set_target_properties(cef_accelerated_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
         add_sanitizers(cef_accelerated_probe)
         add_executable(cef_session_probe tests/session_probe.cpp)
-        target_link_libraries(cef_session_probe PRIVATE cef_runtime cef_sdk gpu logger)
+        target_link_libraries(cef_session_probe PRIVATE environment cef_runtime cef_sdk gpu logger)
         set_target_properties(cef_session_probe PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
         add_sanitizers(cef_session_probe)
         foreach(probe cef_subsystem_probe cef_media_input_probe cef_media_input_session_probe

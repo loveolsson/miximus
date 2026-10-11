@@ -328,8 +328,9 @@ void pipeline_state_s::initialize()
         check(owner.vk.vkCreatePipelineLayout(owner.device, &pipeline_info, nullptr, &conversion_pipeline_layout),
               "conversion pipeline layout");
         constexpr std::array conversions{
-            std::pair{conversion_operation_e::unpack_v210, "unpack_v210.comp"},
-            std::pair{conversion_operation_e::pack_v210,   "pack_v210.comp"  },
+            std::pair{conversion_operation_e::unpack_v210,  "unpack_v210.comp" },
+            std::pair{conversion_operation_e::unpack_video, "unpack_video.comp"},
+            std::pair{conversion_operation_e::pack_v210,    "pack_v210.comp"   },
         };
 
         for (const auto& [operation, name] : conversions) {

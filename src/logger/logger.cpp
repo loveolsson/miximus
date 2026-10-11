@@ -28,6 +28,7 @@ void init_loggers(level::level_enum level_)
     create_logger("nodes");
     create_logger("decklink");
     create_logger("ndi");
+    create_logger("ffmpeg");
 
     app_logger->info("Log level: {}", to_string_view(level_));
 }

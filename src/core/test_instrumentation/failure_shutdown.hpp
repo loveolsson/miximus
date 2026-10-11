@@ -2,6 +2,7 @@
 
 #ifdef MIXIMUS_ENABLE_FAILURE_TESTS
 #include "core/app_state.hpp"
+#include "utils/environment.hpp"
 #include "utils/failure_shutdown.hpp"
 
 #include <boost/asio/post.hpp>
@@ -15,11 +16,11 @@ namespace miximus::core::test_instrumentation {
 // Explicit opt-in, available only in builds configured with BUILD_TESTING.
 inline void inject_shutdown_failure(app_state_s& app)
 {
-    const auto* requested = std::getenv("MIXIMUS_TEST_SHUTDOWN_FAILURE");
-    if (requested == nullptr) {
+    const auto requested = miximus::utils::environment_value("MIXIMUS_TEST_SHUTDOWN_FAILURE");
+    if (!requested) {
         return;
     }
-    const std::string_view mode(requested);
+    const std::string_view mode(*requested);
     if (mode == "shutdown") {
         return;
     }
@@ -38,8 +39,8 @@ inline void inject_shutdown_failure(app_state_s& app)
 
 inline void inject_teardown_failure()
 {
-    const auto* requested = std::getenv("MIXIMUS_TEST_SHUTDOWN_FAILURE");
-    if (requested != nullptr && std::string_view(requested) == "shutdown") {
+    const auto requested = miximus::utils::environment_value("MIXIMUS_TEST_SHUTDOWN_FAILURE");
+    if (requested.has_value() && std::string_view(*requested) == "shutdown") {
         throw std::runtime_error("Injected failure during shutdown");
     }
 }

@@ -1,6 +1,8 @@
 #include "gpu/device.hpp"
 #include "gpu/drawing.hpp"
+#include "gpu/video_frame.hpp"
 #include "logger/logger.hpp"
+#include "utils/environment.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -24,12 +26,10 @@ class device_test : public testing::Test
         logger::init_loggers(spdlog::level::warn);
         device_options_s options;
         // Test options are read from an environment that the test does not modify.
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         // Test options are read from an environment that the test does not modify.
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        if (const auto uuid = std::getenv("MIXIMUS_VULKAN_DEVICE")) {
-            options.device_uuid = uuid;
+        if (const auto uuid = miximus::utils::environment_value("MIXIMUS_VULKAN_DEVICE")) {
+            options.device_uuid = *uuid;
         }
 
         options.max_recordings       = 3;
@@ -81,6 +81,152 @@ TEST_F(device_test, OddPaddedRoundTripsPreserveEveryActiveByteAndPadding)
 
         const auto result = output.readable_bytes();
         EXPECT_TRUE(std::ranges::equal(result, expected)) << "bytes per pixel: " << bpp;
+    }
+}
+
+TEST_F(device_test, DecodedVideoUsesBroadcastColorConversionAtEightAndTenBits)
+{
+    for (unsigned depth : {8U, 10U}) {
+        const unsigned             bytes_per_sample = depth == 8 ? 1 : 2;
+        const unsigned             shift            = depth == 8 ? 0 : 6;
+        auto                       input            = device->create_buffer(128, host_access_e::sequential_write);
+        auto                       output           = device->create_buffer(32, host_access_e::readback);
+        auto                       target = device->create_texture({.width = 2, .height = 2}, format_e::rgba_unorm16);
+        gpu::video_buffer_header_s header;
+        header.component_count  = 3;
+        header.chroma_offset_y  = 0.5F;
+        header.components.at(0) = {
+            .offset   = 80,
+            .stride   = 2 * bytes_per_sample,
+            .step     = bytes_per_sample,
+            .encoding = video_component_encoding(depth, shift, 0, 0, false),
+        };
+        header.components.at(1) = {
+            .offset   = 96,
+            .stride   = 2 * bytes_per_sample,
+            .step     = 2 * bytes_per_sample,
+            .encoding = video_component_encoding(depth, shift, 1, 1, false),
+        };
+        header.components.at(2) = {
+            .offset   = 96 + bytes_per_sample,
+            .stride   = 2 * bytes_per_sample,
+            .step     = 2 * bytes_per_sample,
+            .encoding = video_component_encoding(depth, shift, 1, 1, false),
+        };
+
+        auto memory = input.writable_bytes();
+        std::ranges::fill(memory, std::byte{});
+        std::memcpy(memory.data(), &header, sizeof(header));
+        auto sample = [&](size_t offset, uint16_t value) {
+            value = static_cast<uint16_t>(value << shift);
+            std::memcpy(memory.data() + offset, &value, bytes_per_sample);
+        };
+        const unsigned scale = 1U << (depth - 8);
+        // Neutral black, white, black, white: exact code endpoints.
+        for (unsigned pixel = 0; pixel < 4; ++pixel) {
+            sample(80 + (pixel * bytes_per_sample), static_cast<uint16_t>((pixel % 2 != 0 ? 235 : 16) * scale));
+        }
+
+        sample(96, static_cast<uint16_t>(128 * scale));
+        sample(96 + bytes_per_sample, static_cast<uint16_t>(128 * scale));
+        auto recording = device->try_record();
+        recording->unpack_video(input,
+                                target,
+                                color_parameters(get_color_transfer_from_yuv(color_transfer_e::Rec709, depth),
+                                                 mat3{1.0F},
+                                                 color_conversion_direction_e::from_yuv));
+        recording->readback(target, output);
+        finish(recording);
+        const auto               read = output.readable_bytes();
+        std::array<uint16_t, 16> pixels{};
+        std::memcpy(pixels.data(), read.data(), read.size());
+        for (unsigned p = 0; p < 4; ++p) {
+            for (unsigned c = 0; c < 3; ++c) {
+                EXPECT_NEAR(pixels.at((p * 4) + c), p % 2 != 0 ? 65535 : 0, 2);
+            }
+            EXPECT_EQ(pixels.at((p * 4) + 3), 65535);
+        }
+    }
+}
+
+TEST_F(device_test, DecodedRgbaPreservesPrecisionAndPremultipliesAfterTransfer)
+{
+    auto                  input  = device->create_buffer(96, host_access_e::sequential_write);
+    auto                  output = device->create_buffer(8, host_access_e::readback);
+    auto                  target = device->create_texture({.width = 1, .height = 1}, format_e::rgba_unorm16);
+    video_buffer_header_s header;
+    header.component_count = 4;
+    for (unsigned i = 0; i < 4; ++i) {
+        header.components.at(i) = {
+            .offset = 80 + (2 * i), .stride = 8, .step = 8, .encoding = video_component_encoding(16, 0, 0, 0, false)};
+    }
+    auto memory = input.writable_bytes();
+    std::ranges::fill(memory, std::byte{});
+    std::memcpy(memory.data(), &header, sizeof(header));
+    const std::array<uint16_t, 4> source{32768, 16384, 8192, 32768};
+    std::memcpy(memory.data() + 80, source.data(), sizeof(source));
+    color_transform_s color;
+    color.offset[3] = static_cast<float>(video_transfer_e::srgb);
+    auto recording  = device->try_record();
+    recording->unpack_video(input, target, color);
+    recording->readback(target, output);
+    finish(recording);
+    std::array<uint16_t, 4> actual{};
+    const auto              read = output.readable_bytes();
+    std::memcpy(actual.data(), read.data(), read.size());
+    for (unsigned i = 0; i < 3; ++i) {
+        const double encoded = source.at(i) / 65535.0;
+        const double linear  = std::pow((encoded + 0.055) / 1.055, 2.4);
+        EXPECT_NEAR(actual.at(i), linear * source.at(3), 2);
+    }
+    EXPECT_EQ(actual.at(3), source.at(3));
+}
+
+TEST_F(device_test, DecodedAlphaModesProduceLinearPremultipliedPixels)
+{
+    for (const bool premultiplied : {false, true}) {
+        auto                  input  = device->create_buffer(112, host_access_e::sequential_write);
+        auto                  output = device->create_buffer(32, host_access_e::readback);
+        auto                  target = device->create_texture({.width = 4, .height = 1}, format_e::rgba_unorm16);
+        video_buffer_header_s header;
+        header.component_count             = 4;
+        header.encoded_premultiplied_alpha = premultiplied ? 1U : 0U;
+        for (unsigned i = 0; i < 4; ++i) {
+            header.components.at(i) = {.offset   = 80 + (2 * i),
+                                       .stride   = 32,
+                                       .step     = 8,
+                                       .encoding = video_component_encoding(16, 0, 0, 0, false)};
+        }
+        std::array<uint16_t, 16>      source{};
+        const std::array<uint16_t, 4> alpha{0, 16384, 32768, 65535};
+        for (unsigned x = 0; x < 4; ++x) {
+            for (unsigned c = 0; c < 3; ++c) {
+                source.at((x * 4) + c) =
+                    static_cast<uint16_t>(std::lround((.8 - .2 * c) * (premultiplied ? alpha.at(x) : 65535)));
+            }
+            source.at((x * 4) + 3) = alpha.at(x);
+        }
+        // Hidden color at zero alpha must not leak or cause a division by zero.
+        source.at(0) = 65535;
+        auto bytes   = input.writable_bytes();
+        std::memcpy(bytes.data(), &header, sizeof(header));
+        std::memcpy(bytes.data() + sizeof(header), source.data(), sizeof(source));
+        color_transform_s color;
+        color.offset[3] = static_cast<float>(video_transfer_e::srgb);
+        auto record     = device->try_record();
+        record->unpack_video(input, target, color);
+        record->readback(target, output);
+        finish(record);
+        std::array<uint16_t, 16> actual{};
+        std::memcpy(actual.data(), output.readable_bytes().data(), sizeof(actual));
+        for (unsigned x = 0; x < 4; ++x) {
+            for (unsigned c = 0; c < 3; ++c) {
+                const double linear = std::pow(((.8 - .2 * c) + .055) / 1.055, 2.4);
+                EXPECT_NEAR(actual.at((x * 4) + c), linear * alpha.at(x), 3) << premultiplied << ":" << x << ":" << c;
+                EXPECT_LE(actual.at((x * 4) + c), actual.at((x * 4) + 3));
+            }
+            EXPECT_EQ(actual.at((x * 4) + 3), alpha.at(x));
+        }
     }
 }
 
@@ -667,8 +813,7 @@ TEST_F(device_test, ForeignDeviceResourcesAreRejectedBeforeNativeUse)
 {
     device_options_s options;
     // Test options are read from an environment that the test does not modify.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+    options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
     device_s other(options);
     auto     image = other.create_texture({.width = 2, .height = 2}, format_e::rgba_unorm8);
     auto     input = device->create_buffer(16, host_access_e::sequential_write);

@@ -33,8 +33,9 @@ TEST(GpuFailure, FatalExitDoesNotWaitForResourceDestruction)
             utils::start_shutdown_watchdog(std::chrono::seconds(1));
             struct resource_s
             {
-                ~resource_s() { std::abort(); }
-            } resource;
+                void (*destroy)();
+                ~resource_s() { destroy(); }
+            } resource{.destroy = std::abort};
             fatal_gpu_error("test stalled transfer");
         },
         testing::ExitedWithCode(EXIT_FAILURE),

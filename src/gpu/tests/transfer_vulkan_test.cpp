@@ -5,6 +5,7 @@
 #include "gpu/transfer/texture_readback.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
+#include "utils/environment.hpp"
 #ifdef MIXIMUS_TEST_DECKLINK
 #include "nodes/decklink/detail/allocator.hpp"
 #include "nodes/decklink/detail/output_video_buffer.hpp"
@@ -46,8 +47,8 @@ class transfer_vulkan : public testing::Test
         (void)initialized;
         device_ = std::make_unique<device_s>(
             // Test options are read from an environment that the test does not modify.
-            // NOLINTNEXTLINE(concurrency-mt-unsafe)
-            device_options_s{.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .use_cuda = use_cuda_});
+            device_options_s{.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value(),
+                             .use_cuda   = use_cuda_});
     }
 
     void TearDown() override

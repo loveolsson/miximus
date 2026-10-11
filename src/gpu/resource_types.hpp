@@ -10,6 +10,8 @@ class cuda_transfer_s;
 
 namespace detail {
 
+class external_buffer_s;
+class external_video_copy_s;
 class external_image_copy_s;
 class external_image_export_s;
 class color_comparison_s;

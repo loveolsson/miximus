@@ -30,7 +30,7 @@ this document continues to describe the current runtime until each migration sta
 - the configuration `boost::asio::io_context`, work guard, and configuration thread;
 - one dedicated CPU task worker for heavy work independent of frame boundaries;
 - a dedicated Windows STA file-dialog worker, stopped before graph/configuration teardown;
-- DeckLink, NDI, and font registries;
+- DeckLink, NDI, FFmpeg playback, and font registries;
 - the typed node-status mailbox and configuration-thread snapshot store.
 
 The main thread is the render thread. Normal node `prepare`, `execute`, and `complete` calls happen there. The project is not a generally parallel graph executor. Multithreading is explicit:
@@ -38,6 +38,7 @@ The main thread is the render thread. Normal node `prepare`, `execute`, and `com
 - WebSocket/configuration callbacks mutate the authoritative graph on the configuration thread.
 - DeckLink and SDK callbacks run on SDK-owned threads.
 - NDI discovery, capture, and output use dedicated threads.
+- FFmpeg decode runs on dedicated playback threads; its node-local registry owns asynchronous session retirement.
 - GPU transfer services, submission, and presentation have explicit workers and independent recording contexts.
 - CPU-heavy work that does not depend on a frame boundary runs on the CPU task worker, including text,
   teleprompter, and test-pattern generation, as well as future utility and debugging tasks. Callers poll cancellable task handles;

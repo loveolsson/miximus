@@ -3,6 +3,7 @@
 #include "include/cef_parser.h"
 #include "logger/logger.hpp"
 #include "nodes/cef/subsystem.hpp"
+#include "utils/environment.hpp"
 
 #include <algorithm>
 #include <array>
@@ -665,8 +666,7 @@ int main(int argc, char** argv)
         std::cout.setf(std::ios::unitbuf);
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation            = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation            = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         options.external_image_import = true;
         gpu::device_s gpu(options);
         {

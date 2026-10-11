@@ -2,6 +2,18 @@ include(SelectLibraryConfigurations)
 
 add_library(ffmpeg INTERFACE)
 
+add_library(ffmpeg_platform STATIC hardware.hpp)
+if(WIN32)
+  target_sources(ffmpeg_platform PRIVATE hardware_win.cpp)
+elseif(APPLE)
+  target_sources(ffmpeg_platform PRIVATE hardware_mac.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(ffmpeg_platform PRIVATE hardware_linux.cpp)
+else()
+  target_sources(ffmpeg_platform PRIVATE hardware_other.cpp)
+endif()
+target_link_libraries(ffmpeg_platform PUBLIC ffmpeg)
+
 function(find_ffmpeg_component _library _header)
   set(component "FFMPEG_${_library}")
   find_path(${component}_INCLUDE_DIR NAMES ${_header} REQUIRED)
@@ -34,7 +46,29 @@ function(find_ffmpeg_component _library _header)
   select_library_configurations(${component})
 
   target_include_directories(ffmpeg SYSTEM INTERFACE "${${component}_INCLUDE_DIR}")
-  target_link_libraries(ffmpeg INTERFACE ${${component}_LIBRARY})
+  if(WIN32 AND VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+    # Imported shared targets make FFmpeg DLLs visible to the existing staging
+    # machinery, including test discovery before the application is linked.
+    file(GLOB runtime_release "${library_root}/bin/${_library}-*.dll")
+    file(GLOB runtime_debug "${library_root}/debug/bin/${_library}-*.dll")
+    list(LENGTH runtime_release release_count)
+    list(LENGTH runtime_debug debug_count)
+    if(NOT release_count EQUAL 1 OR NOT debug_count EQUAL 1)
+      message(FATAL_ERROR "Expected one FFmpeg ${_library} runtime per configuration")
+    endif()
+    add_library(ffmpeg_${_library} SHARED IMPORTED GLOBAL)
+    set_target_properties(ffmpeg_${_library} PROPERTIES
+      IMPORTED_CONFIGURATIONS "RELEASE;DEBUG"
+      IMPORTED_IMPLIB_RELEASE "${${component}_LIBRARY_RELEASE}"
+      IMPORTED_IMPLIB_DEBUG "${${component}_LIBRARY_DEBUG}"
+      IMPORTED_LOCATION_RELEASE "${runtime_release}"
+      IMPORTED_LOCATION_DEBUG "${runtime_debug}"
+      MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+      MAP_IMPORTED_CONFIG_MINSIZEREL Release)
+    target_link_libraries(ffmpeg INTERFACE ffmpeg_${_library})
+  else()
+    target_link_libraries(ffmpeg INTERFACE ${${component}_LIBRARY})
+  endif()
 
   message(STATUS "Found ${_library}: ${${component}_LIBRARY}, ${${component}_INCLUDE_DIR}")
   mark_as_advanced(${component}_INCLUDE_DIR ${component}_LIBRARY_RELEASE ${component}_LIBRARY_DEBUG)

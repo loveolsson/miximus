@@ -24,7 +24,60 @@ void check_d3d(HRESULT result, const char* operation)
     }
 }
 
+ComPtr<ID3D11Device> create_matching_device(const device_state_s& owner, UINT flags)
+{
+    VkPhysicalDeviceIDProperties identity{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+    VkPhysicalDeviceProperties2  properties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &identity,
+    };
+    owner.instance_vk.vkGetPhysicalDeviceProperties2(owner.physical, &properties);
+    if (identity.deviceLUIDValid == VK_FALSE) {
+        throw std::runtime_error("Vulkan device has no DXGI adapter identity");
+    }
+
+    ComPtr<IDXGIFactory1> factory;
+    check_d3d(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "create DXGI factory");
+    ComPtr<IDXGIAdapter1> selected;
+    for (UINT index = 0;; ++index) {
+        ComPtr<IDXGIAdapter1> adapter;
+        const auto            result = factory->EnumAdapters1(index, &adapter);
+        if (result == DXGI_ERROR_NOT_FOUND) {
+            break;
+        }
+        check_d3d(result, "enumerate DXGI adapter");
+        DXGI_ADAPTER_DESC1 description{};
+        check_d3d(adapter->GetDesc1(&description), "describe DXGI adapter");
+        if (std::memcmp(&description.AdapterLuid, identity.deviceLUID, VK_LUID_SIZE) == 0) {
+            selected = adapter;
+            break;
+        }
+    }
+    if (selected.Get() == nullptr) {
+        throw std::runtime_error("No DXGI adapter matches the selected Vulkan device");
+    }
+
+    ComPtr<ID3D11Device> created;
+    check_d3d(D3D11CreateDevice(selected.Get(),
+                                D3D_DRIVER_TYPE_UNKNOWN,
+                                nullptr,
+                                flags,
+                                nullptr,
+                                0,
+                                D3D11_SDK_VERSION,
+                                &created,
+                                nullptr,
+                                nullptr),
+              "Create matching D3D11 device");
+    return created;
+}
+
 } // namespace
+
+Microsoft::WRL::ComPtr<ID3D11Device> create_d3d11_producer_device(const std::shared_ptr<device_state_s>& owner)
+{
+    return create_matching_device(*owner, D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT);
+}
 
 struct external_image_platform_s
 {
@@ -34,49 +87,7 @@ struct external_image_platform_s
 
     explicit external_image_platform_s(const device_state_s& owner)
     {
-        VkPhysicalDeviceIDProperties identity{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
-        VkPhysicalDeviceProperties2  properties{
-             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-             .pNext = &identity,
-        };
-        owner.instance_vk.vkGetPhysicalDeviceProperties2(owner.physical, &properties);
-        if (identity.deviceLUIDValid == VK_FALSE) {
-            throw std::runtime_error("Vulkan device has no DXGI adapter identity");
-        }
-
-        ComPtr<IDXGIFactory1> factory;
-        check_d3d(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "create DXGI factory");
-        ComPtr<IDXGIAdapter1> selected;
-        for (UINT index = 0;; ++index) {
-            ComPtr<IDXGIAdapter1> adapter;
-            const auto            result = factory->EnumAdapters1(index, &adapter);
-            if (result == DXGI_ERROR_NOT_FOUND) {
-                break;
-            }
-            check_d3d(result, "enumerate DXGI adapter");
-            DXGI_ADAPTER_DESC1 description{};
-            check_d3d(adapter->GetDesc1(&description), "describe DXGI adapter");
-            if (std::memcmp(&description.AdapterLuid, identity.deviceLUID, VK_LUID_SIZE) == 0) {
-                selected = adapter;
-                break;
-            }
-        }
-        if (selected.Get() == nullptr) {
-            throw std::runtime_error("No DXGI adapter matches the selected Vulkan device");
-        }
-
-        ComPtr<ID3D11Device> created;
-        check_d3d(D3D11CreateDevice(selected.Get(),
-                                    D3D_DRIVER_TYPE_UNKNOWN,
-                                    nullptr,
-                                    D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                                    nullptr,
-                                    0,
-                                    D3D11_SDK_VERSION,
-                                    &created,
-                                    nullptr,
-                                    nullptr),
-                  "create external-image D3D11 device");
+        auto created = create_matching_device(owner, D3D11_CREATE_DEVICE_BGRA_SUPPORT);
         check_d3d(created.As(&device), "query D3D11.1 device");
         created->GetImmediateContext(&context);
     }
@@ -109,8 +120,10 @@ external_image_platform_s& platform(const std::shared_ptr<device_state_s>& devic
     return *device->external_image_platform;
 }
 
-std::shared_ptr<texture_state_s>
-import_texture(const std::shared_ptr<device_state_s>& device, const external_image_s& descriptor, bool writable)
+} // namespace
+
+std::shared_ptr<texture_state_s> import_d3d11_image(const std::shared_ptr<device_state_s>& device,
+                                                    const d3d11_image_description_s&       descriptor)
 {
     if (!device || device->external_image_import != external_image_import_support_e::supported) {
         throw std::runtime_error("D3D11 image sharing is not enabled");
@@ -123,22 +136,21 @@ import_texture(const std::shared_ptr<device_state_s>& device, const external_ima
 
     // Opening on the LUID-matched device rejects handles from a different adapter.
     const auto description = platform(device).describe(descriptor.handle);
-    const auto expected_format =
-        descriptor.order == channel_order_e::rgba ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
-    if ((descriptor.order != channel_order_e::rgba && descriptor.order != channel_order_e::bgra) ||
-        description.Format != expected_format || description.Width != descriptor.extent.width ||
+    if (description.Format != descriptor.dxgi_format || description.Width != descriptor.extent.width ||
         description.Height != descriptor.extent.height || description.MipLevels != 1 || description.ArraySize != 1 ||
         description.SampleDesc.Count != 1 || description.SampleDesc.Quality != 0 ||
         description.Usage != D3D11_USAGE_DEFAULT || description.CPUAccessFlags != 0 ||
         (description.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE) == 0 ||
         (description.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) != 0 ||
-        (description.BindFlags & D3D11_BIND_SHADER_RESOURCE) == 0 ||
-        (writable && (description.BindFlags & D3D11_BIND_RENDER_TARGET) == 0)) {
+        ((descriptor.usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0U &&
+         (description.BindFlags & D3D11_BIND_SHADER_RESOURCE) == 0) ||
+        ((descriptor.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U &&
+         (description.BindFlags & D3D11_BIND_RENDER_TARGET) == 0)) {
         throw std::invalid_argument("D3D11 texture does not meet the external-image contract");
     }
 
-    const auto format = descriptor.order == channel_order_e::rgba ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_B8G8R8A8_UNORM;
-    const VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | (writable ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0U);
+    const auto                              format = descriptor.format;
+    const auto                              usage  = descriptor.usage;
     VkPhysicalDeviceExternalImageFormatInfo external_query{
         .sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO,
         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT,
@@ -153,8 +165,8 @@ import_texture(const std::shared_ptr<device_state_s>& device, const external_ima
     };
     VkExternalImageFormatProperties external_properties{.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
     VkImageFormatProperties2        properties{
-               .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
-               .pNext = &external_properties,
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+        .pNext = &external_properties,
     };
     check(device->instance_vk.vkGetPhysicalDeviceImageFormatProperties2(device->physical, &query, &properties),
           "query D3D11 image import");
@@ -218,6 +230,10 @@ import_texture(const std::shared_ptr<device_state_s>& device, const external_ima
           "import D3D11 memory");
     image->external_allocation_bytes = requirements.size;
     check(device->vk.vkBindImageMemory(device->device, image->image, image->external_memory, 0), "bind D3D11 memory");
+    if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) == 0U) {
+        return image;
+    }
+
     VkImageViewCreateInfo view{
         .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image            = image->image,
@@ -228,6 +244,27 @@ import_texture(const std::shared_ptr<device_state_s>& device, const external_ima
     check(device->vk.vkCreateImageView(device->device, &view, nullptr, &image->view), "create D3D11 image view");
     image->sampled_view = image->view;
     return image;
+}
+
+namespace {
+
+std::shared_ptr<texture_state_s>
+import_texture(const std::shared_ptr<device_state_s>& device, const external_image_s& descriptor, bool writable)
+{
+    if (descriptor.order != channel_order_e::rgba && descriptor.order != channel_order_e::bgra) {
+        throw std::invalid_argument("Unsupported external RGB image order");
+    }
+
+    return import_d3d11_image(
+        device,
+        {
+            .handle = descriptor.handle,
+            .extent = descriptor.extent,
+            .dxgi_format =
+                descriptor.order == channel_order_e::rgba ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM,
+            .format = descriptor.order == channel_order_e::rgba ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_B8G8R8A8_UNORM,
+            .usage  = VK_IMAGE_USAGE_SAMPLED_BIT | (writable ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0U),
+        });
 }
 
 } // namespace

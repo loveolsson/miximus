@@ -1,6 +1,7 @@
 #include "gpu/presenter.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
+#include "utils/environment.hpp"
 
 #include <atomic>
 #include <cstdlib>
@@ -87,8 +88,8 @@ TEST_F(window_test, PresentsOnlyRequestedFramesAcrossResize)
     window_s window({.rect = initial_rect});
     expect_pixel_size(window, initial_rect.size);
     // Test options are read from an environment that the test does not modify.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    device_s device({.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .presentation = true});
+    device_s device({.validation   = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value(),
+                     .presentation = true});
     auto     image = device.create_texture({.width = 32, .height = 32});
 
     auto commands = device.try_record();
@@ -98,10 +99,10 @@ TEST_F(window_test, PresentsOnlyRequestedFramesAcrossResize)
     commands.reset();
     {
         std::atomic_uint64_t requested_frames{};
-        presenter_s          presenter(device,
+        presenter_s presenter(device,
                               window.native_window(),
-                                       {.width = 320, .height = 180},
-                                       {.next_frame = [&](presentation_pacing_e,
+                              {.width = 320, .height = 180},
+                              {.next_frame = [&](presentation_pacing_e,
                                                  const std::stop_token& stop) -> std::optional<presentation_frame_s> {
                                    while (!stop.stop_requested()) {
                                        if (requested_frames.load() != 0) {
@@ -112,8 +113,8 @@ TEST_F(window_test, PresentsOnlyRequestedFramesAcrossResize)
                                    }
                                    return {};
                                },
-                                        .complete = {}});
-        const auto           wait_for_presents = [&](uint64_t count) {
+                               .complete = {}});
+        const auto  wait_for_presents = [&](uint64_t count) {
             const auto deadline = std::chrono::steady_clock::now() + 3s;
             while (presenter.metrics().presents < count && presenter.metrics().failure.empty() &&
                    std::chrono::steady_clock::now() < deadline) {
@@ -157,8 +158,8 @@ TEST_F(window_test, PresentsWhileOtherContextsSubmitAndRetire)
     window_s window({
         .rect = {.pos = on_screen_position(), .size = {320, 180}}
     });
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    device_s device({.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .presentation = true});
+    device_s device({.validation   = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value(),
+                     .presentation = true});
     auto     image    = device.create_texture({.width = 32, .height = 32});
     auto     commands = device.try_record();
     ASSERT_TRUE(commands);
@@ -223,8 +224,8 @@ TEST_F(window_test, StopsWhileAcquiredImageWaitsForSourcePreroll)
 
     window_s window({.rect = initial_rect});
     // Test options are read from an environment that the test does not modify.
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    device_s device({.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .presentation = true});
+    device_s device({.validation   = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value(),
+                     .presentation = true});
     std::atomic_uint64_t requests{};
     {
         presenter_s presenter(
@@ -253,11 +254,11 @@ TEST_F(window_test, StopsWhileAcquiredImageWaitsForSourcePreroll)
 
 TEST_F(window_test, WaitsForTheSelectedFrameWithoutRequestingAReplacement)
 {
-    window_s window({
+    window_s         window({
         .rect = {.pos = on_screen_position(), .size = {320, 180}}
     });
-    // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    device_s         device({.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr, .presentation = true});
+    device_s         device({.validation   = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value(),
+                             .presentation = true});
     auto             image = device.create_texture({.width = 32, .height = 32});
     std::atomic_bool release_submission{};
     // Release even if a test assertion fails, so device teardown cannot deadlock.

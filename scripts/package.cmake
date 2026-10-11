@@ -91,6 +91,13 @@ set(ndi_runtime_names "^(processing\\.ndi\\.lib\\.(x64|x86|arm64)\\.dll|libndi(\
 set(ndi_runtime_paths "(^|/)[Pp]rocessing\\.[Nn][Dd][Ii]\\.[Ll]ib\\.[^.]+\\.dll$"
     "(^|/)libndi\\.so(\\.[0-9]+)*$" "(^|/)libndi(\\.[0-9]+)*\\.dylib$")
 
+# FFmpeg is part of playback, including when installed in a system library
+# directory. Keep version matching independent of the selected FFmpeg release.
+set(ffmpeg_components avcodec avformat avdevice avutil avfilter swscale swresample)
+set(ffmpeg_runtime_paths
+    "(^|/)lib(avcodec|avformat|avdevice|avutil|avfilter|swscale|swresample)\\.so(\\.[0-9]+)*$"
+    "(^|/)lib(avcodec|avformat|avdevice|avutil|avfilter|swscale|swresample)(\\.[0-9]+)*\\.dylib$")
+
 foreach(required "${binary_dir}/${executable}" "${binary_dir}/${assets}")
     if(NOT EXISTS "${required}")
         message(FATAL_ERROR "Missing ${required}. Build Miximus first.")
@@ -99,6 +106,17 @@ endforeach()
 set(executables "${binary_dir}/${executable}")
 set(libraries "${binary_dir}/${assets}")
 set(search_dirs "${binary_dir}")
+set(ffmpeg_libraries)
+if(WIN32)
+    # The wrapper stages the selected configuration's FFmpeg DLLs. Include all
+    # components and inspect their dependencies, even if the linker omitted an
+    # otherwise unused component from the executable's import table.
+    foreach(component IN LISTS ffmpeg_components)
+        file(GLOB component_libraries "${binary_dir}/${component}-*.dll")
+        list(APPEND ffmpeg_libraries ${component_libraries})
+    endforeach()
+    list(APPEND libraries ${ffmpeg_libraries})
+endif()
 if(build_MIXIMUS_ENABLE_CEF)
     # On Linux the CEF wrapper stages outside the configuration directory.
     set(cef_dir "${BUILD_DIR}/cef")
@@ -129,13 +147,15 @@ file(GET_RUNTIME_DEPENDENCIES
     LIBRARIES ${libraries}
     DIRECTORIES ${search_dirs}
     PRE_EXCLUDE_REGEXES ${pre_excludes}
-    POST_INCLUDE_REGEXES ${ndi_runtime_paths}
+    POST_INCLUDE_REGEXES ${ndi_runtime_paths} ${ffmpeg_runtime_paths}
     POST_EXCLUDE_REGEXES ${post_excludes}
     RESOLVED_DEPENDENCIES_VAR dependencies
     UNRESOLVED_DEPENDENCIES_VAR unresolved)
 if(unresolved)
     message(FATAL_ERROR "Unresolved runtime dependencies: ${unresolved}")
 endif()
+list(APPEND dependencies ${ffmpeg_libraries})
+list(REMOVE_DUPLICATES dependencies)
 
 # The build's staged DLL normally has no adjacent notices. Look in the selected
 # SDK too, and fail before replacing dist if its required notices are missing.

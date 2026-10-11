@@ -21,6 +21,7 @@ enum class host_pixel_format_e : std::uint8_t
     bgrx_u8,
     argb_u8,
     v210,
+    video_components,
 };
 
 struct host_frame_layout_s

@@ -2,6 +2,7 @@
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/browser_session.hpp"
 #include "nodes/cef/detail/runtime.hpp"
+#include "utils/environment.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -150,8 +151,7 @@ int main(int argc, char** argv)
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
         options.external_image_import = true;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation            = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         gpu::device_s device(options);
         {
             runtime_s runtime(argv[1], argv[2]);

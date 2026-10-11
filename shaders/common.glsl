@@ -32,6 +32,53 @@ vec3 to_linear(vec3 srgb)
     return mix(higher, lower, cutoff);
 }
 
+// Shared input conversion for packed broadcast and decoded video sources.
+// Transfer identifiers match video_transfer_e. Existing broadcast inputs use 0.
+vec3 decode_video_transfer(vec3 rgb, uint transfer)
+{
+    switch (transfer) {
+        case 1u:
+            return mix(pow((rgb + 0.055) / 1.055, vec3(2.4)), rgb / 12.92, lessThanEqual(rgb, vec3(0.04045)));
+        case 2u:
+            return rgb;
+        case 3u:
+            return pow(max(rgb, vec3(0.0)), vec3(2.2));
+        case 4u:
+            return pow(max(rgb, vec3(0.0)), vec3(2.8));
+        default:
+            return to_linear(rgb);
+    }
+}
+
+vec3 input_to_working_rgb(vec3  components,
+                          vec4  row0,
+                          vec4  row1,
+                          vec4  row2,
+                          vec4  gamut0,
+                          vec4  gamut1,
+                          vec4  gamut2,
+                          vec4  offset,
+                          float encoded_alpha)
+{
+    vec3 value      = components - offset.xyz;
+    vec3 encoded    = vec3(dot(row0.xyz, value), dot(row1.xyz, value), dot(row2.xyz, value));
+    encoded         = encoded_alpha > 0.0 ? encoded / encoded_alpha : vec3(0.0);
+    vec3 linear_rgb = decode_video_transfer(encoded, uint(offset.w));
+    return vec3(dot(gamut0.xyz, linear_rgb), dot(gamut1.xyz, linear_rgb), dot(gamut2.xyz, linear_rgb));
+}
+
+vec3 input_to_working_rgb(vec3 components,
+                          vec4 row0,
+                          vec4 row1,
+                          vec4 row2,
+                          vec4 gamut0,
+                          vec4 gamut1,
+                          vec4 gamut2,
+                          vec4 offset)
+{
+    return input_to_working_rgb(components, row0, row1, row2, gamut0, gamut1, gamut2, offset, 1.0);
+}
+
 // These values match channel_order_e and color_operation_e in the GPU API.
 const uint channel_order_rgba = 0;
 const uint channel_order_bgra = 1;
@@ -107,8 +154,8 @@ vec4 srgb_to_linear_premultiplied(vec4 color)
     // Alpha is coverage and must not undergo the RGB transfer function.
     vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
     vec3 linear_rgb   = mix(pow((straight_rgb + 0.055) / 1.055, vec3(2.4)),
-                          straight_rgb / 12.92,
-                          lessThanEqual(straight_rgb, vec3(0.04045)));
+                            straight_rgb / 12.92,
+                            lessThanEqual(straight_rgb, vec3(0.04045)));
     return vec4(linear_rgb * color.a, color.a);
 }
 
@@ -135,7 +182,7 @@ vec4 linear_to_srgb_premultiplied(vec4 color)
 
     vec3 straight_rgb = clamp(color.rgb / color.a, 0.0, 1.0);
     vec3 encoded_rgb  = mix(1.055 * pow(straight_rgb, vec3(1.0 / 2.4)) - 0.055,
-                           12.92 * straight_rgb,
-                           lessThanEqual(straight_rgb, vec3(0.0031308)));
+                            12.92 * straight_rgb,
+                            lessThanEqual(straight_rgb, vec3(0.0031308)));
     return vec4(encoded_rgb * color.a, color.a);
 }

@@ -106,6 +106,8 @@ class recording_s
     friend class recording_context_s;
     friend struct detail::presenter_state_s;
     friend class transfer::detail::cuda_transfer_s;
+    friend class detail::external_buffer_s;
+    friend class detail::external_video_copy_s;
     friend class detail::external_image_export_s;
     friend class detail::external_image_copy_s;
 
@@ -121,6 +123,8 @@ class recording_s
                      const texture_s&         destination,
                      const color_transform_s& color,
                      size_t                   row_stride);
+    // Source begins with video_buffer_header_s; color.offset.w selects video_transfer_e.
+    void unpack_video(const buffer_s& source, const texture_s& destination, const color_transform_s& color);
     void
     pack_v210(const texture_s& source, const buffer_s& destination, const color_transform_s& color, size_t row_stride);
 

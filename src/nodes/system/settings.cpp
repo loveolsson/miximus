@@ -158,6 +158,7 @@ class node_impl final : public node_i
     {
         return {
             {"decklink_input_buffer_frames",  decklink_input_buffer_limits_s::DEFAULT_FRAME_COUNT      },
+            {"ffmpeg_decoded_buffer_frames",  4                                                        },
             {"ndi_input_buffer_frames",       ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT           },
             {"cef_capture_buffer_frames",     cef_capture_buffer_limits_s::DEFAULT_FRAME_COUNT         },
             {"cef_export_buffer_frames",      cef_export_buffer_limits_s::DEFAULT_FRAME_COUNT          },
@@ -173,6 +174,9 @@ class node_impl final : public node_i
 
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
+        if (name == "ffmpeg_decoded_buffer_frames") {
+            return normalize_option_value<int>(value, 1, 8);
+        }
         if (name == "decklink_input_buffer_frames") {
             return normalize_option_value<int>(value,
                                                decklink_input_buffer_limits_s::MINIMUM_FRAME_COUNT,

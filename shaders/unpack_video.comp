@@ -1,0 +1,102 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer Input
+{
+    uint words[];
+} source;
+
+layout(set = 0, binding = 1, rgba16) writeonly uniform image2D destination;
+
+layout(push_constant) uniform Parameters
+{
+    uint image_width;
+    uint image_height;
+    uint row_stride_words;
+    uint channel_order;
+
+    vec4 conversion_row_0;
+    vec4 conversion_row_1;
+    vec4 conversion_row_2;
+
+    vec4 gamut_row_0;
+    vec4 gamut_row_1;
+    vec4 gamut_row_2;
+
+    vec4 offset;
+} parameters;
+
+uint read_byte(uint address)
+{
+    return (source.words[address / 4u] >> ((address % 4u) * 8u)) & 255u;
+}
+
+float read_sample(uvec4 layout_info, ivec2 position)
+{
+    uint depth      = layout_info.w & 255u;
+    uint shift      = (layout_info.w >> 8u) & 255u;
+    uint count      = (depth + shift + 7u) / 8u;
+    bool big_endian = (layout_info.w & (1u << 24u)) != 0u;
+    uint address    = layout_info.x + uint(position.y) * layout_info.y + uint(position.x) * layout_info.z;
+    uint value      = 0u;
+    for (uint i = 0u; i < count; ++i) {
+        uint bit = (big_endian ? count - 1u - i : i) * 8u;
+        value |= read_byte(address + i) << bit;
+    }
+
+    uint mask = (1u << depth) - 1u;
+    return float((value >> shift) & mask) / float(mask);
+}
+
+float component(uint index, uvec2 pixel)
+{
+    uvec4 info       = uvec4(source.words[index * 4u],
+                             source.words[index * 4u + 1u],
+                             source.words[index * 4u + 2u],
+                             source.words[index * 4u + 3u]);
+    uvec2 subsample  = uvec2((info.w >> 16u) & 15u, (info.w >> 20u) & 15u);
+    uvec2 divisor    = uvec2(1u) << subsample;
+    ivec2 dimensions = ivec2((uvec2(parameters.image_width, parameters.image_height) + divisor - 1u) / divisor);
+    vec2  siting     = vec2(uintBitsToFloat(source.words[16]), uintBitsToFloat(source.words[17]));
+    siting           = mix(vec2(0), siting, greaterThan(subsample, uvec2(0)));
+    vec2  coordinate = (vec2(pixel) - siting) / vec2(divisor);
+    ivec2 lower      = ivec2(floor(coordinate));
+    vec2  weight     = fract(coordinate);
+
+    float a = read_sample(info, clamp(lower, ivec2(0), dimensions - 1));
+    float b = read_sample(info, clamp(lower + ivec2(1, 0), ivec2(0), dimensions - 1));
+    float c = read_sample(info, clamp(lower + ivec2(0, 1), ivec2(0), dimensions - 1));
+    float d = read_sample(info, clamp(lower + ivec2(1, 1), ivec2(0), dimensions - 1));
+
+    return mix(mix(a, b, weight.x), mix(c, d, weight.x), weight.y);
+}
+
+void main()
+{
+    uvec2 pixel = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(pixel, uvec2(parameters.image_width, parameters.image_height)))) {
+        return;
+    }
+
+    uint count = source.words[19];
+    vec3 value = vec3(component(0, pixel));
+    if (count >= 3u) {
+        value = vec3(value.x, component(1, pixel), component(2, pixel));
+    }
+
+    float alpha = count == 4u ? component(3, pixel) : (count == 2u ? component(1, pixel) : 1.0);
+    vec3  rgb   = input_to_working_rgb(value,
+                                       parameters.conversion_row_0,
+                                       parameters.conversion_row_1,
+                                       parameters.conversion_row_2,
+                                       parameters.gamut_row_0,
+                                       parameters.gamut_row_1,
+                                       parameters.gamut_row_2,
+                                       parameters.offset,
+                                       source.words[18] != 0u ? alpha : 1.0);
+    imageStore(destination, ivec2(pixel), vec4(clamp(rgb, 0.0, 1.0) * alpha, alpha));
+}

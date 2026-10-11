@@ -31,6 +31,7 @@ add_subdirectory(adapters)
 
 target_link_libraries(app 
 PRIVATE
+    environment
     gpu
     render
     nodes

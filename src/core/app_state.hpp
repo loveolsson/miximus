@@ -10,6 +10,7 @@
 #include "gpu/window_fwd.hpp"
 #include "nodes/cef/subsystem_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
+#include "nodes/ffmpeg/registry_fwd.hpp"
 #include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
@@ -48,6 +49,11 @@ class app_state_s
             int buffer_frames{ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
         };
         ndi_input_settings_s ndi_input;
+        struct ffmpeg_settings_s
+        {
+            int buffer_frames{4};
+        };
+        ffmpeg_settings_s ffmpeg;
         struct cef_capture_settings_s
         {
             int buffer_frames{cef_capture_buffer_limits_s::DEFAULT_FRAME_COUNT};
@@ -115,6 +121,7 @@ class app_state_s
     std::unique_ptr<gpu::transfer::texture_upload_service_s>   texture_upload_service_;
     std::unique_ptr<gpu::transfer::texture_readback_service_s> texture_readback_service_;
     std::unique_ptr<nodes::decklink::decklink_registry_s>      decklink_registry_;
+    std::unique_ptr<nodes::ffmpeg::ffmpeg_registry_s>          ffmpeg_registry_;
     std::unique_ptr<nodes::ndi::ndi_registry_s>                ndi_registry_;
     std::unique_ptr<render::font_registry_s>                   font_registry_;
     std::unique_ptr<node_status_registry_s>                    status_registry_;
@@ -169,6 +176,7 @@ class app_state_s
     auto                     cpu_task_worker() noexcept { return cpu_task_worker_.get(); }
     auto                     file_dialog() noexcept { return file_dialog_.get(); }
     auto                     status_registry() noexcept { return status_registry_.get(); }
+    auto                     ffmpeg_registry() noexcept { return ffmpeg_registry_.get(); }
     nodes::cef::subsystem_s* cef_subsystem() noexcept { return cef_subsystem_.get(); }
     const std::string&       cef_error() const noexcept { return cef_error_; }
 

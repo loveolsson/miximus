@@ -12,6 +12,13 @@
     {
       "kind": "git",
       "repository": "https://github.com/microsoft/vcpkg",
+      "baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+      "reference": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+      "packages": ["ffmpeg", "ffmpeg-bin2c", "shaderc", "spirv-headers", "spirv-tools", "vulkan-headers", "glslang", "dav1d", "libva"]
+    },
+    {
+      "kind": "git",
+      "repository": "https://github.com/microsoft/vcpkg",
       "baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1",
       "reference": "refs/tags/2026.01.16",
       "packages": [

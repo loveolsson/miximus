@@ -6,6 +6,7 @@
 #include "nodes/cef/detail/command_messages.hpp"
 #include "nodes/cef/subsystem.hpp"
 #include "probe_platform.hpp"
+#include "utils/environment.hpp"
 #include "utils/lookup.hpp"
 
 #include <nlohmann/json.hpp>
@@ -174,7 +175,7 @@ void exercise_commands(session_s& session)
     }
     std::cout << "JavaScript dialogs suppressed and window.open denied\n";
     auto       first  = session.request("value => new Promise(resolve => setTimeout(() => resolve({echo:value}), 50))",
-                                 R"({"message":"hello","number":42})");
+                                        R"({"message":"hello","number":42})");
     const auto second = command_result(session.request("value => value + 1", "4"));
     const auto first_result = command_result(std::move(first));
     if (!first_result.error.empty() || nlohmann::json::parse(first_result.json)["echo"]["number"] != 42 ||
@@ -444,8 +445,7 @@ int main(int argc, char** argv)
         logger::init_loggers(spdlog::level::info);
         gpu::device_options_s options;
         options.external_image_import = true;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation            = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         gpu::device_s device(options);
         {
             subsystem_s                                     subsystem(device, argv[2], argv[1]);

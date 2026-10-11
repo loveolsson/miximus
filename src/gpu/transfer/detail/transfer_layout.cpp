@@ -31,8 +31,24 @@ texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layo
     }
 
     constexpr size_t bytes_per_storage_texel = 4;
-    size_t           minimum_row_stride{};
+    if (host_layout.address_alignment_bytes == 0) {
+        host_layout.address_alignment_bytes = 1;
+    }
+
+    if (!std::has_single_bit(host_layout.address_alignment_bytes)) {
+        throw std::invalid_argument("texture transfer address alignment must be a power of two");
+    }
+    size_t minimum_row_stride{};
     switch (host_layout.pixel_format) {
+        case host_pixel_format_e::video_components:
+            // Independently addressed planes, including a typed layout header.
+            // The row stride is not a description of these planes.
+            if (host_layout.buffer_size_bytes < 80 || host_layout.buffer_size_bytes % 4 != 0) {
+                throw std::invalid_argument("Invalid video component buffer size");
+            }
+            return {.host_layout             = host_layout,
+                    .packed_buffer_bytes     = host_layout.buffer_size_bytes,
+                    .storage_bytes_per_texel = 4};
         case host_pixel_format_e::rgba_u8:
         case host_pixel_format_e::bgra_u8:
         case host_pixel_format_e::bgrx_u8:
@@ -64,18 +80,12 @@ texture_transfer_plan_s make_texture_transfer_plan(host_frame_layout_s host_layo
         throw std::invalid_argument("texture transfer buffer is too small for its row stride");
     }
 
-    if (host_layout.address_alignment_bytes == 0) {
-        host_layout.address_alignment_bytes = 1;
-    }
-    if (!std::has_single_bit(host_layout.address_alignment_bytes)) {
-        throw std::invalid_argument("texture transfer address alignment must be a power of two");
-    }
-
     texture_transfer_plan_s result{
         .host_layout             = host_layout,
         .storage_bytes_per_texel = bytes_per_storage_texel,
     };
     switch (host_layout.pixel_format) {
+        case host_pixel_format_e::video_components: // Returned above.
         case host_pixel_format_e::rgba_u8:
             break;
         case host_pixel_format_e::bgra_u8:

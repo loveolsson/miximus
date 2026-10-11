@@ -2,6 +2,7 @@
 #include "types.hpp"
 
 #include <array>
+#include <stdexcept>
 
 namespace miximus::gpu {
 
@@ -61,18 +62,22 @@ struct color_conversion_s
     };
 }
 
-[[nodiscard]] constexpr color_conversion_s get_color_transfer_from_yuv(color_transfer_e c) noexcept
+[[nodiscard]] constexpr color_conversion_s
+get_color_transfer_from_yuv(color_transfer_e c, unsigned depth = 10, bool full_range = false)
 {
+    if (depth < 8 || depth > 16) {
+        throw std::invalid_argument("YUV component depth must be between 8 and 16");
+    }
     auto [wr, wb] = get_white_point(c);
 
-    constexpr float max_code     = 1023.0f;
-    constexpr float y_black      = 64.0f;
-    constexpr float y_white      = 940.0f;
-    constexpr float chroma_black = 64.0f;
-    constexpr float chroma_white = 960.0f;
-    constexpr float chroma_zero  = 512.0f;
-    constexpr float y_scale      = max_code / (y_white - y_black);
-    constexpr float chroma_scale = max_code / (chroma_white - chroma_black);
+    const float max_code     = static_cast<float>((1u << depth) - 1u);
+    const float scale        = static_cast<float>(1u << (depth - 8));
+    const float y_black      = full_range ? 0.0f : 16.0f * scale;
+    const float y_white      = full_range ? max_code : 235.0f * scale;
+    const float chroma_range = full_range ? max_code : 224.0f * scale;
+    const float chroma_zero  = 128.0f * scale;
+    const float y_scale      = max_code / (y_white - y_black);
+    const float chroma_scale = max_code / chroma_range;
 
     return {
         .matrix =

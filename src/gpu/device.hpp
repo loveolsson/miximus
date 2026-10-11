@@ -44,6 +44,8 @@ class device_s
     std::unique_ptr<recording_context_s>    default_context_;
     friend struct detail::presenter_state_s;
     friend class transfer::detail::cuda_transfer_s;
+    friend class detail::external_buffer_s;
+    friend class detail::external_video_copy_s;
     friend class detail::external_image_export_s;
 
   public:

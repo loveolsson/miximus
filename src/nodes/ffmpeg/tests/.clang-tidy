@@ -1,0 +1,6 @@
+---
+InheritParentConfig: true
+# Measure test control flow, not the branches inside GoogleTest assertions.
+CheckOptions:
+  readability-function-cognitive-complexity.IgnoreMacros: true
+...

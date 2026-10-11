@@ -44,11 +44,11 @@ void main()
         return;
     }
 
-    uint  group_start_word = pixel_position.y * parameters.row_stride_words + pixel_position.x / 6 * 4;
-    vec3  word_0           = unpack_v210_word(group_start_word);
-    vec3  word_1           = unpack_v210_word(group_start_word + 1);
-    vec3  word_2           = unpack_v210_word(group_start_word + 2);
-    vec3  word_3           = unpack_v210_word(group_start_word + 3);
+    uint group_start_word = pixel_position.y * parameters.row_stride_words + pixel_position.x / 6 * 4;
+    vec3 word_0           = unpack_v210_word(group_start_word);
+    vec3 word_1           = unpack_v210_word(group_start_word + 1);
+    vec3 word_2           = unpack_v210_word(group_start_word + 2);
+    vec3 word_3           = unpack_v210_word(group_start_word + 3);
 
     float luma;
     float cb;
@@ -93,14 +93,13 @@ void main()
             break;
     }
 
-    vec3 offset_yuv = vec3(luma, cb, cr) - parameters.offset.xyz;
-    vec3 encoded_rgb = vec3(dot(parameters.conversion_row_0.xyz, offset_yuv),
-                            dot(parameters.conversion_row_1.xyz, offset_yuv),
-                            dot(parameters.conversion_row_2.xyz, offset_yuv));
-    vec3 linear_rgb = to_linear(encoded_rgb);
-
-    vec3 working_rgb = vec3(dot(parameters.gamut_row_0.xyz, linear_rgb),
-                            dot(parameters.gamut_row_1.xyz, linear_rgb),
-                            dot(parameters.gamut_row_2.xyz, linear_rgb));
+    vec3 working_rgb = input_to_working_rgb(vec3(luma, cb, cr),
+                                            parameters.conversion_row_0,
+                                            parameters.conversion_row_1,
+                                            parameters.conversion_row_2,
+                                            parameters.gamut_row_0,
+                                            parameters.gamut_row_1,
+                                            parameters.gamut_row_2,
+                                            parameters.offset);
     imageStore(destination, ivec2(pixel_position), vec4(working_rgb, 1.0));
 }

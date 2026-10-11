@@ -7,6 +7,7 @@
 #include "nodes/cef/detail/image_transport.hpp"
 #include "nodes/cef/detail/runtime.hpp"
 #include "probe_platform.hpp"
+#include "utils/environment.hpp"
 
 #include <cerrno>
 #include <charconv>
@@ -229,8 +230,7 @@ int main(int argc, char** argv)
         }
         gpu::device_options_s options;
         options.external_image_import = true;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation            = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         gpu::device_s device(options);
         bool          success{};
         {

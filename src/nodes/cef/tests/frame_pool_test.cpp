@@ -1,5 +1,6 @@
 #include "logger/logger.hpp"
 #include "nodes/cef/detail/frame_pool.hpp"
+#include "utils/environment.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -25,8 +26,7 @@ class frame_pool_test : public testing::Test
     {
         logger::init_loggers(spdlog::level::warn);
         gpu::device_options_s options;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
+        options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
         device             = std::make_unique<gpu::device_s>(options);
     }
 

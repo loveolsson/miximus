@@ -4,6 +4,7 @@
 #include "gpu/detail/recording.hpp"
 #include "gpu/detail/resource.hpp"
 #include "logger/logger.hpp"
+#include "utils/environment.hpp"
 
 #include <bit>
 #include <chrono>
@@ -33,11 +34,9 @@ class external_image_test : public testing::Test
         }
 
         device_options_s options;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        options.validation = std::getenv("MIXIMUS_VULKAN_VALIDATION") != nullptr;
-        // NOLINTNEXTLINE(concurrency-mt-unsafe)
-        if (const auto* uuid = std::getenv("MIXIMUS_VULKAN_DEVICE")) {
-            options.device_uuid = uuid;
+        options.validation = miximus::utils::environment_value("MIXIMUS_VULKAN_VALIDATION").has_value();
+        if (const auto uuid = miximus::utils::environment_value("MIXIMUS_VULKAN_DEVICE")) {
+            options.device_uuid = *uuid;
         }
 
         options.external_image_import = true;

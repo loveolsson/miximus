@@ -18,6 +18,7 @@ enum class conversion_operation_e
 {
     unpack_v210,
     pack_v210,
+    unpack_video,
 };
 
 struct pipeline_state_s
