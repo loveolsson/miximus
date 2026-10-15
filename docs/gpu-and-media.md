@@ -88,13 +88,25 @@ the defaults for missing options. Native validation clamps numeric values and re
 | `ndi_output_buffer_frames` | 4 | Output playout target in program frames |
 | `screen_output_buffer_frames` | 2 | Output playout target in program frames |
 | `cef_export_buffer_frames` | 2 | Native export slots per browser texture input |
-| `cef_input_buffer_frames` | 3 | Chromium destination slots per browser texture input |
+| `cef_input_buffer_frames` | 4 | Chromium destination slots per browser texture input |
 
 All six timed queues have capacity `target + 3`; capacity does not add to the requested playout delay. Transfer pools
 also cover frames held outside the queue: NDI and browser capture use `target + 7` slots; DeckLink's separate SDK and
 transfer bounds are described below. Browser texture-input slots are direct capacity limits, without preroll or an
 extra `+3`. CEF admission accounts for both configured export and destination depths, including retiring generations.
 Existing memory budgets still apply; larger depths can reduce the resolutions or simultaneous inputs that fit.
+
+CEF export slots and Chromium input slots are separate pools. Increasing exports cannot
+release destinations still retained by Chromium's video/compositor consumers. Two input
+slots allow progress but can severely limit cadence; four are the recommended default.
+A Windows four-input workload on the Quadro P2000 reproduced approximately 30 browser
+captures/s and 180 rejected inputs/s with two destination slots, approximately 60 captures/s
+and 23 rejected inputs/s with three, and 60 captures/s with six rejected inputs total over
+30 seconds with four. Returning to two reproduced the slowdown. The four-slot run had no
+browser-frame repeats, screen presentation drops, or render deadline misses. These are
+measured workload results, not a guarantee for arbitrary page complexity. Existing explicit
+settings are preserved; users of older two/three-slot configurations must raise the Chromium
+input count themselves. The minimum remains two for deliberate memory/cadence tradeoffs.
 
 Changes become visible at a frame boundary. Affected input captures and output sessions restart asynchronously using
 their existing lifecycle paths. Any of the three CEF controls recreates affected browser sessions, reloading pages and
@@ -398,8 +410,29 @@ inside the driver even on a background thread; retaining contexts avoids that co
 on file changes and hardware-option toggles. It does not eliminate codec/frame-pool
 initialization costs or change software-frame upload scheduling.
 
+Playback source failures (open, probe, read, and seek) retain their FFmpeg error codes
+and bypass hardware-backend rejection. The decode worker retries after 1, 2, 5, then
+10 seconds, capped at 10 seconds until a usable frame is published. Stop interrupts
+the backoff. While recovering, status reports the source error, readiness is false
+so the node pauses its timeline, and the last selected frame remains visible. Old
+queued frames and unused GPU reservations retire normally. Reopening seeks to the
+saved position modulo the source duration; rewind requests received during recovery
+are honored. Recovery clears the error only when a replacement frame is queued.
+Permanent codec/conversion failures remain terminal rather than being mislabeled as
+file availability failures. OS calls inside cloud filesystem drivers can still block;
+FFmpeg's interrupt callback does not guarantee cancellation of a blocked native read.
+
+FFmpeg's Windows file protocol uses a persistent read handle (`_wsopen`,
+`SH_DENYNO`), including while paused and across loop seeks. A Windows regression
+checks that the OS sees that handle until decoder destruction. This is not a cloud
+provider pin or a guarantee against virtual-drive disconnection; provider-specific
+eviction still requires investigation against the affected provider. No cloud pin
+settings or source files are modified by recovery.
+
 `ffmpeg_gpu_test` is an explicit hardware test, outside ordinary CTest. It checks
 pool-budget reclamation and retention through display references and GPU completion.
+It also exercises missing/incomplete sources becoming available, interrupted playback,
+retained frames, and cancellation during retry using temporary local video files.
 Windows builds with CEF disabled also test application-device D3D11 ingestion using
 `MIXIMUS_FFMPEG_TEST_VIDEO`, and UHD budget-exhaustion fallback followed by a second
 hardware session using `MIXIMUS_FFMPEG_UHD_TEST_VIDEO`. Set these environment variables

@@ -10,9 +10,12 @@
 #include "vulkan_ingest.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cerrno>
 #include <condition_variable>
 #include <deque>
+#include <format>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -191,6 +194,16 @@ struct playback_session_s::impl_s
         return gpu_texture;
     }
 
+    // Called with mutex held, only after a usable frame has been queued.
+    void mark_ready()
+    {
+        if (!metrics.error.empty()) {
+            getlog("ffmpeg")->info("Video '{}' recovered", options.filename);
+            metrics.error.clear();
+        }
+        metrics.ready = true;
+    }
+
     void publish_decoded(worker_state_s& state, decoded_frame_s& decoded, utils::flicks pts)
     {
         std::shared_ptr<gpu::texture_s> gpu_texture;
@@ -211,7 +224,7 @@ struct playback_session_s::impl_s
             std::scoped_lock lock(mutex);
             if (generation == state.active_generation) {
                 queue.push_back(std::move(frame));
-                metrics.ready = true;
+                mark_ready();
             }
 
             return;
@@ -269,11 +282,11 @@ struct playback_session_s::impl_s
             }
 
             queue.push_back(std::move(frame));
-            metrics.ready = true;
+            mark_ready();
         }
     }
 
-    void decode_iteration(worker_state_s& state)
+    bool wait_for_decode_slot(worker_state_s& state)
     {
         if (!state.hardware_retry) {
             retire_unused_textures(gpu_pool, *gpu_budget, gpu_reserved);
@@ -289,13 +302,13 @@ struct playback_session_s::impl_s
                 // A paused/full software queue must still release retired GPU
                 // storage after render references or submissions finish.
                 if (!changed.wait_for(lock, 20ms, can_decode)) {
-                    return;
+                    return false;
                 }
             } else {
                 changed.wait(lock, can_decode);
             }
             if (stopped) {
-                return;
+                return false;
             }
 
             if (generation != state.active_generation) {
@@ -307,9 +320,20 @@ struct playback_session_s::impl_s
             }
         }
 
+        return true;
+    }
+
+    void decode_iteration(worker_state_s& state)
+    {
+        if (!wait_for_decode_slot(state)) {
+            return;
+        }
+
         std::unique_ptr<decoded_frame_s> decoded;
         try {
             decoded = state.decoder->next();
+        } catch (const source_error_s&) {
+            throw;
         } catch (const std::exception& error) {
             if (stopped) {
                 return;
@@ -329,7 +353,7 @@ struct playback_session_s::impl_s
 
         if (!decoded) {
             if (!state.frames_in_loop || state.loop_end <= utils::flicks{}) {
-                throw std::runtime_error("Video contains no playable frames");
+                throw source_error_s(-EIO, "Video contains no playable frames");
             }
 
             state.decoder->rewind();
@@ -400,27 +424,91 @@ struct playback_session_s::impl_s
         state.loop_end       = {};
     }
 
+    void open_source(worker_state_s& state)
+    {
+        state.decoder        = std::make_unique<decoder_s>(options.filename,
+                                                           options.attempt_hardware_decode,
+                                                           options.buffered_frames + 4,
+                                                           stopped,
+                                                           state.rejected_backends,
+                                                           &device,
+                                                           devices.get());
+        state.hardware_retry = state.decoder->backend() != "software";
+        utils::flicks resume;
+        {
+            std::scoped_lock lock(mutex);
+            resume                  = position;
+            state.active_generation = generation;
+        }
+        const auto local_position = resume > utils::flicks{} ? state.decoder->seek(resume) : utils::flicks{};
+        state.loop_offset         = resume - local_position;
+        state.loop_end            = {};
+        state.frames_in_loop      = false;
+        report_decoder(*state.decoder);
+    }
+
+    void wait_for_source(worker_state_s& state, const source_error_s& error, size_t attempt)
+    {
+        constexpr std::array delays{1s, 2s, 5s, 10s};
+        const auto           delay = delays.at(std::min(attempt, delays.size() - 1));
+        {
+            std::scoped_lock lock(mutex);
+            if (metrics.error.empty() || attempt == 0) {
+                getlog("ffmpeg")->warn("Video '{}' unavailable; retrying: {}", options.filename, error.what());
+            }
+            metrics.error = std::format("File unavailable; retrying: {}", error.what());
+            metrics.ready = false;
+            queue.clear();
+        }
+        // Keep current (and the node's displayed lease), but retire all unused
+        // conversion resources while the source is unavailable.
+        state.ingress.reset();
+        state.platform_ingress.reset();
+        state.decoder.reset();
+        state.stream.reset();
+        gpu_budget->release_memory(gpu_buffer_reserved);
+        gpu_reserved -= gpu_buffer_reserved;
+        gpu_buffer_reserved = 0;
+
+        const auto deadline = std::chrono::steady_clock::now() + delay;
+        while (!stopped && std::chrono::steady_clock::now() < deadline) {
+            retire_unused_textures(gpu_pool, *gpu_budget, gpu_reserved);
+            std::unique_lock lock(mutex);
+            // Poll retirement only while GPU storage remains; stop wakes either wait.
+            changed.wait_until(
+                lock, gpu_pool.empty() ? deadline : std::min(deadline, std::chrono::steady_clock::now() + 20ms), [&] {
+                    return stopped.load();
+                });
+        }
+    }
+
     void run()
     {
         try {
             worker_state_s state;
-            state.decoder        = std::make_unique<decoder_s>(options.filename,
-                                                               options.attempt_hardware_decode,
-                                                               options.buffered_frames + 4,
-                                                               stopped,
-                                                               std::span<const std::string>{},
-                                                               &device,
-                                                               devices.get());
-            state.hardware_retry = options.attempt_hardware_decode && state.decoder->backend() != "software";
-            report_decoder(*state.decoder);
-
+            size_t         attempt{};
             while (!stopped) {
-                decode_iteration(state);
+                try {
+                    if (!state.decoder) {
+                        open_source(state);
+                    }
+                    decode_iteration(state);
+                    std::scoped_lock lock(mutex);
+                    if (metrics.ready) {
+                        attempt = 0;
+                    }
+                } catch (const source_error_s& error) {
+                    if (!stopped) {
+                        wait_for_source(state, error, attempt);
+                        attempt = std::min(attempt + 1, size_t{3});
+                    }
+                }
             }
         } catch (const std::exception& error) {
             if (!stopped) {
                 getlog("ffmpeg")->error("Video '{}' failed: {}", options.filename, error.what());
                 std::scoped_lock lock(mutex);
+                metrics.ready = false;
                 metrics.error = error.what();
             }
         }

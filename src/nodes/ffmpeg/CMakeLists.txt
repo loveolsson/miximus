@@ -38,13 +38,16 @@ if(BUILD_TESTING)
         tests/decoder_test.cpp
         tests/playback_timeline_test.cpp
     )
+    if(WIN32)
+        target_sources(ffmpeg_playback_test PRIVATE tests/file_lifetime_win_test.cpp)
+    endif()
     target_link_libraries(ffmpeg_playback_test PRIVATE nodes ffmpeg GTest::gtest_main)
     add_sanitizers(ffmpeg_playback_test)
     miximus_stage_runtime_dlls(ffmpeg_playback_test)
     gtest_discover_tests(ffmpeg_playback_test)
 
     # Hardware validation is run explicitly, outside ordinary CTest.
-    add_executable(ffmpeg_gpu_test tests/texture_pool_test.cpp)
+    add_executable(ffmpeg_gpu_test tests/texture_pool_test.cpp tests/recovery_test.cpp)
     target_link_libraries(ffmpeg_gpu_test PRIVATE nodes gpu logger GTest::gtest_main)
     if(WIN32 AND NOT MIXIMUS_ENABLE_CEF)
         target_sources(ffmpeg_gpu_test PRIVATE tests/playback_no_cef_test.cpp)

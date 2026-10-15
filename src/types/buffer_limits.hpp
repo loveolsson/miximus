@@ -30,9 +30,10 @@ struct cef_export_buffer_limits_s : input_buffer_limits_s
 };
 struct cef_input_buffer_limits_s : input_buffer_limits_s
 {
-    // Chromium retains the displayed frame while acquiring its replacement.
+    // Chromium can retain displayed and queued frames while GPU work retires.
+    // Two slots permit progress; four provide headroom for continuous playback.
     static constexpr int MINIMUM_FRAME_COUNT = 2;
-    static constexpr int DEFAULT_FRAME_COUNT = 3;
+    static constexpr int DEFAULT_FRAME_COUNT = 4;
 };
 
 inline size_t validate_input_buffer_frames(size_t frames, size_t minimum = input_buffer_limits_s::MINIMUM_FRAME_COUNT)

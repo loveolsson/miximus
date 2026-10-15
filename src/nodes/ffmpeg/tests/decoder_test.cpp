@@ -7,6 +7,7 @@ extern "C" {
 }
 
 #include <atomic>
+#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -56,6 +57,39 @@ TEST_F(DecoderTest, DrainsAndRewindsWithoutLosingLastFrame)
 
         EXPECT_EQ(decoder.next(), nullptr);
         decoder.rewind();
+    }
+}
+
+TEST_F(DecoderTest, SeekKeepsSourceTimestampsAndWrapsLoopPosition)
+{
+    std::atomic_bool stopped{};
+    decoder_s        decoder(filename(), false, 4, stopped);
+    const auto       target = utils::to_flicks(0.04);
+    EXPECT_EQ(decoder.seek(utils::to_flicks(12.0) + target), target);
+    auto frame = decoder.next();
+    ASSERT_NE(frame, nullptr);
+    // Seeking may land on an earlier demuxer/keyframe boundary. Timestamps
+    // must still describe source position, not restart from zero at the seek.
+    for (int i = 0; i < 3 && frame->pts < target; ++i) {
+        frame = decoder.next();
+        ASSERT_NE(frame, nullptr);
+    }
+    EXPECT_EQ(frame->pts, target);
+    decoder.rewind();
+    frame = decoder.next();
+    ASSERT_NE(frame, nullptr);
+    EXPECT_EQ(frame->pts, utils::flicks{});
+}
+
+TEST_F(DecoderTest, MissingFileIsASourceFailureWithOriginalErrorCode)
+{
+    std::atomic_bool stopped{};
+    try {
+        decoder_s decoder(filename() + ".missing", true, 4, stopped);
+        FAIL() << "Missing file unexpectedly opened";
+    } catch (const source_error_s& error) {
+        EXPECT_EQ(error.code(), AVERROR(ENOENT));
+        EXPECT_NE(std::string_view(error.what()).find("Open video file"), std::string_view::npos);
     }
 }
 

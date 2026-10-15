@@ -27,15 +27,27 @@ namespace miximus::nodes::ffmpeg::detail {
 
 namespace {
 
+std::string error_message(int result, std::string_view operation)
+{
+    std::array<char, AV_ERROR_MAX_STRING_SIZE> text{};
+    av_strerror(result, text.data(), text.size());
+    return std::format("{}: {} (FFmpeg {})", operation, text.data(), result);
+}
+
+void check_source(int result, std::string_view operation)
+{
+    if (result < 0) {
+        throw source_error_s(result, operation);
+    }
+}
+
 void check(int result, std::string_view operation)
 {
     if (result >= 0) {
         return;
     }
 
-    std::array<char, AV_ERROR_MAX_STRING_SIZE> text{};
-    av_strerror(result, text.data(), text.size());
-    throw std::runtime_error(std::format("{}: {}", operation, text.data()));
+    throw std::runtime_error(error_message(result, operation));
 }
 
 utils::flicks timestamp(int64_t value, AVRational time_base)
@@ -430,13 +442,16 @@ struct decoder_s::impl_s
                 return;
             }
 
+            if (read < 0 && format->pb != nullptr && format->pb->error < 0) {
+                check_source(format->pb->error, "Read video file");
+            }
             if (read == AVERROR_EOF) {
                 check(avcodec_send_packet(codec, nullptr), "Drain video decoder");
                 draining = true;
                 return;
             }
 
-            check(read, "Read video packet");
+            check_source(read, "Read video packet");
             pending = true;
         }
 
@@ -603,8 +618,8 @@ struct decoder_s::impl_s
         av_dict_set(&options, "protocol_whitelist", "file", 0);
         const int opened = avformat_open_input(&format, filename.c_str(), nullptr, &options);
         av_dict_free(&options);
-        check(opened, "Open video file");
-        check(avformat_find_stream_info(format, nullptr), "Read video streams");
+        check_source(opened, "Open video file");
+        check_source(avformat_find_stream_info(format, nullptr), "Read video streams");
         const AVCodec* decoder = nullptr;
         stream                 = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
         check(stream, "Find video stream");
@@ -709,13 +724,41 @@ std::unique_ptr<decoded_frame_s> decoder_s::next()
     return nullptr;
 }
 
+source_error_s::source_error_s(int code, std::string_view operation)
+    : std::runtime_error(error_message(code, operation))
+    , code_(code)
+{
+}
+
+utils::flicks decoder_s::seek(utils::flicks position)
+{
+    auto&       s        = *impl_;
+    const auto* stream   = s.format->streams[s.stream];
+    const auto  start    = stream->start_time == AV_NOPTS_VALUE ? 0 : stream->start_time;
+    const auto  duration = stream->duration != AV_NOPTS_VALUE ? timestamp(stream->duration, stream->time_base)
+                                                              : timestamp(s.format->duration, AV_TIME_BASE_Q);
+    position             = std::max(position, utils::flicks{});
+    if (duration > utils::flicks{}) {
+        position %= duration;
+    }
+    const auto target = start + av_rescale_q(position.count(), AVRational{1, 705600000}, stream->time_base);
+    check_source(avformat_seek_file(s.format, s.stream, std::numeric_limits<int64_t>::min(), target, target, 0),
+                 "Seek video file");
+    avcodec_flush_buffers(s.codec);
+    av_packet_unref(s.packet);
+    s.pending = s.draining = false;
+    s.origin               = start;
+    s.next_pts             = position;
+    return position;
+}
+
 void decoder_s::rewind()
 {
     auto&      s      = *impl_;
     const auto start  = s.format->streams[s.stream]->start_time;
     const auto target = start == AV_NOPTS_VALUE ? 0 : start;
-    check(avformat_seek_file(s.format, s.stream, std::numeric_limits<int64_t>::min(), target, target, 0),
-          "Rewind video");
+    check_source(avformat_seek_file(s.format, s.stream, std::numeric_limits<int64_t>::min(), target, target, 0),
+                 "Rewind video");
     avcodec_flush_buffers(s.codec);
     av_packet_unref(s.packet);
     s.pending = s.draining = false;

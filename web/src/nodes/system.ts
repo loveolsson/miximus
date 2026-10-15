@@ -91,7 +91,7 @@ export const ApplicationSettingsNode = defineNode({
         max: 8,
       }).setPort(false),
     cef_input_buffer_frames: () =>
-      new NumericInterface("Chromium slots per texture input", 3, {
+      new NumericInterface("Chromium slots per texture input", 4, {
         precision: 0,
         step: 1,
         min: 2,

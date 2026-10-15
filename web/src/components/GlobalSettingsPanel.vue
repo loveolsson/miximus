@@ -66,7 +66,8 @@ const sectionDefinitions = [
   {
     title: "Browser Texture Inputs",
     keys: ["cef_export_buffer_frames", "cef_input_buffer_frames"],
-    description: "Changing slot counts reloads browser pages. Larger pools use more GPU memory.",
+    description:
+      "Changing slot counts reloads browser pages. Four Chromium slots per input are recommended; smaller pools can drop frames while Chromium retains textures. Larger pools use more GPU memory.",
   },
   {
     title: "DeckLink Output",

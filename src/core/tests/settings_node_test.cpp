@@ -114,7 +114,7 @@ TEST(SettingsNode, ValidatesAllInputBufferControlsAndPreservesDefaultsForOlderOp
     EXPECT_EQ(state.at("ndi_input_buffer_frames"), 1);
     EXPECT_EQ(state.at("cef_capture_buffer_frames"), 1);
     EXPECT_EQ(state.at("cef_export_buffer_frames"), 2);
-    EXPECT_EQ(state.at("cef_input_buffer_frames"), 3);
+    EXPECT_EQ(state.at("cef_input_buffer_frames"), 4);
     for (const auto* key : {"decklink_input_buffer_frames",
                             "ndi_input_buffer_frames",
                             "cef_capture_buffer_frames",

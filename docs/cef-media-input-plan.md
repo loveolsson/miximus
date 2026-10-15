@@ -290,7 +290,7 @@ user, is **4–6 simultaneous 1080p60 inputs on the current GPU**; eight-port in
 The graph campaign now accepts `--inputs 2..8`, independent source/browser dimensions, and warmup/steady intervals.
 The original diagnostic environment overrides have since been replaced by Global Settings:
 `cef_export_buffer_frames=1..8` selects native export capacity (default two), and `cef_input_buffer_frames=2..8`
-selects Chromium destination capacity (default three). Pending storage stays bounded at eight slots per input and
+selects Chromium destination capacity (default four). Pending storage stays bounded at eight slots per input and
 admission accounts for both selected depths. Changes recreate browser sessions. No depth implies preroll.
 
 Initial 15-second comparisons on the P2000, using 1080p inputs:

@@ -6,11 +6,23 @@
 #include <atomic>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 
 struct AVFrame;
 
 namespace miximus::nodes::ffmpeg::detail {
+
+// Source failures must not disqualify a hardware decoder.
+class source_error_s : public std::runtime_error
+{
+    int code_;
+
+  public:
+    source_error_s(int code, std::string_view operation);
+    int code() const noexcept { return code_; }
+};
 
 class decoded_frame_s
 {
@@ -70,6 +82,7 @@ class decoder_s
 
     std::unique_ptr<decoded_frame_s> next(); // nullptr after draining EOF
     void                             rewind();
+    utils::flicks                    seek(utils::flicks position);
     std::string                      backend() const;
     std::string                      fallback_reason() const;
 };

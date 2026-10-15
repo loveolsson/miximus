@@ -345,7 +345,7 @@ def main():
                     ndi_input_buffer_frames=1,
                     cef_capture_buffer_frames=1,
                     cef_export_buffer_frames=2,
-                    cef_input_buffer_frames=3,
+                    cef_input_buffer_frames=4,
                 )
                 for label, values in (
                     ("maximum", dict.fromkeys(defaults, 8)),
