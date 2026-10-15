@@ -1,4 +1,6 @@
-target_sources(nodes
+miximus_add_node_family(decklink)
+
+target_sources(nodes_decklink
 PRIVATE
     register.hpp
     register.cpp
@@ -23,9 +25,11 @@ PRIVATE
     registry.cpp
 )
 
-target_link_libraries(nodes
+target_link_libraries(nodes_decklink
 PRIVATE
     gpu
 PUBLIC
     decklink
 )
+
+target_link_libraries(nodes_decklink PRIVATE media shutdown_watchdog)

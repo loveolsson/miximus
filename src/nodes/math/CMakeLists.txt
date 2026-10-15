@@ -1,4 +1,6 @@
-target_sources(nodes
+miximus_add_node_family(math)
+
+target_sources(nodes_math
 PRIVATE
     register.hpp
     register.cpp

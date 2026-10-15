@@ -14,23 +14,27 @@
 #include "nodes/frame_execution_fwd.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
-#include "types/buffer_limits.hpp"
 #include "types/frame_rate.hpp"
-#include "utils/asio.hpp"
-#include "utils/cpu_task_worker.hpp"
 #include "utils/file_dialog.hpp"
 
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
-#include <thread>
 #include <vector>
+
+namespace boost::asio {
+class io_context;
+}
 
 namespace miximus::gpu {
 class device_s;
 class recording_s;
 } // namespace miximus::gpu
+
+namespace miximus::utils {
+class cpu_task_worker_s;
+}
 
 namespace miximus::core {
 
@@ -41,12 +45,14 @@ class app_state_s
     {
         struct decklink_input_settings_s
         {
-            int buffer_frames{decklink_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            decklink_input_settings_s();
+            int buffer_frames;
         };
         decklink_input_settings_s decklink_input;
         struct ndi_input_settings_s
         {
-            int buffer_frames{ndi_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            ndi_input_settings_s();
+            int buffer_frames;
         };
         ndi_input_settings_s ndi_input;
         struct ffmpeg_settings_s
@@ -56,33 +62,39 @@ class app_state_s
         ffmpeg_settings_s ffmpeg;
         struct cef_capture_settings_s
         {
-            int buffer_frames{cef_capture_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            cef_capture_settings_s();
+            int buffer_frames;
         };
         cef_capture_settings_s cef_capture;
         struct cef_export_settings_s
         {
-            int buffer_frames{cef_export_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            cef_export_settings_s();
+            int buffer_frames;
         };
         cef_export_settings_s cef_export;
         struct cef_input_settings_s
         {
-            int buffer_frames{cef_input_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            cef_input_settings_s();
+            int buffer_frames;
         };
         cef_input_settings_s cef_input;
 
         struct decklink_output_settings_s
         {
-            int buffer_frames{decklink_output_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            decklink_output_settings_s();
+            int buffer_frames;
         };
 
         struct ndi_output_settings_s
         {
-            int buffer_frames{ndi_output_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            ndi_output_settings_s();
+            int buffer_frames;
         };
 
         struct screen_output_settings_s
         {
-            int buffer_frames{screen_output_buffer_limits_s::DEFAULT_FRAME_COUNT};
+            screen_output_settings_s();
+            int buffer_frames;
         };
 
         struct framebuffer_settings_s
@@ -103,12 +115,9 @@ class app_state_s
     };
 
   private:
-    using io_service_t = boost::asio::io_context;
-    using work_guard_t = boost::asio::executor_work_guard<io_service_t::executor_type>;
+    struct configuration_worker_s;
     const command_line_options_s              command_line_options_;
-    io_service_t                              cfg_executor_;
-    std::unique_ptr<work_guard_t>             cfg_work_;
-    std::thread                               cfg_thread_;
+    std::unique_ptr<configuration_worker_s>   configuration_worker_;
     std::unique_ptr<utils::cpu_task_worker_s> cpu_task_worker_;
     std::unique_ptr<utils::file_dialog_s>     file_dialog_;
 
@@ -144,12 +153,12 @@ class app_state_s
     explicit app_state_s(test_state_t, command_line_options_s command_line_options = {});
     ~app_state_s();
 
-    auto              cfg_executor() noexcept { return &cfg_executor_; }
-    auto              gpu() noexcept { return gpu_.get(); }
-    gpu::recording_s& commands();
-    gpu::completion_s submit_gpu();
-    void              defer_output(std::function<void(gpu::completion_s)> publish);
-    void              commit_gpu_frame();
+    boost::asio::io_context* cfg_executor() noexcept;
+    auto                     gpu() noexcept { return gpu_.get(); }
+    gpu::recording_s&        commands();
+    gpu::completion_s        submit_gpu();
+    void                     defer_output(std::function<void(gpu::completion_s)> publish);
+    void                     commit_gpu_frame();
 
     // Always cancel uncommitted output leases on stack rewind. Earlier GPU
     // submissions remain valid, but cannot publish a partially evaluated frame.

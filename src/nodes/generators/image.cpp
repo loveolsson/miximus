@@ -7,6 +7,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "render/image_file.hpp"
+#include "utils/cpu_task_worker.hpp"
 #include "utils/failure_shutdown.hpp"
 
 #include <chrono>

@@ -7,8 +7,11 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/window.hpp"
 #include "logger/logger.hpp"
+#include "utils/asio.hpp"
+#include "utils/cpu_task_worker.hpp"
 #include "utils/environment.hpp"
 #include "utils/failure_shutdown.hpp"
+
 #if MIXIMUS_ENABLE_CEF
 #include "nodes/cef/subsystem.hpp"
 #endif
@@ -22,11 +25,21 @@
 #include <cstdlib>
 #include <exception>
 #include <memory>
+#include <thread>
 #include <utility>
 
 using namespace boost::asio;
 
 namespace miximus::core {
+struct app_state_s::configuration_worker_s
+{
+    boost::asio::io_context                                                                   executor;
+    std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work;
+    std::thread                                                                               thread;
+};
+
+boost::asio::io_context* app_state_s::cfg_executor() noexcept { return &configuration_worker_->executor; }
+
 namespace {
 
 gpu::device_options_s gpu_options(const command_line_options_s& command_line)
@@ -113,7 +126,7 @@ app_state_s::app_state_s()
 
 app_state_s::app_state_s(command_line_options_s command_line_options)
     : command_line_options_(std::move(command_line_options))
-    , cfg_work_(std::make_unique<executor_work_guard<io_context::executor_type>>(make_work_guard(cfg_executor_)))
+    , configuration_worker_(std::make_unique<configuration_worker_s>())
     , cpu_task_worker_(std::make_unique<utils::cpu_task_worker_s>())
     , file_dialog_(std::make_unique<utils::file_dialog_s>())
     , window_system_(std::make_unique<gpu::window_system_s>())
@@ -121,8 +134,10 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
     , ndi_registry_(nodes::ndi::ndi_registry_s::create_ndi_registry())
     , font_registry_(render::font_registry_s::create_font_registry())
-    , status_registry_(std::make_unique<node_status_registry_s>(cfg_executor_))
+    , status_registry_(std::make_unique<node_status_registry_s>(configuration_worker_->executor))
 {
+    configuration_worker_->work = std::make_unique<executor_work_guard<io_context::executor_type>>(
+        make_work_guard(configuration_worker_->executor));
     fallback_texture_ = std::make_unique<gpu::texture_s>(
         *gpu_, gpu::vec2i_t{FALLBACK_TEXTURE_DIMENSION, FALLBACK_TEXTURE_DIMENSION}, gpu::format_e::rgba_unorm16);
     fallback_texture_->clear(commands());
@@ -144,10 +159,10 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
         getlog("app")->error("CEF browser subsystem unavailable: {}", cef_error_);
     }
 #endif
-    cfg_thread_ = std::thread([this] {
-        while (!cfg_executor_.stopped()) {
+    configuration_worker_->thread = std::thread([this] {
+        while (!configuration_worker_->executor.stopped()) {
             try {
-                cfg_executor_.run();
+                configuration_worker_->executor.run();
             } catch (...) {
                 // Asio permits re-entering run() after a handler throws. Keep
                 // servicing shutdown callbacks; new graph work is now rejected.
@@ -159,6 +174,7 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
 
 app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s command_line_options)
     : command_line_options_(std::move(command_line_options))
+    , configuration_worker_(std::make_unique<configuration_worker_s>())
 {
 }
 
@@ -175,7 +191,7 @@ app_state_s::~app_state_s()
         cpu_task_worker_->request_stop();
         file_dialog_->stop();
         decklink_registry_->uninstall();
-        cfg_work_ = nullptr;
+        configuration_worker_->work = nullptr;
 
         // Capture-control work may still be retiring SDK buffers and upload
         // streams after a node was removed. Drain it before destroying the shared
@@ -209,11 +225,11 @@ app_state_s::~app_state_s()
         utils::report_shutdown_step_completed();
         utils::begin_shutdown_step("application worker services");
         try {
-            cfg_executor_.stop();
+            configuration_worker_->executor.stop();
         } catch (...) {
             utils::request_failure_shutdown("Failed to stop configuration worker");
         }
-        cfg_thread_.join();
+        configuration_worker_->thread.join();
     } catch (const std::exception& error) {
         utils::fail_without_unwinding("Application teardown failed", error.what());
     } catch (...) {

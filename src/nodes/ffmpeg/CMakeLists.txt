@@ -1,6 +1,12 @@
-target_sources(nodes PRIVATE
-    register.hpp
-    register.cpp
+miximus_add_node_family(ffmpeg)
+target_sources(nodes_ffmpeg PRIVATE register.hpp register.cpp playback_looping.cpp)
+target_link_libraries(nodes_ffmpeg PRIVATE ffmpeg_playback)
+
+add_library(ffmpeg_playback STATIC)
+target_link_libraries(ffmpeg_playback PUBLIC gpu PRIVATE logger shutdown_watchdog)
+add_sanitizers(ffmpeg_playback)
+
+target_sources(ffmpeg_playback PRIVATE
     registry_fwd.hpp
     registry.hpp
     registry.cpp
@@ -12,20 +18,19 @@ target_sources(nodes PRIVATE
     detail/playback.cpp
     detail/playback_timeline.hpp
     detail/texture_pool.hpp
-    playback_looping.cpp
 )
-target_link_libraries(nodes PRIVATE ffmpeg_platform)
+target_link_libraries(ffmpeg_playback PRIVATE ffmpeg_platform)
 
 if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_sources(nodes PRIVATE
+    target_sources(ffmpeg_playback PRIVATE
         detail/vulkan_ingest.cpp
         detail/vulkan_ingest.hpp
         detail/hardware_device.cpp
         detail/hardware_device.hpp
     )
-    target_link_libraries(nodes PRIVATE vulkan_dependencies)
+    target_link_libraries(ffmpeg_playback PRIVATE vulkan_dependencies)
 else()
-    target_sources(nodes PRIVATE
+    target_sources(ffmpeg_playback PRIVATE
         detail/vulkan_ingest_stub.cpp
         detail/vulkan_ingest.hpp
         detail/hardware_device_stub.cpp
@@ -41,14 +46,14 @@ if(BUILD_TESTING)
     if(WIN32)
         target_sources(ffmpeg_playback_test PRIVATE tests/file_lifetime_win_test.cpp)
     endif()
-    target_link_libraries(ffmpeg_playback_test PRIVATE nodes ffmpeg GTest::gtest_main)
+    target_link_libraries(ffmpeg_playback_test PRIVATE ffmpeg_playback ffmpeg GTest::gtest_main)
     add_sanitizers(ffmpeg_playback_test)
     miximus_stage_runtime_dlls(ffmpeg_playback_test)
     gtest_discover_tests(ffmpeg_playback_test)
 
     # Hardware validation is run explicitly, outside ordinary CTest.
     add_executable(ffmpeg_gpu_test tests/texture_pool_test.cpp tests/recovery_test.cpp)
-    target_link_libraries(ffmpeg_gpu_test PRIVATE nodes gpu logger GTest::gtest_main)
+    target_link_libraries(ffmpeg_gpu_test PRIVATE ffmpeg_playback gpu logger GTest::gtest_main)
     if(WIN32 AND NOT MIXIMUS_ENABLE_CEF)
         target_sources(ffmpeg_gpu_test PRIVATE tests/playback_no_cef_test.cpp)
         target_link_libraries(ffmpeg_gpu_test PRIVATE app)
@@ -58,10 +63,10 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
-    target_sources(nodes PRIVATE detail/platform_ingest_win.cpp detail/platform_ingest.hpp)
-    target_link_libraries(nodes PRIVATE d3d11_dependencies)
+    target_sources(ffmpeg_playback PRIVATE detail/platform_ingest_win.cpp detail/platform_ingest.hpp)
+    target_link_libraries(ffmpeg_playback PRIVATE d3d11_dependencies)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_sources(nodes PRIVATE detail/platform_ingest_linux.cpp detail/platform_ingest.hpp)
+    target_sources(ffmpeg_playback PRIVATE detail/platform_ingest_linux.cpp detail/platform_ingest.hpp)
 else()
-    target_sources(nodes PRIVATE detail/platform_ingest_stub.cpp detail/platform_ingest.hpp)
+    target_sources(ffmpeg_playback PRIVATE detail/platform_ingest_stub.cpp detail/platform_ingest.hpp)
 endif()

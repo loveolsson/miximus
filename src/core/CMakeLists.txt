@@ -9,6 +9,7 @@ add_library(app
     configuration.hpp
     configuration_fwd.hpp
     configuration.cpp
+    frame_settings.cpp
     frame_context.hpp
     frame_scheduler.hpp
     frame_scheduler_fwd.hpp
@@ -35,6 +36,9 @@ PRIVATE
     gpu
     render
     nodes
+    nodes_decklink
+    nodes_ndi
+    ffmpeg_playback
     shutdown_watchdog
     magic_enum::magic_enum
     Boost::program_options

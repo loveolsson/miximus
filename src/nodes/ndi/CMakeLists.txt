@@ -1,4 +1,6 @@
-target_sources(nodes
+miximus_add_node_family(ndi)
+
+target_sources(nodes_ndi
 PRIVATE
     registry_fwd.hpp
     registry.hpp
@@ -13,7 +15,9 @@ PRIVATE
     output.cpp
 )
 
-target_link_libraries(nodes
+target_link_libraries(nodes_ndi
 PUBLIC
     ndi
 )
+
+target_link_libraries(nodes_ndi PRIVATE media shutdown_watchdog)

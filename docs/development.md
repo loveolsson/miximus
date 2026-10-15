@@ -31,6 +31,18 @@ The deferred style and containment cleanup, to follow the Vulkan and CEF branch 
 
 ## Building and running
 
+Native node code is divided into static targets: `node_framework` contains the common node APIs and frame
+execution, `nodes_<family>` contains each node family's implementation, and `nodes` contains only the registration
+aggregate. Backend implementations can have their own node-local targets: `ffmpeg_playback` and the CEF runtime
+targets do not depend on the registration aggregate. Backend tests should link those targets directly, rather than
+pulling in every node and vendor SDK. Add family-specific dependencies in that family's `CMakeLists.txt`.
+
+Keep private service implementations out of `app_state.hpp`. Configuration-thread state is defined in
+`app_state.cpp`; consumers of the CPU task worker include its header explicitly. Frame buffer defaults are
+initialized in `frame_settings.cpp`, so changing a default does not recompile every application-state consumer.
+The shared `static_files` library still isolates bundled assets from native application code. Resource checks and
+runtime DLL refreshes remain intentional build steps even when no C++ source needs recompilation.
+
 For a clean Windows checkout, start with [Windows setup and the full-feature port handoff](windows-development.md).
 It covers all native libraries and vendor SDKs, including the required custom CEF build and CUDA transfer port,
 and distinguishes intermediate build checkpoints from full Windows hardware acceptance.

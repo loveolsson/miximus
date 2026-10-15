@@ -1,4 +1,6 @@
-target_sources(nodes PRIVATE
+miximus_add_node_family(cef)
+
+target_sources(nodes_cef PRIVATE
     register.hpp
     register.cpp
     subsystem_fwd.hpp
@@ -7,11 +9,10 @@ target_sources(nodes PRIVATE
     media_input_types.hpp
 )
 if(MIXIMUS_ENABLE_CEF)
-    target_sources(nodes PRIVATE browser.cpp)
+    target_sources(nodes_cef PRIVATE browser.cpp)
 else()
-    target_sources(nodes PRIVATE browser_unavailable.cpp)
+    target_sources(nodes_cef PRIVATE browser_unavailable.cpp)
 endif()
-target_compile_definitions(nodes PUBLIC MIXIMUS_ENABLE_CEF=$<BOOL:${MIXIMUS_ENABLE_CEF}>)
 add_library(cef_media_input STATIC detail/media_input_pool.hpp detail/media_input_pool.cpp)
 target_include_directories(cef_media_input PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(cef_media_input PUBLIC Threads::Threads)
@@ -84,7 +85,7 @@ if(MIXIMUS_ENABLE_CEF)
     target_include_directories(cef_runtime PUBLIC ${PROJECT_SOURCE_DIR}/src)
     add_dependencies(cef_runtime miximus_cef_helper)
     add_sanitizers(cef_runtime)
-    target_link_libraries(nodes PRIVATE cef_runtime)
+    target_link_libraries(nodes_cef PRIVATE cef_runtime)
     if(BUILD_TESTING)
         if(WIN32)
             set(CEF_PROBE_PLATFORM tests/probe_platform_win.cpp)

@@ -19,6 +19,8 @@ block()
             app
             gpu
             nodes
+            node_framework
+            ffmpeg_playback
             render
             web_server
             logger
@@ -26,6 +28,10 @@ block()
             miximus_types
             shutdown_watchdog
         )
+
+        foreach(family decklink ndi ffmpeg cef math screen utils teleprompter text debug generators composite switch system)
+            list(APPEND MIXIMUS_RELEASE_IPO_TARGETS nodes_${family})
+        endforeach()
 
         foreach(OPTIONAL_TARGET core_test render_test miximus_typescript_generator)
             if(TARGET ${OPTIONAL_TARGET})

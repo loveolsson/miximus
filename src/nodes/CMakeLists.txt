@@ -1,4 +1,4 @@
-add_library(nodes
+add_library(node_framework STATIC
     action.hpp
     action.cpp
     node.hpp
@@ -15,13 +15,32 @@ add_library(nodes
     frame_execution.hpp
     frame_execution_fwd.hpp
     frame_execution.cpp
-    register_all.hpp
-    register_all.cpp
     node_map.hpp
     node_map_fwd.hpp
     option_result.hpp
     normalize_option.hpp
 )
+
+find_package(nlohmann_json REQUIRED)
+target_link_libraries(node_framework PUBLIC gpu miximus_types nlohmann_json::nlohmann_json
+    PRIVATE logger magic_enum::magic_enum)
+target_compile_definitions(node_framework PUBLIC MIXIMUS_ENABLE_CEF=$<BOOL:${MIXIMUS_ENABLE_CEF}>)
+add_sanitizers(node_framework)
+
+# Registration is the composition layer; implementations do not depend on it.
+add_library(nodes STATIC register_all.hpp register_all.cpp)
+target_link_libraries(nodes PUBLIC node_framework)
+add_sanitizers(nodes)
+
+function(miximus_add_node_family family)
+    add_library(nodes_${family} STATIC)
+    target_link_libraries(nodes_${family} PUBLIC node_framework PRIVATE logger magic_enum::magic_enum)
+    target_link_libraries(nodes PRIVATE nodes_${family})
+    add_sanitizers(nodes_${family})
+    if(MIXIMUS_USE_PRECOMPILED_HEADERS)
+        target_precompile_headers(nodes_${family} PRIVATE <nlohmann/json.hpp>)
+    endif()
+endfunction()
 
 add_subdirectory(decklink)
 add_subdirectory(ndi)
@@ -37,31 +56,3 @@ add_subdirectory(generators)
 add_subdirectory(composite)
 add_subdirectory(switch)
 add_subdirectory(system)
-
-find_package(nlohmann_json REQUIRED)
-
-target_link_libraries(nodes
-PRIVATE
-    cpu_task_worker
-    gpu
-    decklink
-    ndi
-    render
-    media
-    miximus_types
-    logger
-    shutdown_watchdog
-    magic_enum::magic_enum
-PUBLIC
-    nlohmann_json::nlohmann_json
-)
-
-if(MIXIMUS_USE_PRECOMPILED_HEADERS)
-    target_precompile_headers(nodes PRIVATE
-        <boost/asio/executor_work_guard.hpp>
-        <boost/asio/io_context.hpp>
-        <nlohmann/json.hpp>
-    )
-endif()
-
-add_sanitizers(nodes)

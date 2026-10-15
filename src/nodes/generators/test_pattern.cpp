@@ -10,6 +10,7 @@
 #include "nodes/node_map.hpp"
 #include "nodes/normalize_option.hpp"
 #include "render/surface/surface.hpp"
+#include "utils/cpu_task_worker.hpp"
 #include "utils/failure_shutdown.hpp"
 #include "utils/lookup.hpp"
 #include "utils/observed_value.hpp"
@@ -168,11 +169,11 @@ class node_impl : public node_i
 
         generation_->upload_id = upload->upload_id();
         auto worker            = app->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
-                                                     generate_pattern,
-                                                     generation_->request.dimensions,
-                                                     generation_->request.pattern,
-                                                     generation_->request.show_logo,
-                                                     std::move(*upload));
+                                                                generate_pattern,
+                                                                generation_->request.dimensions,
+                                                                generation_->request.pattern,
+                                                                generation_->request.show_logo,
+                                                                std::move(*upload));
         if (!worker.has_value()) {
             return;
         }

@@ -74,10 +74,9 @@ function(find_ffmpeg_component _library _header)
   mark_as_advanced(${component}_INCLUDE_DIR ${component}_LIBRARY_RELEASE ${component}_LIBRARY_DEBUG)
 endfunction()
 
+# Discover only components consumed by playback. Add device/filter/audio
+# processing libraries when an implementation actually requires them.
 find_ffmpeg_component(avcodec    libavcodec/avcodec.h)
 find_ffmpeg_component(avformat   libavformat/avformat.h)
-find_ffmpeg_component(avdevice   libavdevice/avdevice.h)
 find_ffmpeg_component(avutil     libavutil/avutil.h)
-find_ffmpeg_component(avfilter   libavfilter/avfilter.h)
 find_ffmpeg_component(swscale    libswscale/swscale.h)
-find_ffmpeg_component(swresample libswresample/swresample.h)

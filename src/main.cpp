@@ -13,6 +13,7 @@
 #include "nodes/system/register.hpp"
 #include "types/node_status_json.hpp"
 #include "types/web_message_json.hpp"
+#include "utils/cpu_task_worker.hpp"
 #include "utils/failure_shutdown.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/process_id.hpp"

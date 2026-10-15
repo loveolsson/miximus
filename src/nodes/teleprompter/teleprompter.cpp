@@ -15,6 +15,7 @@
 #include "render/font/font_registry.hpp"
 #include "render/surface/surface.hpp"
 #include "types/node_status_json.hpp"
+#include "utils/cpu_task_worker.hpp"
 #include "utils/failure_shutdown.hpp"
 #include "utils/filesystem.hpp"
 #include "utils/observed_value.hpp"
