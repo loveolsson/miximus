@@ -17,6 +17,7 @@ class memory_budget_s
         : memory_budget_(bytes)
     {
     }
+
     bool reserve_memory(size_t bytes)
     {
         auto current = memory_usage_.load(std::memory_order_relaxed);
@@ -40,6 +41,7 @@ class memory_budget_s
     }
 
     size_t usage() const noexcept { return memory_usage_.load(std::memory_order_relaxed); }
+
     size_t limit() const noexcept { return memory_budget_; }
 };
 
@@ -52,6 +54,7 @@ class memory_reservation_s
 
   public:
     memory_reservation_s() = default;
+
     memory_reservation_s(memory_budget_s& budget, size_t bytes)
         : budget_(&budget)
     {
@@ -60,14 +63,18 @@ class memory_reservation_s
         }
         bytes_ = bytes;
     }
+
     ~memory_reservation_s() { reset(); }
+
     memory_reservation_s(const memory_reservation_s&)            = delete;
     memory_reservation_s& operator=(const memory_reservation_s&) = delete;
+
     memory_reservation_s(memory_reservation_s&& other) noexcept
         : budget_(std::exchange(other.budget_, nullptr))
         , bytes_(std::exchange(other.bytes_, 0))
     {
     }
+
     memory_reservation_s& operator=(memory_reservation_s&& other) noexcept
     {
         if (this != &other) {
@@ -77,6 +84,7 @@ class memory_reservation_s
         }
         return *this;
     }
+
     void resize(size_t bytes)
     {
         if (!budget_ || !budget_->resize_memory_reservation(bytes_, bytes)) {
@@ -84,6 +92,7 @@ class memory_reservation_s
         }
         bytes_ = bytes;
     }
+
     void reset() noexcept
     {
         if (budget_) {

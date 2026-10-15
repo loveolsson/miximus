@@ -563,6 +563,7 @@ struct media_input_session_s::impl_s
 
     std::shared_ptr<state_s> state;
     std::jthread             worker;
+
     impl_s(gpu::device_s&                         device,
            std::shared_ptr<media_input_runtime_s> runtime,
            bool                                   mipmaps,
@@ -594,6 +595,7 @@ media_input_session_s::media_input_session_s(gpu::device_s&                     
 }
 
 media_input_session_s::~media_input_session_s() { close(); }
+
 void media_input_session_s::attach(int browser_id)
 {
     std::scoped_lock lock(impl_->state->mutex);

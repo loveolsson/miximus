@@ -23,8 +23,9 @@ action_dispatch_e node_i::handle_action(action_context_s& /* context */, action_
 {
     return action_dispatch_e::unhandled;
 }
+
 action_dispatch_e
-node_i::handle_frame_action(core::app_state_s* /* app */, const node_state_s& /* state */, action_s& /* action */)
+node_i::handle_frame_action(execution_context_s* /* context */, const node_state_s& /* state */, action_s& /* action */)
 {
     return action_dispatch_e::unhandled;
 }
@@ -45,11 +46,11 @@ void node_i::report_connection(core::node_status_registry_s* registry, status::c
                                                                        : core::status_delivery_e::rate_limited);
 }
 
-void node_i::submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state)
+void node_i::submit(execution_context_s* context, const node_map_t& nodes, const node_state_s& state)
 {
     for (const auto& [_, iface] : interfaces_) {
         if (iface->direction() == interface_i::dir_e::input) {
-            interface_i::submit_dependencies(app, nodes, iface->connections(state));
+            interface_i::submit_dependencies(context, nodes, iface->connections(state));
         }
     }
 }

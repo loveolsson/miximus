@@ -1,7 +1,7 @@
-#include "core/app_state.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -126,7 +126,7 @@ class node_impl final : public node_i
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         const auto path = state.get_option<std::string_view>("file_path");
         if (path != desired_path_) {
@@ -143,8 +143,10 @@ class node_impl final : public node_i
         }
         finish_generation();
         if (!generation_ && !path.empty() && published_path_ != path && failed_path_ != path) {
-            auto task = app->cpu_task_worker()->submit(
-                utils::cpu_task_priority_e::background, load_image, app->texture_upload_service(), std::string(path));
+            auto task = context->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
+                                                           load_image,
+                                                           context->texture_upload_service(),
+                                                           std::string(path));
             if (task) {
                 generation_.emplace(generation_s{.path = std::string(path), .worker = std::move(*task), .upload = {}});
             }
@@ -154,7 +156,7 @@ class node_impl final : public node_i
                             .name    = state.get_option_string_view("name")});
     }
 
-    void complete(core::app_state_s* /*app*/) final { rendered_frame_.reset(); }
+    void complete(execution_context_s* /*context*/) final { rendered_frame_.reset(); }
 
     std::optional<utils::file_dialog_request_s> file_dialog_request(std::string_view    field,
                                                                     const node_state_s& state) const final

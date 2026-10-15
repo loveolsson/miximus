@@ -24,10 +24,12 @@ using namespace std::chrono_literals;
 struct scoped_session_s
 {
     browser_session_s session;
+
     scoped_session_s(gpu::device_s& device, browser_session_s::options_s options)
         : session(device, std::move(options))
     {
     }
+
     scoped_session_s(const scoped_session_s& other)            = delete;
     scoped_session_s& operator=(const scoped_session_s& other) = delete;
     scoped_session_s(scoped_session_s&& other)                 = delete;

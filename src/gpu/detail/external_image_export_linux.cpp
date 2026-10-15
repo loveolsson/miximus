@@ -52,11 +52,11 @@ uint64_t choose_export_modifier(const std::shared_ptr<device_state_s>& device, e
         };
 
         const auto     properties = query_external_image_properties(*device,
-                                                                EXPORT_FORMAT,
-                                                                VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
-                                                                EXPORT_USAGE,
-                                                                VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
-                                                                &modifier_query);
+                                                                    EXPORT_FORMAT,
+                                                                    VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+                                                                    EXPORT_USAGE,
+                                                                    VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                                                                    &modifier_query);
         const auto     result     = properties.result;
         constexpr auto required = VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
         if (result != VK_SUCCESS || extent.width > properties.image.maxExtent.width ||

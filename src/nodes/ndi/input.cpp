@@ -1,10 +1,10 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/input_capture.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
 #include "logger/logger.hpp"
 #include "media/media_clock_sample.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -76,7 +76,7 @@ class node_impl : public node_i
         status_registry->write(id_, source_timing_status(metrics.source_queue));
     }
 
-    void update_capture_lifecycle(core::app_state_s*            app,
+    void update_capture_lifecycle(execution_context_s*          context,
                                   core::node_status_registry_s* status_registry,
                                   const capture_selection_s&    selection)
     {
@@ -104,8 +104,8 @@ class node_impl : public node_i
         }
 
         log()->info("Scheduling NDI input setup for \"{}\"", selection.source_name);
-        capture_ = input_capture_s::create(app->texture_upload_service(),
-                                           app->ndi_registry()->control_executor(),
+        capture_ = input_capture_s::create(context->texture_upload_service(),
+                                           context->ndi_registry()->control_executor(),
                                            selection.source_name,
                                            id_,
                                            static_cast<size_t>(selection.buffer_frames));
@@ -122,26 +122,26 @@ class node_impl : public node_i
     node_impl(node_impl&&)                 = delete;
     node_impl& operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* /*result*/) final
     {
-        auto* status_registry = app->status_registry();
+        auto* status_registry = context->status_registry();
 
-        const auto current_version = app->ndi_registry()->get_source_list_version();
+        const auto current_version = context->ndi_registry()->get_source_list_version();
         if (source_version_.observe(current_version)) {
             status_registry->write(
                 id_,
-                status::source_names_status_s{.source_names = app->ndi_registry()->get_source_options()},
+                status::source_names_status_s{.source_names = context->ndi_registry()->get_source_options()},
                 core::status_delivery_e::immediate);
         }
 
         const capture_selection_s selection{.source_name   = state.get_option<std::string>("source_name"),
                                             .enabled       = state.get_option<bool>("enabled"),
-                                            .buffer_frames = app->frame_settings().ndi_input.buffer_frames};
-        update_capture_lifecycle(app, status_registry, selection);
+                                            .buffer_frames = context->frame_settings().ndi_input.buffer_frames};
+        update_capture_lifecycle(context, status_registry, selection);
         publish_metrics(status_registry);
 
         if (capture_ && capture_->phase() == input_capture_s::phase_e::running) {
-            const auto& frame = app->frame_context();
+            const auto& frame = context->frame_context();
             capture_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
         }
 
@@ -149,26 +149,26 @@ class node_impl : public node_i
                           {.connected = capture_ && capture_->phase() == input_capture_s::phase_e::running});
     }
 
-    void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
+    void submit(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         if (capture_) {
-            const auto& frame = app->frame_context();
+            const auto& frame = context->frame_context();
             (void)capture_->submit_frame(frame.program_pts);
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         rendered_input_frame_.reset();
         // Let recorded graph work run while waiting for the exact PTS-selected upload.
-        app->submit_gpu();
+        context->submit_gpu();
         const auto frame = capture_ ? capture_->resolve_frame() : std::nullopt;
         if (!frame.has_value()) {
             iface_tex_.set_value({.texture = framebuffer_.get(), .name = state.get_option_string_view("name")});
             return;
         }
         rendered_input_frame_ = frame->frame;
-        app->commands().wait_for(rendered_input_frame_->upload_completion());
+        context->commands().wait_for(rendered_input_frame_->upload_completion());
 
         framebuffer_ = rendered_input_frame_->conversion_texture();
 
@@ -176,8 +176,8 @@ class node_impl : public node_i
         // raw NDI frame. Interpret alpha as configured, then convert into linear
         // premultiplied working RGB before downstream filtering/compositing.
 
-        framebuffer_->clear(app->commands());
-        gpu::draw_texture(app->commands(),
+        framebuffer_->clear(context->commands());
+        gpu::draw_texture(context->commands(),
                           rendered_input_frame_->texture(),
                           framebuffer_.get(),
                           {.transfer = gpu::rec709_decode_operation(
@@ -185,11 +185,11 @@ class node_impl : public node_i
                            .compositing = gpu::compositing_e::replace});
 
         auto* output = framebuffer_.get();
-        app->commands().generate_mip_maps(*output);
+        context->commands().generate_mip_maps(*output);
         iface_tex_.set_value({.texture = output, .name = state.get_option_string_view("name")});
     }
 
-    void complete(core::app_state_s* /*app*/) final
+    void complete(execution_context_s* /*context*/) final
     {
         if (rendered_input_frame_) {
             rendered_input_frame_.reset();

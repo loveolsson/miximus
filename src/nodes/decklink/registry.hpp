@@ -22,6 +22,7 @@ struct IDeckLinkDeviceNotificationCallback;
 namespace miximus::nodes::decklink {
 
 class discovery_callback;
+
 namespace detail {
 class device_monitor_s;
 } // namespace detail
@@ -77,7 +78,8 @@ class decklink_registry_s
     decklink_sdk::decklink_ptr<IDeckLinkInput>  get_input(std::string_view name);
     decklink_sdk::decklink_ptr<IDeckLinkOutput> get_output(std::string_view name);
     std::shared_ptr<const device_status_s>      get_device_status(std::string_view name);
-    utils::serial_executor_s*                   control_executor() noexcept { return control_executor_.get(); }
+
+    utils::serial_executor_s* control_executor() noexcept { return control_executor_.get(); }
 
     uint64_t get_device_list_version() const noexcept { return device_list_version_.load(std::memory_order_relaxed); }
 

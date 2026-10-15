@@ -22,6 +22,7 @@
 using namespace miximus;
 using namespace gpu;
 using namespace gpu::transfer;
+
 namespace {
 
 using benchmark_clock_t = std::chrono::steady_clock;
@@ -77,6 +78,7 @@ transfer_measurement_s measure(staging_t& staging, staging_t::direction_e direct
         .format = {},
     };
 }
+
 struct probe_options_s
 {
     device_options_s options{};

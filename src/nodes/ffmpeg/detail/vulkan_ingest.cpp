@@ -79,6 +79,7 @@ struct frame_lock_s
     AVHWFramesContext*     frames;
     AVVulkanFramesContext* context;
     AVVkFrame*             frame;
+
     frame_lock_s(AVHWFramesContext* frame_context, AVVkFrame* image)
         : frames(frame_context)
         , context(static_cast<AVVulkanFramesContext*>(frame_context->hwctx))

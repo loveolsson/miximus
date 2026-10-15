@@ -13,6 +13,7 @@ struct conversion_texture_s
 {
     std::shared_ptr<texture_s> texture;
     size_t                     reserved_bytes{};
+
     void initialize(device_s& device, vec2i_t dimensions, std::optional<sampling_e> sampling, memory_budget_s& budget)
     {
         if (!sampling || texture) {
@@ -31,6 +32,7 @@ struct conversion_texture_s
             throw;
         }
     }
+
     void release(memory_budget_s& budget)
     {
         texture.reset();

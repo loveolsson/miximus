@@ -26,6 +26,7 @@ class cache_clear_callback_s final : public CefCompletionCallback
         : pending_(std::move(pending))
     {
     }
+
     void OnComplete() override { *pending_ = false; }
 };
 
@@ -65,7 +66,8 @@ class browser_app_s final
     }
 
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override { return this; }
-    void                                OnContextInitialized() override
+
+    void OnContextInitialized() override
     {
         {
             std::scoped_lock lock(mutex);

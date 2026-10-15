@@ -128,10 +128,10 @@ class node_impl : public node_i
     output_interface_s<double> iface_res_{*this, "res"};
 
   public:
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         const auto option = state.get_option<double>("t");
-        const auto input  = iface_t_.resolve_value(app, nodes, state, option);
+        const auto input  = iface_t_.resolve_value(context, nodes, state, option);
         const auto value  = glm::clamp(input, 0.0, 1.0);
         const auto easing = state.get_enum_option_unchecked<easing_e>("easing");
 

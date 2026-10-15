@@ -16,6 +16,7 @@ class task_s final : public CefTask
         : function_(std::move(function))
     {
     }
+
     void Execute() override { function_(); }
 };
 

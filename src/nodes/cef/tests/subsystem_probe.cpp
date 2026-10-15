@@ -63,6 +63,7 @@ auto await_frame(session_s& session)
     }
     throw std::runtime_error("Session capture timed out");
 }
+
 void await_context(session_s& session)
 {
     const auto deadline = std::chrono::steady_clock::now() + 5s;
@@ -261,6 +262,7 @@ class crash_task_s final : public CefTask
         , method_(std::move(method))
     {
     }
+
     void Execute() override
     {
         // This probe creates fewer than 32 browsers, in its own embedded runtime.
@@ -368,12 +370,14 @@ void exercise_color(gpu::device_s& device, session_s& session)
     const auto                      decode   = [](float value) {
         return value <= 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
     };
+
     struct case_s
     {
         const char*          css;
         std::array<float, 4> reference;
         float                tolerance;
     };
+
     const std::array cases{
         case_s{.css = "rgb(255,0,0)",              .reference = {1, 0, 0, 1},                                            .tolerance = 0.00004F},
         case_s{.css = "rgb(0,255,0)",              .reference = {0, 1, 0, 1},                                            .tolerance = 0.00004F},

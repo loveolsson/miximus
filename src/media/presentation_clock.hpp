@@ -70,8 +70,8 @@ class presentation_clock_s
                 // refresh rates, while rejecting a pause as a new display rate.
                 const auto rounding_allowance = nominal_frame_duration_ / 50;
                 const auto bounded_duration   = std::clamp(observed_duration,
-                                                         nominal_frame_duration_ - rounding_allowance,
-                                                         nominal_frame_duration_ + rounding_allowance);
+                                                           nominal_frame_duration_ - rounding_allowance,
+                                                           nominal_frame_duration_ + rounding_allowance);
                 frame_duration_ += (bounded_duration - frame_duration_) / RATE_FILTER_DIVISOR;
                 rate_reference_ = completion;
                 rate_intervals_ = 0;

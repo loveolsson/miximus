@@ -32,15 +32,21 @@ struct node_manager_test_access_s
     {
         manager.node_definitions_.emplace("action_test", std::move(factory));
     }
-    static node_actions_s::batch_t  take(node_manager_s& manager) { return manager.take_frame_updates(); }
+
+    static node_actions_s::batch_t take(node_manager_s& manager) { return manager.take_frame_updates(); }
+
     static const nodes::node_map_t& snapshot(node_manager_s& manager) { return manager.nodes_copy_; }
+
     static const nodes::node_map_t& config(node_manager_s& manager) { return manager.nodes_; }
-    static void                     publish(node_manager_s& manager, node_status_registry_s& registry)
+
+    static void publish(node_manager_s& manager, node_status_registry_s& registry)
     {
         manager.publish_frame_status(registry);
     }
+
     static void close(node_manager_s& manager) { manager.close_actions(); }
 };
+
 namespace {
 using nodes::action_dispatch_e;
 using nodes::action_result_s;
@@ -55,6 +61,7 @@ struct observations_s
     std::vector<action_s>        deferred;
     size_t                       starts{};
 };
+
 class action_node_s final : public nodes::node_i
 {
     std::shared_ptr<observations_s>   observed_;
@@ -66,17 +73,22 @@ class action_node_s final : public nodes::node_i
         : observed_(std::move(observed))
     {
     }
+
     std::string_view type() const final { return "action_test"; }
-    void
-    execute(app_state_s* /* app */, const nodes::node_map_t& /* nodes */, const nodes::node_state_s& /* state */) final
+
+    void execute(nodes::execution_context_s* /* context */,
+                 const nodes::node_map_t& /* nodes */,
+                 const nodes::node_state_s& /* state */) final
     {
     }
+
     nlohmann::json get_default_options() const final
     {
         return {
             {"value", 0}
         };
     }
+
     nodes::option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         if (name != "value" || !value->is_number_integer() || value->get<int>() < 0) {
@@ -88,11 +100,28 @@ class action_node_s final : public nodes::node_i
         }
         return nodes::option_result_e::ok;
     }
+
     action_dispatch_e handle_action(nodes::action_context_s& context, action_s& action) const final
     {
         observed_->admissions.push_back(std::this_thread::get_id());
         return handle_config(context, action);
     }
+
+    void defer_action(nodes::action_context_s& context) const
+    {
+        context.defer([observed = observed_](nodes::configuration_context_s* /* context */, action_s owned) {
+            ++observed->starts;
+            if (owned.name == "throw_start") {
+                throw std::runtime_error("injected start failure");
+            }
+            if (owned.name == "async") {
+                observed->deferred.push_back(std::move(owned));
+            } else {
+                owned.complete();
+            }
+        });
+    }
+
     action_dispatch_e handle_config(nodes::action_context_s& context, action_s& action) const
     {
         const auto& name   = action.name;
@@ -142,17 +171,7 @@ class action_node_s final : public nodes::node_i
             return action_dispatch_e::frame;
         }
         if (name == "independent" || name == "async" || name == "throw_start") {
-            context.defer([observed = observed_](app_state_s* /* app */, action_s owned) {
-                ++observed->starts;
-                if (owned.name == "throw_start") {
-                    throw std::runtime_error("injected start failure");
-                }
-                if (owned.name == "async") {
-                    observed->deferred.push_back(std::move(owned));
-                } else {
-                    owned.complete();
-                }
-            });
+            defer_action(context);
             return action_dispatch_e::handled;
         }
         if (name == "large") {
@@ -167,8 +186,10 @@ class action_node_s final : public nodes::node_i
         }
         return action_dispatch_e::unhandled;
     }
-    action_dispatch_e
-    handle_frame_action(app_state_s* /* app */, const nodes::node_state_s& state, action_s& action) final
+
+    action_dispatch_e handle_frame_action(nodes::execution_context_s* /* context */,
+                                          const nodes::node_state_s& state,
+                                          action_s&                  action) final
     {
         if (action.name == "unhandled") {
             return action_dispatch_e::unhandled;
@@ -176,6 +197,7 @@ class action_node_s final : public nodes::node_i
         handle_frame(state, action);
         return action_dispatch_e::handled;
     }
+
     void handle_frame(const nodes::node_state_s& state, action_s& action)
     {
         observed_->deliveries.push_back(std::this_thread::get_id());
@@ -208,6 +230,7 @@ struct update_s
     bool                         corrected{};
     std::optional<origin_info_s> origin;
 };
+
 class recording_adapter_s final : public node_manager_s::adapter_i
 {
     std::reference_wrapper<std::vector<update_s>> updates_;
@@ -219,18 +242,21 @@ class recording_adapter_s final : public node_manager_s::adapter_i
         , removed_(std::move(removed))
     {
     }
+
     void emit_add_node(std::string_view /* type */,
                        std::string_view /* id */,
                        const nlohmann::json& /* options */,
                        const std::optional<origin_info_s>& /* origin */) final
     {
     }
+
     void emit_remove_node(std::string_view id, const std::optional<origin_info_s>& /* origin */) final
     {
         if (removed_) {
             removed_(id);
         }
     }
+
     void emit_update_node(std::string_view                    id,
                           const nlohmann::json&               options,
                           bool                                corrected,
@@ -238,7 +264,9 @@ class recording_adapter_s final : public node_manager_s::adapter_i
     {
         updates_.get().push_back({.id = std::string(id), .options = options, .corrected = corrected, .origin = origin});
     }
+
     void emit_add_connection(const connection_s& /* con */, const std::optional<origin_info_s>& /* origin */) final {}
+
     void emit_remove_connection(const connection_s& /* con */, const std::optional<origin_info_s>& /* origin */) final
     {
     }
@@ -249,7 +277,8 @@ struct action_manager_test_s : testing::Test
     std::shared_ptr<observations_s> observed = std::make_shared<observations_s>();
     std::vector<action_result_s>    replies;
     std::unique_ptr<node_manager_s> manager;
-    void                            SetUp() override
+
+    void SetUp() override
     {
         if (!getlog("app")) {
             logger::init_loggers(spdlog::level::off);
@@ -258,6 +287,7 @@ struct action_manager_test_s : testing::Test
         access::define(*manager, [state = observed] { return std::make_shared<action_node_s>(state); });
         ASSERT_EQ(manager->handle_add_node("action_test", "n", nlohmann::json::object()), error_e::no_error);
     }
+
     node_manager_s::action_request_s request(std::string name, nlohmann::json payload = nullptr, std::string id = "n")
     {
         return {.id      = std::move(id),
@@ -265,17 +295,20 @@ struct action_manager_test_s : testing::Test
                 .payload = std::move(payload),
                 .reply   = [this](action_result_s result) { replies.push_back(std::move(result)); }};
     }
+
     void send(std::string name, nlohmann::json payload = nullptr, std::string id = "n")
     {
         auto action = request(std::move(name), std::move(payload), std::move(id));
         EXPECT_EQ(manager->handle_node_action(nullptr, action.id, action.name, action.payload, std::move(action.reply)),
                   error_e::no_error);
     }
+
     void frame() const
     {
         auto actions = access::take(*manager);
         actions.dispatch(nullptr, access::snapshot(*manager));
     }
+
     int value(std::string_view id = "n") const
     {
         return access::config(*manager).at(std::string(id)).state.options.at("value").get<int>();
@@ -694,6 +727,7 @@ TEST_F(action_manager_test_s, ImmediateReplyCanReenterConfigurationAfterCommit)
               error_e::no_error);
     EXPECT_EQ(value(), 9);
 }
+
 TEST_F(action_manager_test_s, ActionSettingsBroadcastToOriginAndPersistWithoutTransientActions)
 {
     std::vector<update_s> updates;
@@ -874,20 +908,24 @@ TEST(NodeActionPlan, MissingFrameHandlerReportsAnImplementationError)
     {
       public:
         std::string_view type() const final { return "action_test"; }
-        void             execute(app_state_s* /* app */,
-                                 const nodes::node_map_t& /* nodes */,
-                                 const nodes::node_state_s& /* state */) final
+
+        void execute(nodes::execution_context_s* /* context */,
+                     const nodes::node_map_t& /* nodes */,
+                     const nodes::node_state_s& /* state */) final
         {
         }
+
         nodes::option_result_e normalize_option(std::string_view /* name */, nlohmann::json* /* value */) const final
         {
             return nodes::option_result_e::invalid;
         }
+
         action_dispatch_e handle_action(nodes::action_context_s& /* context */, action_s& /* action */) const final
         {
             return action_dispatch_e::frame;
         }
     };
+
     if (!getlog("app")) {
         logger::init_loggers(spdlog::level::off);
     }

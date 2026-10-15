@@ -1,8 +1,8 @@
 #include "browser_inputs.hpp"
 #include "browser_options.hpp"
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "nodes/action.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -40,10 +40,10 @@ class node_impl final : public node_i
     std::string                  error_;
     status::cef_browser_status_s browser_status_;
 
-    static session_t::options_s session_options(core::app_state_s* app, const node_state_s& state)
+    static session_t::options_s session_options(execution_context_s* context, const node_state_s& state)
     {
         const auto url  = state.get_option<std::string>("url");
-        const auto rate = app->frame_settings().frame_rate;
+        const auto rate = context->frame_settings().frame_rate;
         const auto size = state.get_option<gpu::vec2_t>("size");
         return {
             .url        = url,
@@ -52,9 +52,9 @@ class node_impl final : public node_i
             // fractional program rates; capture never skips received paints.
             .frame_rate    = static_cast<int>((rate.numerator + uint64_t(rate.denominator) - 1) / rate.denominator),
             .input_mipmaps = state.get_option<bool>("input_mipmaps"),
-            .capture_buffer_frames = static_cast<size_t>(app->frame_settings().cef_capture.buffer_frames),
-            .export_buffer_frames  = static_cast<size_t>(app->frame_settings().cef_export.buffer_frames),
-            .input_buffer_frames   = static_cast<size_t>(app->frame_settings().cef_input.buffer_frames),
+            .capture_buffer_frames = static_cast<size_t>(context->frame_settings().cef_capture.buffer_frames),
+            .export_buffer_frames  = static_cast<size_t>(context->frame_settings().cef_export.buffer_frames),
+            .input_buffer_frames   = static_cast<size_t>(context->frame_settings().cef_input.buffer_frames),
         };
     }
 
@@ -85,6 +85,7 @@ class node_impl final : public node_i
         uint64_t          restarts;
         bool              operator==(const lifecycle_s&) const = default;
     };
+
     utils::observed_value_s<lifecycle_s> reported_lifecycle_;
 
     void publish_browser_status(core::node_status_registry_s* registry, const status::cef_browser_status_s& value)
@@ -166,7 +167,7 @@ class node_impl final : public node_i
         }
     }
 
-    void handle_reload(core::app_state_s* app, const node_state_s& state, action_s action)
+    void handle_reload(execution_context_s* context, const node_state_s& state, action_s action)
     {
         const auto payload = action.get_typed_payload<decltype(node_actions::reload)::payload_type>();
         if (!payload) {
@@ -176,7 +177,7 @@ class node_impl final : public node_i
         // Runtime/session objects belong exclusively to the render thread. The
         // frame may include configuration accepted after action admission.
         if (!state.get_option<bool>("enabled") || state.get_option<std::string_view>("url").empty() || !request_ ||
-            !session_ || !selection_ || *selection_ != session_options(app, state)) {
+            !session_ || !selection_ || *selection_ != session_options(context, state)) {
             action.fail(error_e::unavailable, "Browser has no active session to reload");
             return;
         }
@@ -200,21 +201,23 @@ class node_impl final : public node_i
     {
         return action.name == node_actions::reload.name ? action_dispatch_e::frame : action_dispatch_e::unhandled;
     }
-    action_dispatch_e handle_frame_action(core::app_state_s* app, const node_state_s& state, action_s& action) final
+
+    action_dispatch_e
+    handle_frame_action(execution_context_s* context, const node_state_s& state, action_s& action) final
     {
         if (action.name == node_actions::reload.name) {
-            handle_reload(app, state, std::move(action));
+            handle_reload(context, state, std::move(action));
             return action_dispatch_e::handled;
         }
         return action_dispatch_e::unhandled;
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* result) final
     {
-        auto*      status  = app->status_registry();
+        auto*      status  = context->status_registry();
         const bool enabled = state.get_option<bool>("enabled");
         const auto url     = state.get_option<std::string_view>("url");
-        if (app->cef_subsystem() == nullptr || !enabled || url.empty()) {
+        if (context->cef_subsystem() == nullptr || !enabled || url.empty()) {
             stop();
             selection_.reset();
             report_connection(status, {.connected = false});
@@ -222,12 +225,12 @@ class node_impl final : public node_i
                 status,
                 status::cef_browser_status_s{
                     .cef_state        = !enabled || url.empty() ? cef_state_e::stopped : cef_state_e::unavailable,
-                    .cef_error        = !enabled || url.empty() ? "" : app->cef_error(),
+                    .cef_error        = !enabled || url.empty() ? "" : context->cef_error(),
                     .cef_inputs_error = {},
                 });
             return;
         }
-        const auto selection = session_options(app, state);
+        const auto selection = session_options(context, state);
         if (selection_ != selection) {
             stop();
             selection_ = selection;
@@ -236,10 +239,10 @@ class node_impl final : public node_i
             retry_after_ = {};
         }
         const auto now = std::chrono::steady_clock::now();
-        update_session(*app->cef_subsystem(), selection, now);
+        update_session(*context->cef_subsystem(), selection, now);
         std::optional<session_t::metrics_s> metrics;
         if (session_) {
-            const auto& frame = app->frame_context();
+            const auto& frame = context->frame_context();
             session_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
             session_->send_program_time(frame);
             metrics = session_->metrics();
@@ -262,19 +265,19 @@ class node_impl final : public node_i
         publish_metrics(status, metrics);
     }
 
-    void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void submit(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         if (session_) {
-            (void)session_->submit_frame(app->frame_context().program_pts);
+            (void)session_->submit_frame(context->frame_context().program_pts);
             for (size_t input = 0; input < inputs_.ports.size(); ++input) {
                 if ((input_mask_ & (1U << input)) != 0U) {
-                    interface_i::submit_dependencies(app, nodes, inputs_.ports.at(input).connections(state));
+                    interface_i::submit_dependencies(context, nodes, inputs_.ports.at(input).connections(state));
                 }
             }
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         output_ = session_ ? session_->resolve_frame() : nullptr;
         iface_tex_.set_value(
@@ -285,7 +288,7 @@ class node_impl final : public node_i
                     continue;
                 }
 
-                const auto             source_info = inputs_.ports.at(input).resolve_value(app, nodes, state);
+                const auto             source_info = inputs_.ports.at(input).resolve_value(context, nodes, state);
                 auto*                  source      = source_info.texture;
                 const auto             connections = inputs_.ports.at(input).connections(state);
                 const std::string_view source_node =
@@ -294,19 +297,19 @@ class node_impl final : public node_i
                     connections.empty() ? std::string_view{} : connections.front().from_interface;
                 if (auto publish = session_->record_media_input(
                         input,
-                        app->commands(),
+                        context->commands(),
                         source,
                         source_node,
                         source_interface,
-                        std::chrono::duration_cast<std::chrono::microseconds>(app->frame_context().program_pts)
+                        std::chrono::duration_cast<std::chrono::microseconds>(context->frame_context().program_pts)
                             .count())) {
-                    app->defer_output([publish = std::move(publish)](const gpu::completion_s&) { publish(); });
+                    context->defer_output([publish = std::move(publish)](const gpu::completion_s&) { publish(); });
                 }
             }
         }
     }
 
-    void complete(core::app_state_s* /* app */) final
+    void complete(execution_context_s* /* context */) final
     {
         output_.reset();
         if (session_) {
@@ -314,11 +317,13 @@ class node_impl final : public node_i
         }
     }
 
-    nlohmann::json  get_default_options() const final { return cef::browser_default_options(); }
+    nlohmann::json get_default_options() const final { return cef::browser_default_options(); }
+
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         return cef::normalize_browser_option(name, value);
     }
+
     std::string_view type() const final { return "cef_browser"; }
 };
 } // namespace

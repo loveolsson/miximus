@@ -19,6 +19,7 @@
 
 namespace miximus::nodes::cef {
 using namespace detail;
+
 namespace {
 using namespace std::chrono_literals;
 using phase_e = browser_session_s::phase_e;
@@ -35,7 +36,8 @@ struct shared_state_s
     mutable std::mutex                     mutex;
     mutable std::condition_variable        changed;
     std::string                            error;
-    void                                   fail(std::string message)
+
+    void fail(std::string message)
     {
         std::scoped_lock lock(mutex);
         if (error.empty()) {
@@ -86,15 +88,22 @@ class client_s final
     {
     }
 
-    CefRefPtr<CefRenderHandler>     GetRenderHandler() override { return this; }
-    CefRefPtr<CefLifeSpanHandler>   GetLifeSpanHandler() override { return this; }
-    CefRefPtr<CefLoadHandler>       GetLoadHandler() override { return this; }
-    CefRefPtr<CefRequestHandler>    GetRequestHandler() override { return this; }
-    CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
-    CefRefPtr<CefDownloadHandler>   GetDownloadHandler() override { return this; }
+    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
 
-    CefRefPtr<CefJSDialogHandler>    GetJSDialogHandler() override { return this; }
-    CefRefPtr<CefDialogHandler>      GetDialogHandler() override { return this; }
+    CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+
+    CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+
+    CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+    CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
+
+    CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+
+    CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
+
+    CefRefPtr<CefDialogHandler> GetDialogHandler() override { return this; }
+
     CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
 
     capture_stream_s& capture() { return capture_; }
@@ -475,10 +484,14 @@ void session_s::advance_frames(utils::flicks pts, utils::flicks target_time, boo
 {
     impl_->client->capture().advance_frames(pts, target_time, discontinuity);
 }
-bool                   session_s::submit_frame(utils::flicks pts) { return impl_->client->capture().submit_frame(pts); }
+
+bool session_s::submit_frame(utils::flicks pts) { return impl_->client->capture().submit_frame(pts); }
+
 session_s::frame_ptr_t session_s::resolve_frame() { return impl_->client->capture().resolve_frame(); }
-void                   session_s::release_prepared_frame() { impl_->client->capture().release_prepared_frame(); }
-void                   session_s::reset_frames() { impl_->client->capture().reset_frames(); }
+
+void session_s::release_prepared_frame() { impl_->client->capture().release_prepared_frame(); }
+
+void session_s::reset_frames() { impl_->client->capture().reset_frames(); }
 
 session_s::metrics_s session_s::metrics() const
 {
@@ -493,7 +506,8 @@ session_s::metrics_s session_s::metrics() const
     return result;
 }
 
-uint32_t              session_s::media_input_demand() const { return impl_->state->inputs->demand(); }
+uint32_t session_s::media_input_demand() const { return impl_->state->inputs->demand(); }
+
 std::function<void()> session_s::record_media_input(size_t                input,
                                                     gpu::recording_s&     commands,
                                                     const gpu::texture_s* source,

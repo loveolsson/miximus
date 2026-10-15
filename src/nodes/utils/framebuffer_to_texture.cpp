@@ -1,6 +1,6 @@
-#include "core/app_state.hpp"
 #include "gpu/recording.hpp"
 #include "gpu/texture.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -20,14 +20,14 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void prepare(core::app_state_s* /*app*/, const node_state_s& /*nodes*/, prepare_result_s* /*result*/) final {}
+    void prepare(execution_context_s* /*context*/, const node_state_s& /*nodes*/, prepare_result_s* /*result*/) final {}
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        const auto texture_source = iface_fb_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_fb_.resolve_value(context, nodes, state);
         auto*      texture        = texture_source.texture;
         if (texture != nullptr) {
-            app->commands().generate_mip_maps(*texture);
+            context->commands().generate_mip_maps(*texture);
         }
         iface_tex_.set_value(texture_source.as_texture());
     }

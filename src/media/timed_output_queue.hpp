@@ -142,9 +142,12 @@ class timed_output_queue_s
     }
 
     const timed_output_queue_metrics_s& metrics() const noexcept { return metrics_; }
-    size_t                              queued() const noexcept { return frames_.size(); }
-    size_t                              capacity() const noexcept { return config_.capacity; }
-    std::optional<utils::flicks>        oldest_program_target_time() const noexcept
+
+    size_t queued() const noexcept { return frames_.size(); }
+
+    size_t capacity() const noexcept { return config_.capacity; }
+
+    std::optional<utils::flicks> oldest_program_target_time() const noexcept
     {
         if (frames_.empty()) {
             return std::nullopt;

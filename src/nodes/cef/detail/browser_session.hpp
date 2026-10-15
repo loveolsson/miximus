@@ -1,5 +1,6 @@
 #pragma once
 #include "nodes/cef/session.hpp"
+
 namespace miximus::nodes::cef::detail {
 // Lifecycle authority is held by the subsystem control worker. Consumers receive
 // session_s, which exposes frame consumption, commands and status only.
@@ -10,6 +11,7 @@ class browser_session_s final : public session_s
         : session_s(device, std::move(options), std::move(inputs))
     {
     }
+
     ~browser_session_s();
     browser_session_s(const browser_session_s&)            = delete;
     browser_session_s& operator=(const browser_session_s&) = delete;

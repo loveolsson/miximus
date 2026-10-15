@@ -65,52 +65,48 @@ gpu::device_options_s gpu_options(const command_line_options_s& command_line)
 }
 } // namespace
 
-gpu::recording_s& app_state_s::commands()
-{
-    if (!recording_) {
-        recording_ = gpu_->try_record();
-        if (!recording_) {
-            throw gpu::recording_unavailable_s{};
-        }
-    }
+gpu::recording_s& app_state_s::commands() { return frame_commands_->commands(); }
 
-    return *recording_;
-}
-
-gpu::completion_s app_state_s::submit_gpu()
-{
-    if (recording_) {
-        last_submission_ = recording_->submit();
-        recording_.reset();
-    }
-
-    return last_submission_;
-}
+gpu::completion_s app_state_s::submit_gpu() { return frame_commands_->submit_gpu(); }
 
 void app_state_s::defer_output(std::function<void(gpu::completion_s)> publish)
 {
-    pending_outputs_.emplace_back(std::move(publish));
+    frame_commands_->defer_output(std::move(publish));
 }
 
-void app_state_s::commit_gpu_frame()
-{
-    if (!pending_outputs_.empty()) {
-        auto& recording = commands();
-        for (auto& publish : pending_outputs_) {
-            recording.on_submitted(std::move(publish));
-        }
-        pending_outputs_.clear();
-    }
-    submit_gpu();
-}
+void app_state_s::commit_gpu_frame() { frame_commands_->commit(); }
 
-void app_state_s::abort_gpu() noexcept
-{
-    recording_.reset();
-    pending_outputs_.clear();
-}
+void app_state_s::abort_gpu() noexcept { frame_commands_->abort(); }
+
 namespace {
 constexpr int FALLBACK_TEXTURE_DIMENSION = 16;
+}
+
+nodes::execution_context_s app_state_s::node_context()
+{
+    return {
+        {.device        = gpu_.get(),
+         .fallback      = fallback_texture_.get(),
+         .uploads       = texture_upload_service_.get(),
+         .readbacks     = texture_readback_service_.get(),
+         .decklink      = decklink_registry_.get(),
+         .ndi           = ndi_registry_.get(),
+         .ffmpeg        = ffmpeg_registry_.get(),
+         .fonts         = font_registry_.get(),
+         .cpu_tasks     = cpu_task_worker_.get(),
+         .status        = status_registry_.get(),
+         .browser       = cef_subsystem_.get(),
+         .browser_error = &cef_error_},
+        frame_settings_,
+        frame_context_,
+        *frame_commands_,
+        frame_info
+    };
+}
+
+nodes::configuration_context_s app_state_s::configuration_context()
+{
+    return {.browser = cef_subsystem_.get(), .browser_error = &cef_error_};
 }
 
 void app_state_s::begin_frame(frame_settings_s settings, frame_context_s frame_context) noexcept
@@ -131,6 +127,7 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
     , file_dialog_(std::make_unique<utils::file_dialog_s>())
     , window_system_(std::make_unique<gpu::window_system_s>())
     , gpu_(std::make_unique<gpu::device_s>(gpu_options(command_line_options_)))
+    , frame_commands_(std::make_unique<nodes::frame_commands_s>(gpu_.get()))
     , decklink_registry_(nodes::decklink::decklink_registry_s::create_decklink_registry())
     , ndi_registry_(nodes::ndi::ndi_registry_s::create_ndi_registry())
     , font_registry_(render::font_registry_s::create_font_registry())
@@ -175,6 +172,7 @@ app_state_s::app_state_s(command_line_options_s command_line_options)
 app_state_s::app_state_s(test_state_t /*test_state*/, command_line_options_s command_line_options)
     : command_line_options_(std::move(command_line_options))
     , configuration_worker_(std::make_unique<configuration_worker_s>())
+    , frame_commands_(std::make_unique<nodes::frame_commands_s>())
 {
 }
 
@@ -219,7 +217,7 @@ app_state_s::~app_state_s()
         texture_readback_service_.reset();
         texture_upload_service_.reset();
         fallback_texture_.reset();
-        last_submission_ = {};
+        frame_commands_.reset();
         gpu_.reset();
         window_system_.reset();
         utils::report_shutdown_step_completed();

@@ -89,7 +89,8 @@ class strided_image_view_s
     }
 
     gpu::vec2i_t dimensions() const noexcept { return dimensions_; }
-    ptrdiff_t    row_stride_bytes() const noexcept { return row_stride_; }
+
+    ptrdiff_t row_stride_bytes() const noexcept { return row_stride_; }
 
     // Construction validates the complete storage range. Raster operations
     // clip row indices before using this unchecked hot-path accessor.

@@ -1,10 +1,10 @@
 #include "render/test_pattern/test_pattern.hpp"
 
-#include "core/app_state.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -73,8 +73,8 @@ class node_impl : public node_i
     gpu::texture_frame_ptr                                  published_frame_;
     gpu::texture_frame_ptr                                  rendered_frame_;
 
-    static std::shared_ptr<gpu::transfer::texture_upload_stream_s> create_stream(core::app_state_s* app,
-                                                                                 gpu::vec2i_t       dimensions)
+    static std::shared_ptr<gpu::transfer::texture_upload_stream_s> create_stream(execution_context_s* context,
+                                                                                 gpu::vec2i_t         dimensions)
     {
         const auto host_row_stride_bytes = sizeof(render::surface_s::pixel_t) * static_cast<size_t>(dimensions.x);
         const gpu::transfer::host_frame_layout_s host_layout{
@@ -85,7 +85,7 @@ class node_impl : public node_i
             .address_alignment_bytes = render::surface_s::PREFERRED_DATA_ALIGNMENT,
             .memory_access           = gpu::transfer::host_memory_access_e::overwrite,
         };
-        return app->texture_upload_service()->create_stream({
+        return context->texture_upload_service()->create_stream({
             .host_layout = host_layout,
             .max_slots   = 1,
         });
@@ -134,7 +134,7 @@ class node_impl : public node_i
         generation_.reset();
     }
 
-    void begin_generation(core::app_state_s* app)
+    void begin_generation(execution_context_s* context)
     {
         if (generation_.has_value() || !desired_request_.has_value() ||
             (published_request_.has_value() && *published_request_ == desired_request_.value()) ||
@@ -144,12 +144,12 @@ class node_impl : public node_i
 
         generation_.emplace(generation_s{
             .request = desired_request_.value(),
-            .stream  = create_stream(app, desired_request_.value().dimensions),
+            .stream  = create_stream(context, desired_request_.value().dimensions),
             .worker  = {},
         });
     }
 
-    void submit_generation(core::app_state_s* app)
+    void submit_generation(execution_context_s* context)
     {
         if (!generation_.has_value() || generation_->submitted) {
             return;
@@ -168,12 +168,12 @@ class node_impl : public node_i
         }
 
         generation_->upload_id = upload->upload_id();
-        auto worker            = app->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
-                                                                generate_pattern,
-                                                                generation_->request.dimensions,
-                                                                generation_->request.pattern,
-                                                                generation_->request.show_logo,
-                                                                std::move(*upload));
+        auto worker            = context->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
+                                                                    generate_pattern,
+                                                                    generation_->request.dimensions,
+                                                                    generation_->request.pattern,
+                                                                    generation_->request.show_logo,
+                                                                    std::move(*upload));
         if (!worker.has_value()) {
             return;
         }
@@ -203,7 +203,7 @@ class node_impl : public node_i
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         rendered_frame_.reset();
         const auto         resolution = state.get_option<gpu::vec2_t>("resolution", {1920, 1080});
@@ -224,8 +224,8 @@ class node_impl : public node_i
         }
 
         finish_generation();
-        begin_generation(app);
-        submit_generation(app);
+        begin_generation(context);
+        submit_generation(context);
 
         if (published_stream_) {
             if (auto frame = published_stream_->select_latest_completed_upload()) {
@@ -237,7 +237,7 @@ class node_impl : public node_i
                                   .name    = state.get_option_string_view("name")});
     }
 
-    void complete(core::app_state_s* /*app*/) final
+    void complete(execution_context_s* /*context*/) final
     {
         if (rendered_frame_) {
             rendered_frame_.reset();

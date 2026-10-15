@@ -47,6 +47,7 @@ TEST(typescript_generator, opaque_json_overrides_are_member_specific)
         nlohmann::json                          options;
         decltype(web_message::config_s::status) status;
     };
+
     static_assert(member_type_override<&unrelated_s::options>.empty());
     static_assert(member_type_override<&unrelated_s::status>.empty());
 

@@ -125,6 +125,7 @@ struct flicks_hash
 {
     using argument_type = flicks;
     using result_type   = size_t;
+
     result_type operator()(argument_type const& s) const noexcept { return std::hash<flicks::rep>{}(s.count()); }
 };
 

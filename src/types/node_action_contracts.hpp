@@ -35,8 +35,8 @@ struct contract_s
 };
 
 inline constexpr contract_s<browser_reload_payload_s, std::nullptr_t>      reload{"cef_browser",
-                                                                             "reload",
-                                                                             "browser_reload_payload_s"};
+                                                                                  "reload",
+                                                                                  "browser_reload_payload_s"};
 inline constexpr contract_s<clear_browser_cache_payload_s, std::nullptr_t> clear_browser_cache{
     "application_settings",
     "clear_browser_cache",

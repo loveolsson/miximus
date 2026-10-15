@@ -116,6 +116,7 @@ capture_stream_s::frame_ptr_t capture_stream_s::resolve_frame()
 }
 
 void capture_stream_s::release_prepared_frame() { prepared.reset(); }
+
 void capture_stream_s::reset_frames()
 {
     release_prepared_frame();

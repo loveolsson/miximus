@@ -1,7 +1,7 @@
 #pragma once
-#include "core/app_state_fwd.hpp"
 #include "gpu/types.hpp"
 #include "nodes/disconnected_value_provider.hpp"
+#include "nodes/execution_context_fwd.hpp"
 #include "nodes/interface_type.hpp"
 #include "nodes/node_fwd.hpp"
 #include "nodes/node_map.hpp"
@@ -39,22 +39,27 @@ class interface_i
     interface_i& operator=(interface_i&&)      = delete;
 
     void add_connection(con_set_t* connections, const connection_s& con, con_set_t* removed) const;
+
     void set_max_connection_count(size_t count) noexcept { max_connection_count_ = count; }
 
     std::span<const connection_s> connections(const node_state_s& state) const;
-    static void submit_dependencies(core::app_state_s*, const node_map_t&, std::span<const connection_s>);
+    static void submit_dependencies(execution_context_s*, const node_map_t&, std::span<const connection_s>);
 
-    dir_e            direction() const noexcept { return direction_; }
+    dir_e direction() const noexcept { return direction_; }
+
     interface_type_e type() const noexcept { return type_; }
-    void             clear_frame_value();
-    virtual bool     accepts(interface_type_e /*type*/) const noexcept { return false; }
+
+    void clear_frame_value();
+
+    virtual bool accepts(interface_type_e /*type*/) const noexcept { return false; }
+
     std::string_view name() const noexcept { return name_; }
 
   protected:
     [[nodiscard]] const interface_i*
-    resolve_connection(core::app_state_s*, const node_map_t&, const connection_s&) const;
+    resolve_connection(execution_context_s*, const node_map_t&, const connection_s&) const;
     [[nodiscard]] resolved_cons_t
-    resolve_connections(core::app_state_s*, const node_map_t&, std::span<const connection_s>) const;
+    resolve_connections(execution_context_s*, const node_map_t&, std::span<const connection_s>) const;
 
     size_t           max_connection_count_{1};
     std::string_view name_;
@@ -77,6 +82,7 @@ class input_interface_s : public interface_i
         : interface_i(owner, name, dir_e::input, get_interface_type<T>())
     {
     }
+
     ~input_interface_s() = default;
 
     bool accepts(interface_type_e type) const noexcept final
@@ -91,12 +97,13 @@ class input_interface_s : public interface_i
                 return type == target_type;
         }
     }
+
     [[nodiscard]] static T cast_iface_to_value(const interface_i* iface, const T& fallback);
 
-    [[nodiscard]] T resolve_value(core::app_state_s*  app,
-                                  const node_map_t&   nodes,
-                                  const node_state_s& state,
-                                  T const&            fallback = T{}) const
+    [[nodiscard]] T resolve_value(execution_context_s* context,
+                                  const node_map_t&    nodes,
+                                  const node_state_s&  state,
+                                  T const&             fallback = T{}) const
     {
         assert(max_connection_count_ == 1); // Should only be called on interfaces expecting a single value
 
@@ -105,26 +112,26 @@ class input_interface_s : public interface_i
 
         if (!connected.empty()) {
             disconnected_value_provider_.release();
-            const auto* iface = resolve_connection(app, nodes, connected.front());
+            const auto* iface = resolve_connection(context, nodes, connected.front());
             return iface != nullptr ? cast_iface_to_value(iface, fallback) : fallback;
         }
 
         if constexpr (std::is_same_v<T, framebuffer_source_info_s>) {
-            return disconnected_value_provider_.get(app, fallback, state.get_option_string_view("name"));
+            return disconnected_value_provider_.get(context, fallback, state.get_option_string_view("name"));
         } else {
-            return disconnected_value_provider_.get(app, fallback);
+            return disconnected_value_provider_.get(context, fallback);
         }
     }
 
     template <size_t S = 4>
-    [[nodiscard]] resolved_values_t<S> resolve_values(core::app_state_s*  app,
-                                                      const node_map_t&   nodes,
-                                                      const node_state_s& state,
-                                                      T const&            fallback = T{}) const
+    [[nodiscard]] resolved_values_t<S> resolve_values(execution_context_s* context,
+                                                      const node_map_t&    nodes,
+                                                      const node_state_s&  state,
+                                                      T const&             fallback = T{}) const
     {
         resolved_values_t<S> res;
 
-        auto ifaces = resolve_connections(app, nodes, connections(state));
+        auto ifaces = resolve_connections(context, nodes, connections(state));
 
         res.reserve(ifaces.size());
         assert(max_connection_count_ > 1); // Should only be called on interfaces expecting multiple values
@@ -161,9 +168,11 @@ class output_interface_s : public interface_i
             set_max_connection_count(std::numeric_limits<size_t>::max());
         }
     }
+
     ~output_interface_s() = default;
 
-    T    get_value() const { return value_; }
+    T get_value() const { return value_; }
+
     void set_value(T value) { value_ = utils::is_finite(value) ? std::move(value) : T{}; }
 };
 

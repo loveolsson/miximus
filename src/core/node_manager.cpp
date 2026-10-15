@@ -42,7 +42,8 @@ class action_reply_queue_s
     std::mutex                                mutex_;
     bool                                      open_{};
     std::vector<std::pair<reply_t, result_t>> pending_;
-    static void                               deliver(const reply_t& reply, result_t result) noexcept
+
+    static void deliver(const reply_t& reply, result_t result) noexcept
     {
         try {
             if (reply) {
@@ -65,6 +66,7 @@ class action_reply_queue_s
         }
         deliver(reply, std::move(result));
     }
+
     void open() noexcept
     {
         std::vector<std::pair<reply_t, result_t>> pending;
@@ -459,7 +461,8 @@ void node_manager_s::action_work_s::run(app_state_s* app)
         return;
     }
     try {
-        start(app, std::move(action));
+        auto context = app != nullptr ? app->configuration_context() : nodes::configuration_context_s{};
+        start(&context, std::move(action));
     } catch (const std::exception& error) {
         logger::log_error_noexcept("app", "Node configuration action failed: {}", error.what());
     } catch (...) {
@@ -566,19 +569,24 @@ nodes::set_options_result_s node_manager_s::handle_control_batch(app_state_s*   
                                                                  node_actions_s::clock_t::time_point now)
 {
     auto replies = std::make_shared<action_reply_queue_s>();
+
     struct release_s
     {
         std::shared_ptr<action_reply_queue_s> replies;
+
         explicit release_s(std::shared_ptr<action_reply_queue_s> queue)
             : replies(std::move(queue))
         {
         }
+
         ~release_s() { replies->open(); }
+
         release_s(const release_s&)            = delete;
         release_s& operator=(const release_s&) = delete;
         release_s(release_s&&)                 = delete;
         release_s& operator=(release_s&&)      = delete;
     } release{replies};
+
     // Wrap once, before any rejection path. Destruction settles abandoned work
     // before release opens the reply queue, after all graph locks are gone.
     std::vector<action_work_s> work;
@@ -791,26 +799,27 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
                                               : status_delivery_e::rate_limited);
         }
 
-        actions.dispatch(app, nodes_copy_);
+        auto context = app->node_context();
+        actions.dispatch(&context, nodes_copy_);
         const auto prepare_start   = utils::flicks_now();
-        const auto demanding_nodes = nodes::prepare_all_nodes(app, nodes_copy_);
+        const auto demanding_nodes = nodes::prepare_all_nodes(&context, nodes_copy_);
         const auto prepare_end     = utils::flicks_now();
 
         app->frame_info.submitted_nodes.clear();
         app->frame_info.submitted_nodes.reserve(nodes_copy_.size());
-        nodes::submit_demanding_nodes(app, nodes_copy_, demanding_nodes);
+        nodes::submit_demanding_nodes(&context, nodes_copy_, demanding_nodes);
         const auto submit_end = utils::flicks_now();
 
         app->frame_info.executed_nodes.clear();
         app->frame_info.executed_nodes.reserve(nodes_copy_.size());
         try {
             const app_state_s::frame_scope_s frame(*app);
-            nodes::execute_demanding_nodes(app, nodes_copy_, demanding_nodes);
+            nodes::execute_demanding_nodes(&context, nodes_copy_, demanding_nodes);
             app->commit_gpu_frame();
         } catch (const gpu::recording_unavailable_s&) {
             ++gpu_recording_drops_;
         } catch (...) {
-            nodes::complete_all_nodes(app, nodes_copy_);
+            nodes::complete_all_nodes(&context, nodes_copy_);
             throw;
         }
 
@@ -818,7 +827,7 @@ void node_manager_s::tick_one_frame(app_state_s* app, frame_scheduler_s& schedul
 
         const auto finish_end = execute_end;
 
-        nodes::complete_all_nodes(app, nodes_copy_);
+        nodes::complete_all_nodes(&context, nodes_copy_);
         const auto complete_end = utils::flicks_now();
 
         {

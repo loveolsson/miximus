@@ -52,6 +52,7 @@ struct recording_state_s
         VkPipelineStageFlags2 stage;
         VkAccessFlags2        access;
     };
+
     std::shared_ptr<device_state_s>                owner;
     std::shared_ptr<recording_context_state_s>     context;
     arena_s*                                       arena{};
@@ -65,6 +66,7 @@ struct recording_state_s
         VkPipelineStageFlags2 stage{};
         VkAccessFlags2        access{};
     };
+
     std::unordered_map<texture_state_s*, boost::container::small_vector<initial_use_s, 1>> initial_uses;
     std::unordered_map<texture_state_s*, image_layouts_t>                                  layouts;
     std::unordered_map<texture_state_s*, bool>                                             mip_dirty;

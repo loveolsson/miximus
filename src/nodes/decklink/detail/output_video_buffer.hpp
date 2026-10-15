@@ -43,6 +43,7 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
     }
 
     HRESULT STDMETHODCALLTYPE StartAccess(BMDBufferAccessFlags /*flags*/) noexcept final { return S_OK; }
+
     HRESULT STDMETHODCALLTYPE EndAccess(BMDBufferAccessFlags /*flags*/) noexcept final { return S_OK; }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) noexcept final
@@ -62,6 +63,7 @@ class output_video_buffer_s final : public IDeckLinkVideoBuffer
     }
 
     ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+
     ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const ULONG count = --ref_count_;

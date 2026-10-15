@@ -26,7 +26,8 @@ class completion_s
     bool          submitted() const;
     wait_result_e wait_submitted(std::chrono::milliseconds timeout, const std::stop_token& stop = {}) const;
     wait_result_e wait(std::chrono::milliseconds timeout, const std::stop_token& stop = {}) const;
-    explicit      operator bool() const noexcept { return submission_ != nullptr; }
+
+    explicit operator bool() const noexcept { return submission_ != nullptr; }
 };
 
 } // namespace miximus::gpu

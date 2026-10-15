@@ -21,6 +21,7 @@ class source_error_s : public std::runtime_error
 
   public:
     source_error_s(int code, std::string_view operation);
+
     int code() const noexcept { return code_; }
 };
 

@@ -25,6 +25,7 @@ std::filesystem::path module_path(const wchar_t* name)
 } // namespace
 
 std::filesystem::path runtime_directory() { return module_path(nullptr).parent_path() / "cef"; }
+
 std::filesystem::path vulkan_loader_path() { return module_path(L"vulkan-1.dll"); }
 
 install_media_inputs_t find_install_media_inputs()

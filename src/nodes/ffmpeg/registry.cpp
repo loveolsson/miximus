@@ -19,6 +19,7 @@ struct ffmpeg_registry_s::impl_s
     gpu::transfer::texture_upload_service_s&                 uploads;
     std::vector<std::shared_ptr<detail::playback_session_s>> sessions;
     std::unique_ptr<utils::serial_executor_s>                control{std::make_unique<utils::serial_executor_s>()};
+
     explicit impl_s(gpu::device_s& gpu, gpu::transfer::texture_upload_service_s& service)
         : hardware(std::make_shared<detail::hardware_devices_s>(gpu))
         , device(gpu)

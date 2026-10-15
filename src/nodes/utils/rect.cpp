@@ -19,13 +19,13 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         auto pos  = state.get_option<gpu::vec2_t>("pos", {0, 0});
         auto size = state.get_option<gpu::vec2_t>("size", {1, 1});
 
-        pos  = iface_pos_.resolve_value(app, nodes, state, pos);
-        size = iface_size_.resolve_value(app, nodes, state, size);
+        pos  = iface_pos_.resolve_value(context, nodes, state, pos);
+        size = iface_size_.resolve_value(context, nodes, state, size);
 
         iface_res_.set_value({.pos = pos, .size = size});
     }

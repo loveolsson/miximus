@@ -26,11 +26,13 @@ struct node_status_registry_s::state_s
         status_delivery_e        delivery;
         std::unique_ptr<value_i> value;
     };
+
     using groups_t = std::unordered_map<std::type_index, entry_s>;
     using batch_t  = utils::unordered_string_map_t<groups_t>;
 
     // Caller holds mutex; displaced payloads stay in frame until it is released.
     void merge_frame();
+
     struct snapshot_s
     {
         groups_t                              pending;
@@ -41,6 +43,7 @@ struct node_status_registry_s::state_s
         bool                                  immediate{};
 
         bool dirty() const { return !pending.empty() || !dirty_fields.empty(); }
+
         void materialize(std::string_view id);
     };
 
@@ -50,6 +53,7 @@ struct node_status_registry_s::state_s
         , timer(context)
     {
     }
+
     boost::asio::io_context& executor;
     std::atomic<bool>        stopped{false};
     // Producer-owned, never touched by the executor.
@@ -77,9 +81,11 @@ node_status_registry_s::node_status_registry_s(boost::asio::io_context&         
         throw std::invalid_argument("Status report interval must be positive");
     }
 }
+
 node_status_registry_s::~node_status_registry_s() { stop(); }
 
 void node_status_registry_s::set_callback(callback_t callback) { state_->callback = std::move(callback); }
+
 void node_status_registry_s::stop() noexcept
 {
     if (state_->stopped.exchange(true)) {

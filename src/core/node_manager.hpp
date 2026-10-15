@@ -67,11 +67,13 @@ class node_manager_s
     nodes::node_map_t                                        nodes_;
     nodes::node_map_t                                        nodes_copy_;
     std::unordered_set<std::string>                          removed_nodes_;
+
     struct removal_notice_s
     {
         std::string                  id;
         std::optional<origin_info_s> origin;
     };
+
     std::vector<removal_notice_s>     removal_notices_;
     nodes::con_set_t                  connections_;
     nodes::node_definition_map_t      node_definitions_;
@@ -114,6 +116,7 @@ class node_manager_s
         std::string    id;
         nlohmann::json options;
     };
+
     struct action_request_s
     {
         std::string             id;
@@ -159,14 +162,17 @@ class node_manager_s
         bool corrected{};
         bool action_modified{};
     };
+
     using update_notices_t = utils::unordered_string_map_t<update_notice_s>;
     void emit_option_updates_locked(const update_notices_t& notices, const std::optional<origin_info_s>& origin);
+
     struct action_work_s
     {
         nodes::action_s                  action;
         nodes::action_context_s::start_t start;
         void                             run(app_state_s* app);
     };
+
     void admit_action_locked(app_state_s*                        app,
                              action_work_s&                      work,
                              update_notices_t&                   notices,

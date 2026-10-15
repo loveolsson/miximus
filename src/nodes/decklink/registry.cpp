@@ -182,6 +182,7 @@ class discovery_callback final : public IDeckLinkDeviceNotificationCallback
     }
 
     ULONG AddRef() noexcept final { return ++ref_count_; }
+
     ULONG Release() noexcept final
     {
         const auto count = --ref_count_;

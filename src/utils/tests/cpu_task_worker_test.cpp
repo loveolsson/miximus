@@ -70,6 +70,7 @@ struct blocked_worker_s
         });
         started.get_future().wait();
     }
+
     blocked_worker_s(const blocked_worker_s&)            = delete;
     blocked_worker_s& operator=(const blocked_worker_s&) = delete;
     blocked_worker_s(blocked_worker_s&&)                 = delete;
@@ -82,6 +83,7 @@ struct blocked_worker_s
             release.count_down();
         }
     }
+
     ~blocked_worker_s() { unblock(); }
 };
 

@@ -27,8 +27,8 @@ class window_s
         bool             fullscreen{};
         std::string_view monitor_id{};
         recti_s          rect{
-                     {0,   0  },
-                     {640, 480}
+            {0,   0  },
+            {640, 480}
         };
     };
 

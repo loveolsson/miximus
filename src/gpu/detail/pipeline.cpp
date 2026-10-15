@@ -15,6 +15,7 @@ struct shader_module_s
     device_state_s& owner;
 
     VkShaderModule module{};
+
     shader_module_s(device_state_s& device, const char* name)
         : owner(device)
     {

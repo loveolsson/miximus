@@ -360,6 +360,7 @@ texture_s* texture_readback_target_s::conversion_texture() const
 }
 
 texture_s* texture_readback_target_s::texture() const noexcept { return slot_ ? slot_->frame->texture() : nullptr; }
+
 const buffer_s& texture_readback_target_s::buffer() const { return slot_->frame->buffer(); }
 
 channel_order_e texture_readback_target_s::output_order() const noexcept { return stream_->transfer_plan.output_order; }

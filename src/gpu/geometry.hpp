@@ -138,8 +138,8 @@ calculate_texture_draw(rect_s bounds, vec2i_t content_dimensions, vec2i_t target
         const auto covered = cover_aspect_ratio(bounds, content_dimensions, target_dimensions);
         result.destination = bounds;
         result.source      = {
-                 .pos  = (bounds.pos - covered.pos) / covered.size,
-                 .size = bounds.size / covered.size,
+            .pos  = (bounds.pos - covered.pos) / covered.size,
+            .size = bounds.size / covered.size,
         };
     } else {
         throw std::invalid_argument("unknown texture fill mode");

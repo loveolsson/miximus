@@ -20,6 +20,9 @@ block()
             gpu
             nodes
             node_framework
+            node_contracts
+            node_status
+            frame_timing
             ffmpeg_playback
             render
             web_server
@@ -33,7 +36,7 @@ block()
             list(APPEND MIXIMUS_RELEASE_IPO_TARGETS nodes_${family})
         endforeach()
 
-        foreach(OPTIONAL_TARGET core_test render_test miximus_typescript_generator)
+        foreach(OPTIONAL_TARGET core_test render_test miximus_typescript_generator frame_policy_test node_status_test web_message_test frame_execution_test)
             if(TARGET ${OPTIONAL_TARGET})
                 list(APPEND MIXIMUS_RELEASE_IPO_TARGETS ${OPTIONAL_TARGET})
             endif()

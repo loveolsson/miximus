@@ -30,12 +30,15 @@ class capture_stream_s
     capture_stream_s(gpu::device_s& device, gpu::vec2i_t dimensions, int frame_rate, size_t buffer_frames);
     static size_t texture_budget(gpu::vec2i_t dimensions, size_t buffer_frames);
     bool          capture(const CefAcceleratedPaintInfo& info, const std::atomic_bool& close_requested);
-    void          new_epoch()
+
+    void new_epoch()
     {
         ++epoch_;
         previous_timestamp_.reset();
     }
-    bool                 idle() const { return pool_.idle(); }
+
+    bool idle() const { return pool_.idle(); }
+
     void                 advance_frames(utils::flicks pts, utils::flicks target_time, bool discontinuity);
     bool                 submit_frame(utils::flicks pts);
     frame_ptr_t          resolve_frame();

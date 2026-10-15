@@ -11,6 +11,7 @@ struct websocket_connection
     enum_array_t<topic_e, bool> topics;
 
     bool has_subscription(topic_e t) const noexcept { return topics[t]; }
+
     void set_subscription(topic_e t, bool value) noexcept { topics[t] = value; }
 };
 

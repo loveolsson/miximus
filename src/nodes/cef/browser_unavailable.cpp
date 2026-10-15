@@ -1,8 +1,8 @@
 #include "browser_inputs.hpp"
 #include "browser_options.hpp"
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "nodes/action.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -42,30 +42,35 @@ class unavailable_browser_s final : public node_i
         return action_dispatch_e::unhandled;
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /* result */) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* /* result */) final
     {
         const bool stopped = !state.get_option<bool>("enabled") || state.get_option<std::string_view>("url").empty();
-        report_connection(app->status_registry(), {.connected = false});
-        app->status_registry()->write(
+        report_connection(context->status_registry(), {.connected = false});
+        context->status_registry()->write(
             id_,
             status::cef_browser_status_s{.cef_state        = stopped ? cef_state_e::stopped : cef_state_e::unavailable,
-                                         .cef_error        = stopped ? "" : app->cef_error(),
+                                         .cef_error        = stopped ? "" : context->cef_error(),
                                          .cef_inputs_error = {}},
-            reported_state_.observe(std::pair(stopped, stopped ? std::string{} : app->cef_error()))
+            reported_state_.observe(std::pair(stopped, stopped ? std::string{} : context->cef_error()))
                 ? core::status_delivery_e::immediate
                 : core::status_delivery_e::rate_limited);
     }
-    void execute(core::app_state_s* /* app */, const node_map_t& /* nodes */, const node_state_s& state) final
+
+    void execute(execution_context_s* /* context */, const node_map_t& /* nodes */, const node_state_s& state) final
     {
         texture_.set_value({.texture = nullptr, .name = state.get_option_string_view("name")});
     }
-    nlohmann::json  get_default_options() const final { return browser_default_options(); }
+
+    nlohmann::json get_default_options() const final { return browser_default_options(); }
+
     option_result_e normalize_option(std::string_view name, nlohmann::json* value) const final
     {
         return normalize_browser_option(name, value);
     }
+
     std::string_view type() const final { return "cef_browser"; }
 };
 } // namespace
+
 std::shared_ptr<node_i> create_browser_node() { return std::make_shared<unavailable_browser_s>(); }
 } // namespace miximus::nodes::cef

@@ -137,7 +137,8 @@ class export_queue_test : public testing::Test
     std::unique_ptr<media_input_exports_s>               queue;
     gpu::texture_s                                       source;
     std::unique_ptr<gpu::recording_context_s>            context;
-    void                                                 SetUp() override
+
+    void SetUp() override
     {
         if (!spdlog::get("gpu")) {
             logger::init_loggers(spdlog::level::warn);
@@ -155,6 +156,7 @@ class export_queue_test : public testing::Test
     }
 
     void TearDown() override { EXPECT_EQ(device->validation_errors(), 0U); }
+
     std::shared_ptr<media_input_exports_s::publication_s> record(std::unique_ptr<gpu::recording_s>& commands) const
     {
         commands = context->try_record();

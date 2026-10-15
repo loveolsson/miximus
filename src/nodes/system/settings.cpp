@@ -1,6 +1,6 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "nodes/action.hpp"
+#include "nodes/execution_context.hpp"
 #include "types/node_action_contracts.hpp"
 #if MIXIMUS_ENABLE_CEF
 #include "nodes/cef/subsystem.hpp"
@@ -27,7 +27,7 @@ using namespace miximus;
 using namespace miximus::nodes;
 using nlohmann::json;
 
-using framebuffer_settings_s = core::app_state_s::frame_settings_s::framebuffer_settings_s;
+using framebuffer_settings_s = frame_settings_s::framebuffer_settings_s;
 
 std::optional<uint32_t> read_positive_uint32(const json& value)
 {
@@ -98,10 +98,10 @@ class node_impl final : public node_i
 {
     utils::observed_value_s<bool> reported_cache_pending_;
 
-    static void clear_browser_cache(core::app_state_s* app, action_s action)
+    static void clear_browser_cache(configuration_context_s* context, action_s action)
     {
 #if MIXIMUS_ENABLE_CEF
-        if (auto* cef = app->cef_subsystem()) {
+        if (auto* cef = context->cef_subsystem()) {
             if (!cef->clear_http_cache()) {
                 action.fail(error_e::busy, "Browser cache clearing is already pending");
                 return;
@@ -112,7 +112,7 @@ class node_impl final : public node_i
             return;
         }
 #endif
-        action.fail(error_e::unavailable, app->cef_error());
+        action.fail(error_e::unavailable, context->cef_error());
     }
 
     static void handle_clear_browser_cache(action_context_s& context, action_s& action)
@@ -127,7 +127,7 @@ class node_impl final : public node_i
   public:
     std::string_view type() const final { return miximus::nodes::system::SETTINGS_NODE_TYPE; }
 
-    void execute(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final {}
+    void execute(execution_context_s* /*context*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final {}
 
     action_dispatch_e handle_action(action_context_s& context, action_s& action) const final
     {
@@ -138,15 +138,15 @@ class node_impl final : public node_i
         return action_dispatch_e::unhandled;
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& /* state */, prepare_result_s* /* result */) final
+    void prepare(execution_context_s* context, const node_state_s& /* state */, prepare_result_s* /* result */) final
     {
         bool pending = false;
 #if MIXIMUS_ENABLE_CEF
-        if (const auto* cef = app->cef_subsystem()) {
+        if (const auto* cef = context->cef_subsystem()) {
             pending = cef->cache_clear_pending();
         }
 #endif
-        if (auto* registry = app->status_registry()) {
+        if (auto* registry = context->status_registry()) {
             registry->write(id_,
                             status::browser_cache_status_s{.browser_cache_clearing = pending},
                             reported_cache_pending_.observe(pending) ? core::status_delivery_e::immediate

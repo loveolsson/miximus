@@ -1,8 +1,8 @@
 #include "nodes/interface.hpp"
 
-#include "core/app_state.hpp"
 #include "gpu/recording.hpp"
 #include "gpu/texture.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/frame_execution.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -58,17 +58,18 @@ std::span<const connection_s> interface_i::connections(const node_state_s& state
     return state.get_connection_set(name_);
 }
 
-void interface_i::submit_dependencies(core::app_state_s*            app,
+void interface_i::submit_dependencies(execution_context_s*          context,
                                       const node_map_t&             nodes,
                                       std::span<const connection_s> connected)
 {
     for (const auto& connection : connected) {
-        submit_node_once(app, nodes, connection.from_node);
+        submit_node_once(context, nodes, connection.from_node);
     }
 }
 
-const interface_i*
-interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes, const connection_s& connection) const
+const interface_i* interface_i::resolve_connection(execution_context_s* context,
+                                                   const node_map_t&    nodes,
+                                                   const connection_s&  connection) const
 {
     const auto record = nodes.find(connection.from_node);
     if (record == nodes.end()) {
@@ -77,13 +78,13 @@ interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes,
 
     const auto* iface = record->second.node->find_interface(connection.from_interface);
     if (iface != nullptr) {
-        execute_node_once(app, nodes, record->first);
+        execute_node_once(context, nodes, record->first);
         if (type() == interface_type_e::texture && iface->type() == interface_type_e::framebuffer) {
             const auto* output = dynamic_cast<const output_interface_s<framebuffer_source_info_s>*>(iface);
             if (output != nullptr) {
                 const auto source = output->get_value();
                 if (source.texture != nullptr) {
-                    app->commands().generate_mip_maps(*source.texture);
+                    context->commands().generate_mip_maps(*source.texture);
                 }
             }
         }
@@ -91,7 +92,7 @@ interface_i::resolve_connection(core::app_state_s* app, const node_map_t& nodes,
     return iface;
 }
 
-interface_i::resolved_cons_t interface_i::resolve_connections(core::app_state_s*            app,
+interface_i::resolved_cons_t interface_i::resolve_connections(execution_context_s*          context,
                                                               const node_map_t&             nodes,
                                                               std::span<const connection_s> connected) const
 {
@@ -99,7 +100,7 @@ interface_i::resolved_cons_t interface_i::resolve_connections(core::app_state_s*
     res.reserve(connected.size());
 
     for (const auto& con : connected) {
-        res.emplace_back(resolve_connection(app, nodes, con));
+        res.emplace_back(resolve_connection(context, nodes, con));
     }
 
     return res;

@@ -37,10 +37,10 @@ decklink_ptr<IDeckLinkDiscovery> create_device_discovery()
 {
     IDeckLinkDiscovery* discovery = nullptr;
     const auto          result    = ::CoCreateInstance(CLSID_CDeckLinkDiscovery,
-                                           nullptr,
-                                           CLSCTX_ALL,
-                                           decklink_iid<IDeckLinkDiscovery>(),
-                                           reinterpret_cast<void**>(&discovery));
+                                                       nullptr,
+                                                       CLSCTX_ALL,
+                                                       decklink_iid<IDeckLinkDiscovery>(),
+                                                       reinterpret_cast<void**>(&discovery));
     return SUCCEEDED(result) ? decklink_ptr(discovery, false) : decklink_ptr<IDeckLinkDiscovery>{};
 }
 

@@ -1,10 +1,10 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/output_sender.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_readback.hpp"
 #include "logger/logger.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -105,7 +105,7 @@ class node_impl : public node_i
         }
     }
 
-    void update_sender_lifecycle(core::app_state_s*                  app,
+    void update_sender_lifecycle(execution_context_s*                context,
                                  core::node_status_registry_s*       status_registry,
                                  const std::pair<std::string, bool>& selection)
     {
@@ -134,14 +134,14 @@ class node_impl : public node_i
         }
 
         log()->info("Scheduling NDI output setup for \"{}\"", selection.first);
-        sender_ = output_sender_s::create(app->ndi_registry()->control_executor(), selection.first);
+        sender_ = output_sender_s::create(context->ndi_registry()->control_executor(), selection.first);
         sender_selection_.commit(selection);
         sender_->start_async();
     }
 
-    void ensure_readback_stream(core::app_state_s* app, gpu::vec2i_t dimensions)
+    void ensure_readback_stream(execution_context_s* context, gpu::vec2i_t dimensions)
     {
-        const auto& settings = app->frame_settings();
+        const auto& settings = context->frame_settings();
         if (readback_stream_ && !stream_dimensions_.would_change(dimensions)) {
             return;
         }
@@ -156,7 +156,7 @@ class node_impl : public node_i
         };
         const auto readback_slot_count =
             output_sender_s::get_readback_slot_count(static_cast<size_t>(settings.ndi_output.buffer_frames));
-        readback_stream_ = app->texture_readback_service()->create_stream({
+        readback_stream_ = context->texture_readback_service()->create_stream({
             .host_layout   = host_layout,
             .max_slots     = readback_slot_count,
             .initial_slots = readback_slot_count,
@@ -165,8 +165,8 @@ class node_impl : public node_i
         sender_->set_stream(readback_stream_,
                             dimensions,
                             settings.frame_rate,
-                            app->frame_context().frame_duration,
-                            app->frame_context().program_target_time - app->frame_context().program_pts,
+                            context->frame_context().frame_duration,
+                            context->frame_context().program_target_time - context->frame_context().program_pts,
                             static_cast<size_t>(settings.ndi_output.buffer_frames));
     }
 
@@ -179,13 +179,13 @@ class node_impl : public node_i
     node_impl(node_impl&&)                 = delete;
     node_impl& operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* result) final
     {
-        auto*      status_registry = app->status_registry();
+        auto*      status_registry = context->status_registry();
         const auto enabled         = state.get_option<bool>("enabled");
         const auto configured_name = state.get_option<std::string>("source_name", id_);
         const auto sender_name     = configured_name.empty() ? id_ : configured_name;
-        const auto frame_rate      = app->frame_settings().frame_rate;
+        const auto frame_rate      = context->frame_settings().frame_rate;
         const auto frame_rate_valid =
             std::in_range<int>(frame_rate.numerator) && std::in_range<int>(frame_rate.denominator);
         result->demands_execution = enabled && frame_rate_valid;
@@ -194,12 +194,12 @@ class node_impl : public node_i
             log()->error("Cannot represent the configured frame rate in the NDI API");
         }
 
-        update_sender_lifecycle(app, status_registry, std::pair(sender_name, enabled && frame_rate_valid));
+        update_sender_lifecycle(context, status_registry, std::pair(sender_name, enabled && frame_rate_valid));
 
         const auto timing = timing_selection_t{
-            app->frame_settings().frame_rate,
-            app->frame_context().epoch,
-            app->frame_settings().ndi_output.buffer_frames,
+            context->frame_settings().frame_rate,
+            context->frame_context().epoch,
+            context->frame_settings().ndi_output.buffer_frames,
         };
         if (timing_selection_.observe(timing)) {
             clear_render_state();
@@ -210,19 +210,19 @@ class node_impl : public node_i
                           {.connected = sender_ && sender_->phase() == output_sender_s::phase_e::running});
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         if (!sender_ || sender_->phase() != output_sender_s::phase_e::running) {
             return;
         }
 
-        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_tex_.resolve_value(context, nodes, state);
         auto*      texture        = texture_source.texture;
         if (texture == nullptr) {
             return;
         }
 
-        ensure_readback_stream(app, texture->dimensions());
+        ensure_readback_stream(context, texture->dimensions());
         if (readback_stream_->initial_slots_pending()) {
             return;
         }
@@ -235,8 +235,8 @@ class node_impl : public node_i
         // Convert linear premultiplied working RGB to the selected wire alpha
         // representation before RGBA8 quantization. Row order stays top-to-bottom.
 
-        target->texture()->clear(app->commands());
-        gpu::draw_texture(app->commands(),
+        target->texture()->clear(context->commands());
+        gpu::draw_texture(context->commands(),
                           texture,
                           target->texture(),
                           {.transfer = gpu::rec709_encode_operation(
@@ -244,11 +244,11 @@ class node_impl : public node_i
                            .compositing = gpu::compositing_e::replace,
                            .output      = target->output_order()});
 
-        target->set_program_target_time(app->frame_context().program_target_time);
+        target->set_program_target_time(context->frame_context().program_target_time);
         auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
         // The stored callback owns pending; Clang's MSVC shared_ptr model reports a false leak.
         // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
-        app->defer_output([pending = std::move(pending), sender = sender_](gpu::completion_s ready) {
+        context->defer_output([pending = std::move(pending), sender = sender_](gpu::completion_s ready) {
             pending->submit(std::move(ready));
             sender->notify_frame();
         });

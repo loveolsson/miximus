@@ -1,9 +1,9 @@
-#include "core/app_state.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
 #include "nodes/composite/source_labels.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -46,9 +46,9 @@ class node_impl : public node_i
   public:
     explicit node_impl() { iface_tex_.set_max_connection_count(INT_MAX); }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        const auto fb_source = iface_fb_in_.resolve_value(app, nodes, state);
+        const auto fb_source = iface_fb_in_.resolve_value(context, nodes, state);
         auto*      fb        = fb_source.texture;
         iface_fb_out_.set_value(fb_source);
 
@@ -57,7 +57,7 @@ class node_impl : public node_i
             return;
         }
 
-        auto textures = iface_tex_.resolve_values<9>(app, nodes, state);
+        auto textures = iface_tex_.resolve_values<9>(context, nodes, state);
 
         if (textures.empty()) {
             labels_.clear();
@@ -89,7 +89,7 @@ class node_impl : public node_i
             .max_height = cell_dimensions.y - (2 * inset),
         };
         if (show_labels) {
-            labels_.update(app, {textures.data(), textures.size()}, label_style);
+            labels_.update(context, {textures.data(), textures.size()}, label_style);
         } else {
             labels_.clear();
         }
@@ -104,7 +104,7 @@ class node_impl : public node_i
                 if (texture != nullptr) {
                     const auto texture_draw =
                         gpu::calculate_texture_draw(cell, texture->dimensions(), target_dimensions, fill_mode);
-                    gpu::draw_texture(app->commands(), texture, fb, {.geometry = texture_draw});
+                    gpu::draw_texture(context->commands(), texture, fb, {.geometry = texture_draw});
                 }
 
                 if (!show_labels) {
@@ -113,7 +113,7 @@ class node_impl : public node_i
                 const auto* label = labels_.find(textures[i].name);
                 if (label != nullptr) {
                     const auto geometry = label_geometry(cell, label->dimensions(), target_dimensions, inset);
-                    gpu::draw_texture(app->commands(), label, fb, {.geometry = geometry});
+                    gpu::draw_texture(context->commands(), label, fb, {.geometry = geometry});
                 }
             }
         }

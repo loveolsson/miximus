@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/app_state_fwd.hpp"
+#include "nodes/execution_context_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
 #include "nodes/option_result.hpp"
 #include "types/error.hpp"
@@ -83,7 +83,7 @@ class action_s
 class action_context_s
 {
   public:
-    using start_t  = std::function<void(core::app_state_s*, action_s)>;
+    using start_t  = std::function<void(configuration_context_s*, action_s)>;
     using update_t = std::function<set_options_result_s(const nlohmann::json&)>;
 
   private:
@@ -100,9 +100,13 @@ class action_context_s
         , start_(start)
     {
     }
-    const node_state_s&  state() const { return state_; }
-    const node_state_s*  find_state(std::string_view id) const;
+
+    const node_state_s& state() const { return state_; }
+
+    const node_state_s* find_state(std::string_view id) const;
+
     set_options_result_s update_settings(const nlohmann::json& patch) { return update_(patch); }
+
     // The caller transfers the same action to this handler after unlocking.
     void defer(start_t start) { start_ = std::move(start); }
 };

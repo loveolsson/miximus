@@ -10,8 +10,9 @@
 #include "gpu/window_fwd.hpp"
 #include "nodes/cef/subsystem_fwd.hpp"
 #include "nodes/decklink/registry_fwd.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/ffmpeg/registry_fwd.hpp"
-#include "nodes/frame_execution_fwd.hpp"
+#include "nodes/frame_commands.hpp"
 #include "nodes/ndi/registry_fwd.hpp"
 #include "render/font/font_registry_fwd.hpp"
 #include "types/frame_rate.hpp"
@@ -41,78 +42,7 @@ namespace miximus::core {
 class app_state_s
 {
   public:
-    struct frame_settings_s
-    {
-        struct decklink_input_settings_s
-        {
-            decklink_input_settings_s();
-            int buffer_frames;
-        };
-        decklink_input_settings_s decklink_input;
-        struct ndi_input_settings_s
-        {
-            ndi_input_settings_s();
-            int buffer_frames;
-        };
-        ndi_input_settings_s ndi_input;
-        struct ffmpeg_settings_s
-        {
-            int buffer_frames{4};
-        };
-        ffmpeg_settings_s ffmpeg;
-        struct cef_capture_settings_s
-        {
-            cef_capture_settings_s();
-            int buffer_frames;
-        };
-        cef_capture_settings_s cef_capture;
-        struct cef_export_settings_s
-        {
-            cef_export_settings_s();
-            int buffer_frames;
-        };
-        cef_export_settings_s cef_export;
-        struct cef_input_settings_s
-        {
-            cef_input_settings_s();
-            int buffer_frames;
-        };
-        cef_input_settings_s cef_input;
-
-        struct decklink_output_settings_s
-        {
-            decklink_output_settings_s();
-            int buffer_frames;
-        };
-
-        struct ndi_output_settings_s
-        {
-            ndi_output_settings_s();
-            int buffer_frames;
-        };
-
-        struct screen_output_settings_s
-        {
-            screen_output_settings_s();
-            int buffer_frames;
-        };
-
-        struct framebuffer_settings_s
-        {
-            static constexpr int DEFAULT_WIDTH  = 1920;
-            static constexpr int DEFAULT_HEIGHT = 1080;
-            static constexpr int MIN_DIMENSION  = 256;
-            static constexpr int MAX_DIMENSION  = 4096;
-
-            gpu::vec2i_t default_size{DEFAULT_WIDTH, DEFAULT_HEIGHT};
-        };
-
-        frame_rate_s               frame_rate{DEFAULT_FRAME_RATE};
-        framebuffer_settings_s     framebuffer;
-        decklink_output_settings_s decklink_output;
-        ndi_output_settings_s      ndi_output;
-        screen_output_settings_s   screen_output;
-    };
+    using frame_settings_s = nodes::frame_settings_s;
 
   private:
     struct configuration_worker_s;
@@ -123,9 +53,7 @@ class app_state_s
 
     std::unique_ptr<gpu::window_system_s>                      window_system_;
     std::unique_ptr<gpu::device_s>                             gpu_;
-    std::unique_ptr<gpu::recording_s>                          recording_;
-    gpu::completion_s                                          last_submission_;
-    std::vector<std::function<void(gpu::completion_s)>>        pending_outputs_;
+    std::unique_ptr<nodes::frame_commands_s>                   frame_commands_;
     std::unique_ptr<gpu::texture_s>                            fallback_texture_;
     std::unique_ptr<gpu::transfer::texture_upload_service_s>   texture_upload_service_;
     std::unique_ptr<gpu::transfer::texture_readback_service_s> texture_readback_service_;
@@ -154,11 +82,13 @@ class app_state_s
     ~app_state_s();
 
     boost::asio::io_context* cfg_executor() noexcept;
-    auto                     gpu() noexcept { return gpu_.get(); }
-    gpu::recording_s&        commands();
-    gpu::completion_s        submit_gpu();
-    void                     defer_output(std::function<void(gpu::completion_s)> publish);
-    void                     commit_gpu_frame();
+
+    auto gpu() noexcept { return gpu_.get(); }
+
+    gpu::recording_s& commands();
+    gpu::completion_s submit_gpu();
+    void              defer_output(std::function<void(gpu::completion_s)> publish);
+    void              commit_gpu_frame();
 
     // Always cancel uncommitted output leases on stack rewind. Earlier GPU
     // submissions remain valid, but cannot publish a partially evaluated frame.
@@ -171,36 +101,51 @@ class app_state_s
             : app_(app)
         {
         }
+
         ~frame_scope_s() { app_.abort_gpu(); }
+
         frame_scope_s(const frame_scope_s&)            = delete;
         frame_scope_s& operator=(const frame_scope_s&) = delete;
     };
-    void                     abort_gpu() noexcept;
-    auto                     fallback_texture() noexcept { return fallback_texture_.get(); }
-    auto                     texture_upload_service() noexcept { return texture_upload_service_.get(); }
-    auto                     texture_readback_service() noexcept { return texture_readback_service_.get(); }
-    auto                     decklink_registry() noexcept { return decklink_registry_.get(); }
-    auto                     ndi_registry() noexcept { return ndi_registry_.get(); }
-    auto                     font_registry() noexcept { return font_registry_.get(); }
-    auto                     cpu_task_worker() noexcept { return cpu_task_worker_.get(); }
-    auto                     file_dialog() noexcept { return file_dialog_.get(); }
-    auto                     status_registry() noexcept { return status_registry_.get(); }
-    auto                     ffmpeg_registry() noexcept { return ffmpeg_registry_.get(); }
+
+    void abort_gpu() noexcept;
+
+    auto fallback_texture() noexcept { return fallback_texture_.get(); }
+
+    auto texture_upload_service() noexcept { return texture_upload_service_.get(); }
+
+    auto texture_readback_service() noexcept { return texture_readback_service_.get(); }
+
+    auto decklink_registry() noexcept { return decklink_registry_.get(); }
+
+    auto ndi_registry() noexcept { return ndi_registry_.get(); }
+
+    auto font_registry() noexcept { return font_registry_.get(); }
+
+    auto cpu_task_worker() noexcept { return cpu_task_worker_.get(); }
+
+    auto file_dialog() noexcept { return file_dialog_.get(); }
+
+    auto status_registry() noexcept { return status_registry_.get(); }
+
+    auto ffmpeg_registry() noexcept { return ffmpeg_registry_.get(); }
+
     nodes::cef::subsystem_s* cef_subsystem() noexcept { return cef_subsystem_.get(); }
-    const std::string&       cef_error() const noexcept { return cef_error_; }
+
+    const std::string& cef_error() const noexcept { return cef_error_; }
 
     const command_line_options_s& command_line_options() const noexcept { return command_line_options_; }
 
     void begin_frame(frame_settings_s settings, frame_context_s frame_context) noexcept;
 
     const frame_settings_s& frame_settings() const noexcept { return frame_settings_; }
-    const frame_context_s&  frame_context() const noexcept { return frame_context_; }
 
-    struct
-    {
-        nodes::submitted_node_set_t submitted_nodes;
-        nodes::executed_node_set_t  executed_nodes;
-    } frame_info;
+    const frame_context_s& frame_context() const noexcept { return frame_context_; }
+
+    nodes::frame_execution_state_s frame_info;
+
+    nodes::execution_context_s     node_context();
+    nodes::configuration_context_s configuration_context();
 };
 
 } // namespace miximus::core

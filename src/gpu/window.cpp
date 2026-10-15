@@ -295,9 +295,11 @@ recti_s window_s::get_window_rect()
 }
 
 void window_s::poll() { glfwPollEvents(); }
+
 void window_s::terminate() { glfwTerminate(); }
 
 window_system_s::window_system_s() { window_s::initialize_glfw(); }
+
 window_system_s::~window_system_s() { window_s::terminate(); }
 
 } // namespace miximus::gpu

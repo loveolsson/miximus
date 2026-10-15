@@ -25,6 +25,7 @@ class command_channel_s : public std::enable_shared_from_this<command_channel_s>
         command_protocol::request_kind_e          kind{command_protocol::request_kind_e::custom};
         std::optional<core::frame_context_s>      time;
     };
+
     std::map<std::string, pending_s> pending_requests;
     uint64_t                         next_request{};
     uint64_t                         navigation{};
@@ -45,26 +46,34 @@ class command_channel_s : public std::enable_shared_from_this<command_channel_s>
 
   public:
     void attach(CefRefPtr<CefBrowser> browser) { browser_ = std::move(browser); }
+
     void detach() { browser_ = nullptr; }
+
     void close()
     {
         close_requested = true;
         cancel_commands("Browser is closing");
     }
+
     void cancel_commands(std::string_view reason);
     bool receive(const CefRefPtr<CefFrame>& frame, CefProcessId source, const CefRefPtr<CefProcessMessage>& message);
+
     bool ready() const noexcept { return context_ready; }
+
     bool has_timing_handler() const noexcept { return timing_enabled; }
+
     struct metrics_s
     {
         uint64_t    rejections;
         std::string error;
     };
+
     metrics_s metrics() const
     {
         const std::scoped_lock lock(mutex);
         return {timing_rejections, timing_error};
     }
+
     std::future<session_s::command_result_s> request(std::string                          function_source,
                                                      std::string                          json,
                                                      std::chrono::milliseconds            timeout,

@@ -1,6 +1,6 @@
 #pragma once
-#include "core/app_state_fwd.hpp"
 #include "core/node_status_registry_fwd.hpp"
+#include "nodes/execution_context_fwd.hpp"
 #include "nodes/node_map_fwd.hpp"
 #include "nodes/option_result.hpp"
 #include "types/error.hpp"
@@ -64,20 +64,21 @@ class node_i
     // Name dispatch only, against this frame's stable settings. Return handled
     // after replying or transferring ownership; unknown names return unhandled.
     // Frame handlers never receive the settings editing capability.
-    virtual action_dispatch_e handle_frame_action(core::app_state_s* app, const node_state_s& state, action_s& action);
+    virtual action_dispatch_e
+    handle_frame_action(execution_context_s* context, const node_state_s& state, action_s& action);
 
     /**
      * Called every tick on the main/render thread. Update lifecycle state,
      * inspect options, and schedule explicit background work without blocking.
      */
-    virtual void prepare(core::app_state_s*, const node_state_s&, prepare_result_s*) {};
+    virtual void prepare(execution_context_s*, const node_state_s&, prepare_result_s*) {};
 
     /**
      * Called once for every node in the demanded upstream closure after all
      * nodes have prepared and before any demanded node executes. Use this to
      * park frame-local work or initiate asynchronous work; do not wait for it.
      */
-    virtual void submit(core::app_state_s*, const node_map_t&, const node_state_s&);
+    virtual void submit(execution_context_s*, const node_map_t&, const node_state_s&);
 
     /**
      * Called on the main thread with explicit GPU recording ownership. Invoked lazily
@@ -85,7 +86,7 @@ class node_i
      * from within another node's execute() when resolving interface connections.
      * Resolve upstream targets before recording downstream operations.
      */
-    virtual void execute(core::app_state_s*, const node_map_t&, const node_state_s&) = 0;
+    virtual void execute(execution_context_s*, const node_map_t&, const node_state_s&) = 0;
 
     /**
      * Called on the main thread after execution. GPU commands may still run.
@@ -94,7 +95,7 @@ class node_i
      * Common frame completion clears texture/framebuffer output values after
      * all node callbacks; numeric, vector and rectangle outputs are retained.
      */
-    virtual void complete(core::app_state_s*) {}
+    virtual void complete(execution_context_s*) {}
 
     /**
      * Render-snapshot nodes are destroyed on the main thread. GPU allocations
@@ -109,7 +110,8 @@ class node_i
     std::string_view id() const { return id_; }
 
     const interface_map_t& get_interfaces() const { return interfaces_; }
-    const interface_i*     find_interface(std::string_view name) const;
+
+    const interface_i* find_interface(std::string_view name) const;
 };
 
 inline const interface_i* node_i::find_interface(std::string_view name) const

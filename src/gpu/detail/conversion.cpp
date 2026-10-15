@@ -89,6 +89,7 @@ void recording_state_s::convert(const std::shared_ptr<buffer_state_s>&  buffer,
          }}
     };
     owner->vk.vkUpdateDescriptorSets(owner->device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
     // Compute shaders address packed storage in 32-bit words, including SDK row padding.
     struct conversion_parameters_s
     {

@@ -31,12 +31,15 @@ void check(HRESULT result, const char* operation)
 struct context_lock_s
 {
     AVD3D11VADeviceContext& device;
+
     explicit context_lock_s(AVD3D11VADeviceContext& context)
         : device(context)
     {
         device.lock(device.lock_ctx);
     }
+
     ~context_lock_s() { device.unlock(device.lock_ctx); }
+
     context_lock_s(const context_lock_s&)            = delete;
     context_lock_s& operator=(const context_lock_s&) = delete;
     context_lock_s(context_lock_s&&)                 = delete;
@@ -172,6 +175,7 @@ platform_ingest_s::platform_ingest_s(gpu::device_s& device)
     : impl_(std::make_unique<impl_s>(device))
 {
 }
+
 platform_ingest_s::~platform_ingest_s() = default;
 
 void platform_ingest_s::convert(decoded_frame_s& frame, const gpu::texture_s& target)

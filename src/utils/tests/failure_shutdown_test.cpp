@@ -21,7 +21,8 @@ class recovery_files_test : public testing::Test
 {
   public:
     std::filesystem::path directory;
-    void                  SetUp() override
+
+    void SetUp() override
     {
 #ifdef _WIN32
         // Windows death tests restart the executable; inspect the parent's recovery files.
@@ -43,6 +44,7 @@ class recovery_files_test : public testing::Test
         ASSERT_EQ(_wputenv_s(L"MIXIMUS_TEST_RECOVERY_DIRECTORY", directory.c_str()), 0);
 #endif
     }
+
     void TearDown() override
     {
 #ifdef _WIN32
@@ -50,6 +52,7 @@ class recovery_files_test : public testing::Test
 #endif
         std::filesystem::remove_all(directory);
     }
+
     static std::string read(const std::filesystem::path& path)
     {
         std::ifstream file(path);

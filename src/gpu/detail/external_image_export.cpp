@@ -14,6 +14,7 @@ external_image_export_s::external_image_export_s(device_s& device, extent_s exte
 external_image_export_s::~external_image_export_s() = default;
 
 external_image_s external_image_export_s::descriptor() const { return state_->descriptor; }
+
 size_t external_image_export_s::allocation_bytes() const { return state_->exported->external_allocation_bytes; }
 
 void external_image_export_s::copy(recording_s& record, const texture_s& source, const draw_s& conversion)

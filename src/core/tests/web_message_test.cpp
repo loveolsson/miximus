@@ -53,7 +53,9 @@ class server_mock_s final : public web_server::server_s
     }
 
     void set_config_getters([[maybe_unused]] const web_server::config_getters_t& getters) final {}
+
     void start([[maybe_unused]] uint16_t port, [[maybe_unused]] boost::asio::io_context* service) final {}
+
     void stop() final {}
 
     void send_message(const nlohmann::json& message, int64_t connection_id) final

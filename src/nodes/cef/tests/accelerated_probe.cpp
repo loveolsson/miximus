@@ -37,6 +37,7 @@ class task_s final : public CefTask
         : function_(std::move(function))
     {
     }
+
     void Execute() override { function_(); }
 };
 
@@ -71,6 +72,7 @@ class client_s final
         , dimensions_(dimensions)
     {
     }
+
     void creation_failed()
     {
         {
@@ -108,12 +110,15 @@ class client_s final
         return success;
     }
 
-    CefRefPtr<CefRenderHandler>   GetRenderHandler() override { return this; }
+    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
+
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-    void                          GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
+
+    void GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override
     {
         rect = {0, 0, static_cast<int>(dimensions_.width), static_cast<int>(dimensions_.height)};
     }
+
     void OnAfterCreated(CefRefPtr<CefBrowser> created) override
     {
         bool closing{};
@@ -128,6 +133,7 @@ class client_s final
             created->GetHost()->CloseBrowser(true);
         }
     }
+
     void request_close()
     {
         CefRefPtr<CefBrowser> current;
@@ -140,6 +146,7 @@ class client_s final
             current->GetHost()->CloseBrowser(true);
         }
     }
+
     void OnBeforeClose(CefRefPtr<CefBrowser> /* browser */) override
     {
         std::scoped_lock lock(mutex);
@@ -147,12 +154,14 @@ class client_s final
         closed  = true;
         changed.notify_all();
     }
+
     void fail(std::string message)
     {
         std::scoped_lock lock(mutex);
         error = std::move(message);
         changed.notify_all();
     }
+
     void OnPaint(CefRefPtr<CefBrowser> /* browser */,
                  PaintElementType /* type */,
                  const RectList& /* dirty_rects */,
@@ -162,6 +171,7 @@ class client_s final
     {
         fail("CEF delivered software paint; no pixels were ingested");
     }
+
     void OnAcceleratedPaint(CefRefPtr<CefBrowser> /* browser */,
                             PaintElementType type,
                             const RectList& /* dirty_rects */,

@@ -1,19 +1,19 @@
 #include "frame_execution.hpp"
 
-#include "core/app_state.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 
 namespace miximus::nodes {
 
-std::vector<std::string_view> prepare_all_nodes(core::app_state_s* app, node_map_t& nodes)
+std::vector<std::string_view> prepare_all_nodes(execution_context_s* context, node_map_t& nodes)
 {
     std::vector<std::string_view> demanding_nodes;
     demanding_nodes.reserve(nodes.size());
     for (auto& [id, record] : nodes) {
         node_i::prepare_result_s result;
-        record.node->prepare(app, record.state, &result);
+        record.node->prepare(context, record.state, &result);
         if (result.demands_execution) {
             demanding_nodes.emplace_back(id);
         }
@@ -21,10 +21,10 @@ std::vector<std::string_view> prepare_all_nodes(core::app_state_s* app, node_map
     return demanding_nodes;
 }
 
-void complete_all_nodes(core::app_state_s* app, node_map_t& nodes)
+void complete_all_nodes(execution_context_s* context, node_map_t& nodes)
 {
     for (auto& [_, record] : nodes) {
-        record.node->complete(app);
+        record.node->complete(context);
     }
     // Discard all frame-local image pointers and name borrows after completion.
     // Clearing does not dereference a borrowed name, so node order is irrelevant.
@@ -35,9 +35,9 @@ void complete_all_nodes(core::app_state_s* app, node_map_t& nodes)
     }
 }
 
-bool submit_node_once(core::app_state_s* app, const node_map_t& nodes, std::string_view id)
+bool submit_node_once(execution_context_s* context, const node_map_t& nodes, std::string_view id)
 {
-    auto& submitted_nodes = app->frame_info.submitted_nodes;
+    auto& submitted_nodes = context->frame_info.submitted_nodes;
     if (!submitted_nodes.emplace(id).second) {
         return false;
     }
@@ -48,13 +48,13 @@ bool submit_node_once(core::app_state_s* app, const node_map_t& nodes, std::stri
         return false;
     }
 
-    node->second.node->submit(app, nodes, node->second.state);
+    node->second.node->submit(context, nodes, node->second.state);
     return true;
 }
 
-bool execute_node_once(core::app_state_s* app, const node_map_t& nodes, std::string_view id)
+bool execute_node_once(execution_context_s* context, const node_map_t& nodes, std::string_view id)
 {
-    auto& executed_nodes = app->frame_info.executed_nodes;
+    auto& executed_nodes = context->frame_info.executed_nodes;
     if (!executed_nodes.emplace(id).second) {
         return false;
     }
@@ -65,25 +65,25 @@ bool execute_node_once(core::app_state_s* app, const node_map_t& nodes, std::str
         return false;
     }
 
-    node->second.node->execute(app, nodes, node->second.state);
+    node->second.node->execute(context, nodes, node->second.state);
     return true;
 }
 
-void submit_demanding_nodes(core::app_state_s*                app,
+void submit_demanding_nodes(execution_context_s*              context,
                             const node_map_t&                 nodes,
                             std::span<const std::string_view> demanding_nodes)
 {
     for (const auto id : demanding_nodes) {
-        submit_node_once(app, nodes, id);
+        submit_node_once(context, nodes, id);
     }
 }
 
-void execute_demanding_nodes(core::app_state_s*                app,
+void execute_demanding_nodes(execution_context_s*              context,
                              const node_map_t&                 nodes,
                              std::span<const std::string_view> demanding_nodes)
 {
     for (const auto id : demanding_nodes) {
-        execute_node_once(app, nodes, id);
+        execute_node_once(context, nodes, id);
     }
 }
 

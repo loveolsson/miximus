@@ -169,7 +169,9 @@ media_input_exports_s::frame_s::~frame_s()
         gpu::detail::fatal_gpu_error("Failed to quarantine CEF input frame");
     }
 }
-media_input_pool_s::ticket_s                media_input_exports_s::frame_s::ticket() const { return pending_->ticket; }
+
+media_input_pool_s::ticket_s media_input_exports_s::frame_s::ticket() const { return pending_->ticket; }
+
 const gpu::detail::external_image_export_s& media_input_exports_s::frame_s::image() const
 {
     if (retired_) {
@@ -180,7 +182,8 @@ const gpu::detail::external_image_export_s& media_input_exports_s::frame_s::imag
 }
 
 int64_t media_input_exports_s::frame_s::timestamp_us() const { return pending_->timestamp; }
-bool    media_input_exports_s::frame_s::current() const
+
+bool media_input_exports_s::frame_s::current() const
 {
     std::scoped_lock lock(state_->mutex);
     return !retired_ && !pending_->cancelled && !state_->failed;
@@ -352,6 +355,7 @@ std::shared_ptr<media_input_exports_s::publication_s> media_input_exports_s::rec
     state_s::validate(input);
     auto state   = state_;
     auto pending = std::make_shared<pending_s>();
+
     // Separate native-submission and complete-frame decisions. An early native
     // flush followed by a graph exception must still drain producer GPU work.
     struct native_guard_s

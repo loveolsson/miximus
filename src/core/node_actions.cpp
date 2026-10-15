@@ -9,8 +9,11 @@
 
 namespace miximus::core {
 bool node_actions_s::valid_request(std::string_view id, std::string_view name) { return !id.empty() && !name.empty(); }
+
 node_actions_s::batch_t::~batch_t() { cancel(); }
+
 node_actions_s::batch_t::batch_t(batch_t&& other) noexcept { groups_.swap(other.groups_); }
+
 node_actions_s::batch_t& node_actions_s::batch_t::operator=(batch_t&& other) noexcept
 {
     batch_t previous;
@@ -18,6 +21,7 @@ node_actions_s::batch_t& node_actions_s::batch_t::operator=(batch_t&& other) noe
     groups_.swap(other.groups_);
     return *this;
 }
+
 size_t node_actions_s::batch_t::size() const
 {
     size_t count{};
@@ -26,6 +30,7 @@ size_t node_actions_s::batch_t::size() const
     }
     return count;
 }
+
 void node_actions_s::batch_t::cancel(error_e error, std::string_view message)
 {
     for (auto& group : groups_) {
@@ -35,7 +40,10 @@ void node_actions_s::batch_t::cancel(error_e error, std::string_view message)
     }
     groups_.clear();
 }
-void node_actions_s::batch_t::dispatch(app_state_s* app, const nodes::node_map_t& snapshot, clock_t::time_point now)
+
+void node_actions_s::batch_t::dispatch(nodes::execution_context_s* context,
+                                       const nodes::node_map_t&    snapshot,
+                                       clock_t::time_point         now)
 {
     std::vector<request_s*> ordered;
     ordered.reserve(size());
@@ -57,7 +65,7 @@ void node_actions_s::batch_t::dispatch(app_state_s* app, const nodes::node_map_t
         }
         auto action = std::move(request);
         try {
-            if (found->second.node->handle_frame_action(app, found->second.state, action) !=
+            if (found->second.node->handle_frame_action(context, found->second.state, action) !=
                 nodes::action_dispatch_e::handled) {
                 action.fail(error_e::internal_error, "Node did not handle frame action");
             }

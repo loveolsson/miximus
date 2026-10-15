@@ -73,7 +73,8 @@ class frame_scheduler_s
     const frame_scheduler_metrics_s& finish_frame();
 
     const frame_scheduler_metrics_s& metrics() const { return metrics_; }
-    std::string_view                 clock_name() const;
+
+    std::string_view clock_name() const;
 };
 
 } // namespace miximus::core

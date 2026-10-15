@@ -22,13 +22,21 @@ class frame_staging_s
                     direction_e                    direction,
                     texture_frame_s*               frame,
                     recording_context_s*           recording_context = nullptr);
-    size_t           host_buffer_size_bytes() const noexcept { return backend_->host_buffer_size_bytes(); }
-    size_t           allocation_bytes() const { return backend_->allocation_bytes(); }
+
+    size_t host_buffer_size_bytes() const noexcept { return backend_->host_buffer_size_bytes(); }
+
+    size_t allocation_bytes() const { return backend_->allocation_bytes(); }
+
     std::string_view backend_name() const noexcept { return backend_->backend_name(); }
-    void*            host_memory() const noexcept { return backend_->host_memory(); }
-    void             prepare_host_write() { backend_->prepare_host_write(); }
-    bool         submit_transfer(const completion_s& dependency = {}) { return backend_->submit_transfer(dependency); }
+
+    void* host_memory() const noexcept { return backend_->host_memory(); }
+
+    void prepare_host_write() { backend_->prepare_host_write(); }
+
+    bool submit_transfer(const completion_s& dependency = {}) { return backend_->submit_transfer(dependency); }
+
     completion_s completion() const { return backend_->completion(); }
-    bool         transfer_ready();
+
+    bool transfer_ready();
 };
 } // namespace miximus::gpu::transfer::detail

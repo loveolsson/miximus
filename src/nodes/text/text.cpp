@@ -1,4 +1,3 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
@@ -6,6 +5,7 @@
 #include "gpu/transfer/texture_upload.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -78,25 +78,25 @@ class node_impl : public node_i
         }
     }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* /*result*/) final
     {
-        const auto font_version      = app->font_registry()->get_font_list_version();
+        const auto font_version      = context->font_registry()->get_font_list_version();
         const bool font_list_changed = font_version_.observe(font_version);
         const auto font_name         = state.get_option<std::string_view>("font_name");
         const bool font_name_changed = status_font_name_.observe(font_name);
 
         if (font_list_changed) {
             text_info_->needs_update = true;
-            app->status_registry()->write(
+            context->status_registry()->write(
                 id_,
-                status::font_names_status_s{.font_names = app->font_registry()->get_font_options()},
+                status::font_names_status_s{.font_names = context->font_registry()->get_font_options()},
                 core::status_delivery_e::immediate);
         }
         if (font_list_changed || font_name_changed) {
-            app->status_registry()->write(
+            context->status_registry()->write(
                 id_,
                 status::font_variants_status_s{
-                    .font_variants = app->font_registry()->get_font_variant_options(font_name),
+                    .font_variants = context->font_registry()->get_font_variant_options(font_name),
                 },
                 core::status_delivery_e::immediate);
         }
@@ -126,11 +126,11 @@ class node_impl : public node_i
         }
 
         if (text_info_->needs_update && !text_info_->text.value().empty()) {
-            schedule_render(app);
+            schedule_render(context);
         }
     }
 
-    void schedule_render(core::app_state_s* app)
+    void schedule_render(execution_context_s* context)
     {
         if (render_future_.valid()) {
             if (render_future_.wait_for(0ms) != std::future_status::ready) {
@@ -152,15 +152,15 @@ class node_impl : public node_i
             return;
         }
 
-        auto font_info =
-            app->font_registry()->find_font_variant(text_info_->font_name.value(), text_info_->font_variant.value());
+        auto font_info = context->font_registry()->find_font_variant(text_info_->font_name.value(),
+                                                                     text_info_->font_variant.value());
         if (!font_info) {
-            font_info = app->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
+            font_info = context->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
         }
         if (!font_info) {
-            const auto names = app->font_registry()->get_font_names();
+            const auto names = context->font_registry()->get_font_names();
             if (!names.empty()) {
-                font_info = app->font_registry()->find_font_variant(names.front(), "Regular");
+                font_info = context->font_registry()->find_font_variant(names.front(), "Regular");
             }
         }
         if (!font_info) {
@@ -168,9 +168,9 @@ class node_impl : public node_i
         }
 
         auto snapshot = std::make_unique<text_render_info_s>(*text_info_);
-        auto future   = app->cpu_task_worker()->submit(
+        auto future   = context->cpu_task_worker()->submit(
             utils::cpu_task_priority_e::normal,
-            [info = std::move(snapshot), font = *font_info, uploads = app->texture_upload_service()]() mutable {
+            [info = std::move(snapshot), font = *font_info, uploads = context->texture_upload_service()]() mutable {
                 render_text(uploads, *info, font);
                 return std::move(info);
             });
@@ -199,6 +199,7 @@ class node_impl : public node_i
             std::u32string_view text;
             gpu::vec2i_t        baseline;
         };
+
         const std::u32string_view text_view(utf32_text);
         std::vector<line_s>       lines;
         gpu::vec2i_t              minimum{};
@@ -260,10 +261,10 @@ class node_impl : public node_i
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         rendered_text_frame_.reset();
-        const auto fb_source = iface_fb_in_.resolve_value(app, nodes, state);
+        const auto fb_source = iface_fb_in_.resolve_value(context, nodes, state);
         auto*      fb        = fb_source.texture;
         iface_fb_out_.set_value(fb_source);
 
@@ -286,7 +287,7 @@ class node_impl : public node_i
         }
         rendered_text_frame_ = std::move(frame);
 
-        auto position = iface_position_in_.resolve_value(app, nodes, state, {0.0, 0.0});
+        auto position = iface_position_in_.resolve_value(context, nodes, state, {0.0, 0.0});
 
         // Calculate the scale to render text at its natural pixel size
         // Convert surface dimensions to framebuffer coordinates
@@ -298,10 +299,10 @@ class node_impl : public node_i
         const gpu::texture_draw_s geometry{
             .destination = {.pos = position, .size = scale}
         };
-        gpu::draw_texture(app->commands(), rendered_text_frame_->texture(), fb, {.geometry = geometry});
+        gpu::draw_texture(context->commands(), rendered_text_frame_->texture(), fb, {.geometry = geometry});
     }
 
-    void complete(core::app_state_s* /*app*/) final
+    void complete(execution_context_s* /*context*/) final
     {
         if (rendered_text_frame_) {
             rendered_text_frame_.reset();

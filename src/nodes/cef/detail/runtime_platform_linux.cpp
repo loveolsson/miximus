@@ -26,6 +26,7 @@ class preserved_signals_s
             }
         }
     }
+
     preserved_signals_s(const preserved_signals_s& other)            = delete;
     preserved_signals_s& operator=(const preserved_signals_s& other) = delete;
     preserved_signals_s(preserved_signals_s&& other)                 = delete;

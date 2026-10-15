@@ -97,11 +97,13 @@ class cpu_task_s
     }
 
     [[nodiscard]] bool valid() const noexcept { return result_.valid(); }
+
     template <typename Rep, typename Period>
     std::future_status wait_for(const std::chrono::duration<Rep, Period>& timeout) const
     {
         return result_.wait_for(timeout);
     }
+
     T get() { return result_.get(); }
 };
 
@@ -184,8 +186,8 @@ class cpu_task_worker_s
         });
         auto                               future = task.get_future();
         auto                               entry  = std::make_shared<detail::cpu_task_entry_s>(detail::cpu_task_entry_s{
-                                           .priority = priority,
-                                           .invoke =
+            .priority = priority,
+            .invoke =
                 std::packaged_task<void(bool)>([task = std::move(task)](bool cancelled) mutable { task(cancelled); }),
         });
         {

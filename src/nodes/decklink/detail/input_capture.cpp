@@ -413,11 +413,11 @@ class callback_s final
             // and two retiring GPU evaluations. These are bounds, not latency.
             const auto upload_slots = sdk_buffers + queue_capacity + 1 + 2;
             const auto stream       = upload_service_->create_stream({
-                      .host_layout         = host_layout,
-                      .max_slots           = upload_slots,
-                      .initial_slots       = sdk_buffers,
-                      .generate_mip_maps   = false,
-                      .conversion_sampling = gpu::sampling_e::mipmapped_linear,
+                .host_layout         = host_layout,
+                .max_slots           = upload_slots,
+                .initial_slots       = sdk_buffers,
+                .generate_mip_maps   = false,
+                .conversion_sampling = gpu::sampling_e::mipmapped_linear,
             });
 
             auto allocator = make_decklink_ptr<input_video_buffer_allocator_s>(bufferSize, stream, sdk_buffers);
@@ -726,7 +726,8 @@ class callback_s final
         }
     }
 
-    bool    requires_render_release() const { return phase_.load() == phase_e::release_requested; }
+    bool requires_render_release() const { return phase_.load() == phase_e::release_requested; }
+
     phase_e phase() const { return phase_.load(); }
 
     metrics_s metrics() const
@@ -776,6 +777,7 @@ class callback_s final
     }
 
     ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+
     ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const ULONG count = --ref_count_;

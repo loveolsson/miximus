@@ -142,10 +142,10 @@ class input_capture_s::impl_s
             .memory_access     = gpu::transfer::host_memory_access_e::overwrite,
         };
         upload_stream_       = upload_service_->create_stream({
-                  .host_layout         = host_layout,
-                  .max_slots           = input_buffer_slot_count(buffer_frames_),
-                  .generate_mip_maps   = false,
-                  .conversion_sampling = gpu::sampling_e::mipmapped_linear,
+            .host_layout         = host_layout,
+            .max_slots           = input_buffer_slot_count(buffer_frames_),
+            .generate_mip_maps   = false,
+            .conversion_sampling = gpu::sampling_e::mipmapped_linear,
         });
         upload_dimensions_   = dimensions;
         upload_pixel_format_ = pixel_format;
@@ -254,8 +254,8 @@ class input_capture_s::impl_s
 
         const auto upload_id = upload->upload_id();
         auto       captured  = frame_queue_.create_frame(*media_clock_sample,
-                                                  arrival_time,
-                                                  captured_frame_data_s{
+                                                         arrival_time,
+                                                         captured_frame_data_s{
                                                              .stream        = std::move(stream),
                                                              .upload        = std::move(*upload),
                                                              .upload_id     = upload_id,
@@ -263,7 +263,7 @@ class input_capture_s::impl_s
                                                              .dimensions    = dimensions,
                                                              .ndi_timecode  = video_frame.timecode,
                                                              .ndi_timestamp = video_frame.timestamp,
-                                                  });
+                                                         });
         // Begin the transfer before entering the timed FIFO. Consumption still waits
         // for this exact upload, after the configured source buffering interval.
         if (!captured->mark_submitted() ||

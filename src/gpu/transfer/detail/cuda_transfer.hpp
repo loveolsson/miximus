@@ -49,13 +49,15 @@ class cuda_transfer_s final : public transfer_backend_i
                     texture_frame_s&               frame,
                     recording_context_s*           recording_context);
     ~cuda_transfer_s() override;
-    void*            host_memory() const noexcept override;
-    size_t           host_buffer_size_bytes() const noexcept override;
-    size_t           allocation_bytes() const noexcept override;
+    void*  host_memory() const noexcept override;
+    size_t host_buffer_size_bytes() const noexcept override;
+    size_t allocation_bytes() const noexcept override;
+
     std::string_view backend_name() const noexcept override { return "cuda-vulkan-direct"; }
-    void             prepare_host_write() override;
-    bool             submit_transfer(const completion_s& dependency) override;
-    completion_s     completion() const override;
-    bool             transfer_ready() override;
+
+    void         prepare_host_write() override;
+    bool         submit_transfer(const completion_s& dependency) override;
+    completion_s completion() const override;
+    bool         transfer_ready() override;
 };
 } // namespace miximus::gpu::transfer::detail

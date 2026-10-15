@@ -1,5 +1,5 @@
-#include "core/app_state.hpp"
 #include "gpu/types.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -20,14 +20,14 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         const auto size   = state.get_option<gpu::vec2_t>("size");
         const auto center = state.get_option<gpu::vec2_t>("center");
         const auto speed  = state.get_option<double>("speed");
         const auto phase  = state.get_option<double>("phase");
 
-        const double seconds       = utils::to_seconds(app->frame_context().program_pts);
+        const double seconds       = utils::to_seconds(context->frame_context().program_pts);
         const double phase_radians = phase * std::numbers::pi_v<double> / 180.0;
         const double angle         = (seconds * speed) + phase_radians;
         const auto   result        = center + (gpu::vec2_t{std::cos(angle), std::sin(angle)} * size);

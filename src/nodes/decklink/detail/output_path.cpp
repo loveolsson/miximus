@@ -54,7 +54,7 @@ auto create_frame_with_buffer(IDeckLinkOutput*                          device,
     }
 
     decklink_ptr<IDeckLinkMutableVideoFrame> frame;
-    const auto                               result = device->CreateVideoFrameWithBuffer(display_mode.dimensions.x,
+    const auto result = device->CreateVideoFrameWithBuffer(display_mode.dimensions.x,
                                                            display_mode.dimensions.y,
                                                            static_cast<int32_t>(host_layout.row_stride_bytes),
                                                            decklink_pixel_format,

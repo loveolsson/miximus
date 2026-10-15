@@ -53,29 +53,29 @@ class node_impl : public node_i
     {
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         const int    active_option = state.get_option<int>("active", 1);
-        const double active_value  = active_.resolve_value(app, nodes, state, static_cast<double>(active_option));
+        const double active_value  = active_.resolve_value(context, nodes, state, static_cast<double>(active_option));
         const auto   index         = active_index(active_value);
         const auto&  input         = inputs_.at(index);
-        output_.set_value(input.resolve_value(app, nodes, state));
+        output_.set_value(input.resolve_value(context, nodes, state));
     }
 
-    void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void submit(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         const auto active_connections = active_.connections(state);
-        interface_i::submit_dependencies(app, nodes, active_connections);
+        interface_i::submit_dependencies(context, nodes, active_connections);
         if (!active_connections.empty()) {
             for (const auto& input : inputs_) {
-                interface_i::submit_dependencies(app, nodes, input.connections(state));
+                interface_i::submit_dependencies(context, nodes, input.connections(state));
             }
             return;
         }
 
         const auto  index = active_index(static_cast<double>(state.get_option<int>("active", 1)));
         const auto& input = inputs_.at(index);
-        interface_i::submit_dependencies(app, nodes, input.connections(state));
+        interface_i::submit_dependencies(context, nodes, input.connections(state));
     }
 
     nlohmann::json get_default_options() const final

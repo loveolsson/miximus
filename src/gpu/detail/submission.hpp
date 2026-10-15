@@ -13,10 +13,12 @@ namespace miximus::gpu::detail {
 struct submission_engine_s
 {
     device_state_s& owner;
+
     explicit submission_engine_s(device_state_s& device)
         : owner(device)
     {
     }
+
     void initialize();
     void start();
     void stop();

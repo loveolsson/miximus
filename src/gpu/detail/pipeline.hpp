@@ -24,10 +24,12 @@ enum class conversion_operation_e
 struct pipeline_state_s
 {
     device_state_s& owner;
+
     explicit pipeline_state_s(device_state_s& device)
         : owner(device)
     {
     }
+
     ~pipeline_state_s();
     pipeline_state_s(const pipeline_state_s&)            = delete;
     pipeline_state_s& operator=(const pipeline_state_s&) = delete;

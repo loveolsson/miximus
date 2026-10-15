@@ -30,11 +30,13 @@ class node_status_registry_s
         std::string    node_id;
         nlohmann::json status;
     };
+
     struct removal_s
     {
         std::string           node_id;
         std::function<void()> notify;
     };
+
     using callback_t = std::function<void(const std::vector<status_update_s>&)>;
 
   private:
@@ -48,14 +50,17 @@ class node_status_registry_s
         virtual ~value_i()                       = default;
         virtual nlohmann::json serialize() const = 0;
     };
+
     template <status::registered_contract T>
     struct value_s final : value_i
     {
         T value;
+
         explicit value_s(T input)
             : value(std::move(input))
         {
         }
+
         nlohmann::json serialize() const final { return value; }
     };
     struct state_s;

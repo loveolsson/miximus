@@ -124,6 +124,7 @@ session_request_s::session_request_s(std::shared_ptr<state_s> state)
     : state_(std::move(state))
 {
 }
+
 session_request_s::~session_request_s() { state_->stop(); }
 
 std::shared_ptr<session_s> session_request_s::session() const
@@ -167,6 +168,7 @@ subsystem_s::subsystem_s(gpu::device_s&               device,
 subsystem_s::~subsystem_s() = default;
 
 bool subsystem_s::clear_http_cache() { return impl_->runtime.clear_http_cache(); }
+
 bool subsystem_s::cache_clear_pending() const { return impl_->runtime.cache_clear_pending(); }
 
 std::unique_ptr<session_request_s> subsystem_s::create_session(session_t::options_s options)

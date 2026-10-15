@@ -29,8 +29,8 @@ ComPtr<ID3D11Device> create_matching_device(const device_state_s& owner, UINT fl
 {
     VkPhysicalDeviceIDProperties identity{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
     VkPhysicalDeviceProperties2  properties{
-         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-         .pNext = &identity,
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &identity,
     };
     owner.instance_vk.vkGetPhysicalDeviceProperties2(owner.physical, &properties);
     if (identity.deviceLUIDValid == VK_FALSE) {

@@ -40,7 +40,8 @@ class buffer_s
     allocation_info_s          allocation_info() const;
     std::span<std::byte>       writable_bytes();
     std::span<const std::byte> readable_bytes() const;
-    explicit                   operator bool() const noexcept { return state_ != nullptr; }
+
+    explicit operator bool() const noexcept { return state_ != nullptr; }
 };
 
 } // namespace miximus::gpu

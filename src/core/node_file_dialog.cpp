@@ -3,6 +3,7 @@
 #include "node_manager.hpp"
 #include "nodes/node.hpp"
 
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 
 namespace miximus::core {

@@ -72,7 +72,8 @@ class texture_readback_target_s
     channel_order_e output_order() const noexcept;
     void            set_program_target_time(utils::flicks program_target_time) noexcept;
     void            submit(completion_s ready);
-    explicit        operator bool() const noexcept { return slot_ != nullptr; }
+
+    explicit operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_readback_frame_s
@@ -98,7 +99,8 @@ class texture_readback_frame_s
     // merely to hand off ownership, or recycle the address at schedule time.
     std::span<const std::byte> readable_host_bytes() const noexcept;
     utils::flicks              program_target_time() const noexcept;
-    explicit                   operator bool() const noexcept { return slot_ != nullptr; }
+
+    explicit operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_readback_stream_s

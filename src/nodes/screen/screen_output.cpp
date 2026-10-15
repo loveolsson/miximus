@@ -1,10 +1,10 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/output_presenter.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/window.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -96,24 +96,25 @@ class node_impl : public node_i
     node_impl& operator=(const node_impl&) = delete;
     node_impl& operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* result) final
     {
         const auto monitor_version = gpu::window_s::get_monitor_list_version();
         if (monitor_version_.observe(monitor_version)) {
-            app->status_registry()->write(id_,
-                                          status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()},
-                                          core::status_delivery_e::immediate);
+            context->status_registry()->write(
+                id_,
+                status::monitor_options_status_s{.monitors = gpu::window_s::get_monitors()},
+                core::status_delivery_e::immediate);
         }
 
         const auto enabled                = state.get_option<bool>("enabled", false);
         const auto monitor_id             = state.get_option<std::string_view>("monitor_id");
-        auto       nominal_frame_duration = app->frame_context().frame_duration;
+        auto       nominal_frame_duration = context->frame_context().frame_duration;
         if (const auto refresh_rate = gpu::window_s::get_monitor_refresh_rate(monitor_id); refresh_rate.has_value()) {
             nominal_frame_duration = utils::k_flicks_one_second / *refresh_rate;
         }
         const auto presenter_settings = presenter_settings_t{
             enabled,
-            app->frame_settings().screen_output.buffer_frames,
+            context->frame_settings().screen_output.buffer_frames,
             nominal_frame_duration,
         };
         const auto position                = state.get_option<gpu::vec2_t>("position", {0, 0});
@@ -141,7 +142,7 @@ class node_impl : public node_i
         if (window_settings_changed || enabled_changed) {
             failure_.clear();
         }
-        publish_error(app->status_registry());
+        publish_error(context->status_registry());
         const bool presenter_settings_changed = presenter_settings_.observe(presenter_settings);
         if (presenter_ && (presenter_settings_changed || window_settings_changed || output_dimensions_changed) &&
             !presenter_stopping_) {
@@ -151,22 +152,22 @@ class node_impl : public node_i
 
         if (presenter_stopping_) {
             if (!presenter_->stopped()) {
-                report_connection(app->status_registry(), {.connected = false});
+                report_connection(context->status_registry(), {.connected = false});
                 return;
             }
             destroy_presenter();
         }
 
         if (!enabled || !failure_.empty()) {
-            report_connection(app->status_registry(), {.connected = false});
+            report_connection(context->status_registry(), {.connected = false});
             return;
         }
 
         if (!presenter_) {
             try {
                 presenter_ = std::make_unique<output_presenter_s>(
-                    *app->gpu(),
-                    static_cast<size_t>(app->frame_settings().screen_output.buffer_frames),
+                    *context->gpu(),
+                    static_cast<size_t>(context->frame_settings().screen_output.buffer_frames),
                     nominal_frame_duration,
                     fullscreen,
                     monitor_id,
@@ -175,24 +176,24 @@ class node_impl : public node_i
             } catch (const std::exception& error) {
                 failure_ = error.what();
                 destroy_presenter();
-                publish_error(app->status_registry());
-                report_connection(app->status_registry(), {.connected = false});
+                publish_error(context->status_registry());
+                report_connection(context->status_registry(), {.connected = false});
                 return;
             }
         }
 
         result->demands_execution = true;
-        report_connection(app->status_registry(), {.connected = true});
-        publish_metrics(app->status_registry());
+        report_connection(context->status_registry(), {.connected = true});
+        publish_metrics(context->status_registry());
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         if (!presenter_ || presenter_stopping_ || !failure_.empty()) {
             return;
         }
 
-        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_tex_.resolve_value(context, nodes, state);
         auto*      texture        = texture_source.texture;
         auto       frame          = presenter_->try_acquire();
         if (!frame.has_value()) {
@@ -200,26 +201,26 @@ class node_impl : public node_i
         }
 
         auto* target = frame->target();
-        target->clear(app->commands());
+        target->clear(context->commands());
         if (texture != nullptr) {
             const auto texture_draw =
                 gpu::calculate_texture_draw({},
                                             texture->dimensions(),
                                             presenter_->output_dimensions(),
                                             state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode"));
-            gpu::draw_texture(app->commands(), texture, target, {.geometry = texture_draw});
+            gpu::draw_texture(context->commands(), texture, target, {.geometry = texture_draw});
         }
 
         auto       pending     = std::make_shared<output_presenter_s::render_frame_s>(std::move(*frame));
-        const auto target_time = app->frame_context().program_target_time;
+        const auto target_time = context->frame_context().program_target_time;
         // The stored callback owns pending; Clang's MSVC shared_ptr model reports a false leak.
         // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
-        app->defer_output([pending = std::move(pending), target_time](gpu::completion_s ready) {
+        context->defer_output([pending = std::move(pending), target_time](gpu::completion_s ready) {
             pending->submit(target_time, std::move(ready));
         });
     }
 
-    void complete(core::app_state_s* /*app*/) final {}
+    void complete(execution_context_s* /*context*/) final {}
 
     nlohmann::json get_default_options() const final
     {

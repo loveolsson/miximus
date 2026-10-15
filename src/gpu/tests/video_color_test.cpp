@@ -3,6 +3,7 @@
 #include "gpu/video_frame.hpp"
 
 #include <gtest/gtest.h>
+
 namespace miximus::gpu { namespace {
 
 TEST(VideoColor, Rec2020PrimariesMatchExistingBroadcastGamut)

@@ -2,6 +2,7 @@
 #include "decklink_inc.hpp"
 
 #include <DeckLinkAPIVersion.h>
+
 namespace miximus::decklink_sdk {
 
 /**

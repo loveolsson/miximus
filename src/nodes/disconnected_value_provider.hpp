@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/app_state_fwd.hpp"
+#include "nodes/execution_context_fwd.hpp"
 #include "nodes/source_info.hpp"
 
 #include <memory>
@@ -11,7 +11,8 @@ template <typename T>
 struct disconnected_value_provider_s
 {
     void release() noexcept {}
-    T    get(core::app_state_s* /*app*/, const T& fallback) { return fallback; }
+
+    T get(execution_context_s* /*context*/, const T& fallback) { return fallback; }
 };
 
 template <>
@@ -31,7 +32,7 @@ struct disconnected_value_provider_s<framebuffer_source_info_s>
 
     void release() noexcept;
     framebuffer_source_info_s
-    get(core::app_state_s* app, const framebuffer_source_info_s& fallback, std::string_view name);
+    get(execution_context_s* context, const framebuffer_source_info_s& fallback, std::string_view name);
 };
 
 } // namespace miximus::nodes::detail

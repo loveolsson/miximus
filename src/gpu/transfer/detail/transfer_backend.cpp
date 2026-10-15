@@ -53,13 +53,19 @@ class vulkan_staging_s final : public transfer_backend_i
         address_ = bytes.data();
     }
 
-    void*            host_memory() const noexcept override { return address_; }
-    size_t           host_buffer_size_bytes() const noexcept override { return plan_.host_layout.buffer_size_bytes; }
-    size_t           allocation_bytes() const override { return host_.allocation_info().bytes; }
+    void* host_memory() const noexcept override { return address_; }
+
+    size_t host_buffer_size_bytes() const noexcept override { return plan_.host_layout.buffer_size_bytes; }
+
+    size_t allocation_bytes() const override { return host_.allocation_info().bytes; }
+
     std::string_view backend_name() const noexcept override { return "vulkan-staging"; }
-    void             prepare_host_write() override { (void)host_.writable_bytes(); }
-    completion_s     completion() const override { return completion_; }
-    bool             submit_transfer(const completion_s& dependency) override
+
+    void prepare_host_write() override { (void)host_.writable_bytes(); }
+
+    completion_s completion() const override { return completion_; }
+
+    bool submit_transfer(const completion_s& dependency) override
     {
         auto record = recording_context_ != nullptr ? recording_context_->try_record() : device_.try_record();
         if (!record) {

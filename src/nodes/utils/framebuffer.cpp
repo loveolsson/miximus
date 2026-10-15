@@ -1,6 +1,6 @@
-#include "core/app_state.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -23,19 +23,19 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         auto         size_opt   = state.get_option<gpu::vec2_t>("size");
-        auto         size_float = iface_size_.resolve_value(app, nodes, state, size_opt);
+        auto         size_float = iface_size_.resolve_value(context, nodes, state, size_opt);
         gpu::vec2i_t size       = glm::floor(size_float);
 
         size = glm::max(size, gpu::vec2i_t{128, 128});
 
         if (!framebuffer_ || framebuffer_->dimensions() != size) {
-            framebuffer_ = std::make_unique<gpu::texture_s>(*app->gpu(), size, gpu::format_e::rgba_unorm16);
+            framebuffer_ = std::make_unique<gpu::texture_s>(*context->gpu(), size, gpu::format_e::rgba_unorm16);
         }
 
-        framebuffer_->clear(app->commands());
+        framebuffer_->clear(context->commands());
 
         iface_fb_.set_value({.texture = framebuffer_.get(), .name = state.get_option_string_view("name")});
     }

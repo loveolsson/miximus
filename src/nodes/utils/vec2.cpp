@@ -19,13 +19,13 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         auto x = state.get_option<double>("x", 0);
         auto y = state.get_option<double>("y", 0);
 
-        x = iface_x_.resolve_value(app, nodes, state, x);
-        y = iface_y_.resolve_value(app, nodes, state, y);
+        x = iface_x_.resolve_value(context, nodes, state, x);
+        y = iface_y_.resolve_value(context, nodes, state, y);
 
         iface_res_.set_value({x, y});
     }

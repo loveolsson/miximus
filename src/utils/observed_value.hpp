@@ -47,7 +47,8 @@ class observed_value_s
 
     void reset() { value_.reset(); }
 
-    [[nodiscard]] bool     has_value() const { return value_.has_value(); }
+    [[nodiscard]] bool has_value() const { return value_.has_value(); }
+
     [[nodiscard]] const T& value() const { return value_.value(); }
 };
 

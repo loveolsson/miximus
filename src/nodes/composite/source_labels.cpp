@@ -1,9 +1,9 @@
 #include "nodes/composite/source_labels.hpp"
 
-#include "core/app_state.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/transfer/texture_upload.hpp"
 #include "logger/logger.hpp"
+#include "nodes/execution_context.hpp"
 #include "render/font/font_info.hpp"
 #include "render/font/font_instance.hpp"
 #include "render/font/font_loader.hpp"
@@ -128,6 +128,7 @@ struct source_labels_s::impl_s
     impl_s& operator=(const impl_s& other) = delete;
     impl_s(impl_s&& other)                 = delete;
     impl_s& operator=(impl_s&& other)      = delete;
+
     ~impl_s()
     {
         try {
@@ -182,20 +183,20 @@ struct source_labels_s::impl_s
         }
     }
 
-    void schedule_prepare(core::app_state_s* app, const render::pill_style_s& style)
+    void schedule_prepare(execution_context_s* context, const render::pill_style_s& style)
     {
         needs_prepare = false;
-        auto font     = app->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
+        auto font     = context->font_registry()->find_font_variant(render::get_default_font_name(), "Regular");
         if (!font) {
-            const auto fonts = app->font_registry()->get_font_names();
+            const auto fonts = context->font_registry()->get_font_names();
             if (fonts.empty()) {
                 return;
             }
-            const auto variants = app->font_registry()->get_font_variant_names(fonts.front());
+            const auto variants = context->font_registry()->get_font_variant_names(fonts.front());
             if (variants.empty()) {
                 return;
             }
-            font = app->font_registry()->find_font_variant(fonts.front(), variants.front());
+            font = context->font_registry()->find_font_variant(fonts.front(), variants.front());
         }
         if (!font || style.font_size <= 0) {
             return;
@@ -212,18 +213,18 @@ struct source_labels_s::impl_s
             }
         }
 
-        auto submitted_task = app->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
-                                                             prepare_labels,
-                                                             std::move(batch),
-                                                             *font,
-                                                             app->texture_upload_service());
+        auto submitted_task = context->cpu_task_worker()->submit(utils::cpu_task_priority_e::background,
+                                                                 prepare_labels,
+                                                                 std::move(batch),
+                                                                 *font,
+                                                                 context->texture_upload_service());
         if (submitted_task) {
             task            = std::move(*submitted_task);
             task_generation = generation;
         }
     }
 
-    void schedule_paint(core::app_state_s* app)
+    void schedule_paint(execution_context_s* context)
     {
         if (!pending_batch) {
             return;
@@ -246,7 +247,7 @@ struct source_labels_s::impl_s
             return;
         }
 
-        auto submitted_task = app->cpu_task_worker()->submit(
+        auto submitted_task = context->cpu_task_worker()->submit(
             utils::cpu_task_priority_e::background, paint_labels, std::move(pending_batch), std::move(uploads));
         if (submitted_task) {
             task            = std::move(*submitted_task);
@@ -259,6 +260,7 @@ source_labels_s::source_labels_s()
     : impl_(std::make_unique<impl_s>())
 {
 }
+
 source_labels_s::~source_labels_s() = default;
 
 void source_labels_s::clear()
@@ -271,7 +273,7 @@ void source_labels_s::clear()
     state.collect_completed_work();
 }
 
-void source_labels_s::update(core::app_state_s*                     app,
+void source_labels_s::update(execution_context_s*                   context,
                              std::span<const texture_source_info_s> sources,
                              const render::pill_style_s&            style)
 {
@@ -285,7 +287,7 @@ void source_labels_s::update(core::app_state_s*                     app,
     std::ranges::sort(names);
     names.erase(std::ranges::unique(names).begin(), names.end());
 
-    const auto version       = app->font_registry()->get_font_list_version();
+    const auto version       = context->font_registry()->get_font_list_version();
     const bool style_changed = state.desired_style.observe(style);
     const bool font_changed  = state.desired_font_version.observe(version);
     if (!std::ranges::equal(names, state.desired_names) || style_changed || font_changed) {
@@ -305,9 +307,9 @@ void source_labels_s::update(core::app_state_s*                     app,
         return;
     }
     if (state.needs_prepare) {
-        state.schedule_prepare(app, style);
+        state.schedule_prepare(context, style);
     } else {
-        state.schedule_paint(app);
+        state.schedule_paint(context);
     }
 }
 

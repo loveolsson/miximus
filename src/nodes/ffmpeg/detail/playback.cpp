@@ -23,6 +23,7 @@
 namespace miximus::nodes::ffmpeg::detail {
 
 using namespace std::chrono_literals;
+
 struct playback_session_s::impl_s
 {
     std::shared_ptr<const hardware_devices_s>               devices;

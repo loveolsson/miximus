@@ -85,6 +85,7 @@ class transfer_worker_s : public std::enable_shared_from_this<Derived>
     memory_budget_s     memory_;
     device_s&           device_;
     recording_context_s recording_context_;
+
     transfer_worker_s(device_s& device, size_t memory_budget)
         : memory_(memory_budget)
         , device_(device)
@@ -130,6 +131,7 @@ class transfer_worker_s : public std::enable_shared_from_this<Derived>
     }
 
     size_t memory_usage() const noexcept { return memory_.usage(); }
+
     size_t memory_budget() const noexcept { return memory_.limit(); }
 };
 

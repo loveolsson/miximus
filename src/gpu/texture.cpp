@@ -84,7 +84,8 @@ format_e texture_s::format() const
 }
 
 uint32_t texture_s::mip_levels() const { return state_ ? state_->mip_levels : 0; }
-bool     texture_s::idle() const
+
+bool texture_s::idle() const
 {
     return !state_ ||
            (state_->recording_uses.load() == 0 && state_->last_use_timeline_value.load() <= state_->owner->completed());

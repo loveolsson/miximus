@@ -488,7 +488,8 @@ void verify_screen_cadence(utils::flicks program_duration,
     EXPECT_NEAR(
         utils::to_seconds(timeline.buffered_latency()), utils::to_seconds(initial_presentation - ORIGIN), 0.001);
     const auto expected_program_frame = (display_duration * FRAME_COUNT + program_duration / 2) / program_duration;
-    EXPECT_NEAR(previous_frame, expected_program_frame, 1);
+    EXPECT_GE(previous_frame, expected_program_frame - 1);
+    EXPECT_LE(previous_frame, expected_program_frame + 1);
 }
 
 TEST_P(ScreenCadence, ContinuousFeedbackKeepsLiveBoundedQueueStable)

@@ -14,6 +14,7 @@ struct file_dialog_filter_s
     std::string label;
     std::string pattern;
 };
+
 struct file_dialog_request_s
 {
     std::string                       title;

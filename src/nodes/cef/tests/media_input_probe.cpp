@@ -94,10 +94,14 @@ class client_s final
     {
     }
 
-    CefRefPtr<CefRenderHandler>   GetRenderHandler() override { return this; }
+    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return this; }
+
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-    CefRefPtr<CefDisplayHandler>  GetDisplayHandler() override { return this; }
+
+    CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+
     void GetViewRect(CefRefPtr<CefBrowser> /* browser */, CefRect& rect) override { rect = {0, 0, 640, 360}; }
+
     void OnAfterCreated(CefRefPtr<CefBrowser> browser) override
     {
         std::scoped_lock lock(mutex_);
@@ -729,6 +733,7 @@ void run_async(cef_detail::media_input_exports_s& queue,
 
     std::cout << '\n';
 }
+
 void run_serial(const std::vector<std::unique_ptr<gpu::detail::external_image_export_s>>& exports,
                 gpu::texture_s&                                                           source,
                 gpu::recording_context_s&                                                 context,

@@ -91,6 +91,7 @@ PointerAlignment: Left
 #    Language: TextProto
 #    BasedOnStyle: google
 ReflowComments: true
+SeparateDefinitionBlocks: Always
 SortIncludes: true
 SortUsingDeclarations: true
 SpaceAfterCStyleCast: false

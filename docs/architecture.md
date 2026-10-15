@@ -62,6 +62,17 @@ drained at shutdown. Running C++ callables cannot be forcibly stopped safely.
 
 Each explicit background path owns its locks, queues, completion signals, and shutdown procedure.
 
+Node callbacks receive a borrowed `nodes::execution_context_s`, not `app_state_s`. It exposes the current immutable
+frame settings/timing, node services, and recording operations, with no application ownership, configuration
+executor, or frame-commit operation. The frame driver constructs the context after `begin_frame()` and keeps it
+alive through actions, preparation, submission, execution, and completion. Background tasks capture owned inputs
+or the required long-lived service handles, never the context. Application-owned `nodes::frame_commands_s` retains
+recordings and pending publication callbacks; the frame driver alone commits or abandons the whole frame.
+
+Configuration action dispatch uses a separate `nodes::configuration_context_s` with the browser cache service;
+settings mutations continue to pass through `action_context_s` and authoritative graph validation. Frame actions
+receive only the render context. Runtime ownership and shutdown ordering remain in `app_state_s`.
+
 ## Authoritative graph and render snapshot
 
 `core::node_manager_s` owns two node maps:

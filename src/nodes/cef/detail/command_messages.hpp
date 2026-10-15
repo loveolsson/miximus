@@ -17,6 +17,7 @@ struct request_s
     std::string    json;
     request_kind_e kind{};
 };
+
 struct result_s
 {
     std::string id;
@@ -25,11 +26,13 @@ struct result_s
     bool        success{};
     std::string payload;
 };
+
 struct cancel_s
 {
     std::string id;
     std::string context;
 };
+
 struct context_s
 {
     std::string token;

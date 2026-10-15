@@ -14,6 +14,7 @@ class retirement_queue_s
         uint64_t              completion;
         std::function<void()> destroy;
     };
+
     std::mutex           mutex_;
     std::vector<entry_s> pending_;
 

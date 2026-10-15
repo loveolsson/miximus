@@ -22,6 +22,7 @@ namespace miximus::render {
 
 namespace {
 int floor_pixel(FT_Pos value) { return static_cast<int>(std::floor(static_cast<double>(value) / 64.0)); }
+
 int ceil_pixel(FT_Pos value) { return static_cast<int>(std::ceil(static_cast<double>(value) / 64.0)); }
 
 void check_freetype(FT_Error error)

@@ -10,6 +10,7 @@ namespace {
 constexpr auto frame_format   = gpu::format_e::rgba_unorm16;
 constexpr auto frame_sampling = gpu::sampling_e::linear;
 } // namespace
+
 size_t frame_pool_s::storage_bytes(gpu::vec2i_t dimensions)
 {
     return gpu::texture_s::estimate_storage_byte_size(dimensions, frame_format, frame_sampling);
@@ -53,7 +54,8 @@ frame_pool_s::frame_s::~frame_s()
     state_->slots[index_].leased = false;
 }
 
-gpu::texture_s&       frame_pool_s::frame_s::texture() noexcept { return state_->slots[index_].texture; }
+gpu::texture_s& frame_pool_s::frame_s::texture() noexcept { return state_->slots[index_].texture; }
+
 const gpu::texture_s& frame_pool_s::frame_s::texture() const noexcept { return state_->slots[index_].texture; }
 
 frame_pool_s::frame_pool_s(gpu::device_s& device, gpu::vec2i_t dimensions, size_t capacity, size_t memory_budget_bytes)

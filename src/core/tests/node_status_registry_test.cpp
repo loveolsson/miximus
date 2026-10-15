@@ -46,6 +46,7 @@ struct node_status_registry_test_s : testing::Test
             updates.insert(updates.end(), batch.begin(), batch.end());
         });
     }
+
     auto flush()
     {
         registry.publish();

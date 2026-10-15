@@ -20,6 +20,7 @@ struct cancellation_s
     IFileDialog*    dialog;
     std::stop_token stop;
 };
+
 void CALLBACK poll_shutdown(HWND window, UINT /*message*/, UINT_PTR /*timer*/, DWORD /*time*/)
 {
     // Win32 stores the callback pointer in pointer-sized window userdata.
@@ -46,11 +47,13 @@ file_dialog_result_s show_dialog(const file_dialog_request_s& request, const std
         FAILED(dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_NOCHANGEDIR))) {
         return {.error = error_e::internal_error};
     }
+
     struct wide_filter_s
     {
         std::wstring label;
         std::wstring pattern;
     };
+
     std::vector<wide_filter_s> owned_filters;
     owned_filters.reserve(request.filters.size());
     for (const auto& filter : request.filters) {
@@ -128,6 +131,7 @@ struct file_dialog_s::impl_s
         file_dialog_request_s options;
         completion_t          completion;
     };
+
     std::mutex                  mutex;
     std::condition_variable_any ready;
     std::optional<request_s>    pending;
@@ -177,8 +181,11 @@ file_dialog_s::file_dialog_s()
     : impl_(std::make_unique<impl_s>())
 {
 }
+
 file_dialog_s::~file_dialog_s() { stop(); }
-bool    file_dialog_s::supported() { return true; }
+
+bool file_dialog_s::supported() { return true; }
+
 error_e file_dialog_s::open(file_dialog_request_s request, completion_t completion)
 {
     const std::scoped_lock lock(impl_->mutex);
@@ -193,6 +200,7 @@ error_e file_dialog_s::open(file_dialog_request_s request, completion_t completi
     impl_->ready.notify_one();
     return error_e::no_error;
 }
+
 void file_dialog_s::stop()
 {
     {

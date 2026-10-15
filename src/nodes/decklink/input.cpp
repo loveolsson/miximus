@@ -1,4 +1,3 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/colorspace.hpp"
 #include "detail/device_reservation.hpp"
@@ -8,6 +7,7 @@
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
 #include "logger/logger.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -96,18 +96,18 @@ class node_impl : public node_i
         }
     }
 
-    void publish_device_status(core::app_state_s* app, std::string_view device_name)
+    void publish_device_status(execution_context_s* context, std::string_view device_name)
     {
-        const auto device_status = app->decklink_registry()->get_device_status(device_name);
+        const auto device_status = context->decklink_registry()->get_device_status(device_name);
         auto       payload       = make_device_status(device_status ? *device_status : device_status_s{});
         const bool important =
             device_status_event_.observe(device_status_event_s{.device_name   = std::string(device_name),
                                                                .signal_locked = payload.signal_locked,
                                                                .active_format = payload.active_format});
-        app->status_registry()->write(id_,
-                                      std::move(payload),
-                                      important ? core::status_delivery_e::immediate
-                                                : core::status_delivery_e::rate_limited);
+        context->status_registry()->write(id_,
+                                          std::move(payload),
+                                          important ? core::status_delivery_e::immediate
+                                                    : core::status_delivery_e::rate_limited);
     }
 
     void publish_metrics(core::node_status_registry_s* status_registry)
@@ -135,7 +135,7 @@ class node_impl : public node_i
         status_registry->write(id_, source_timing_status(metrics.source_queue));
     }
 
-    void prepare_active_capture(core::app_state_s* app, core::node_status_registry_s* status_registry)
+    void prepare_active_capture(execution_context_s* context, core::node_status_registry_s* status_registry)
     {
         if (!capture_) {
             return;
@@ -162,12 +162,12 @@ class node_impl : public node_i
         }
 
         if (phase == input_capture_s::phase_e::running) {
-            const auto& frame = app->frame_context();
+            const auto& frame = context->frame_context();
             capture_->advance_frames(frame.program_pts, frame.program_target_time, frame.discontinuity);
         }
     }
 
-    bool start_capture(core::app_state_s* app, decklink_ptr<IDeckLinkInput> device, std::string_view device_name)
+    bool start_capture(execution_context_s* context, decklink_ptr<IDeckLinkInput> device, std::string_view device_name)
     {
         auto reservation = device_reservation_s<IDeckLinkInput>::acquire(device.get());
         if (!reservation) {
@@ -175,13 +175,13 @@ class node_impl : public node_i
         }
 
         log()->info("Scheduling DeckLink input setup for {}", device_name);
-        capture_ =
-            std::make_unique<input_capture_s>(app->texture_upload_service(),
-                                              app->decklink_registry()->control_executor(),
-                                              std::move(device),
-                                              std::move(reservation),
-                                              std::string(device_name),
-                                              static_cast<size_t>(app->frame_settings().decklink_input.buffer_frames));
+        capture_ = std::make_unique<input_capture_s>(
+            context->texture_upload_service(),
+            context->decklink_registry()->control_executor(),
+            std::move(device),
+            std::move(reservation),
+            std::string(device_name),
+            static_cast<size_t>(context->frame_settings().decklink_input.buffer_frames));
         capture_->start_async();
         return true;
     }
@@ -196,34 +196,34 @@ class node_impl : public node_i
     void operator=(const node_impl&) = delete;
     void operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* /*result*/) final
     {
-        auto* sr = app->status_registry();
+        auto* sr = context->status_registry();
 
-        const auto current_version     = app->decklink_registry()->get_device_list_version();
+        const auto current_version     = context->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(current_version);
         if (device_list_changed) {
             sr->write(id_,
-                      status::device_names_status_s{.device_names = app->decklink_registry()->get_input_options()},
+                      status::device_names_status_s{.device_names = context->decklink_registry()->get_input_options()},
                       core::status_delivery_e::immediate);
         }
 
-        prepare_active_capture(app, sr);
+        prepare_active_capture(context, sr);
 
         auto device_name = state.get_option<std::string>("device_name");
         auto enabled     = state.get_option<bool>("enabled");
 
-        if (device_list_changed && capture_ && !app->decklink_registry()->get_input(device_name)) {
+        if (device_list_changed && capture_ && !context->decklink_registry()->get_input(device_name)) {
             stop_capture();
             capture_selection_.reset();
         }
 
-        publish_device_status(app, device_name);
+        publish_device_status(context, device_name);
         publish_metrics(sr);
 
         const capture_selection_s selection{.device_name   = device_name,
                                             .enabled       = enabled,
-                                            .buffer_frames = app->frame_settings().decklink_input.buffer_frames};
+                                            .buffer_frames = context->frame_settings().decklink_input.buffer_frames};
         if (capture_selection_.would_change(selection)) {
             stop_capture();
 
@@ -233,13 +233,13 @@ class node_impl : public node_i
                 return;
             }
 
-            auto device = app->decklink_registry()->get_input(device_name);
+            auto device = context->decklink_registry()->get_input(device_name);
             if (!device) {
                 report_connection(sr, {.connected = false});
                 return;
             }
 
-            if (!start_capture(app, std::move(device), device_name)) {
+            if (!start_capture(context, std::move(device), device_name)) {
                 report_connection(sr, {.connected = false});
                 return;
             }
@@ -249,26 +249,26 @@ class node_impl : public node_i
         report_connection(sr, {.connected = capture_ && capture_->phase() == input_capture_s::phase_e::running});
     }
 
-    void submit(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
+    void submit(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         if (capture_) {
-            const auto& frame = app->frame_context();
+            const auto& frame = context->frame_context();
             (void)capture_->submit_frame(frame.program_pts);
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         rendered_input_frame_.reset();
         // Let recorded graph work run while waiting for the exact PTS-selected upload.
-        app->submit_gpu();
+        context->submit_gpu();
         const auto frame = capture_ ? capture_->resolve_frame() : std::nullopt;
         if (!frame.has_value()) {
             iface_tex_.set_value({.texture = framebuffer_.get(), .name = state.get_option_string_view("name")});
             return;
         }
         rendered_input_frame_ = frame->frame;
-        app->commands().wait_for(rendered_input_frame_->upload_completion());
+        context->commands().wait_for(rendered_input_frame_->upload_completion());
 
         framebuffer_ = rendered_input_frame_->conversion_texture();
 
@@ -278,20 +278,20 @@ class node_impl : public node_i
             gamut_conversion_   = gpu::get_gamut_transfer_to_rec709(transfer);
         }
 
-        framebuffer_->clear(app->commands());
+        framebuffer_->clear(context->commands());
         const auto& source = *rendered_input_frame_;
-        app->commands().unpack_v210(
+        context->commands().unpack_v210(
             source.buffer(),
             *framebuffer_,
             gpu::color_parameters(yuv_conversion_, gamut_conversion_, gpu::color_conversion_direction_e::from_yuv),
             source.layout().row_stride_bytes);
 
         auto fb_tex = framebuffer_.get();
-        app->commands().generate_mip_maps(*fb_tex);
+        context->commands().generate_mip_maps(*fb_tex);
         iface_tex_.set_value({.texture = fb_tex, .name = state.get_option_string_view("name")});
     }
 
-    void complete(core::app_state_s* /*app*/) final
+    void complete(execution_context_s* /*context*/) final
     {
         if (rendered_input_frame_) {
             rendered_input_frame_.reset();

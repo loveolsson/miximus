@@ -231,6 +231,7 @@ void color_comparison_s::record(recording_s&         recording,
 
     vk.vkCmdBindDescriptorSets(
         state.arena->commands, VK_PIPELINE_BIND_POINT_COMPUTE, state_->layout, 0, 1, &descriptor, 0, nullptr);
+
     struct parameters_s
     {
         std::array<float, 4> reference;
@@ -238,6 +239,7 @@ void color_comparison_s::record(recording_s&         recording,
         uint32_t             x_begin;
         uint32_t             x_end;
     } parameters{.reference = reference, .tolerance = tolerance, .x_begin = x_begin, .x_end = x_end};
+
     static_assert(sizeof(parameters) == 28);
 
     vk.vkCmdPushConstants(

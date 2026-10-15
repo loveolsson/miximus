@@ -1,4 +1,3 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/colorspace.hpp"
 #include "detail/device_reservation.hpp"
@@ -14,6 +13,7 @@
 #include "media/playout_timeline.hpp"
 #include "media/presentation_timeline.hpp"
 #include "media/timed_output_queue.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -914,6 +914,7 @@ class callback_s final : public IDeckLinkVideoOutputCallback
     }
 
     ULONG STDMETHODCALLTYPE AddRef() noexcept final { return ++ref_count_; }
+
     ULONG STDMETHODCALLTYPE Release() noexcept final
     {
         const ULONG count = --ref_count_;
@@ -937,12 +938,14 @@ class node_impl : public node_i
         int                   buffer_frames;
         bool                  operator==(const selection_s&) const = default;
     };
+
     struct mode_options_key_s
     {
         std::string device_name;
         uint64_t    version;
         bool        operator==(const mode_options_key_s&) const = default;
     };
+
     struct device_status_event_s
     {
         std::string                device_name;
@@ -950,6 +953,7 @@ class node_impl : public node_i
         std::optional<std::string> active_format;
         bool                       operator==(const device_status_event_s&) const = default;
     };
+
     struct keyer_status_event_s
     {
         decklink_keyer_mode_e      requested;
@@ -983,7 +987,7 @@ class node_impl : public node_i
         }
     }
 
-    bool start_playback(core::app_state_s*            app,
+    bool start_playback(execution_context_s*          context,
                         decklink_ptr<IDeckLinkOutput> device,
                         std::string_view              device_name,
                         std::string_view              display_mode,
@@ -997,8 +1001,8 @@ class node_impl : public node_i
         }
 
         log()->info("Scheduling DeckLink output setup for {}", device_name);
-        callback_ = make_decklink_ptr<callback_s>(app->texture_readback_service(),
-                                                  app->decklink_registry()->control_executor(),
+        callback_ = make_decklink_ptr<callback_s>(context->texture_readback_service(),
+                                                  context->decklink_registry()->control_executor(),
                                                   std::move(device),
                                                   std::move(reservation),
                                                   std::string(device_name),
@@ -1010,18 +1014,18 @@ class node_impl : public node_i
         return true;
     }
 
-    void publish_device_status(core::app_state_s* app, std::string_view device_name)
+    void publish_device_status(execution_context_s* context, std::string_view device_name)
     {
-        const auto device_status = app->decklink_registry()->get_device_status(device_name);
+        const auto device_status = context->decklink_registry()->get_device_status(device_name);
         auto       payload       = make_device_status(device_status ? *device_status : device_status_s{});
         const bool important =
             device_status_event_.observe(device_status_event_s{.device_name      = std::string(device_name),
                                                                .reference_locked = payload.reference_locked,
                                                                .active_format    = payload.active_format});
-        app->status_registry()->write(id_,
-                                      std::move(payload),
-                                      important ? core::status_delivery_e::immediate
-                                                : core::status_delivery_e::rate_limited);
+        context->status_registry()->write(id_,
+                                          std::move(payload),
+                                          important ? core::status_delivery_e::immediate
+                                                    : core::status_delivery_e::rate_limited);
     }
 
     utils::observed_value_s<keyer_status_event_s> keyer_status_event_;
@@ -1157,32 +1161,33 @@ class node_impl : public node_i
     node_impl(node_impl&&)                 = delete;
     node_impl& operator=(node_impl&&)      = delete;
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* result) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* result) final
     {
-        auto* status = app->status_registry();
+        auto* status = context->status_registry();
 
-        const auto device_list_version = app->decklink_registry()->get_device_list_version();
+        const auto device_list_version = context->decklink_registry()->get_device_list_version();
         const bool device_list_changed = device_version_.observe(device_list_version);
         if (device_list_changed) {
-            status->write(id_,
-                          status::device_names_status_s{.device_names = app->decklink_registry()->get_output_options()},
-                          core::status_delivery_e::immediate);
+            status->write(
+                id_,
+                status::device_names_status_s{.device_names = context->decklink_registry()->get_output_options()},
+                core::status_delivery_e::immediate);
         }
 
         const auto device_name    = state.get_option<std::string>("device_name");
         const auto display_mode   = state.get_option<std::string>("display_mode");
         const auto keyer_mode     = state.get_enum_option_unchecked<decklink_keyer_mode_e>("keyer_mode");
         const auto enabled        = state.get_option<bool>("enabled");
-        const auto buffer_frames  = app->frame_settings().decklink_output.buffer_frames;
+        const auto buffer_frames  = context->frame_settings().decklink_output.buffer_frames;
         result->demands_execution = enabled;
-        publish_device_status(app, device_name);
+        publish_device_status(context, device_name);
 
         const selection_s selection{.device_name   = device_name,
                                     .display_mode  = display_mode,
                                     .keyer_mode    = keyer_mode,
                                     .enabled       = enabled,
-                                    .frame_rate    = app->frame_settings().frame_rate,
-                                    .epoch         = app->frame_context().epoch,
+                                    .frame_rate    = context->frame_settings().frame_rate,
+                                    .epoch         = context->frame_context().epoch,
                                     .buffer_frames = buffer_frames};
         if (selection_.observe(selection)) {
             stop_playback();
@@ -1190,7 +1195,7 @@ class node_impl : public node_i
             next_start_attempt_  = {};
         }
 
-        if (device_list_changed && callback_ && !app->decklink_registry()->get_output(device_name)) {
+        if (device_list_changed && callback_ && !context->decklink_registry()->get_output(device_name)) {
             stop_playback();
         }
 
@@ -1212,21 +1217,21 @@ class node_impl : public node_i
             return;
         }
 
-        auto device = app->decklink_registry()->get_output(device_name);
-        if (!device || !start_playback(app,
+        auto device = context->decklink_registry()->get_output(device_name);
+        if (!device || !start_playback(context,
                                        std::move(device),
                                        device_name,
                                        display_mode,
                                        keyer_mode,
-                                       app->frame_context().frame_duration,
+                                       context->frame_context().frame_duration,
                                        buffer_frames)) {
             next_start_attempt_ = std::chrono::steady_clock::now() + 100ms;
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_tex_.resolve_value(context, nodes, state);
         auto*      texture        = texture_source.texture;
         if (texture == nullptr || !render_state_) {
             return;
@@ -1242,12 +1247,12 @@ class node_impl : public node_i
             frame_renderer_ = render_state_->active_output.path->create_renderer();
         }
         const auto fill_mode = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
-        frame_renderer_->render(app->commands(), texture, *target, fill_mode);
-        target->set_program_target_time(app->frame_context().program_target_time);
+        frame_renderer_->render(context->commands(), texture, *target, fill_mode);
+        target->set_program_target_time(context->frame_context().program_target_time);
         auto pending = std::make_shared<gpu::transfer::texture_readback_target_s>(std::move(*target));
         // The stored callback owns pending; Clang's MSVC shared_ptr model reports a false leak.
         // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
-        app->defer_output([pending = std::move(pending), callback = callback_](gpu::completion_s ready) mutable {
+        context->defer_output([pending = std::move(pending), callback = callback_](gpu::completion_s ready) mutable {
             pending->submit(std::move(ready));
             if (callback) {
                 callback->request_preroll_pump();

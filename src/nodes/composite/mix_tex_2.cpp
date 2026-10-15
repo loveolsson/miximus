@@ -1,8 +1,8 @@
-#include "core/app_state.hpp"
 #include "glm/common.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -23,31 +23,31 @@ class node_impl : public node_i
     output_interface_s<framebuffer_source_info_s> iface_fb_out_{*this, "fb_out"};
 
   public:
-    void submit(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void submit(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        interface_i::submit_dependencies(app, nodes, iface_fb_in_.connections(state));
+        interface_i::submit_dependencies(context, nodes, iface_fb_in_.connections(state));
 
         const auto t_connections = iface_t_.connections(state);
-        interface_i::submit_dependencies(app, nodes, t_connections);
+        interface_i::submit_dependencies(context, nodes, t_connections);
 
         if (!t_connections.empty()) {
-            interface_i::submit_dependencies(app, nodes, iface_a_.connections(state));
-            interface_i::submit_dependencies(app, nodes, iface_b_.connections(state));
+            interface_i::submit_dependencies(context, nodes, iface_a_.connections(state));
+            interface_i::submit_dependencies(context, nodes, iface_b_.connections(state));
             return;
         }
 
         const auto t = state.get_option<double>("t");
         if (t < 1.0) {
-            interface_i::submit_dependencies(app, nodes, iface_a_.connections(state));
+            interface_i::submit_dependencies(context, nodes, iface_a_.connections(state));
         }
         if (t > 0.0) {
-            interface_i::submit_dependencies(app, nodes, iface_b_.connections(state));
+            interface_i::submit_dependencies(context, nodes, iface_b_.connections(state));
         }
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        const auto framebuffer_source = iface_fb_in_.resolve_value(app, nodes, state);
+        const auto framebuffer_source = iface_fb_in_.resolve_value(context, nodes, state);
         auto*      framebuffer        = framebuffer_source.texture;
         iface_fb_out_.set_value(framebuffer_source);
 
@@ -56,21 +56,21 @@ class node_impl : public node_i
         }
 
         const auto t_option = state.get_option<double>("t");
-        const auto t_value  = iface_t_.resolve_value(app, nodes, state, t_option);
+        const auto t_value  = iface_t_.resolve_value(context, nodes, state, t_option);
         const auto t        = glm::clamp(t_value, 0.0, 1.0);
-        auto*      fallback = app->fallback_texture();
+        auto*      fallback = context->fallback_texture();
 
         const gpu::texture_s* a{};
         const gpu::texture_s* b{};
         if (t <= 0.0) {
-            a = iface_a_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
+            a = iface_a_.resolve_value(context, nodes, state, {.texture = fallback, .name = {}}).texture;
             b = a;
         } else if (t >= 1.0) {
-            b = iface_b_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
+            b = iface_b_.resolve_value(context, nodes, state, {.texture = fallback, .name = {}}).texture;
             a = b;
         } else {
-            a = iface_a_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
-            b = iface_b_.resolve_value(app, nodes, state, {.texture = fallback, .name = {}}).texture;
+            a = iface_a_.resolve_value(context, nodes, state, {.texture = fallback, .name = {}}).texture;
+            b = iface_b_.resolve_value(context, nodes, state, {.texture = fallback, .name = {}}).texture;
         }
 
         const auto target_dimensions = framebuffer->dimensions();
@@ -80,7 +80,7 @@ class node_impl : public node_i
         const auto b_draw     = gpu::calculate_texture_draw({}, b->dimensions(), target_dimensions, fill_mode);
         const auto blend_mode = state.get_enum_option_unchecked<gpu::blend_mode_e>("blend_mode");
 
-        gpu::mix_textures(app->commands(), a, b, framebuffer, t, a_draw, b_draw, blend_mode);
+        gpu::mix_textures(context->commands(), a, b, framebuffer, t, a_draw, b_draw, blend_mode);
     }
 
     nlohmann::json get_default_options() const final

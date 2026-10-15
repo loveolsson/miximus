@@ -38,7 +38,9 @@ struct platform_ingest_s::impl_s
         : bridge(gpu)
     {
     }
+
     ~impl_s() { reset(); }
+
     impl_s(const impl_s&)            = delete;
     impl_s& operator=(const impl_s&) = delete;
     impl_s(impl_s&&)                 = delete;
@@ -76,6 +78,7 @@ platform_ingest_s::platform_ingest_s(gpu::device_s& device)
     : impl_(std::make_unique<impl_s>(device))
 {
 }
+
 platform_ingest_s::~platform_ingest_s() = default;
 
 void platform_ingest_s::convert(decoded_frame_s& frame, const gpu::texture_s& target)

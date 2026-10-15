@@ -62,15 +62,15 @@ class node_impl : public node_i
     {
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         const auto value_option = state.get_option<T>("value", default_value_);
         const auto min_option   = state.get_option<T>("min", default_min_);
         const auto max_option   = state.get_option<T>("max", default_max_);
 
-        const auto value = iface_value_.resolve_value(app, nodes, state, value_option);
-        const auto min   = iface_min_.resolve_value(app, nodes, state, min_option);
-        const auto max   = iface_max_.resolve_value(app, nodes, state, max_option);
+        const auto value = iface_value_.resolve_value(context, nodes, state, value_option);
+        const auto min   = iface_min_.resolve_value(context, nodes, state, min_option);
+        const auto max   = iface_max_.resolve_value(context, nodes, state, max_option);
 
         iface_res_.set_value(clamp_value(value, min, max));
     }

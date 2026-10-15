@@ -32,7 +32,8 @@ struct texture_upload_id_s
 {
     uint64_t sequence{};
 
-    auto     operator<=>(const texture_upload_id_s&) const = default;
+    auto operator<=>(const texture_upload_id_s&) const = default;
+
     explicit operator bool() const noexcept { return sequence != 0; }
 };
 
@@ -77,7 +78,8 @@ class texture_upload_lease_s
     std::span<std::byte> writable_host_bytes() const noexcept;
     texture_upload_id_s  upload_id() const noexcept;
     [[nodiscard]] bool   submit(upload_ownership_e ownership = upload_ownership_e::stream);
-    explicit             operator bool() const noexcept { return slot_ != nullptr; }
+
+    explicit operator bool() const noexcept { return slot_ != nullptr; }
 };
 
 class texture_upload_stream_s

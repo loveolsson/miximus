@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/app_state_fwd.hpp"
 #include "gpu/texture_fwd.hpp"
+#include "nodes/execution_context_fwd.hpp"
 #include "nodes/source_info.hpp"
 #include "render/pill_label.hpp"
 
@@ -24,8 +24,9 @@ class source_labels_s
     source_labels_s(const source_labels_s& other)            = delete;
     source_labels_s& operator=(const source_labels_s& other) = delete;
 
-    void
-    update(core::app_state_s* app, std::span<const texture_source_info_s> sources, const render::pill_style_s& style);
+    void update(execution_context_s*                   context,
+                std::span<const texture_source_info_s> sources,
+                const render::pill_style_s&            style);
     void clear();
 
     // Borrowed until the next update(), clear(), or destruction.

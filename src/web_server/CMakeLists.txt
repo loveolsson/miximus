@@ -29,9 +29,9 @@ PRIVATE
     Boost::url
     Threads::Threads
     websocketpp::websocketpp
+PUBLIC
     logger
     miximus_types
-PUBLIC
     nlohmann_json::nlohmann_json
     magic_enum::magic_enum
 ) 

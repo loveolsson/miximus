@@ -23,6 +23,7 @@ class node_actions_s
     static constexpr auto   MAX_AGE      = std::chrono::seconds(5);
 
     using request_s = nodes::action_s;
+
     struct pending_s
     {
         // An entry also marks this node's settings/connections dirty.
@@ -34,6 +35,7 @@ class node_actions_s
         pending_s(pending_s&&)                 = default;
         pending_s& operator=(pending_s&&)      = default;
     };
+
     class batch_t
     {
         // Explicitly move-only: MSVC's deque move can throw, so vector would
@@ -50,7 +52,9 @@ class node_actions_s
         batch_t& operator=(batch_t&& other) noexcept;
         size_t   size() const;
         void cancel(error_e error = error_e::cancelled, std::string_view message = "Node action frame was abandoned");
-        void dispatch(app_state_s* app, const nodes::node_map_t& snapshot, clock_t::time_point now = clock_t::now());
+        void dispatch(nodes::execution_context_s* context,
+                      const nodes::node_map_t&    snapshot,
+                      clock_t::time_point         now = clock_t::now());
     };
 
     static bool valid_request(std::string_view id, std::string_view name);

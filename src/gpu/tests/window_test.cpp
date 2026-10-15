@@ -19,17 +19,20 @@
 namespace miximus::gpu { namespace {
 
 using namespace std::chrono_literals;
+
 class window_test : public testing::Test
 {
   protected:
     static inline std::unique_ptr<window_system_s> system;
-    static void                                    SetUpTestSuite()
+
+    static void SetUpTestSuite()
     {
         logger::init_loggers(spdlog::level::warn);
         system = std::make_unique<window_system_s>();
     }
 
-    static void    TearDownTestSuite() { system.reset(); }
+    static void TearDownTestSuite() { system.reset(); }
+
     static vec2i_t on_screen_position()
     {
         int x{};

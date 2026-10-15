@@ -22,15 +22,18 @@ class surface_s
     const gpu::vec2i_t dimensions_;
     std::span<pixel_t> pixels_;
 
-    pixel_t*       data() noexcept { return pixels_.data(); }
+    pixel_t* data() noexcept { return pixels_.data(); }
+
     const pixel_t* data() const noexcept { return pixels_.data(); }
 
   public:
     surface_s(gpu::vec2i_t dimensions, std::span<std::byte> storage);
     surface_s(gpu::vec2i_t dimensions, std::span<pixel_t> pixels);
 
-    gpu::vec2i_t             dimensions() const noexcept { return dimensions_; }
-    std::span<pixel_t>       pixels() noexcept { return pixels_; }
+    gpu::vec2i_t dimensions() const noexcept { return dimensions_; }
+
+    std::span<pixel_t> pixels() noexcept { return pixels_; }
+
     std::span<const pixel_t> pixels() const noexcept { return pixels_; }
 
     // Surface storage is linear premultiplied RGBA. These overloads convert

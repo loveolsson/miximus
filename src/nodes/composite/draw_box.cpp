@@ -1,9 +1,9 @@
-#include "core/app_state.hpp"
 #include "glm/common.hpp"
 #include "gpu/drawing.hpp"
 #include "gpu/geometry.hpp"
 #include "gpu/texture.hpp"
 #include "gpu/types.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -26,9 +26,9 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        const auto fb_source = iface_fb_in_.resolve_value(app, nodes, state);
+        const auto fb_source = iface_fb_in_.resolve_value(context, nodes, state);
         auto*      fb        = fb_source.texture;
         iface_fb_out_.set_value(fb_source);
 
@@ -36,14 +36,14 @@ class node_impl : public node_i
             return;
         }
 
-        const auto texture_source = iface_tex_.resolve_value(app, nodes, state);
+        const auto texture_source = iface_tex_.resolve_value(context, nodes, state);
         auto*      texture        = texture_source.texture;
 
         if (texture == nullptr) {
             return;
         }
 
-        auto draw_rect = iface_rect_.resolve_value(app,
+        auto draw_rect = iface_rect_.resolve_value(context,
                                                    nodes,
                                                    state,
                                                    {
@@ -52,13 +52,13 @@ class node_impl : public node_i
         });
 
         auto opacity_opt     = state.get_option<double>("opacity", 1.0);
-        auto opacity         = iface_opacity_.resolve_value(app, nodes, state, opacity_opt);
+        auto opacity         = iface_opacity_.resolve_value(context, nodes, state, opacity_opt);
         opacity              = glm::clamp(opacity, 0.0, 1.0);
         const auto fill_mode = state.get_enum_option_unchecked<gpu::fill_mode_e>("fill_mode");
         const auto texture_draw =
             gpu::calculate_texture_draw(draw_rect, texture->dimensions(), fb->dimensions(), fill_mode);
 
-        gpu::draw_texture(app->commands(), texture, fb, {.geometry = texture_draw, .opacity = opacity});
+        gpu::draw_texture(context->commands(), texture, fb, {.geometry = texture_draw, .opacity = opacity});
     }
 
     nlohmann::json get_default_options() const final

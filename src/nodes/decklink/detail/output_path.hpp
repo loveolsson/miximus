@@ -18,6 +18,7 @@
 namespace miximus::gpu {
 
 class texture_s;
+
 namespace transfer {
 class texture_readback_target_s;
 }
@@ -70,8 +71,10 @@ class output_path_i
     output_path_i(output_path_i&&)                 = delete;
     output_path_i& operator=(output_path_i&&)      = delete;
 
-    const output_display_mode_s&              display_mode() const noexcept { return display_mode_; }
-    BMDPixelFormat                            decklink_pixel_format() const noexcept { return decklink_pixel_format_; }
+    const output_display_mode_s& display_mode() const noexcept { return display_mode_; }
+
+    BMDPixelFormat decklink_pixel_format() const noexcept { return decklink_pixel_format_; }
+
     const gpu::transfer::host_frame_layout_s& host_layout() const noexcept { return host_layout_; }
 
     virtual auto create_frame(IDeckLinkOutput* device, IDeckLinkVideoBuffer* buffer, std::string_view device_name) const

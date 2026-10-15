@@ -1,4 +1,4 @@
-#include "core/app_state.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -19,14 +19,14 @@ class node_impl : public node_i
   public:
     explicit node_impl() = default;
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         auto size   = state.get_option<double>("size");
         auto center = state.get_option<double>("center");
         auto speed  = state.get_option<double>("speed");
         auto phase  = state.get_option<double>("phase");
 
-        const double s             = utils::to_seconds(app->frame_context().program_pts);
+        const double s             = utils::to_seconds(context->frame_context().program_pts);
         const double phase_radians = phase * std::numbers::pi_v<double> / 180.0;
         const double res           = (std::sin((s * speed) + phase_radians) * size) + center;
 

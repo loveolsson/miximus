@@ -87,6 +87,7 @@ class output_presenter_s::impl_s : public std::enable_shared_from_this<impl_s>
 
       public:
         slot_lease_s() = default;
+
         slot_lease_s(impl_s* impl, size_t index) noexcept
             : impl_(impl)
             , index_(index)

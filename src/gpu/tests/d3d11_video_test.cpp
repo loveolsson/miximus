@@ -98,7 +98,9 @@ void verify_carrier(DXGI_FORMAT format, uint32_t sample_bytes, uint32_t width = 
 }
 
 TEST(d3d11_video, PreservesEveryEightBitSampleAndArraySlice) { verify_carrier(DXGI_FORMAT_NV12, 1); }
+
 TEST(d3d11_video, PreservesEveryTenBitSample) { verify_carrier(DXGI_FORMAT_P010, 2); }
+
 TEST(d3d11_video, PreservesEverySixteenBitSample) { verify_carrier(DXGI_FORMAT_P016, 2); }
 
 TEST(d3d11_video, PreservesChromaAcrossPartialCarrierRows)

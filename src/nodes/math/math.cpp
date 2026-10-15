@@ -38,7 +38,7 @@ class node_impl : public node_i
     {
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
         T res{};
 
@@ -47,8 +47,8 @@ class node_impl : public node_i
         auto a_opt = state.get_option<T>("a");
         auto b_opt = state.get_option<T>("b");
 
-        auto a = iface_a_.resolve_value(app, nodes, state, a_opt);
-        auto b = iface_b_.resolve_value(app, nodes, state, b_opt);
+        auto a = iface_a_.resolve_value(context, nodes, state, a_opt);
+        auto b = iface_b_.resolve_value(context, nodes, state, b_opt);
 
         switch (op) {
             case operation_e::add:

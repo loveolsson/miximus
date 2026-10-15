@@ -54,13 +54,13 @@ frame_context_s frame_scheduler_s::begin_frame(frame_rate_s frame_rate)
     const auto frame_offset        = duration_ * static_cast<utils::flicks::rep>(timeline_frame_);
     const auto program_target_time = anchor_time_ + frame_offset;
     context_                       = {
-                              .frame_number        = next_frame_number_,
-                              .epoch               = epoch_,
-                              .program_pts         = frame_offset,
-                              .frame_duration      = duration_,
-                              .program_target_time = program_target_time,
-                              .render_deadline     = program_target_time + duration_,
-                              .discontinuity       = discontinuity,
+        .frame_number        = next_frame_number_,
+        .epoch               = epoch_,
+        .program_pts         = frame_offset,
+        .frame_duration      = duration_,
+        .program_target_time = program_target_time,
+        .render_deadline     = program_target_time + duration_,
+        .discontinuity       = discontinuity,
     };
 
     metrics_ = {

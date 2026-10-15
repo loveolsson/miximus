@@ -62,7 +62,8 @@ class web_server_impl
     void send(const con_hdl_t& hdl, const nlohmann::json&);
 
     callback_t& get_subscription_by_topic(topic_e t) { return subscription_by_topic_[t]; }
-    con_set_t&  get_connections_by_topic(topic_e t) { return connections_by_topic_[t]; }
+
+    con_set_t& get_connections_by_topic(topic_e t) { return connections_by_topic_[t]; }
 
     server_t         endpoint_;
     con_map_t        connections_;

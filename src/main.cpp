@@ -38,6 +38,7 @@
 
 using namespace miximus;
 using namespace std::chrono_literals;
+
 namespace {
 
 constexpr int HTTP_PORT = 7351;

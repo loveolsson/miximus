@@ -548,6 +548,7 @@ BOOST_DESCRIBE_STRUCT(ffmpeg_playback_status_s,
                        playback_dropped_frames,
                        playback_loops,
                        playback_queue_depth))
+
 template <typename T>
 struct contract_s
 {

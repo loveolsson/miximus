@@ -27,9 +27,9 @@ class node_impl : public node_i
     {
     }
 
-    void execute(core::app_state_s* app, const node_map_t& nodes, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& nodes, const node_state_s& state) final
     {
-        auto* source = input_.resolve_value(app, nodes, state).texture;
+        auto* source = input_.resolve_value(context, nodes, state).texture;
         if (source != nullptr) {
             output_.set_value({.texture = source, .name = state.get_option_string_view("source_name")});
         } else {

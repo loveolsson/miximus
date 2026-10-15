@@ -1,7 +1,7 @@
-#include "core/app_state.hpp"
 #include "core/node_status_registry.hpp"
 #include "detail/playback.hpp"
 #include "detail/playback_timeline.hpp"
+#include "nodes/execution_context.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
@@ -57,15 +57,15 @@ class node_impl final : public node_i
 
     ~node_impl() override { stop(); }
 
-    void prepare(core::app_state_s* app, const node_state_s& state, prepare_result_s* /*result*/) final
+    void prepare(execution_context_s* context, const node_state_s& state, prepare_result_s* /*result*/) final
     {
         executed_ = false;
-        registry_ = app->ffmpeg_registry();
+        registry_ = context->ffmpeg_registry();
         mode_     = state.get_enum_option_unchecked<playback_mode_e>("playback_mode");
         detail::playback_options_s options{
             .filename = state.get_option<bool>("enabled") ? state.get_option<std::string>("filename") : std::string{},
             .attempt_hardware_decode = state.get_option<bool>("attempt_hardware_decode"),
-            .buffered_frames         = app->frame_settings().ffmpeg.buffer_frames,
+            .buffered_frames         = context->frame_settings().ffmpeg.buffer_frames,
         };
 
         if (selection_.observe(options)) {
@@ -79,17 +79,17 @@ class node_impl final : public node_i
 
         detail::playback_status_s status;
         if (session_) {
-            status              = session_->status();
-            const auto& context = app->frame_context();
+            status             = session_->status();
+            const auto& timing = context->frame_context();
             if (mode_ == playback_mode_e::always_play) {
-                timeline_.tick(context.program_pts, context.epoch, status.ready);
+                timeline_.tick(timing.program_pts, timing.epoch, status.ready);
             }
 
             session_->advance(timeline_.position());
         }
 
-        report_connection(app->status_registry(), {.connected = status.ready && status.error.empty()});
-        app->status_registry()->write(
+        report_connection(context->status_registry(), {.connected = status.ready && status.error.empty()});
+        context->status_registry()->write(
             id_,
             status::ffmpeg_playback_status_s{
                 .playback_backend          = status.backend,
@@ -104,23 +104,23 @@ class node_impl final : public node_i
             });
     }
 
-    void submit(core::app_state_s* /*app*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
+    void submit(execution_context_s* /*context*/, const node_map_t& /*nodes*/, const node_state_s& /*state*/) final
     {
         prepared_ = session_ ? session_->selected() : nullptr;
     }
 
-    void execute(core::app_state_s* app, const node_map_t& /*nodes*/, const node_state_s& state) final
+    void execute(execution_context_s* context, const node_map_t& /*nodes*/, const node_state_s& state) final
     {
         executed_ = true;
         if (session_ && mode_ != playback_mode_e::always_play) {
-            const auto& context = app->frame_context();
-            timeline_.tick(context.program_pts, context.epoch, session_->status().ready);
+            const auto& timing = context->frame_context();
+            timeline_.tick(timing.program_pts, timing.epoch, session_->status().ready);
             session_->advance(timeline_.position());
             prepared_ = session_->selected();
         }
 
         if (prepared_ && prepared_ != displayed_) {
-            app->submit_gpu();
+            context->submit_gpu();
             auto& source = *prepared_;
             if (source.gpu_texture) {
                 output_    = source.gpu_texture;
@@ -140,20 +140,20 @@ class node_impl final : public node_i
         // Re-record on repeats as the graph may have aborted the previous frame.
         // CPU selection is not evidence that its conversion was submitted.
         if (frame_ && displayed_) {
-            app->commands().wait_for(frame_->upload_completion());
-            app->commands().unpack_video(frame_->buffer(), *output_, displayed_->color);
-            app->commands().generate_mip_maps(*output_);
+            context->commands().wait_for(frame_->upload_completion());
+            context->commands().unpack_video(frame_->buffer(), *output_, displayed_->color);
+            context->commands().generate_mip_maps(*output_);
         }
 
         texture_.set_value({.texture = output_.get(), .name = state.get_option_string_view("name")});
     }
 
-    void complete(core::app_state_s* app) final
+    void complete(execution_context_s* context) final
     {
         prepared_.reset();
         if (mode_ != playback_mode_e::always_play && !executed_) {
-            const auto& context = app->frame_context();
-            timeline_.tick(context.program_pts, context.epoch, false);
+            const auto& timing = context->frame_context();
+            timeline_.tick(timing.program_pts, timing.epoch, false);
             if (previously_active_ && mode_ == playback_mode_e::pause_and_rewind_inactive) {
                 timeline_.rewind();
                 if (session_) {

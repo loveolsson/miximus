@@ -28,7 +28,8 @@ Run `python3 scripts/test_screen_output_failure.py [build/miximus]` in a display
 monitor status, failure retention, explicit reconfiguration, and disabling the output. The script uses temporary
 settings and refuses to run alongside another application instance on the local API port.
 
-Ordinary nodes use `gpu::drawing.hpp` and `app->commands()` for typed operations. The sole GPU implementation lives
+Ordinary nodes use `gpu::drawing.hpp` and their borrowed execution context's `commands()` for typed operations.
+The application owns the recording state and controls frame commit/abandonment. The sole GPU implementation lives
 directly in `src/gpu/`, with Vulkan/VMA state and pipeline internals in `src/gpu/detail/`. Public resource headers
 contain no native Vulkan types; dependency integration remains in `src/wrapper/vulkan/`. Internal device ownership
 separates pipeline resources, submission scheduling and deferred retirement into concrete components under
@@ -603,7 +604,7 @@ most one task at a time to the existing CPU worker, at background priority. Prep
 font metadata; painting tasks own exact upload leases and write directly into their bounded transfer memory. Font
 loading, glyph measurement, and rasterization all run on that worker. Futures transfer exclusive batch ownership
 between threads, without borrowing graph values or node pointers. The render thread only polls task/upload completion
-and draws completed textures through `app->commands()`.
+and draws completed textures through the execution context's `commands()`.
 
 Each distinct current label has a compact single-slot upload stream with mipmap generation disabled. Cached frame
 leases survive across frames; GPU uses retain native storage independently when a name is removed or labels are

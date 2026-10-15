@@ -1,6 +1,7 @@
-#include "core/app_state.hpp"
 #include "gpu/texture.hpp"
 #include "nodes/composite/register.hpp"
+#include "nodes/execution_context.hpp"
+#include "nodes/frame_commands.hpp"
 #include "nodes/frame_execution.hpp"
 #include "nodes/interface.hpp"
 #include "nodes/node.hpp"
@@ -19,6 +20,15 @@
 
 namespace {
 using namespace miximus;
+
+struct frame_fixture_s
+{
+    nodes::frame_settings_s        settings;
+    core::frame_context_s          timing;
+    nodes::frame_commands_s        commands;
+    nodes::frame_execution_state_s state;
+    nodes::execution_context_s     context{{}, settings, timing, commands, state};
+};
 
 class test_node_s final : public nodes::node_i
 {
@@ -48,30 +58,34 @@ class test_node_s final : public nodes::node_i
 
     std::string_view type() const final { return type_; }
 
-    void prepare(core::app_state_s* /*app*/, const nodes::node_state_s& /*state*/, prepare_result_s* result) final
+    void prepare(nodes::execution_context_s* /*context*/,
+                 const nodes::node_state_s& /*state*/,
+                 prepare_result_s* result) final
     {
         record("prepare");
         result->demands_execution = demands_execution_;
     }
 
-    void submit(core::app_state_s* app, const nodes::node_map_t& nodes, const nodes::node_state_s& state) final
+    void
+    submit(nodes::execution_context_s* context, const nodes::node_map_t& nodes, const nodes::node_state_s& state) final
     {
         record("submit");
         for (const auto* iface :
              {static_cast<const nodes::interface_i*>(&source_), static_cast<const nodes::interface_i*>(&input_)}) {
-            miximus::nodes::interface_i::submit_dependencies(app, nodes, iface->connections(state));
+            miximus::nodes::interface_i::submit_dependencies(context, nodes, iface->connections(state));
         }
     }
 
-    void execute(core::app_state_s* app, const nodes::node_map_t& nodes, const nodes::node_state_s& state) final
+    void
+    execute(nodes::execution_context_s* context, const nodes::node_map_t& nodes, const nodes::node_state_s& state) final
     {
-        (void)source_.resolve_value(app, nodes, state);
-        (void)input_.resolve_value(app, nodes, state);
+        (void)source_.resolve_value(context, nodes, state);
+        (void)input_.resolve_value(context, nodes, state);
         output_.set_value(1.0);
         record("execute");
     }
 
-    void complete(core::app_state_s* /*app*/) final { record("complete"); }
+    void complete(nodes::execution_context_s* /*context*/) final { record("complete"); }
 
     nodes::option_result_e normalize_option(std::string_view /*name*/, nlohmann::json* /*value*/) const final
     {
@@ -138,11 +152,16 @@ class source_node_s final : public nodes::node_i
         : source_(std::move(source))
     {
     }
+
     std::string_view type() const final { return "test_source"; }
-    void execute(core::app_state_s* /*app*/, const nodes::node_map_t& /*nodes*/, const nodes::node_state_s& state) final
+
+    void execute(nodes::execution_context_s* /*context*/,
+                 const nodes::node_map_t& /*nodes*/,
+                 const nodes::node_state_s& state) final
     {
         output_.set_value({.texture = source_.texture, .name = state.get_option_string_view("name")});
     }
+
     nodes::option_result_e normalize_option(std::string_view /*name*/, nlohmann::json* /*value*/) const final
     {
         return nodes::option_result_e::invalid;
@@ -179,7 +198,8 @@ TEST(FrameExecution, PreparesAndCompletesEveryNodeButSubmitsOnlyDemandedClosure)
 {
     std::vector<std::string> events;
     nodes::node_map_t        graph;
-    core::app_state_s        app(core::app_state_s::test_state_t{});
+    frame_fixture_s          fixture;
+    auto&                    context = fixture.context;
     add_node(&graph, "source", &events);
     add_node(&graph, "shared", &events);
     add_node(&graph, "sink_a", &events, true);
@@ -190,29 +210,29 @@ TEST(FrameExecution, PreparesAndCompletesEveryNodeButSubmitsOnlyDemandedClosure)
     connect(&graph, "shared", "sink_a", "input");
     connect(&graph, "shared", "sink_b", "input");
 
-    const auto demanding_nodes = nodes::prepare_all_nodes(&app, graph);
+    const auto demanding_nodes = nodes::prepare_all_nodes(&context, graph);
     ASSERT_EQ(demanding_nodes.size(), 2);
     for (const auto id : {"source", "shared", "sink_a", "sink_b", "inactive"}) {
         EXPECT_EQ(count_event(events, std::string("prepare:") + id), 1);
     }
 
-    nodes::submit_demanding_nodes(&app, graph, demanding_nodes);
-    EXPECT_EQ(app.frame_info.submitted_nodes.size(), 4);
+    nodes::submit_demanding_nodes(&context, graph, demanding_nodes);
+    EXPECT_EQ(context.frame_info.submitted_nodes.size(), 4);
     for (const auto id : {"source", "shared", "sink_a", "sink_b"}) {
-        EXPECT_TRUE(app.frame_info.submitted_nodes.contains(id));
+        EXPECT_TRUE(context.frame_info.submitted_nodes.contains(id));
     }
-    EXPECT_FALSE(app.frame_info.submitted_nodes.contains("inactive"));
+    EXPECT_FALSE(context.frame_info.submitted_nodes.contains("inactive"));
 
     for (const auto id : {"source", "shared", "sink_a", "sink_b"}) {
         EXPECT_EQ(count_event(events, std::string("submit:") + id), 1);
     }
     EXPECT_EQ(count_event(events, "submit:inactive"), 0);
 
-    nodes::execute_demanding_nodes(&app, graph, demanding_nodes);
+    nodes::execute_demanding_nodes(&context, graph, demanding_nodes);
     EXPECT_EQ(count_event(events, "execute:sink_a"), 1);
     EXPECT_EQ(count_event(events, "execute:sink_b"), 1);
 
-    nodes::complete_all_nodes(&app, graph);
+    nodes::complete_all_nodes(&context, graph);
     for (const auto id : {"source", "shared", "sink_a", "sink_b", "inactive"}) {
         EXPECT_EQ(count_event(events, std::string("complete:") + id), 1);
     }
@@ -230,11 +250,12 @@ TEST(FrameExecution, ExecuteOnceSuppressesSharedAndRepeatedRequests)
 {
     std::vector<std::string> events;
     nodes::node_map_t        graph;
-    core::app_state_s        app(core::app_state_s::test_state_t{});
+    frame_fixture_s          fixture;
+    auto&                    context = fixture.context;
     add_node(&graph, "shared", &events);
 
-    EXPECT_TRUE(nodes::execute_node_once(&app, graph, "shared"));
-    EXPECT_FALSE(nodes::execute_node_once(&app, graph, "shared"));
+    EXPECT_TRUE(nodes::execute_node_once(&context, graph, "shared"));
+    EXPECT_FALSE(nodes::execute_node_once(&context, graph, "shared"));
     EXPECT_EQ(count_event(events, "execute:shared"), 1);
 }
 
@@ -242,11 +263,12 @@ TEST(FrameExecution, SubmitOnceSuppressesSharedAndRepeatedRequests)
 {
     std::vector<std::string> events;
     nodes::node_map_t        graph;
-    core::app_state_s        app(core::app_state_s::test_state_t{});
+    frame_fixture_s          fixture;
+    auto&                    context = fixture.context;
     add_node(&graph, "shared", &events);
 
-    EXPECT_TRUE(nodes::submit_node_once(&app, graph, "shared"));
-    EXPECT_FALSE(nodes::submit_node_once(&app, graph, "shared"));
+    EXPECT_TRUE(nodes::submit_node_once(&context, graph, "shared"));
+    EXPECT_FALSE(nodes::submit_node_once(&context, graph, "shared"));
     EXPECT_EQ(count_event(events, "submit:shared"), 1);
 }
 
@@ -254,7 +276,8 @@ TEST(FrameExecution, SwitchSubmissionUsesOptionRouteOrAllConnectedSelectorRoutes
 {
     std::vector<std::string>     events;
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::switch_nodes::register_nodes(&definitions);
 
@@ -268,17 +291,17 @@ TEST(FrameExecution, SwitchSubmissionUsesOptionRouteOrAllConnectedSelectorRoutes
     connect(&graph, "d", "switch", "d");
     graph.at("switch").state.options["active"] = 2;
 
-    ASSERT_TRUE(nodes::submit_node_once(&app, graph, "switch"));
-    EXPECT_TRUE(app.frame_info.submitted_nodes.contains("b"));
-    EXPECT_FALSE(app.frame_info.submitted_nodes.contains("a"));
-    EXPECT_FALSE(app.frame_info.submitted_nodes.contains("c"));
-    EXPECT_FALSE(app.frame_info.submitted_nodes.contains("d"));
+    ASSERT_TRUE(nodes::submit_node_once(&context, graph, "switch"));
+    EXPECT_TRUE(context.frame_info.submitted_nodes.contains("b"));
+    EXPECT_FALSE(context.frame_info.submitted_nodes.contains("a"));
+    EXPECT_FALSE(context.frame_info.submitted_nodes.contains("c"));
+    EXPECT_FALSE(context.frame_info.submitted_nodes.contains("d"));
 
-    app.frame_info.submitted_nodes.clear();
+    context.frame_info.submitted_nodes.clear();
     connect(&graph, "selector", "switch", "active");
-    ASSERT_TRUE(nodes::submit_node_once(&app, graph, "switch"));
+    ASSERT_TRUE(nodes::submit_node_once(&context, graph, "switch"));
     for (const auto id : {"selector", "a", "b", "c", "d"}) {
-        EXPECT_TRUE(app.frame_info.submitted_nodes.contains(id));
+        EXPECT_TRUE(context.frame_info.submitted_nodes.contains(id));
     }
 }
 
@@ -286,7 +309,8 @@ TEST(FrameExecution, MixSubmissionUsesOptionRouteOrBothConnectedControlRoutes)
 {
     std::vector<std::string>     events;
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::composite::register_nodes(&definitions);
 
@@ -299,16 +323,16 @@ TEST(FrameExecution, MixSubmissionUsesOptionRouteOrBothConnectedControlRoutes)
     connect(&graph, "b", "mix", "b");
     graph.at("mix").state.options["t"] = 0.0;
 
-    ASSERT_TRUE(nodes::submit_node_once(&app, graph, "mix"));
-    EXPECT_TRUE(app.frame_info.submitted_nodes.contains("framebuffer"));
-    EXPECT_TRUE(app.frame_info.submitted_nodes.contains("a"));
-    EXPECT_FALSE(app.frame_info.submitted_nodes.contains("b"));
+    ASSERT_TRUE(nodes::submit_node_once(&context, graph, "mix"));
+    EXPECT_TRUE(context.frame_info.submitted_nodes.contains("framebuffer"));
+    EXPECT_TRUE(context.frame_info.submitted_nodes.contains("a"));
+    EXPECT_FALSE(context.frame_info.submitted_nodes.contains("b"));
 
-    app.frame_info.submitted_nodes.clear();
+    context.frame_info.submitted_nodes.clear();
     connect(&graph, "control", "mix", "t");
-    ASSERT_TRUE(nodes::submit_node_once(&app, graph, "mix"));
+    ASSERT_TRUE(nodes::submit_node_once(&context, graph, "mix"));
     for (const auto id : {"framebuffer", "control", "a", "b"}) {
-        EXPECT_TRUE(app.frame_info.submitted_nodes.contains(id));
+        EXPECT_TRUE(context.frame_info.submitted_nodes.contains(id));
     }
 }
 
@@ -339,7 +363,8 @@ template <typename T>
 void check_rename(std::string_view type, std::string_view input, std::string_view output)
 {
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::utils::register_nodes(&definitions);
     gpu::texture_s texture;
@@ -356,8 +381,8 @@ void check_rename(std::string_view type, std::string_view input, std::string_vie
         })
                       .error,
                   error_e::no_error);
-        app.frame_info.executed_nodes.clear();
-        ASSERT_TRUE(nodes::execute_node_once(&app, graph, "rename"));
+        context.frame_info.executed_nodes.clear();
+        ASSERT_TRUE(nodes::execute_node_once(&context, graph, "rename"));
         const auto renamed  = read_output<T>(graph, "rename", output);
         const auto original = read_output<T>(graph, "source", "out");
         EXPECT_EQ(renamed.texture, &texture);
@@ -366,7 +391,7 @@ void check_rename(std::string_view type, std::string_view input, std::string_vie
         EXPECT_EQ(original.texture, &texture);
         EXPECT_EQ(original.name, "Camera");
         EXPECT_EQ(original.name.data(), graph.at("source").state.get_option_string_view("name").data());
-        nodes::complete_all_nodes(&app, graph);
+        nodes::complete_all_nodes(&context, graph);
     }
     const auto options = state.options;
     EXPECT_NE(node->set_options(state.options,
@@ -387,7 +412,8 @@ TEST(FrameExecution, RenameCopiesMetadataWithoutMutatingTheSource)
 TEST(FrameExecution, TextureBranchesAndSwitchesPreserveNamesAcrossFrames)
 {
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::utils::register_nodes(&definitions);
     nodes::switch_nodes::register_nodes(&definitions);
@@ -401,19 +427,19 @@ TEST(FrameExecution, TextureBranchesAndSwitchesPreserveNamesAcrossFrames)
     graph.at("rename").state.options["source_name"] = "Preview";
     for (const auto active : {1, 2, 1}) {
         graph.at("switch").state.options["active"] = active;
-        app.frame_info.executed_nodes.clear();
-        ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
+        context.frame_info.executed_nodes.clear();
+        ASSERT_TRUE(nodes::execute_node_once(&context, graph, "switch"));
         const auto result = read_output<nodes::texture_source_info_s>(graph, "switch", "tex");
         EXPECT_EQ(result.texture, &texture);
         EXPECT_EQ(result.name, active == 1 ? "Camera" : "Preview");
         const auto upstream = read_output<nodes::texture_source_info_s>(
             graph, active == 1 ? "source" : "rename", active == 1 ? "out" : "tex_out");
         EXPECT_EQ(result.name.data(), upstream.name.data());
-        nodes::complete_all_nodes(&app, graph);
+        nodes::complete_all_nodes(&context, graph);
     }
     graph.at("source").state.options["name"] = "Camera renamed";
-    app.frame_info.executed_nodes.clear();
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
+    context.frame_info.executed_nodes.clear();
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "switch"));
     EXPECT_EQ(read_output<nodes::texture_source_info_s>(graph, "switch", "tex").name, "Camera renamed");
 }
 
@@ -460,7 +486,8 @@ TEST(FrameExecution, MissingTextureKeepsItsNameUnlessUsingAFallbackImage)
 TEST(FrameExecution, EmptyFramebufferPassThroughPreservesMetadata)
 {
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::utils::register_nodes(&definitions);
     nodes::composite::register_nodes(&definitions);
@@ -468,14 +495,14 @@ TEST(FrameExecution, EmptyFramebufferPassThroughPreservesMetadata)
     for (const auto type : {"draw_box", "mix_tex_2", "infinite_multiviewer"}) {
         add_registered_node(&graph, type, type, definitions);
         connect(&graph, "source", type, "fb_in");
-        ASSERT_TRUE(nodes::execute_node_once(&app, graph, type));
+        ASSERT_TRUE(nodes::execute_node_once(&context, graph, type));
         const auto result = read_output<nodes::framebuffer_source_info_s>(graph, type, "fb_out");
         EXPECT_EQ(result.texture, nullptr);
         EXPECT_EQ(result.name, "Program");
     }
     add_registered_node(&graph, "adapter", "framebuffer_to_texture", definitions);
     connect(&graph, "source", "adapter", "fb");
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "adapter"));
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "adapter"));
     const auto result = read_output<nodes::texture_source_info_s>(graph, "adapter", "tex");
     EXPECT_EQ(result.texture, nullptr);
     EXPECT_EQ(result.name, "Program");
@@ -484,7 +511,8 @@ TEST(FrameExecution, EmptyFramebufferPassThroughPreservesMetadata)
 TEST(FrameExecution, CompletionClearsImageOutputsAndPreservesValueOutputs)
 {
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::switch_nodes::register_nodes(&definitions);
     gpu::texture_s texture;
@@ -502,10 +530,10 @@ TEST(FrameExecution, CompletionClearsImageOutputsAndPreservesValueOutputs)
         .pos = {1, 2},
           .size = {3, 4}
     });
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "framebuffer"));
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "switch"));
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "framebuffer"));
     EXPECT_EQ(read_output<nodes::texture_source_info_s>(graph, "switch", "tex").texture, &texture);
-    nodes::complete_all_nodes(&app, graph);
+    nodes::complete_all_nodes(&context, graph);
     EXPECT_EQ(read_output<nodes::texture_source_info_s>(graph, "source", "out").texture, nullptr);
     const auto framebuffer = read_output<nodes::framebuffer_source_info_s>(graph, "framebuffer", "out");
     EXPECT_EQ(framebuffer.texture, nullptr);
@@ -522,18 +550,19 @@ TEST(FrameExecution, CompletionClearsImageOutputsAndPreservesValueOutputs)
     EXPECT_TRUE(cleared.name.empty());
 
     add_source(&graph, "source", nodes::texture_source_info_s{.texture = &texture, .name = {}}, "Next frame");
-    app.frame_info.executed_nodes.clear();
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "switch"));
+    context.frame_info.executed_nodes.clear();
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "switch"));
     const auto refreshed = read_output<nodes::texture_source_info_s>(graph, "switch", "tex");
     EXPECT_EQ(refreshed.texture, &texture);
     EXPECT_EQ(refreshed.name, "Next frame");
-    nodes::complete_all_nodes(&app, graph);
+    nodes::complete_all_nodes(&context, graph);
 }
 
 TEST(FrameExecution, RenamePublishesEmptyOutputForMissingImage)
 {
     nodes::node_map_t            graph;
-    core::app_state_s            app(core::app_state_s::test_state_t{});
+    frame_fixture_s              fixture;
+    auto&                        context = fixture.context;
     nodes::node_definition_map_t definitions;
     nodes::utils::register_nodes(&definitions);
     add_source(&graph, "texture", nodes::texture_source_info_s{}, "Missing camera");
@@ -544,8 +573,8 @@ TEST(FrameExecution, RenamePublishesEmptyOutputForMissingImage)
     connect(&graph, "framebuffer", "framebuffer-name", "fb_in");
     graph.at("texture-name").state.options["source_name"]     = "Camera";
     graph.at("framebuffer-name").state.options["source_name"] = "Program";
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "texture-name"));
-    ASSERT_TRUE(nodes::execute_node_once(&app, graph, "framebuffer-name"));
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "texture-name"));
+    ASSERT_TRUE(nodes::execute_node_once(&context, graph, "framebuffer-name"));
     const auto texture     = read_output<nodes::texture_source_info_s>(graph, "texture-name", "tex_out");
     const auto framebuffer = read_output<nodes::framebuffer_source_info_s>(graph, "framebuffer-name", "fb_out");
     EXPECT_EQ(texture.texture, nullptr);
@@ -556,14 +585,15 @@ TEST(FrameExecution, RenamePublishesEmptyOutputForMissingImage)
 
 TEST(FrameExecution, AbandonedFrameReleasesOutputLeasesWithoutPublication)
 {
-    core::app_state_s  app(core::app_state_s::test_state_t{});
+    frame_fixture_s    fixture;
+    auto&              context = fixture.context;
     std::weak_ptr<int> retained;
     bool               published = false;
     {
-        const core::app_state_s::frame_scope_s frame(app);
+        const nodes::frame_commands_s::scope_s frame(fixture.commands);
         auto                                   lease = std::make_shared<int>(1);
         retained                                     = lease;
-        app.defer_output([lease, &published](const gpu::completion_s&) { published = true; });
+        context.defer_output([lease, &published](const gpu::completion_s&) { published = true; });
     }
     EXPECT_TRUE(retained.expired());
     EXPECT_FALSE(published);

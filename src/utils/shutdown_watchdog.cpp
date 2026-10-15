@@ -157,6 +157,7 @@ void request_failure_shutdown(std::string_view message, std::string_view detail)
 {
     failure_state().request(message, detail);
 }
+
 bool failure_shutdown_requested() noexcept { return failure_state().failed.load(std::memory_order_acquire); }
 
 [[noreturn]] void fail_without_unwinding(std::string_view message, std::string_view detail) noexcept
@@ -178,8 +179,10 @@ void publish_recovery_settings(std::filesystem::path path, std::string contents)
         monitor.settings.store(std::move(snapshot));
     }
 }
+
 std::shared_ptr<const recovery_settings_s> recovery_settings() { return state().settings.load(); }
-void                                       freeze_recovery_settings()
+
+void freeze_recovery_settings()
 {
     auto&                  monitor = state();
     const std::scoped_lock lock(monitor.snapshot_mutex);

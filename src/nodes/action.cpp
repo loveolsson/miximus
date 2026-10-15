@@ -22,6 +22,7 @@ struct action_s::response_s
         : reply(std::move(callback))
     {
     }
+
     static void deliver(const reply_t& reply, action_result_s result) noexcept
     {
         if (!reply) {
@@ -35,6 +36,7 @@ struct action_s::response_s
             logger::log_error_noexcept("app", "Node action reply failed with an unknown exception");
         }
     }
+
     void cancel_timer() noexcept
     {
         if (!timer) {
@@ -47,6 +49,7 @@ struct action_s::response_s
         }
         timer.reset();
     }
+
     reply_t settle_locked(error_e error)
     {
         if (result) {
@@ -57,6 +60,7 @@ struct action_s::response_s
         cancel_timer();
         return std::exchange(reply, {});
     }
+
     void complete(action_result_s value) noexcept
     {
         reply_t callback;
@@ -66,6 +70,7 @@ struct action_s::response_s
         }
         deliver(callback, std::move(value));
     }
+
     bool check_deadline(clock_t::time_point now, bool consume) noexcept
     {
         reply_t callback;
@@ -94,7 +99,9 @@ action_s::action_s(std::string node_id, std::string action_name, nlohmann::json 
     , payload(std::move(action_payload))
 {
 }
+
 action_s::~action_s() { fail(error_e::internal_error, "Node action was abandoned without a result"); }
+
 action_s::action_s(action_s&& other) noexcept
     // The source keeps a read-only outcome observer; owns_ alone transfers response authority.
     // NOLINTNEXTLINE(performance-move-constructor-init)
@@ -106,6 +113,7 @@ action_s::action_s(action_s&& other) noexcept
     , sequence(other.sequence)
 {
 }
+
 action_s& action_s::operator=(action_s&& other) noexcept
 {
     if (this != &other) {
@@ -119,12 +127,14 @@ action_s& action_s::operator=(action_s&& other) noexcept
     }
     return *this;
 }
+
 void action_s::complete(action_result_s result) noexcept
 {
     if (owns_) {
         response_->complete(std::move(result));
     }
 }
+
 void action_s::fail(error_e error, std::string_view message) noexcept
 {
     if (!*this) {
@@ -136,7 +146,9 @@ void action_s::fail(error_e error, std::string_view message) noexcept
         complete({.error = error});
     }
 }
-action_s::             operator bool() const noexcept { return owns_ && !result_error(); }
+
+action_s::operator bool() const noexcept { return owns_ && !result_error(); }
+
 std::optional<error_e> action_s::result_error() const noexcept
 {
     if (!response_) {
@@ -145,6 +157,7 @@ std::optional<error_e> action_s::result_error() const noexcept
     const std::scoped_lock lock(response_->mutex);
     return response_->result;
 }
+
 void action_s::set_deadline(clock_t::time_point deadline, std::optional<boost::asio::any_io_executor> executor)
 {
     if (!owns_) {
@@ -167,6 +180,7 @@ void action_s::set_deadline(clock_t::time_point deadline, std::optional<boost::a
         });
     }
 }
+
 bool action_s::expire(clock_t::time_point now) noexcept
 {
     if (!owns_) {
@@ -175,7 +189,9 @@ bool action_s::expire(clock_t::time_point now) noexcept
     response_->check_deadline(now, false);
     return result_error() == error_e::expired;
 }
+
 bool action_s::consume(clock_t::time_point now) noexcept { return owns_ && response_->check_deadline(now, true); }
+
 const node_state_s* action_context_s::find_state(std::string_view id) const
 {
     const auto found = graph_.find(id);

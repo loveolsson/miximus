@@ -261,8 +261,8 @@ TEST(Surface, ZonePlateMirrorsOddEvenAndSinglePixelDimensions)
             const size_t x = i % width;
             const size_t y = i / width;
             symmetric      = symmetric && pixels[i] == pixels[(y * width) + width - 1 - x] &&
-                        pixels[i] == pixels[((height - 1 - y) * width) + x];
-            opaque = opaque && pixels[i].a == 255;
+                             pixels[i] == pixels[((height - 1 - y) * width) + x];
+            opaque         = opaque && pixels[i].a == 255;
         }
         EXPECT_TRUE(symmetric);
         EXPECT_TRUE(opaque);

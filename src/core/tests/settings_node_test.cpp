@@ -1,5 +1,5 @@
-#include "core/app_state.hpp"
 #include "nodes/action.hpp"
+#include "nodes/frame_settings.hpp"
 #include "nodes/node.hpp"
 #include "nodes/node_map.hpp"
 #include "nodes/system/register.hpp"
@@ -82,7 +82,7 @@ TEST(FrameRate, CanonicalizesEquivalentRatesAndRejectsInexactRates)
 
 TEST(SettingsNode, ProvidesTheDefaultSettings)
 {
-    using framebuffer_settings_s = core::app_state_s::frame_settings_s::framebuffer_settings_s;
+    using framebuffer_settings_s = nodes::frame_settings_s::framebuffer_settings_s;
 
     const auto settings = create_settings_node();
     const auto defaults = settings->get_default_options();
@@ -157,7 +157,7 @@ TEST(SettingsNode, ValidatesAllInputBufferControlsAndPreservesDefaultsForOlderOp
 
 TEST(SettingsNode, CorrectsDefaultFramebufferSize)
 {
-    using framebuffer_settings_s = core::app_state_s::frame_settings_s::framebuffer_settings_s;
+    using framebuffer_settings_s = nodes::frame_settings_s::framebuffer_settings_s;
 
     const auto           settings = create_settings_node();
     auto                 state    = settings->get_default_options();

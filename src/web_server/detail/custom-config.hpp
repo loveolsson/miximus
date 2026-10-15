@@ -25,6 +25,7 @@ struct custom_config : public websocketpp::config::asio
         typedef custom_config::elog_type elog_type;
         typedef custom_config::alog_type alog_type;
     };
+
     typedef websocketpp::transport::asio::endpoint<transport_config> transport_type;
 };
 

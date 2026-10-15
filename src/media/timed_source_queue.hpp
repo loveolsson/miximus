@@ -50,8 +50,10 @@ class source_frame_s
     source_frame_s& operator=(source_frame_s&&)      = delete;
 
     source_frame_readiness_e readiness() const noexcept { return readiness_.load(std::memory_order_acquire); }
-    const T&                 payload() const noexcept { return payload_; }
-    T&                       payload() noexcept { return payload_; }
+
+    const T& payload() const noexcept { return payload_; }
+
+    T& payload() noexcept { return payload_; }
 
     bool mark_submitted() noexcept
     {
@@ -133,10 +135,13 @@ class prepared_frame_ticket_s
   public:
     prepared_frame_ticket_s() = default;
 
-    const frame_ptr_t&         frame() const noexcept { return frame_; }
+    const frame_ptr_t& frame() const noexcept { return frame_; }
+
     prepared_frame_selection_e selection() const noexcept { return selection_; }
-    bool                       discontinuity() const noexcept { return discontinuity_; }
-    [[nodiscard]] bool         await() const noexcept { return frame_ != nullptr && frame_->await(); }
+
+    bool discontinuity() const noexcept { return discontinuity_; }
+
+    [[nodiscard]] bool await() const noexcept { return frame_ != nullptr && frame_->await(); }
 };
 
 struct timed_source_queue_config_s
@@ -415,8 +420,8 @@ class timed_source_queue_s
                 continue;
             }
 
-            const auto frame_delay = frame->media_clock_sample.frame_duration *
-                                     static_cast<utils::flicks::rep>(config_.playout_delay_frames);
+            const auto      frame_delay = frame->media_clock_sample.frame_duration *
+                                          static_cast<utils::flicks::rep>(config_.playout_delay_frames);
             aligned_frame_s aligned{
                 .frame       = std::move(frame),
                 .program_pts = *mapped + config_.playout_delay + frame_delay,

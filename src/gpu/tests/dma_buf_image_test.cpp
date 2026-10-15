@@ -27,7 +27,8 @@ class external_image_test : public testing::Test
     VkCommandPool producer_pool{};
 
     VkSemaphore producer_signal{};
-    void        SetUp() override
+
+    void SetUp() override
     {
         if (!spdlog::get("gpu")) {
             logger::init_loggers(spdlog::level::warn);
