@@ -48,6 +48,14 @@ Release builds do not enable interprocedural optimization by default. Enable IPO
 libraries and their executable consumers with `-DMIXIMUS_ENABLE_RELEASE_IPO=ON`. External dependencies and the
 separately loaded `static_files` shared library are not included.
 
+CUDA discovery uses CMake's `FindCUDAToolkit` and links `CUDA::cudart`. Within that discovery only,
+environment search paths are separated by purpose: `PATH` supplies program locations, `LIB` supplies library
+locations, and `INCLUDE` supplies header locations. This avoids repeatedly searching executable directories for
+optional toolkit libraries that Miximus does not use. `CUDAToolkit_ROOT`, `CUDA_PATH`, CMake search paths, and
+the finder's platform defaults remain available; use `CUDAToolkit_ROOT` or `CMAKE_LIBRARY_PATH` for nonstandard
+library installations instead of relying on library files being in `PATH`. Explicitly disabled CMake search
+categories are respected. Other dependencies retain their normal search behavior.
+
 Use **clang-tidy 21** on Linux and Windows so both platforms use the same major version of the checks.
 Select it explicitly; CMake's default `clang-tidy` lookup does not enforce a version. Use a separate build
 directory so normal builds remain unaffected:

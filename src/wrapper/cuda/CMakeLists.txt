@@ -2,7 +2,23 @@ option(MIXIMUS_ENABLE_CUDA "Build optional CUDA/Vulkan transfers when the toolki
 if(NOT MIXIMUS_ENABLE_CUDA)
     return()
 endif()
-find_package(CUDAToolkit QUIET)
+block(SCOPE_FOR VARIABLES PROPAGATE CUDAToolkit_FOUND CUDAToolkit_VERSION CUDAToolkit_BIN_DIR)
+    # FindCUDAToolkit probes optional libraries beyond the cudart we consume.
+    # Do not search executable PATH directories for each missing library. Keep
+    # PATH for programs (including nvcc), LIB for libraries and INCLUDE for headers.
+    # Explicit toolkit roots, CMake search paths and platform defaults still apply.
+    if((NOT DEFINED CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH OR CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH)
+        AND (NOT DEFINED CMAKE_FIND_USE_CMAKE_PATH OR CMAKE_FIND_USE_CMAKE_PATH))
+        cmake_path(CONVERT "$ENV{PATH}" TO_CMAKE_PATH_LIST cuda_program_paths)
+        cmake_path(CONVERT "$ENV{LIB}" TO_CMAKE_PATH_LIST cuda_library_paths)
+        cmake_path(CONVERT "$ENV{INCLUDE}" TO_CMAKE_PATH_LIST cuda_include_paths)
+        list(APPEND CMAKE_PROGRAM_PATH ${cuda_program_paths})
+        list(APPEND CMAKE_LIBRARY_PATH ${cuda_library_paths})
+        list(APPEND CMAKE_INCLUDE_PATH ${cuda_include_paths})
+        set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH FALSE)
+    endif()
+    find_package(CUDAToolkit QUIET)
+endblock()
 if(CUDAToolkit_FOUND AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
     add_library(cuda_dependencies INTERFACE)
     target_link_libraries(cuda_dependencies INTERFACE CUDA::cudart)
